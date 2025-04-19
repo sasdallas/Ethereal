@@ -19,3 +19,7 @@ DEFINE_SYSCALL3(execve, SYS_EXECVE, const char*, const char**, char**);
 int execve(const char *pathname, const char *argv[], char *envp[]) {
     __sets_errno(__syscall_execve(pathname, argv, envp));
 }
+
+int execv(const char *path, const char *argv[]) {
+    return execve(path, argv, environ);
+}
