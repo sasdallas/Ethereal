@@ -23,6 +23,12 @@ _Begin_C_Header
 #include <stddef.h>
 #include <assert.h>
 
+/**** DEFINITIONS ****/
+
+#define EXIT_SUCCESS    0
+#define EXIT_FAILURE    1
+
+
 /**** FUNCTIONS ****/
 
 __attribute__((__noreturn__)) void abort(void);
@@ -39,6 +45,10 @@ long int strtol(const char*, char**, int);
 long long int strtoll(const char*, char**, int);
 double strtod(const char*, char**);
 
+char *getenv(const char *name);
+int putenv(char *string);
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
 
 __attribute__((malloc)) void *malloc( size_t size );
 __attribute__((malloc)) void *calloc( size_t num, size_t size );

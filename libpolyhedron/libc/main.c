@@ -17,12 +17,12 @@
 
 /* Environment */
 char **environ = NULL;
+int envc = 0;
 
 // TODO: Init array support, mark as constructor - got a lot to do
 
 void __create_environ(char **envp) {
     // First calculate envc
-    int envc = 0;
     char **envpp = envp;
     while (*envpp++) {
         envc++;
