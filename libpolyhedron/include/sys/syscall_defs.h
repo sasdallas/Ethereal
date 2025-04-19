@@ -26,6 +26,7 @@ _Begin_C_Header
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
+#include <dirent.h>
 
 /**** MACROS ****/
 
@@ -49,6 +50,7 @@ DECLARE_SYSCALL2(stat, const char*, struct stat*);
 DECLARE_SYSCALL2(fstat, int, struct stat*);
 DECLARE_SYSCALL2(lstat, const char*, struct stat*);
 DECLARE_SYSCALL3(ioctl, int, unsigned long, void*);
+DECLARE_SYSCALL3(readdir, struct dirent*, int, unsigned long);
 DECLARE_SYSCALL1(brk, void*);
 DECLARE_SYSCALL0(fork);
 DECLARE_SYSCALL3(lseek, int, off_t, int);

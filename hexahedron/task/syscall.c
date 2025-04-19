@@ -36,6 +36,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_FSTAT]         = (syscall_func_t)(uintptr_t)sys_fstat,
     [SYS_LSTAT]         = (syscall_func_t)(uintptr_t)sys_lstat,
     [SYS_IOCTL]         = (syscall_func_t)(uintptr_t)sys_ioctl,
+    [SYS_READDIR]       = (syscall_func_t)(uintptr_t)sys_readdir,
     [SYS_BRK]           = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]          = (syscall_func_t)(uintptr_t)sys_fork,
     [SYS_LSEEK]         = (syscall_func_t)(uintptr_t)sys_lseek,
@@ -501,9 +502,7 @@ long sys_chdir(const char *path) {
     SYSCALL_VALIDATE_PTR(path);
 
     // Check that the path is accessible
-    LOG(DEBUG, "path: %s\n", path);
     char *new_path = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)path);
-    LOG(DEBUG, "new_path: %s\n", new_path);
 
     fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
     if (tmpnode) { 
@@ -515,7 +514,6 @@ long sys_chdir(const char *path) {
 
         // Close node
         fs_close(tmpnode);
-        LOG(DEBUG, "all done\n");
         return 0;
     }
 
@@ -526,6 +524,23 @@ long sys_chdir(const char *path) {
  * @brief fchdir system call
  */
 long sys_fchdir(int fd) {
-    // TODO
-    return -EINVAL;
+    SYSCALL_UNIMPLEMENTED("sys_fchdir");
+    return 0;
+}
+
+/**
+ * @brief readdir system call
+ */
+long sys_readdir(struct dirent *ent, int fd, unsigned long index) {
+    SYSCALL_VALIDATE_PTR(ent);
+    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+        return -EBADF;
+    }
+
+    struct dirent *dent = fs_readdir(FD(current_cpu->current_process, fd)->node, index);
+    if (!dent) return 0; // EOF
+
+    memcpy(ent, dent, sizeof(struct dirent));
+    kfree(dent);
+    return 1;
 }

@@ -31,6 +31,7 @@ _Begin_C_Header
 #define SYS_FSTAT           7
 #define SYS_LSTAT           8
 #define SYS_IOCTL           9
+#define SYS_READDIR         10
 /* reserved */
 #define SYS_BRK             20
 #define SYS_FORK            21
