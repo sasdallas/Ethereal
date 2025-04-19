@@ -350,7 +350,6 @@ struct dirent *vfs_fakeNodeReaddir(fs_node_t *node, unsigned long index) {
     // TODO: gross
     unsigned long i = 0;
     foreach(childnode, ((tree_node_t*)node->dev)->children) {
-        i++;
         if (i == index) {
             vfs_tree_node_t *vfs_node = (vfs_tree_node_t*)((tree_node_t*)childnode->value)->value;
             
@@ -360,6 +359,7 @@ struct dirent *vfs_fakeNodeReaddir(fs_node_t *node, unsigned long index) {
             dent->d_ino = i;
             return dent;
         }
+        i++;
     }
 
     return NULL;
