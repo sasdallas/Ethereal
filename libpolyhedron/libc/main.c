@@ -12,9 +12,32 @@
  */
 
 #include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Environment */
+char **environ = NULL;
 
 // TODO: Init array support, mark as constructor - got a lot to do
 
+void __create_environ(char **envp) {
+    // First calculate envc
+    int envc = 0;
+    char **envpp = envp;
+    while (*envpp++) {
+        envc++;
+    }
+
+    // Now start copying
+    environ = malloc(envc * sizeof(char*));
+    for (int i = 0; i < envc; i++) {
+        printf("environ[i] = %s\n", envp[i]);
+        environ[i] = strdup(envp[i]);
+    }
+}
+
 void __libc_main(int argc, char **argv, char **envp, int (*main)(int, char**)) {
+    // TODO: Call constructors 
+    __create_environ(envp);
     exit(main(argc, argv));
 }
