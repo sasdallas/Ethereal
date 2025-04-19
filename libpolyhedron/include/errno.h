@@ -102,6 +102,8 @@
 
 #ifndef __LIBK
 extern int errno;
+
+char *strerror(int errnum);
 #endif
 
 #endif

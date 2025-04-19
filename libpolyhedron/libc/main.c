@@ -31,7 +31,6 @@ void __create_environ(char **envp) {
     // Now start copying
     environ = malloc(envc * sizeof(char*));
     for (int i = 0; i < envc; i++) {
-        printf("environ[i] = %s\n", envp[i]);
         environ[i] = strdup(envp[i]);
     }
 }

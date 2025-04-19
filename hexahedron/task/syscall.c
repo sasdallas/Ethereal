@@ -428,7 +428,7 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Try to get the file
     fs_node_t *f = kopen_user(pathname, O_RDONLY);
     if (!f) return -ENOENT;
-    if (f->flags != VFS_FILE) return -EISDIR;
+    if (f->flags != VFS_FILE) { fs_close(f); return -EISDIR; }
 
     // Collect any arguments that we need
     int argc = 0;
