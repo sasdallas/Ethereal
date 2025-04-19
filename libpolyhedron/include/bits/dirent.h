@@ -20,13 +20,17 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <sys/types.h>
 
 /**** TYPES ****/
 
-typedef struct dirent {
-    uint32_t d_ino;
-    char d_name[256];
-} dirent;
+struct dirent {
+    ino_t   d_ino;              // Inode number
+    off_t   d_off;              // Not an offset
+    unsigned short d_reclen;    // Record length
+    unsigned char d_type;       // Type of file
+    char d_name[256];           // Null-terminated filename
+};
 
 #endif
 
