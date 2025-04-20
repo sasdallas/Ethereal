@@ -22,14 +22,14 @@ struct utsname buf;
 
 void help() {
     printf("Usage: uname <option>\n");
-    printf("\t-a, --all                 print all information in the following order");
+    printf("\t-a, --all                 print all information in the following order\n");
     printf("\t-s, --kernel-name         print the kernel name\n");
     printf("\t-n, --nodename            print the nodename\n");
     printf("\t-r, --kernel-release      print the kernel release\n");
     printf("\t-v, --kernel-version      print the kernel version\n");
     printf("\t-m, --machine             print the machine hardware name\n");
     printf("\t-p, --processor           print the processor type\n");
-    printf("\t-i, --hardware-platform   print the hardware platform");
+    printf("\t-i, --hardware-platform   print the hardware platform\n");
     printf("\t-o, --operating-system    print the operating system\n");
     printf("\t--help                    display this help and exit\n");
     printf("\t--version                 print the version and exit\n");
@@ -63,7 +63,7 @@ int uname_process_option(char *option) {
     } else if (!strcmp(option, "-o") || !strcmp(option, "--oeprating-system")) {
         printf("%s ", buf.sysname);
     } else {
-        printf("uname: invalid option -- '%s'", option);
+        printf("uname: invalid option -- '%s'\n", option);
         printf("Try 'uname --help' for more information.\n");
         exit(EXIT_FAILURE);
     }
