@@ -138,20 +138,14 @@ void shell() {
 
         int argc = 0;
         char **argv = shell_processCommand(buffer, &argc);
-        printf("debug: Executing program \"%s\" with argc %d\n", argv[0], argc);
 
         // Check if builtin
         if (shell_executeBuiltin(argc, argv)) goto _next_cmd;
 
-        struct stat st;
-        if (stat(argv[0], &st) < 0) {
-            printf("%s: errno %d\n", argv[0], errno);
-            goto _next_cmd;
-        }
-
         pid_t child = fork();
         if (!child) {
-            execve((const char*)argv[0], (const char**)argv, NULL);
+            execvpe((const char*)argv[0], (const char**)argv, environ);
+            printf("Error executing program \"%s\": %s\n", argv[0], strerror(errno));
             exit(1);
         } else {
             while (1) {
@@ -163,7 +157,7 @@ void shell() {
                 }
 
                 if (pid == child) {
-                    printf("Process finished with exitcode %d\n", WEXITSTATUS(wstatus));
+                    // printf("Process finished with exitcode %d\n", WEXITSTATUS(wstatus));
                     break;
                 }
             }
@@ -180,6 +174,8 @@ int main(int argc, char *argv[]) {
     open("/device/stdin", O_RDONLY);
     open("/device/kconsole", O_RDWR);
     open("/device/kconsole", O_RDWR);
+
+    putenv("PATH=/device/initrd/bin/:"); // TEMP
 
     printf("Welcome to Ethereal\n");
     printf("Initializing shell...\n");
