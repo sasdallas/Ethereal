@@ -19,6 +19,7 @@
 #include <kernel/panic.h>
 #include <kernel/gfx/gfx.h>
 #include <kernel/gfx/term.h>
+#include <kernel/config.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -47,7 +48,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_WAIT]          = (syscall_func_t)(uintptr_t)sys_wait,
     [SYS_GETCWD]        = (syscall_func_t)(uintptr_t)sys_getcwd,
     [SYS_CHDIR]         = (syscall_func_t)(uintptr_t)sys_chdir,
-    [SYS_FCHDIR]        = (syscall_func_t)(uintptr_t)sys_fchdir
+    [SYS_FCHDIR]        = (syscall_func_t)(uintptr_t)sys_fchdir,
+    [SYS_UNAME]         = (syscall_func_t)(uintptr_t)sys_uname
 };
 
 /* Unimplemented system call */
@@ -543,4 +545,27 @@ long sys_readdir(struct dirent *ent, int fd, unsigned long index) {
     memcpy(ent, dent, sizeof(struct dirent));
     kfree(dent);
     return 1;
+}
+
+
+long sys_uname(struct utsname *buf) {
+    SYSCALL_VALIDATE_PTR(buf);
+
+    // Copy!
+    snprintf(buf->sysname, LIBPOLYHEDRON_UTSNAME_LENGTH, "Hexahedron");
+    snprintf(buf->nodename, LIBPOLYHEDRON_UTSNAME_LENGTH, "N/A"); // lol, should be hostname
+    snprintf(buf->release, LIBPOLYHEDRON_UTSNAME_LENGTH, "%d.%d.%d-%s", 
+                    __kernel_version_major, 
+                    __kernel_version_minor, 
+                    __kernel_version_lower,
+                    __kernel_build_configuration);
+
+    snprintf(buf->version, LIBPOLYHEDRON_UTSNAME_LENGTH, "%s %s %s",
+        __kernel_version_codename,
+        __kernel_build_date,
+        __kernel_build_time);
+
+    snprintf(buf->machine, LIBPOLYHEDRON_UTSNAME_LENGTH, "%s", __kernel_architecture);
+
+    return 0;
 }

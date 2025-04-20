@@ -85,5 +85,6 @@ long sys_wait(pid_t pid, int *wstatus, int options);
 long sys_getcwd(char *buf, size_t size);
 long sys_chdir(const char *path);
 long sys_fchdir(int fd);
+long sys_uname(struct utsname *buf);
 
 #endif

@@ -26,6 +26,7 @@ _Begin_C_Header
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/utsname.h>
 #include <dirent.h>
 
 /**** MACROS ****/
@@ -62,6 +63,7 @@ DECLARE_SYSCALL3(wait, pid_t, int*, int);
 DECLARE_SYSCALL2(getcwd, char*, size_t);
 DECLARE_SYSCALL1(chdir, const char*);
 DECLARE_SYSCALL1(fchdir, int);
+DECLARE_SYSCALL1(uname, struct utsname*);
 
 #endif
 
