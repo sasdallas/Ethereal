@@ -1,12 +1,12 @@
-# reduceOS
+# Ethereal
 
-A memory-focused, lightweight operating system written in C and Assembly.
+A totally from scratch all-in-one operating system, written for speed, memory conservation, and reliability.
 
-## What is reduceOS?
+## What is Ethereal?
 
-reduceOS is a project with the goal of creating a fully functional OS (including usermode components) with as little requirements as possible.
+Ethereal is a project with the goal of creating a fully functional OS with all components that a user requires.
 
-Currently, the project is moving away from kernel mode stages and towards usermode.
+Currently, the project is developing its usermode stages.
 
 ## Features
 - Advanced driver system with a well-documented kernel API
@@ -41,5 +41,5 @@ Certain external components are available in `external`. Here is a list of them 
 
 ## Licensing
 
-Hexahedron, libpolyhedron, and all other components of reduceOS fall under the terms of the BSD 3-clause license (available in LICENSE).\
+Hexahedron, libpolyhedron, and all other components of Ethereal fall under the terms of the BSD 3-clause license (available in LICENSE).\
 All files, unless specified, fall under this license.
