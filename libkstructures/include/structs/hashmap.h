@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -37,7 +37,7 @@ typedef struct _hashmap {
     int type;                   // Type (HASHMAP_PTR or HASHMAP_INT)
     char *name;                 // Optional name
     size_t size;                // Size of the hashmap
-    hashmap_node_t **entries;   // List of nodes in the hashmap (sourced from old reduceOS hashmap impl.)
+    hashmap_node_t **entries;   // List of nodes in the hashmap (sourced from old Ethereal Operating System hashmap impl.)
                                 // This is a sort of quick access system
 } hashmap_t;
 

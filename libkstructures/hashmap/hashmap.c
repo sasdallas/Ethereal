@@ -5,14 +5,14 @@
  * This hashmap uses the SDBM hashing algorithm on the keys.
  * SDBM is public domain - see http://www.cse.yorku.ca/~oz/hash.html
  * 
- * Most of this hashing code is sourced from the old reduceOS kernel. 
+ * Most of this hashing code is sourced from the old Ethereal Operating System kernel. 
  * It uses a list of entries, each of which is indexed based on the SDBM hash
  * of the key, and these entries can also contain their own lists of hash elements.
  * 
  * It's basically one static list that contains a bunch of linked lists.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
