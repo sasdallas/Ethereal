@@ -18,7 +18,7 @@
  * - Allow arguments to modify this
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -27,9 +27,16 @@
 
 #include <kernel/drivers/video.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/debug.h>
 #include <structs/list.h>
 #include <string.h>
 #include <errno.h>
+
+#include <kernel/mem/mem.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/task/process.h>
+#include <kernel/task/syscall.h>
+#include <kernel/gfx/video.h>
 
 /* List of available drivers */
 static list_t *video_driver_list = NULL;
