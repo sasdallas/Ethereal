@@ -52,6 +52,6 @@ size_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
     if (!f) return 0;
     
     // screw it, just read directly from the buffer
-    // TODO: This is not good. We should probably be using f->readbuf (needed as well for ungetc)
+    // TODO: This is not good. We should probably be using f->readbuf for buffered I/O (needed as well for ungetc)
     return read(f->fd, buf, size);
 }
