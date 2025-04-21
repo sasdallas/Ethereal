@@ -7,7 +7,7 @@
  * @todo Bulk transfers, interrupt transfers, isochronous transfers (not sure if we can do the last now)
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
+ * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
