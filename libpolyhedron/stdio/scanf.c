@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fflush.c
- * @brief fflush
+ * @file libpolyhedron/stdio/scanf.c
+ * @brief scanf
  * 
  * 
  * @copyright
@@ -12,27 +12,18 @@
  */
 
 #include <stdio.h>
-#include <unistd.h>
 
-#ifndef __LIBK
-
-int fflush(FILE *f) {
-    if (!f->wbuf) return EOF; // What are you trying to flush?
-
-    if (f->wbuflen) {
-        // We have length, update
-        write(f->fd, f->wbuf, f->wbuflen);
-        f->wbuflen = 0;
-    }
-
-
+int scanf(const char *format, ...) {
+    printf("scanf: %s\n", format);
     return 0;
 }
 
-#else
-
-int fflush(FILE *f) {
+int fscanf(FILE *stream, const char *format, ...) {
+    printf("fscanf %p %s\n", stream, format);
     return 0;
 }
 
-#endif
+int sscanf(const char *str, const char *format, ...) {
+    printf("sscanf \"%s\" \"%s\"", str, format);
+    return 0;
+}
