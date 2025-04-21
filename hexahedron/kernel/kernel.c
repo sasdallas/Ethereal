@@ -176,7 +176,6 @@ void kmain() {
     zerodev_init();
     debug_mountNode();
     periphfs_init();
-    video_mount();
     vfs_dump();
 
     // Networking
