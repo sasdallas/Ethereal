@@ -62,6 +62,12 @@ int circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer);
 int circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer);
 
 /**
+ * @brief Returns whether a circular buffer has any content available
+ * @param circbuf The circular buffer
+ */
+int circbuf_available(circbuf_t *circbuf);
+
+/**
  * @brief Destroy a circular buffer
  * @param circbuf The circular buffer to destroy
  */
