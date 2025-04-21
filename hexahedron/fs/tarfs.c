@@ -3,7 +3,7 @@
  * @brief USTAR archive filesystem, used for the initial ramdisk
  * 
  * @copyright
- * This file is part of reduceOS, which is created by Samuel.
+ * This file is part of Ethereal Operating System, which is created by Samuel.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -240,6 +240,41 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
                 // Copy name
                 strncat(out->d_name, (!slashes) ? path_filename : strrchr(path_filename, '/')+1, 256);
     
+                // Setup other parameters
+                out->d_reclen = strtoull(header->size, NULL, 8);
+                
+                // Interpret the type now
+                switch (header->type[0]) {
+                    case USTAR_HARD_LINK:
+                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header->name);
+                        node->flags = DT_REG;
+                        break;
+
+                    case USTAR_SYMLINK:
+                        out->d_type = DT_LNK;
+                        break;
+
+                    case USTAR_CHARDEV:
+                        out->d_type = DT_CHR;
+                        break;
+
+                    case USTAR_BLOCKDEV:
+                        out->d_type = DT_BLK;
+                        break;
+
+                    case USTAR_DIRECTORY:
+                        out->d_type = DT_DIR;
+                        break;
+
+                    case USTAR_PIPE:
+                        out->d_type = DT_FIFO;
+                        break;
+                    
+                    default:
+                        out->d_type = DT_REG;
+                        break;
+                }
+
                 kfree(header);
                 return out;
             }

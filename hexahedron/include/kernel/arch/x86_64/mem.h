@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -66,6 +66,7 @@ typedef union page {
 
 #define MEM_DMA_REGION              (uintptr_t)0x00000000A0000000
 #define MEM_USERMODE_STACK_REGION   (uintptr_t)0x0000060000000000 
+#define MEM_USERMODE_DEVICE_REGION  (uintptr_t)0x0000400000000000
 #define MEM_FRAMEBUFFER_REGION      (uintptr_t)0x0000080000000000
 #define MEM_HEAP_REGION             (uintptr_t)0xFFFFFF0000000000
 #define MEM_PHYSMEM_MAP_REGION      (uintptr_t)0xFFFFFF8000000000 // !!!: PHYSMEM_MAP is close to kernel heap

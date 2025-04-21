@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -108,7 +108,7 @@ typedef struct vfs_filesystem {
 } vfs_filesystem_t;
 
 // We also use custom tree nodes for each VFS entry.
-// This is a remnant of legacy reduceOS that I liked - it allows us to know what filesystem type is assigned to what node.
+// This is a remnant of legacy Ethereal Operating System that I liked - it allows us to know what filesystem type is assigned to what node.
 // It also allows for a root node to not immediately be mounted.
 typedef struct vfs_tree_node {
     char *name;         // Yes, node->name exists but this is faster and allows us to have "mapped" nodes

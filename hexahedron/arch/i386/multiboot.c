@@ -9,7 +9,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -366,7 +366,7 @@ void arch_mark_memory(generic_parameters_t *parameters, uintptr_t highest_addres
         mmap = mmap->next;
     }
 
-    // While working on previous versions of reduceOS, I accidentally brute-forced this.
+    // While working on previous versions of Ethereal Operating System, I accidentally brute-forced this.
     // QEMU doesn't properly unmark DMA regions, apparently - according to libvfio-user issue $493
     // https://github.com/nutanix/libvfio-user/issues/463
     

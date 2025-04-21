@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -236,7 +236,7 @@ uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func);
 /**
  * @brief Scan and find a PCI device on a specific function
  * 
- * This is required because of @c PCI_TYPE_BRIDGE - also a remnant of the reduceOS scanner
+ * This is required because of @c PCI_TYPE_BRIDGE - also a remnant of the Ethereal Operating System scanner
  * 
  * @param callback The callback to use
  * @param data Any user data to pass to callback

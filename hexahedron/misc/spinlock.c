@@ -5,7 +5,7 @@
  * This is used for safeguarding SMP memory accesses. It is an internal spinlock implementation.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -50,6 +50,7 @@ void spinlock_destroy(spinlock_t *spinlock) {
  * Will spin around until we acquire the lock
  */
 void spinlock_acquire(spinlock_t *spinlock) {
+    if (spinlock->cpu == arch_current_cpu()) return; // We already own this CPU
     while (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
         // TODO: CPU pause
     }

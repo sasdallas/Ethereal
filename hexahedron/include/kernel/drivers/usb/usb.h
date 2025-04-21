@@ -2,11 +2,11 @@
  * @file hexahedron/include/kernel/drivers/usb/usb.h
  * @brief Universal Serial Bus driver
  * 
- * @note This USB driver is mostly sourced from the previous reduceOS. It will likely need to be expanded and added upon. 
+ * @note This USB driver is mostly sourced from the previous Ethereal Operating System. It will likely need to be expanded and added upon. 
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 

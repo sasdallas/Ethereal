@@ -12,7 +12,7 @@
  * Note that reading from /device/stdin will also discard the corresponding key event.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -91,6 +91,14 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
 }
 
 /**
+ * @brief ioctl
+ */
+int periph_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+    circbuf_t *buf = (circbuf_t*)node->dev;
+    return !(buf->head == buf->tail);
+}
+
+/**
  * @brief Initialize the peripheral filesystem interface
  */
 void periphfs_init() {
@@ -104,6 +112,7 @@ void periphfs_init() {
     kbd_node->flags = VFS_CHARDEVICE;
     kbd_node->dev = (void*)kbd_buffer;
     kbd_node->read = keyboard_read;
+    kbd_node->ioctl = periph_ioctl;
     vfs_mount(kbd_node, "/device/keyboard");
 
     // Create and mount keyboard node
@@ -113,6 +122,7 @@ void periphfs_init() {
     stdin_node->flags = VFS_CHARDEVICE;
     stdin_node->dev = (void*)kbd_buffer;
     stdin_node->read = stdin_read;
+    stdin_node->ioctl = periph_ioctl;
     vfs_mount(stdin_node, "/device/stdin");
 }
 

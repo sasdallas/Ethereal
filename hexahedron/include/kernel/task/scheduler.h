@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -20,7 +20,7 @@
 
 /**** DEFINITIONS ****/
 
-// Sourced from reduceOS 1.x scheduler
+// Sourced from Ethereal Operating System 1.x scheduler
 #define PROCESS_KERNEL          0x01    // Process is a kernel-mode process 
 #define PROCESS_STARTED         0x02    // Process started
 #define PROCESS_RUNNING         0x04    // Process running

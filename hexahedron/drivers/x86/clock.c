@@ -2,10 +2,10 @@
  * @file hexahedron/drivers/x86/clock.c
  * @brief x86 clock/CMOS driver
  * 
- * This driver was ported pretty much straight from reduceOS' original kernel.
+ * This driver was ported pretty much straight from Ethereal Operating System' original kernel.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 

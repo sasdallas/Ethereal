@@ -7,7 +7,7 @@
  *          later.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -322,7 +322,6 @@ static void mem_copyOnWrite(page_t *page, uintptr_t address) {
     spinlock_release(&cow_lock);
     LOG(DEBUG, "Finished performing CoW for page %p. Switched frames from %p -> %p\n", address, src_frame, dest_frame);
     return;
-
 }
 
 /**

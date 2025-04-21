@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -38,6 +38,7 @@
 #include <kernel/fs/periphfs.h>
 
 // Drivers
+#include <kernel/drivers/video.h>
 #include <kernel/drivers/font.h>
 #include <kernel/drivers/net/loopback.h>
 #include <kernel/drivers/net/arp.h>
@@ -118,41 +119,36 @@ void kernel_loadDrivers() {
 
 struct timeval tv_start;
 
-int tx = 0, ty = 0;
-
 void kthread() {
     int iterations = 0;
     for (;;) {
-        // if (current_cpu->current_process->pid == 1) {
-        //     terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
+        if (current_cpu->current_process->pid == 1) {
+            terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
 
-        //     #include <kernel/drivers/clock.h>
+            #include <kernel/drivers/clock.h>
             
             
-        //     struct timeval tv;
-        //     gettimeofday(&tv, NULL);
-        //     if (!tv_start.tv_sec) tv_start = tv;
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            if (!tv_start.tv_sec) tv_start = tv;
 
-        //     terminal_setXY(100, 100);
-        //     printf("==== CURRENT PROCESSES\n");
-        //     for (unsigned i = 0; i < arch_get_generic_parameters()->cpu_count; i++) {
-        //         if (processor_data[i].current_process && processor_data[i].current_thread) printf("\tCPU%d: Process \"%s\" (%ld ticks so far)\n", i, processor_data[i].current_process->name, processor_data[i].current_thread->total_ticks);
-        //         else printf("\tCPU%d: No thread/no process\n", i);
-        //     }
+            terminal_setXY(100, 100);
+            printf("==== CURRENT PROCESSES\n");
+            for (unsigned i = 0; i < arch_get_generic_parameters()->cpu_count; i++) {
+                if (processor_data[i].current_process && processor_data[i].current_thread) printf("\tCPU%d: Process \"%s\" (%ld ticks so far)\n", i, processor_data[i].current_process->name, processor_data[i].current_thread->total_ticks);
+                else printf("\tCPU%d: No thread/no process\n", i);
+            }
 
-        //     extern volatile int task_switches;
-        //     if ((tv.tv_sec - tv_start.tv_sec)) {
-        //         printf("==== TASK SWITCHES: %d (%d switches per second)\n", task_switches, task_switches / (tv.tv_sec - tv_start.tv_sec));
-        //     } else {
-        //         printf("==== TASK SWITCHES: %d (give it a second, scheduler is waking up)\n", task_switches);
-        //     }
-        //     printf("==== WE HAVE NOT CRASHED FOR %d SECONDS\n", tv.tv_sec - tv_start.tv_sec);
-        // }
-        iterations++;
-        dprintf(DEBUG, "Hi from %s! This is iteration %d\n", current_cpu->current_process->name, iterations);
+            extern volatile int task_switches;
+            if ((tv.tv_sec - tv_start.tv_sec)) {
+                printf("==== TASK SWITCHES: %d (%d switches per second)\n", task_switches, task_switches / (tv.tv_sec - tv_start.tv_sec));
+            } else {
+                printf("==== TASK SWITCHES: %d (give it a second, scheduler is waking up)\n", task_switches);
+            }
+            printf("==== WE HAVE NOT CRASHED FOR %d SECONDS\n", tv.tv_sec - tv_start.tv_sec);
+        }
 
-        sleep_untilTime(current_cpu->current_thread, 3, 0);
-        process_yield(0);
+        arch_pause();
     }
 }
 
@@ -180,6 +176,7 @@ void kmain() {
     zerodev_init();
     debug_mountNode();
     periphfs_init();
+    video_mount();
     vfs_dump();
 
     // Networking
@@ -248,16 +245,6 @@ void kmain() {
         LOG(WARN, "Not loading any drivers, found argument \"--no-load-drivers\".\n");
         printf(COLOR_CODE_YELLOW    "Refusing to load drivers because of kernel argument \"--no-load-drivers\" - careful!\n" COLOR_CODE_RESET);
     }
-
-    char name[256] = { 0 };
-
-    for (int i = 1; i <= 2; i++) {
-        snprintf(name, 256, "kthread%d", i);
-        process_t *process = process_create(NULL, name, PROCESS_STARTED | PROCESS_KERNEL, PRIORITY_MED);
-        process->main_thread = thread_create(process, NULL, (uintptr_t)&kthread, THREAD_FLAG_KERNEL);
-        scheduler_insertThread(process->main_thread);
-    }    
-
     
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
@@ -265,18 +252,28 @@ void kmain() {
     // Spawn init task for this CPU
     current_cpu->current_process = process_spawnInit();
 
+    // !!!: TEMPORARY
+
     #ifdef __ARCH_I386__
-    fs_node_t *file = kopen("/device/initrd/test_app", O_RDONLY);
+    const char *path = "/device/initrd/test_app";
     #else
-    fs_node_t *file = kopen("/device/initrd/init64", O_RDONLY);
+    const char *path = "/device/initrd/bin/init";
     #endif
+
+    fs_node_t *file;
+    if (kargs_has("exec")) {
+        file = kopen(kargs_get("exec"), O_RDONLY);
+    } else {
+        LOG(INFO, "Running %s as init process\n", path);
+        file = kopen(path, O_RDONLY);
+    }
 
     if (file) {
         char *argv[] = { "test_argv1", "test_argv2", NULL };
         char *envp[] = { "TEST_ENV=test1", "FOO=bar", NULL };
         process_execute(file, 2, argv, envp);
     } else {
-        LOG(WARN, "test_app not found, destroying init and switching\n");
+        LOG(WARN, "Init process not found, destroying init and switching\n");
         current_cpu->current_process = NULL;
         process_switchNextThread();
     }
