@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -100,8 +100,10 @@ int ps2_keyboardIRQ(void *context) {
         return 0;
     }
 
+	int event_type = (ch > 0x58) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
+	if (ch > 0x58) ch -= 0x58;
 
-    if (ch > 0x58) return 0;
+    // if (ch > 0x58) return 0;
 
     // Determine the scancode we should print
     char ascii = 0;
@@ -111,7 +113,7 @@ int ps2_keyboardIRQ(void *context) {
         ascii = ps2_keyboard_scancodes_lower[ch];
     }
 
-	periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, ascii);
+	periphfs_sendKeyboardEvent(event_type, ascii);
     return 0;
 }
 

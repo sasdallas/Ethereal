@@ -1,6 +1,5 @@
 /*
  * Hexahedron ACPICA header 
- * Original source: Acces2
  */
 
 #ifndef __ACHEXAHEDRON_H__

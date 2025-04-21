@@ -7,7 +7,7 @@
  * @todo Bulk transfers, interrupt transfers, isochronous transfers (not sure if we can do the last now)
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of reduceOS.
+ * This file is part of the Hexahedron kernel, which is part of Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -387,7 +387,41 @@ int uhci_control(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *t
  * @brief UHCI interrupt transfer method
  */
 int uhci_interrupt(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *transfer) {
-    return USB_TRANSFER_FAILED;
+    if (!controller || !dev || !transfer || !HC(controller)) return USB_TRANSFER_FAILED;
+    uhci_t *hc = HC(controller);
+
+    // An INTERRUPT transfer consists of a single input TD
+    
+    // First, create the queue head that will hold the TD
+    uhci_qh_t *qh = uhci_createQH(hc);
+    qh->transfer = transfer;
+    QH_LINK_TERM(qh);
+
+    // Create transfer descriptor
+    uhci_td_t *td = uhci_createTD(hc, dev->speed, transfer->endp->toggle, dev->address, transfer->endpoint, UHCI_PACKET_IN, transfer->length, transfer->data);
+    TD_LINK_TERM(td);
+    QH_LINK_TD(qh, td);
+
+    // Insert it into the chain
+    spinlock_acquire(&hc->lock);
+    uhci_qh_t *current = (uhci_qh_t*)hc->qh_list->tail->value;
+    QH_LINK_QH(current, qh);
+    list_append(hc->qh_list, (void*)qh);
+    spinlock_release(&hc->lock);
+
+    // Wait for the transfer to finish
+    while (transfer->status == USB_TRANSFER_IN_PROGRESS) {
+        uhci_waitForQH(controller, qh);
+    }
+
+    // Destroy the queue head
+    uhci_destroyQH(controller, qh); 
+
+    if (transfer->endp) {
+        transfer->endp->toggle ^= 1;
+    }
+
+    return transfer->status;
 }
 
 /**
