@@ -1,6 +1,7 @@
 # Ethereal
 
-A totally from scratch all-in-one operating system, written for speed, memory conservation, and reliability.
+A totally from scratch all-in-one operating system, written for speed, memory conservation, and reliability.\
+Formerly known as reduceOS
 
 ## What is Ethereal?
 
@@ -29,11 +30,11 @@ Currently, the project is developing its usermode stages.
 - `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
 
 ## Building
-To build reduceOS, you will need a cross compiler for your target architecture.\
+To build Ethereal, you will need a cross compiler for your target architecture.\
 Other packages required: `grub-common`, `xorriso`, `qemu-system`
 
 Edit `buildscripts/build-arch.sh` to change the target build architecture. \
-Running `make all` will build an ISO in `build-output/reduceOS.iso`
+Running `make all` will build an ISO in `build-output/ethereal.iso`
 
 ## External components
 Certain external components are available in `external`. Here is a list of them and their versions:
