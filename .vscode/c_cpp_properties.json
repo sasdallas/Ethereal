@@ -1,78 +1,77 @@
 {
-    "configurations": [
-        {
-            "name": "linux-gcc-x64",
-            "includePath": [
-                "${workspaceFolder}/**"
-            ],
-            "compilerPath": "/usr/bin/gcc",
-            "cStandard": "${default}",
-            "cppStandard": "${default}",
-            "intelliSenseMode": "linux-gcc-x64",
-            "compilerArgs": [
-                ""
-            ]
-        },
-        {
-            "name": "osdev-x86_64",
-            "includePath": [
-                "/home/samuel/Desktop/reduceOS/**",
-                "/home/samuel/Desktop/reduceOS/libkstructures/include/**",
-                "/home/samuel/Desktop/reduceOS/libpolyhedron/include/**",
-                "/home/samuel/Desktop/reduceOS/hexahedron/include/**",
-                "/home/samuel/Desktop/reduceOS/build-output/sysroot/usr/include/**"
-            ],
-            "defines": [
-                "REDUCEOS",
-                "HEXAHEDRON",
-                "__KERNEL__",
-                "__LIBK",
-                "__ARCH_X86_64__"
-            ],
-            "compilerPath": "/usr/bin/x86_64-elf-gcc",
-            "cStandard": "c17",
-            "cppStandard": "c++14",
-            "intelliSenseMode": "linux-gcc-x86",
-            "compilerArgs": [
-                "-ffreestanding",
-                "--sysroot",
-                "${workspaceFolder}/build-output/sysroot/"
-            ],
-            "compilerPathInCppPropertiesJson": "/usr/bin/x86_64-elf-gcc",
-            "mergeConfigurations": false,
-            "browse": {
-                "path": [
-                    "/home/samuel/Desktop/reduceOS/**",
-                    "/home/samuel/Desktop/reduceOS/build-output/sysroot/usr/include/**",
-                    "/home/samuel/Desktop/reduceOS"
-                ],
-                "limitSymbolsToIncludedHeaders": true
-            }
-        },
-        {
-            "name": "osdev-i386",
-            "includePath": [
-                "/home/samuel/Desktop/reduceOS/**",
-                "/home/samuel/Desktop/reduceOS/libkstructures/include/",
-                "/home/samuel/Desktop/reduceOS/libpolyhedron/include/",
-                "/home/samuel/Desktop/reduceOS/hexahedron/include/",
-                "/home/samuel/Desktop/reduceOS/build-output/sysroot/usr/include/**",
-                "${workspaceFolder}/hexahedron/include"
-            ],
-            "defines": [
-                "__ARCH_I386__",
-                "ACPICA_ENABLED"
-            ],
-            "compilerPath": "/usr/bin/i686-elf-gcc",
-            "cStandard": "c17",
-            "cppStandard": "c++14",
-            "intelliSenseMode": "linux-clang-x64",
-            "compilerArgs": [
-                "-ffreestanding",
-                "--sysroot",
-                "${workspaceFolder}/build-output/sysroot/"
-            ]
-        }
-    ],
-    "version": 4
+  "configurations": [
+    {
+      "name": "linux-gcc-x64",
+      "includePath": [
+        "${workspaceFolder}/**"
+      ],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "linux-gcc-x64",
+      "compilerArgs": [
+        ""
+      ]
+    },
+    {
+      "name": "osdev-x86_64",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/libkstructures/include/**",
+        "${workspaceFolder}/libpolyhedron/include/**",
+        "${workspaceFolder}/hexahedron/include/**",
+        "${workspaceFolder}/build-output/sysroot/usr/include/**"
+      ],
+      "defines": [
+        "REDUCEOS",
+        "HEXAHEDRON",
+        "__KERNEL__",
+        "__ARCH_X86_64__"
+      ],
+      "compilerPath": "/usr/bin/x86_64-elf-gcc",
+      "cStandard": "c17",
+      "cppStandard": "c++14",
+      "intelliSenseMode": "linux-gcc-x86",
+      "compilerArgs": [
+        "-ffreestanding",
+        "--sysroot",
+        "${workspaceFolder}/build-output/sysroot/"
+      ],
+      "compilerPathInCppPropertiesJson": "/usr/bin/x86_64-elf-gcc",
+      "mergeConfigurations": false,
+      "browse": {
+        "path": [
+          "${workspaceFolder}/**",
+          "${workspaceFolder}/build-output/sysroot/usr/include/**",
+          "${workspaceFolder}"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    },
+    {
+      "name": "osdev-i386",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/libkstructures/include/",
+        "${workspaceFolder}/libpolyhedron/include/",
+        "${workspaceFolder}/hexahedron/include/",
+        "${workspaceFolder}/build-output/sysroot/usr/include/**",
+        "${workspaceFolder}/hexahedron/include"
+      ],
+      "defines": [
+        "__ARCH_I386__",
+        "ACPICA_ENABLED"
+      ],
+      "compilerPath": "/usr/bin/i686-elf-gcc",
+      "cStandard": "c17",
+      "cppStandard": "c++14",
+      "intelliSenseMode": "linux-clang-x64",
+      "compilerArgs": [
+        "-ffreestanding",
+        "--sysroot",
+        "${workspaceFolder}/build-output/sysroot/"
+      ]
+    }
+  ],
+  "version": 4
 }

@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": false,
-      "cwd": "/home/samuel/Desktop/reduceOS/hexahedron/arch/x86_64",
-      "program": "/home/samuel/Desktop/reduceOS/hexahedron/arch/x86_64/build/Debug/outDebug",
+      "cwd": "/home/samuel/Desktop/reduceOS",
+      "program": "/home/samuel/Desktop/reduceOS/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

@@ -99,7 +99,10 @@
     "clock.h": "c",
     "sleep.h": "c",
     "spinlock.h": "c",
-    "fd.h": "c"
+    "fd.h": "c",
+    "ps2.h": "c",
+    "video.h": "c",
+    "stdlib.h": "c"
   },
   "makefile.configureOnOpen": false
 }
