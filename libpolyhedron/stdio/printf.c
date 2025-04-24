@@ -462,6 +462,14 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 	return out;
 }
 
+int vsprintf(char *str, const char *fmt, va_list ap) {
+	struct CBData data = {str, 0, 0};
+	int out = xvasprintf(cb_sprintf, &data, fmt, ap);
+	cb_sprintf(&data, '\0');
+	return out;
+}
+
+
 int snprintf(char * str, size_t size, const char * format, ...) {
 	struct CBData data = {str,size,0};
 	va_list args;
