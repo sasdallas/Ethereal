@@ -49,6 +49,11 @@ typedef int (*xvas_callback)(void *, char);
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+/* Modes for setvbuf */
+#define _IONBF      0
+#define _IOLBF      1
+#define _IOFBF      2       
+
 /* EOF */
 #define EOF (-1)
 
@@ -81,6 +86,7 @@ int putchar(int ch);
 int printf(const char * __restrict, ...);
 int puts(const char *);
 int vsnprintf(char *str, size_t size, const char *format, va_list ap);
+int vsprintf(char *str, const char *format, va_list ap);
 int snprintf(char * str, size_t size, const char * format, ...);
 int sprintf(char * str, const char * format, ...);
 size_t xvasprintf(xvas_callback callback, void * userData, const char * fmt, va_list args);
@@ -93,7 +99,6 @@ int getchar();
 
 FILE *fopen(const char *pathname, const char *mode);
 int fclose(FILE *stream);
-
 int fputc(int c, FILE *f);
 int fputs(const char *s, FILE *f);
 int fflush(FILE *f);
@@ -103,6 +108,13 @@ long ftell(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+
+void setbuf(FILE *stream, char *buf);
+void setbuffer(FILE *stream, char *buf, size_t size);
+void setlinebuf(FILE *stream);
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+
+void perror(const char *s);
 
 int scanf(const char *format, ...);
 int fscanf(FILE *stream, const char *format, ...);
