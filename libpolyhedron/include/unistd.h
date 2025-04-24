@@ -60,6 +60,7 @@ pid_t waitpid(pid_t pid, int *wstatus, int options);
 char *getcwd(char *buf, size_t size);
 int chdir(const char *path);
 int fchdir(int fd);
+pid_t getpid();
 
 /* STUBS */
 int mkdir(const char *pathname, mode_t mode);
