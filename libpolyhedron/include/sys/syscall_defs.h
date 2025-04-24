@@ -64,6 +64,7 @@ DECLARE_SYSCALL2(getcwd, char*, size_t);
 DECLARE_SYSCALL1(chdir, const char*);
 DECLARE_SYSCALL1(fchdir, int);
 DECLARE_SYSCALL1(uname, struct utsname*);
+DECLARE_SYSCALL0(getpid);
 
 #endif
 

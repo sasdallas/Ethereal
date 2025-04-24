@@ -45,6 +45,7 @@ _Begin_C_Header
 #define SYS_CHDIR           29
 #define SYS_FCHDIR          30
 #define SYS_UNAME           31
+#define SYS_GETPID          32
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \
