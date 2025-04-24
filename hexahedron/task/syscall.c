@@ -49,7 +49,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETCWD]        = (syscall_func_t)(uintptr_t)sys_getcwd,
     [SYS_CHDIR]         = (syscall_func_t)(uintptr_t)sys_chdir,
     [SYS_FCHDIR]        = (syscall_func_t)(uintptr_t)sys_fchdir,
-    [SYS_UNAME]         = (syscall_func_t)(uintptr_t)sys_uname
+    [SYS_UNAME]         = (syscall_func_t)(uintptr_t)sys_uname,
+    [SYS_GETPID]        = (syscall_func_t)(uintptr_t)sys_getpid
 };
 
 /* Unimplemented system call */
@@ -568,4 +569,8 @@ long sys_uname(struct utsname *buf) {
     snprintf(buf->machine, LIBPOLYHEDRON_UTSNAME_LENGTH, "%s", __kernel_architecture);
 
     return 0;
+}
+
+pid_t sys_getpid() {
+    return current_cpu->current_process->pid;
 }
