@@ -14,8 +14,25 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+
+void help() {
+    printf("Usage: ls [OPTION]... [FILE]...\n");
+    printf("List information about the FILEs (the current directory by default)\n");
+    exit(EXIT_SUCCESS);
+}
+
+void version() {
+    printf("ls (Ethereal miniutils) 1.00\n");
+    printf("Copyright (C) 2025 The Ethereal Development Team\n");
+    exit(EXIT_SUCCESS);
+}
 
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "--help")) help();
+    if (argc > 1 && !strcmp(argv[1], "--version")) version();
+
     char *path = (argc > 1) ? argv[1] : ".";
 
     DIR *dirp = opendir(path);

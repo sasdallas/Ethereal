@@ -38,6 +38,15 @@ int main(int argc, char *argv[]) {
         version();
     }
 
+    // Stat to make sure
+    if (argc > 1) {
+        struct stat st;
+        if (stat(argv[1], &st) < 0){ 
+            printf("cat: %s: %s\n", argv[1], strerror(errno));
+            return 1;
+        }
+    }
+
     FILE *f = NULL;
     if (argc < 1) {
         f = stdin;
