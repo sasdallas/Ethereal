@@ -22,6 +22,9 @@ int fputc(int c, FILE *f) {
 }
 
 int fputs(const char *s, FILE *f) {
-    while (*s) fputc(*s, f);
+    while (*s) {
+        fputc(*s, f);
+    }
+
     return 0;
 }

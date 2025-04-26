@@ -63,11 +63,11 @@ typedef int (*xvas_callback)(void *, char);
 /* No, this doesn't match GLIBC's version */
 typedef struct _iobuf {
     int fd;                 // File descriptor number
+    int error;              // Error check
 
     char *rbuf;             // Read buffer
     size_t rbufsz;          // Read buffer size 
     int eof;                // End of file
-
 
     char *wbuf;             // File write buffer
     size_t wbuflen;         // Length of buffer contents
@@ -108,6 +108,7 @@ long ftell(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+int ferror( FILE *stream );
 
 void setbuf(FILE *stream, char *buf);
 void setbuffer(FILE *stream, char *buf, size_t size);
