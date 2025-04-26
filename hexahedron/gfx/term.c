@@ -52,7 +52,7 @@ int terminal_init(color_t fg, color_t bg) {
     if (!fontHeight || !fontWidth) return -EINVAL; // No font loaded
 
     // Setup terminal variables
-    terminal_width = driver->screenWidth / fontWidth;
+    terminal_width = driver->screenWidth / (fontWidth + 1);
     terminal_height = driver->screenHeight / fontHeight;
     terminal_fg = fg;
     terminal_bg = bg;
