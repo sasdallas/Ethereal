@@ -43,6 +43,9 @@ struct tm {
     int _tm_zone_offset;
 };
 
+/**** DEFINITIONS ****/
+
+#define CLOCKS_PER_SEC 1000000
 
 /**** FUNCTIONS ****/
 

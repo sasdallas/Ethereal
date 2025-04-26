@@ -26,6 +26,7 @@ _Begin_C_Header
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/times.h>
 #include <sys/utsname.h>
 #include <dirent.h>
 
@@ -65,6 +66,7 @@ DECLARE_SYSCALL1(chdir, const char*);
 DECLARE_SYSCALL1(fchdir, int);
 DECLARE_SYSCALL1(uname, struct utsname*);
 DECLARE_SYSCALL0(getpid);
+DECLARE_SYSCALL1(times, struct tms*);
 
 #endif
 

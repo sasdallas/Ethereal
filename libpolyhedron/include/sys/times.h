@@ -25,11 +25,15 @@ _Begin_C_Header
 /**** TYPES ****/
 
 struct tms {
-    unsigned long tms_utime;
-    unsigned long tms_stime;
-    unsigned long tms_cutime;
-    unsigned long tms_cstime;
+    unsigned long tms_utime;            // CPU time spent executing instructions
+    unsigned long tms_stime;            // CPU time spent executing inside the kernel
+    unsigned long tms_cutime;           // Sum of tms_utime and tms_cutime for all waited-for terminated children
+    unsigned long tms_cstime;           // Sum of tms_utime and tms_cutime for all waited-for terminated children
 };
+
+/**** FUNCTIONS ****/
+
+clock_t times(struct tms *buf);
 
 #endif
 

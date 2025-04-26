@@ -25,7 +25,7 @@ _Begin_C_Header
 #include <stdint.h>
 #include <fcntl.h>
 #include <stddef.h>
-#include <sys/types.h>
+#include <sys/times.h>
 #include <errno.h>
 #include <time.h>
 
@@ -61,6 +61,7 @@ char *getcwd(char *buf, size_t size);
 int chdir(const char *path);
 int fchdir(int fd);
 pid_t getpid();
+clock_t times(struct tms *buf);
 
 /* STUBS */
 int mkdir(const char *pathname, mode_t mode);
