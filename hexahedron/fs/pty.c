@@ -18,6 +18,7 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
+#include <ctype.h>
 #include <string.h>
 #include <termios.h>
 
@@ -25,8 +26,13 @@
 static int last_pty_index = 0;
 
 /* Helpers */
+#define CTRL(ch) (('@' + ch) % 128)
+#define IS_CTRL(ch) (ch < 0x20 || ch == 0x7F)
+
 #define WRITE_IN(ch) pty->write_in(pty, ch)
 #define WRITE_OUTPUT(ch) pty->write_out(pty, ch)
+#define WRITE_CONTROL(ch) { WRITE_OUTPUT('^'); WRITE_OUTPUT(CTRL(ch)); }
+#define WRITE_BKSP() { WRITE_OUTPUT('\010'); WRITE_OUTPUT(' '); WRITE_OUTPUT('\010'); }
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:PTY", __VA_ARGS__)
@@ -100,28 +106,17 @@ void pty_input(pty_t *pty, uint8_t ch) {
                 pty->canonical_idx--;
                 
                 // Check if it is a control character
-                int was_control = (pty->canonical_buffer[pty->canonical_idx] < 0x20 || pty->canonical_buffer[pty->canonical_idx] == 0x7F); 
+                int was_control = IS_CTRL(pty->canonical_buffer[pty->canonical_idx]); 
                 pty->canonical_buffer[pty->canonical_idx] = 0;
                 if (LFLAG(ECHO) && LFLAG(ECHOE)) {
-                    WRITE_OUTPUT('\010');
-                    WRITE_OUTPUT(' ');
-                    WRITE_OUTPUT('\010');
-
-                    if (was_control) {
-                        WRITE_OUTPUT('\010');
-                        WRITE_OUTPUT(' ');
-                        WRITE_OUTPUT('\010');
-                    }
+                    WRITE_BKSP();
+                    if (was_control) WRITE_BKSP();
                 }
             }
 
 
-            // If ECHOE wasn't set, we should print out the backsapce
-            if (LFLAG(ECHO) && !LFLAG(ECHOE)) {
-                WRITE_OUTPUT('^');
-                WRITE_OUTPUT(('@' + ch) % 128);
-            }
-            
+            // If ECHOE wasn't set, we should print out the backspace
+            if (LFLAG(ECHO) && !LFLAG(ECHOE)) WRITE_CONTROL(ch);
             return;
         }
 
@@ -154,9 +149,9 @@ void pty_input(pty_t *pty, uint8_t ch) {
 
         if (LFLAG(ECHO)) {
             // Write control character
-            if ((ch < 0x20 || ch == 0x7F) && ch != '\n') {
-                WRITE_OUTPUT('^');
-                WRITE_OUTPUT((ch + '@') % 128);
+            // Sourced from old reduceOS
+            if (IS_CTRL(ch) && ch != '\n') {
+                WRITE_CONTROL(ch);
             } else {
                 WRITE_OUTPUT(ch);
             }
@@ -168,7 +163,10 @@ void pty_input(pty_t *pty, uint8_t ch) {
 
             // Dump the buffer
             for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
+            
+            // Reset
             pty->canonical_idx = 0;
+            pty->canonical_buffer[pty->canonical_idx] = 0;
 
             return;
         }
@@ -198,7 +196,46 @@ ssize_t pty_writeMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer
  * @brief PTY write method for slave
  */
 ssize_t pty_writeSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    return 0; // UNIMPL
+    // Writes to the slave are redirected to the master's stdin
+    pty_t *pty = (pty_t*)node->dev;
+
+    for (size_t i = 0; i < size; i++) {
+        char ch = buffer[i];
+
+        // Handle the character
+
+        // OPOST
+        if (OFLAG(OPOST)) {
+            // TODO: Implementation defined
+        }
+
+        // ONLCR
+        if (OFLAG(ONLCR) && ch == '\n') {
+            WRITE_OUTPUT('\r');
+            WRITE_OUTPUT('\n');
+            continue;
+        } 
+
+        // OCRNL
+        if (OFLAG(OCRNL) && ch == '\r') {
+            WRITE_OUTPUT('\r');
+            WRITE_OUTPUT('\n');
+            continue;
+        }
+
+        // TODO: ONLRET?
+
+        // OLCUC
+        if (OFLAG(OLCUC)) {
+            // Map lowercase to uppercase
+            WRITE_OUTPUT(toupper(ch));
+            continue;
+        }
+
+        WRITE_OUTPUT(ch);
+    }
+
+    return size;
 }
 
 /**
@@ -214,6 +251,8 @@ ssize_t pty_readMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
 ssize_t pty_readSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     pty_t *pty = (pty_t*)node->dev;
 
+
+    // !!!: HORRIBLE THIS IS JUST FOR TESTING IGNORE IGNORE IGNORE
     ssize_t read = 0;
     uint8_t *b = buffer;
     for (; (size_t)read < size; read++) {
