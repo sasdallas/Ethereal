@@ -109,6 +109,7 @@ int fseek(FILE *stream, long offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int ferror( FILE *stream );
+int fileno(FILE *stream);
 
 void setbuf(FILE *stream, char *buf);
 void setbuffer(FILE *stream, char *buf, size_t size);
