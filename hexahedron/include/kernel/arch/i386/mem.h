@@ -128,6 +128,20 @@ typedef union page {
 #define MEM_SET_FRAME(page, frame) (page->bits.address = ((uintptr_t)frame >> MEM_PAGE_SHIFT))      // Set the frame of a page. Used because of our weird union thing.
 #define MEM_GET_FRAME(page) (page->bits.address << MEM_PAGE_SHIFT)                                  // Get the frame of a page. Used because of our weird union thing.
 
+/* ACCESSIBLE MACROS */
+#define PAGE_IS_PRESENT(pg) (pg && pg->bits.present)
+#define PAGE_IS_WRITABLE(pg) (pg && pg->bits.rw)
+#define PAGE_IS_USERMODE(pg) (pg && pg->bits.usermode)
+#define PAGE_IS_EXECUTABLE(pg) (1)
+#define PAGE_IS_COW(pg) (pg && pg->bits.cow)
+#define PAGE_IS_DIRTY(pg) (pg && pg->bits.dirty)
+
+#define PAGE_PRESENT(pg) (pg->bits.present)
+#define PAGE_WRITABLE(pg) (pg->bits.rw)
+#define PAGE_USERMODE(pg) (pg->bits.usermode)
+#define PAGE_COW(pg) (pg->bits.cow)
+#define PAGE_DIRTY(pg) (pg->bits.dirty)
+#define PAGE_FRAME_RAW(pg) (pg->bits.address)
 
 /**** FUNCTIONS ****/
 

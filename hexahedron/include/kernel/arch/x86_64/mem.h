@@ -29,7 +29,7 @@ typedef union page {
         uint64_t writethrough:1;    // Writethrough
         uint64_t cache_disable:1;   // Uncacheable
         uint64_t accessed:1;        // Accessed
-        uint64_t available1:1;      // Free bits!
+        uint64_t dirty:1;           // Dirty
         uint64_t size:1;            // Page size - 4MiB or 4KiB
                                     // IMPORTANT: This is also the PAT bit for PTEs
         uint64_t global:1;          // Global
@@ -93,6 +93,21 @@ typedef union page {
 #define MEM_GET_FRAME(page) (page->bits.address << MEM_PAGE_SHIFT)                                  // Get the frame of a page. Used because of our weird union thing.
 
 #define MEM_IS_CANONICAL(addr) (((addr & 0xFFFF000000000000) == 0xFFFF000000000000) || !(addr & 0xFFFF000000000000))    // Ugly macro to verify if an address is canonical
+
+/* ACCESSIBLE MACROS */
+#define PAGE_IS_PRESENT(pg) (pg && pg->bits.present)
+#define PAGE_IS_WRITABLE(pg) (pg && pg->bits.rw)
+#define PAGE_IS_USERMODE(pg) (pg && pg->bits.usermode)
+#define PAGE_IS_EXECUTABLE(pg) (pg && !(pg->bits.nx))
+#define PAGE_IS_COW(pg) (pg && pg->bits.cow)
+#define PAGE_IS_DIRTY(pg) (pg && pg->bits.dirty)
+
+#define PAGE_PRESENT(pg) (pg->bits.present)
+#define PAGE_WRITABLE(pg) (pg->bits.rw)
+#define PAGE_USERMODE(pg) (pg->bits.usermode)
+#define PAGE_COW(pg) (pg->bits.cow)
+#define PAGE_DIRTY(pg) (pg->bits.dirty)
+#define PAGE_FRAME_RAW(pg) (pg->bits.address)
 
 /**** FUNCTIONS ****/
 
