@@ -39,9 +39,6 @@ uintptr_t mem_driverRegion              = MEM_DRIVER_REGION;    // Driver space
 uintptr_t mem_dmaRegion                 = MEM_DMA_REGION;       // DMA region
 uintptr_t mem_mmioRegion                = MEM_MMIO_REGION;      // MMIO region
 
-// Reference counts
-uint8_t  *mem_pageReferences            = NULL;
-
 // Spinlocks
 static spinlock_t ref_lock = { 0 };
 static spinlock_t cow_lock = { 0 };
@@ -103,7 +100,6 @@ uintptr_t mem_getKernelHeap() {
     return mem_kernelHeap;
 }
 
-
 /**
  * @brief Invalidate a page in the TLB
  * @param addr The address of the page 
@@ -112,68 +108,6 @@ uintptr_t mem_getKernelHeap() {
 static inline void mem_invalidatePage(uintptr_t addr) {
     asm volatile ("invlpg (%0)" :: "r"(addr) : "memory");
     smp_tlbShootdown(addr);
-} 
-
-/**
- * @brief Increment a page refcount
- * @param page The page to increment reference counts of
- * @returns The number of reference counts or 0 if maximum is reached
- */
-int mem_incrementPageReference(page_t *page) {
-    if (!page) return 0; // ???
-    if (!page->bits.present) {
-        LOG(ERR, "Tried incrementing reference count on non-present page\n");
-        return 0;
-    }
-
-    spinlock_acquire(&ref_lock);
-
-    // First get the index in refcounts of the frame
-    uintptr_t idx = page->bits.address;
-    if (mem_pageReferences[idx] == UINT8_MAX) {
-        // We're too high, return 0 and hope they make a copy of the page
-        spinlock_release(&ref_lock);
-        return 0; 
-    }
-
-    mem_pageReferences[idx]++;
-    int new_refs = mem_pageReferences[idx];
-
-    spinlock_release(&ref_lock);
-
-    // LOG(DEBUG, "[REFCOUNT] INCREASE: %p %d\n", MEM_GET_FRAME(page), new_refs);
-    return new_refs;
-}
-
-/**
- * @brief Decrement a page refcount
- * @param page The page to decrement the reference count of
- * @returns The number of reference counts. Panicks if 0
- */
-int mem_decrementPageReference(page_t *page) {
-    if (!page) return 0; // ???
-    if (!page->bits.present) {
-        LOG(ERR, "Tried decrementing reference count on non-present page\n");
-        return 0;
-    }
-
-    spinlock_acquire(&ref_lock);
-
-    // First get the index in refcounts of the frame
-    uintptr_t idx = page->bits.address;
-    if (mem_pageReferences[idx] == 0) {
-        // Bail out!
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pageref", "*** Tried to release reference on page with 0 references (bug)\n");
-        __builtin_unreachable();
-    }
-
-    mem_pageReferences[idx]--;
-    int new_refs = mem_pageReferences[idx];
-
-    spinlock_release(&ref_lock);
-
-    // LOG(DEBUG, "[REFCOUNT] DECREASE: %p %02x\n", MEM_GET_FRAME(page), mem_pageReferences[idx]);
-    return new_refs;
 }
 
 /**
@@ -251,7 +185,7 @@ void mem_destroyVAS(page_t *vas) {
                                     if (pg->bits.rw) {
                                         mem_freePage(pg);
                                     } else {
-                                        if (!mem_decrementPageReference(pg)) {
+                                        if (!ref_decrement(PAGE_FRAME_RAW(pg))) {
                                             pmm_freeBlock(MEM_GET_FRAME(pg));
                                         }
                                     }
@@ -295,7 +229,7 @@ static void mem_copyOnWrite(page_t *page, uintptr_t address) {
     spinlock_acquire(&cow_lock);
 
     // Is this the last reference to the page?
-    if (mem_decrementPageReference(page) == 0) {
+    if (ref_decrement(PAGE_FRAME_RAW(page)) == 0) {
         // Yes. We can just mark the page as writable
         page->bits.rw = 1;
         page->bits.cow = 0;
@@ -362,14 +296,14 @@ static void mem_copyUserPage(page_t *src_page, page_t *dest_page, uintptr_t addr
     if (src_page->bits.rw) {
         // Writable. That means the page is fresh and has no references.
         // Just make sure though
-        if (mem_pageReferences[src_page->bits.address]) {
+        if (ref_get(PAGE_FRAME_RAW(src_page))) {
             // What? If a page has references it should be using CoW.
-            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "CoW", "*** Source page %p (frame %p) already has references. Corrupted references bitmap?\n", address, MEM_GET_FRAME(src_page));
+            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "CoW", "*** Source page %p (frame %p) already has %d references. Corrupted references bitmap?\n", address, MEM_GET_FRAME(src_page), ref_get(PAGE_FRAME_RAW(src_page)));
             __builtin_unreachable();
         }
 
         // Initialize references
-        mem_pageReferences[src_page->bits.address] = 2;
+        ref_set(PAGE_FRAME_RAW(src_page), 2);
 
         // Mark the source and destination page as R/O and set them both to have a CoW pending
         // Writes will trigger a page fault which the handler with detect and auto handle CoW
@@ -388,7 +322,7 @@ static void mem_copyUserPage(page_t *src_page, page_t *dest_page, uintptr_t addr
 
     // It's not writable and probably already has pending CoW
     // Can we add a new reference?
-    if (mem_incrementPageReference(src_page) == 0) {
+    if (ref_increment(PAGE_FRAME_RAW(src_page)) == -1) {
         // No. There are too many reference counts and we should copy the page.
         // This is gross..
         uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src_page), PAGE_SIZE);
@@ -524,7 +458,7 @@ page_t *mem_clone(page_t *dir) {
                     if (page_src->bits.usermode) {
                         uintptr_t address = ((pdpt << (9 * 3 + 12)) | (pd << (9*2 + 12)) | (pt << (9 + 12)) | (page << MEM_PAGE_SHIFT));
                         mem_copyUserPage(page_src, page_dest, address, (address >= MEM_USERMODE_STACK_REGION) ? 1 : 0);
-                        LOG(DEBUG, "Usermode page at address %016llX (frame: %p, refs: %d) - CoW\n", address, MEM_GET_FRAME(page_src), mem_pageReferences[page_src->bits.address]);
+                        LOG(DEBUG, "Usermode page at address %016llX (frame: %p, refs: %d) - CoW\n", address, MEM_GET_FRAME(page_src), ref_get(page_src->bits.address));
                     } else {
                         // Raw copy
                         page_dest->data = page_src->data;
@@ -706,8 +640,8 @@ void mem_freePage(page_t *page) {
     if (!page) return;
 
     // Check reference counts
-    if (mem_pageReferences[page->bits.address]) {
-        if (mem_decrementPageReference(page)) return; // Still references on this page
+    if (ref_get(PAGE_FRAME_RAW(page))) {
+        if (ref_decrement(PAGE_FRAME_RAW(page))) return; // Still references on this page
     }
 
     // Mark the page as not present
@@ -1030,13 +964,6 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
         if (pg) pg->bits.rw = 0;
     }
 
-    // Make space for reference counts in kernel heap
-    // Reference counts will be initialized when a user PTE is copied.
-    size_t refcount_bytes = frame_bytes;  // One byte per page
-    refcount_bytes = (refcount_bytes & 0xFFF) ? MEM_ALIGN_PAGE(refcount_bytes) : refcount_bytes;
-    mem_pageReferences = (uint8_t*)mem_sbrk(refcount_bytes);
-    memset(mem_pageReferences, 0, refcount_bytes);
-
     // Setup the PAT
     // TODO: Write a better interface for the PAT
     uint32_t pat_lo, pat_hi;
@@ -1051,6 +978,9 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
 
     // Initialize regions
     mem_regionsInitialize();
+
+    // Initialize references
+    ref_init(MEM_ALIGN_PAGE(mem_size / PMM_BLOCK_SIZE));
 
     // Register page fault
     hal_registerExceptionHandler(14, mem_pageFault);
