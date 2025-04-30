@@ -328,6 +328,19 @@ size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * f
 					dec = (int)(va_arg(args, int));
 				}
 
+				if (dec < 0) {
+					// Handle negative sign
+					if (sign_type != 2) {
+						OUT('-');
+					} 
+
+					// Invert
+					dec = -dec;
+				} else if (sign_type == 1) {
+					// Always sign
+					OUT('+');
+				}
+
 				written += print_dec(dec, width, callback, userData, (padding == '0'), !justification, precision);
 				break;
 			
