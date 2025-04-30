@@ -32,9 +32,14 @@ int settimeofday(struct timeval *p, void *z) {
 #else
 
 DEFINE_SYSCALL2(gettimeofday, SYS_GETTIMEOFDAY, struct timeval*, void*);
+DEFINE_SYSCALL2(settimeofday, SYS_SETTIMEOFDAY, struct timeval*, void*);
 
 int gettimeofday(struct timeval *p, void *z) {
     __sets_errno(__syscall_gettimeofday(p, z));
+}
+
+int settimeofday(struct timeval *p, void *z) {
+    __sets_errno(__syscall_settimeofday(p, z));
 }
 
 #endif
