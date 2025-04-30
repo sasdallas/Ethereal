@@ -386,7 +386,7 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
  */
 long sys_gettimeofday(struct timeval *tv, void *tz) {
     SYSCALL_VALIDATE_PTR(tv);
-    SYSCALL_VALIDATE_PTR(tz);
+    if (tz) SYSCALL_VALIDATE_PTR(tz);
     return gettimeofday(tv, tz);
 }
 
@@ -471,7 +471,7 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     new_envp[envc] = NULL;
 
     process_execute(f, argc, new_argv, new_envp);
-    return 0;
+    return -ENOEXEC;
 }
 
 /**
