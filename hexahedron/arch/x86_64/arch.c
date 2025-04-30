@@ -146,6 +146,12 @@ extern uintptr_t __bss_end;
     _next_frame:
         ip = stk->ip;
         stk = stk->nextframe;
+
+        // Validate
+        if (!mem_validate((void*)stk, PTR_USER)) {
+            dprintf(NOHEADER,   COLOR_CODE_RED      "Backtrace stopped at %p\n", stk);
+            break;
+        }
     }
 }
 

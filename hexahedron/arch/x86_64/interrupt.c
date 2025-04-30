@@ -281,7 +281,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         if (processor_data[i].cpu_id || !i) {
             // We have valid data here
             if (processor_data[i].current_thread != NULL) {
-                dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s') - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_dir);
+                dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s', PID %d) - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_process->pid, processor_data[i].current_dir);
             } else {
                 dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", processor_data[i].current_dir);
             }
