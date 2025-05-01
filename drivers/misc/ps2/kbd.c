@@ -100,8 +100,8 @@ int ps2_keyboardIRQ(void *context) {
         return 0;
     }
 
-	int event_type = (ch > 0x58) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
-	if (ch > 0x58) ch -= 0x58;
+	int event_type = (ch >= 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
+	if (ch >= 0x80) ch -= 0x80;
 
     // if (ch > 0x58) return 0;
 
