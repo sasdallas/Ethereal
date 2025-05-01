@@ -42,6 +42,8 @@
 #define EVENT_KEY_MODIFIER_RELEASE      0x02
 #define EVENT_KEY_MODIFIER_PRESS        0x03
 
+#define KBD_QUEUE_EVENTS                4096
+
 /**** TYPES ****/
 
 /**
@@ -51,6 +53,20 @@ typedef struct key_event {
     int event_type;         // Type of event
     uint8_t scancode;       // Scancode
 } key_event_t;
+
+/**
+ * @brief Keyboard queue buffer
+ */
+typedef struct key_buffer_t {
+    spinlock_t lock;
+    key_event_t event[KBD_QUEUE_EVENTS];
+    volatile int head;
+    volatile int tail;
+} key_buffer_t;
+
+/**** MACROS ****/
+
+#define KEY_CONTENT_AVAILABLE(buffer) ((buffer)->head != (buffer)->tail)
 
 
 /**** FUNCTIONS ****/

@@ -35,6 +35,31 @@ fs_node_t *stdin_node = NULL;
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:PERIPHFS", __VA_ARGS__)
 
+/**
+ * @brief Get the last keyboard event (pop from the buffer)
+ * @param event Event pointer
+ * @returns 0 on success, 1 on failure
+ */
+static int periphfs_getKeyboardEvent(key_event_t *event) {
+    // Get buffer
+    key_buffer_t *buf = (key_buffer_t*)kbd_node->dev;
+
+    // Get the lock
+    spinlock_acquire(&buf->lock);
+    
+    // Increase and reset head
+    buf->head++;
+    if (buf->head > KBD_QUEUE_EVENTS) buf->head = 0;
+
+    // Get event
+    *event = buf->event[buf->head];
+
+    // Release the lock
+    spinlock_release(&buf->lock);
+
+    return 0;
+} 
+
 
 /**
  * @brief Keyboard device read
@@ -48,11 +73,13 @@ static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t
         return 0;
     }
 
-    circbuf_t *buf = (circbuf_t*)node->dev;
+    // Get buffer
+    key_buffer_t *buf = (key_buffer_t*)node->dev;
 
     // TODO: This is really really bad.. like actually horrendous. We should also be putting the thread to sleep
-    while (circbuf_read(buf, size, buffer)) {
-        while (buf->head == buf->tail) arch_pause();
+    for (size_t i = 0; i < size; i += sizeof(key_event_t)) {
+        while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
+        periphfs_getKeyboardEvent((key_event_t*)(buffer + i));
     }
 
     
@@ -65,18 +92,16 @@ static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t
 static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
     if (!size || !buffer) return 0;
 
-    circbuf_t *buf = (circbuf_t*)node->dev;
+    key_buffer_t *buf = (key_buffer_t*)node->dev;
 
     // Start reading key events
     key_event_t event;
     
     for (size_t i = 0; i < size; i++) {
         while (1) {
-            // TODO: This is really really bad.. like actually horrendous. We should also be putting the thread to sleep
-            while (circbuf_read(buf, sizeof(key_event_t), (uint8_t*)&event)) {
-                // LOG(DEBUG, "CWAIT\n");
-                while (buf->head == buf->tail) arch_pause();
-            }
+            // Wait for content
+            while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
+            periphfs_getKeyboardEvent(&event);
 
             // Did we get a key press event?
             if (event.event_type != EVENT_KEY_PRESS) continue;
@@ -94,8 +119,7 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
  * @brief ioctl
  */
 int periph_ioctl(fs_node_t *node, unsigned long request, void *argp) {
-    circbuf_t *buf = (circbuf_t*)node->dev;
-    return !(buf->head == buf->tail);
+    return KEY_CONTENT_AVAILABLE((key_buffer_t*)node->dev);
 }
 
 /**
@@ -103,14 +127,15 @@ int periph_ioctl(fs_node_t *node, unsigned long request, void *argp) {
  */
 void periphfs_init() {
     // Create keyboard circular buffer
-    circbuf_t *kbd_buffer = circbuf_create("kbd buffer", sizeof(key_event_t) * 512);
+    key_buffer_t *kbdbuf = kmalloc(sizeof(key_buffer_t));
+    memset(kbdbuf, 0, sizeof(key_buffer_t));
 
     // Create and mount keyboard node
     kbd_node = kmalloc(sizeof(fs_node_t));
     memset(kbd_node, 0, sizeof(fs_node_t));
     strcpy(kbd_node->name, "keyboard");
     kbd_node->flags = VFS_CHARDEVICE;
-    kbd_node->dev = (void*)kbd_buffer;
+    kbd_node->dev = (void*)kbdbuf;
     kbd_node->read = keyboard_read;
     kbd_node->ioctl = periph_ioctl;
     vfs_mount(kbd_node, "/device/keyboard");
@@ -120,7 +145,7 @@ void periphfs_init() {
     memset(stdin_node, 0, sizeof(fs_node_t));
     strcpy(stdin_node->name, "stdin");
     stdin_node->flags = VFS_CHARDEVICE;
-    stdin_node->dev = (void*)kbd_buffer;
+    stdin_node->dev = (void*)kbdbuf;
     stdin_node->read = stdin_read;
     stdin_node->ioctl = periph_ioctl;
     vfs_mount(stdin_node, "/device/stdin");
@@ -138,8 +163,16 @@ int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode) {
         .scancode = scancode
     };
 
+    // Push!
+    key_buffer_t *buffer = (key_buffer_t*)kbd_node->dev;
 
-    circbuf_write((circbuf_t*)kbd_node->dev, sizeof(key_event_t), (uint8_t*)&event);
+    // Reset tail if needed
+    buffer->tail++;
+    if (buffer->tail > KBD_QUEUE_EVENTS) buffer->tail = 0;
+
+    // Set event
+    buffer->event[buffer->tail] = event;
+
     LOG(DEBUG, "SEND key event type=%d\n", event_type);
     return 0;
 }
