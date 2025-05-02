@@ -941,12 +941,52 @@ extern uintptr_t __kernel_start, __kernel_end;
     // Call back to architecture to mark/unmark memory
     // !!!: Unmarking too much memory. Would kernel_addr work?
     extern void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size);
-    arch_mark_memory(kernel_pts * 512 * PAGE_SIZE, mem_size);
+    arch_mark_memory(MEM_ALIGN_PAGE(first_free_page + frame_bytes), mem_size);
 
     // Setup kernel heap to point to after frames
-    mem_kernelHeap = MEM_HEAP_REGION + frame_bytes;
+    mem_kernelHeap = MEM_HEAP_REGION + frame_bytes + PAGE_SIZE;
 
-    for (;;);
+    LOG(DEBUG, "Kernel heap will begin at %p\n", mem_kernelHeap);
+
+    LOG(DEBUG, "Removing original kernel allocation...\n");
+    mem_kernelPML[0][0].bits.present = 0;
+
+    // Now that we have finished creating our basic memory system, we can map the kernel code to be R/O.
+    // Force map kernel code (text section)
+    extern uintptr_t __text_start, __text_end;
+    uintptr_t kernel_code_start = (uintptr_t)&__text_start;
+    uintptr_t kernel_code_end = (uintptr_t)&__text_end;
+
+    // Align kernel code end (as text section is positioned at the beginning)
+    kernel_code_end = kernel_code_end & ~0xFFF; // This should gurantee that we don't overmap into, say, BSS
+
+    for (uintptr_t i = kernel_code_start; i < kernel_code_end; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+        if (pg) pg->bits.rw = 0;
+    }
+
+    // Setup the PAT
+    // TODO: Write a better interface for the PAT
+    uint32_t pat_lo, pat_hi;
+    cpu_getMSR(IA32_PAT_MSR, &pat_lo, &pat_hi);
+
+    // Setup entry #7 (WC) 
+    pat_hi |= 0x1000000; 
+    pat_hi &= ~(0x6000000);
+
+    // Write back the MSR
+    cpu_setMSR(IA32_PAT_MSR, pat_lo, pat_hi);
+
+    // Initialize regions
+    mem_regionsInitialize();
+
+    // Initialize references
+    ref_init(MEM_ALIGN_PAGE(mem_size / PMM_BLOCK_SIZE));
+
+    // Register page fault
+    hal_registerExceptionHandler(14, mem_pageFault);
+
+    LOG(INFO, "Memory management initialized\n");
 }
 
 /**
