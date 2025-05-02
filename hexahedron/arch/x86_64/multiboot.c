@@ -468,8 +468,9 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
     is_mb2 = 0;
 
     extern uintptr_t __kernel_end;
+    extern uintptr_t __kernel_end_phys;
     uintptr_t kernel_addr = (uintptr_t)&__kernel_end;
-    uintptr_t msize = (uintptr_t)&__kernel_end;
+    uintptr_t msize = (uintptr_t)&__kernel_end_phys;
 
     // Check if memory map was provided 
     if (!(bootinfo->flags & 0x040)) {
