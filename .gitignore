@@ -6,3 +6,4 @@ ser_output2.txt
 *.img
 drivers/test
 drivers/test/*
+external/musl/
