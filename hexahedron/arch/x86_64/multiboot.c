@@ -208,19 +208,25 @@ _done_modules:
  * @returns A generic parameters structure
  */
 generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
+#define MBRELOC(x) ((uintptr_t)mem_remapPhys((uintptr_t)(x), 0))
+
+    bootinfo = (multiboot_t*)MBRELOC(bootinfo);
+
     // First, get some bytes for a generic_parameters structure
     generic_parameters_t *parameters = (generic_parameters_t*)arch_allocate_structure(sizeof(generic_parameters_t));
     
     // Get the easy stuff out of the way - copy some strings.
-    if (strlen((char*)(uintptr_t)bootinfo->cmdline) > 0) {
-        parameters->kernel_cmdline = (char*)arch_relocate_structure(bootinfo->cmdline, strlen((char*)(uintptr_t)bootinfo->cmdline) + 1);
+    size_t cmdline_len = strlen((char*)MBRELOC(bootinfo->cmdline));
+    if (cmdline_len > 0) {
+        parameters->kernel_cmdline = (char*)arch_relocate_structure(MBRELOC(bootinfo->cmdline), cmdline_len + 1);
         parameters->kernel_cmdline[strlen(parameters->kernel_cmdline)] = 0;
     } else {
         parameters->kernel_cmdline = (char*)NULL;
     }
 
-    if (strlen((char*)(uintptr_t)bootinfo->boot_loader_name) > 0) {
-        parameters->bootloader_name = (char*)arch_relocate_structure(bootinfo->boot_loader_name, strlen((char*)(uintptr_t)bootinfo->boot_loader_name) + 1);
+    size_t btldr_name_len = strlen((char*)MBRELOC(bootinfo->boot_loader_name));
+    if (btldr_name_len > 0) {
+        parameters->bootloader_name = (char*)arch_relocate_structure(MBRELOC(bootinfo->boot_loader_name), btldr_name_len + 1);
         parameters->bootloader_name[strlen(parameters->bootloader_name)] = 0;
     } else {
         parameters->bootloader_name = (char*)NULL;
@@ -239,12 +245,17 @@ generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
     if (bootinfo->mods_count == 0) goto _done_modules;
 
     // Construct the initial module
-    multiboot1_mod_t *module = (multiboot1_mod_t*)(uintptr_t)bootinfo->mods_addr;
+    multiboot1_mod_t *module = (multiboot1_mod_t*)MBRELOC(bootinfo->mods_addr);
     parameters->module_start = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
-    parameters->module_start->cmdline = (char*)arch_relocate_structure((uintptr_t)module->cmdline, strlen((char*)(uintptr_t)module->cmdline));
+    parameters->module_start->cmdline = (char*)arch_relocate_structure(MBRELOC(module->cmdline), strlen((char*)MBRELOC(module->cmdline)));
     uintptr_t relocated = arch_relocate_structure((uintptr_t)module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
     parameters->module_start->mod_start = relocated; 
     parameters->module_start->mod_end = relocated + (module->mod_end - module->mod_start);
+
+    if ((module->mod_end - module->mod_start) > PMM_BLOCK_SIZE) {
+        // Reinitialize the region.
+        pmm_initializeRegion(module->mod_start, module->mod_end - module->mod_start);
+    }
 
     // Are we done yet?
     if (bootinfo->mods_count == 1) goto _done_modules;
@@ -255,20 +266,14 @@ generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
         module++;
 
         generic_module_desc_t *mod_descriptor = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
-        mod_descriptor->cmdline = (char*)arch_relocate_structure((uintptr_t)module->cmdline, strlen((char*)(uintptr_t)module->cmdline));
+        mod_descriptor->cmdline = (char*)arch_relocate_structure(MBRELOC(module->cmdline), strlen((char*)MBRELOC(module->cmdline)));
         
         // Relocate the module's contents
         mod_descriptor->mod_start = arch_relocate_structure((uintptr_t)module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
         mod_descriptor->mod_end = mod_descriptor->mod_start + (module->mod_end - module->mod_start);
 
-        // Check size of module
-        if ((module->mod_end - module->mod_start) > PMM_BLOCK_SIZE) {
-            // Reinitialize the region. Modules are also identity mapped so free those pages
-            mem_free(module->mod_start, module->mod_end - module->mod_start, MEM_DEFAULT);
-        }
-
         // Null-terminate cmdline
-        mod_descriptor->cmdline[strlen(mod_descriptor->cmdline) - 1] = 0;
+        mod_descriptor->cmdline[strlen((char*)MBRELOC(mod_descriptor->cmdline)) - 1] = 0;
 
         last_mod_descriptor->next = mod_descriptor;
         last_mod_descriptor = mod_descriptor;
@@ -291,9 +296,9 @@ _done_modules:
     generic_mmap_desc_t *descriptor = parameters->mmap_start;
     
 
-    for (mmap = (multiboot1_mmap_entry_t*)(uintptr_t)bootinfo->mmap_addr;
-                (uintptr_t)mmap < bootinfo->mmap_addr + bootinfo->mmap_length;
-                mmap = (multiboot1_mmap_entry_t*) ((uintptr_t)mmap + mmap->size + sizeof(mmap->size))) {
+    for (mmap = (multiboot1_mmap_entry_t*)MBRELOC(bootinfo->mmap_addr);
+                (uintptr_t)mmap < MBRELOC(bootinfo->mmap_addr) + bootinfo->mmap_length;
+                mmap = (multiboot1_mmap_entry_t*)MBRELOC(((uintptr_t)mmap + mmap->size + sizeof(mmap->size)))) {
                 
 
         descriptor->address = mmap->addr;
@@ -328,7 +333,7 @@ _done_modules:
         // dprintf(DEBUG, "Memory descriptor 0x%x - 0x%016llX len 0x%016llX type 0x%x last descriptor 0x%x\n", descriptor, descriptor->address, descriptor->length, descriptor->type, last_mmap_descriptor);
 
         // If we're not the first update the last memory map descriptor
-        if ((uintptr_t)mmap != bootinfo->mmap_addr) {
+        if ((uintptr_t)mmap != MBRELOC(bootinfo->mmap_addr)) {
             last_mmap_descriptor->next = descriptor;
             last_mmap_descriptor = descriptor;
         }
