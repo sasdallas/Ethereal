@@ -15,6 +15,7 @@
 #include <kernel/task/fd.h>
 #include <kernel/mem/alloc.h>
 #include <string.h>
+#include <kernel/debug.h>
 
 /**
  * @brief Destroy a file descriptor table for a process
@@ -70,6 +71,7 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
         // Reallocate to a new capacity, adding PROCESS_FD_EXPAND_AMOUNT
         process->fd_table->total += PROCESS_FD_EXPAND_AMOUNT;
         process->fd_table->fds = krealloc(process->fd_table->fds, sizeof(fd_t*) * process->fd_table->total);
+        memset(&process->fd_table->fds[process->fd_table->total-PROCESS_FD_EXPAND_AMOUNT], 0, PROCESS_FD_EXPAND_AMOUNT * sizeof(fd_t*));
     }
 
     // Search through the file descriptor list to find a spot
@@ -89,6 +91,7 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
     }
 
     // ???
+    dprintf_module(ERR, "TASK:FD", "CRITICAL: Corrupted file descriptor bitmap. Could not find a spot\n");
     return NULL;
 }
 
