@@ -49,6 +49,8 @@ $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a: $(LIBK_C_OBJECTS)
 # Build target for libc 
 $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS)
 	$(AR) rcs $@ $(LIBC_C_OBJECTS)
+	-ln -s $@ $(DESTDIR)$(LIB_DIRECTORY)/libc.a
+	cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crt0.o $(DESTDIR)$(LIB_DIRECTORY)
 
 
 # Target disabled
