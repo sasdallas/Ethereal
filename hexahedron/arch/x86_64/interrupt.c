@@ -259,16 +259,16 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
 
     dprintf(NOHEADER, "\033[1;31mFAULT REGISTERS:\n\033[0;31m");
 
-    dprintf(NOHEADER, "RAX %016X RBX %016X RCX %016X RDX %016X\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
-    dprintf(NOHEADER, "RDI %016X RSI %016X RBP %016X RSP %016X\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
-    dprintf(NOHEADER, "R8  %016X R9  %016X R10 %016X R11 %016X\n", regs->r8, regs->r9, regs->r10, regs->r11);
-    dprintf(NOHEADER, "R12 %016X R13 %016X R14 %016X R15 %016X\n", regs->r12, regs->r13, regs->r14, regs->r15);
-    dprintf(NOHEADER, "ERR %016X RIP %016X RFL %016X\n\n", regs->err_code, regs->rip, regs->rflags);
+    dprintf(NOHEADER, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
+    dprintf(NOHEADER, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
+    dprintf(NOHEADER, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
+    dprintf(NOHEADER, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
+    dprintf(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
 
     dprintf(NOHEADER, "CS %04X DS %04X SS %04X\n\n", regs->cs, regs->ds, regs->ss);
-    dprintf(NOHEADER, "CR0 %08X CR2 %016X CR3 %016X CR4 %08X\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3, regs_extended->cr4);
-    dprintf(NOHEADER, "GDTR %016X %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
-    dprintf(NOHEADER, "IDTR %016X %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
+    dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX CR4 %08X\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3, regs_extended->cr4);
+    dprintf(NOHEADER, "GDTR %016llX %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
+    dprintf(NOHEADER, "IDTR %016llX %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
 
     // !!!: not conforming (should call kernel_panic_finalize) but whatever
     // We want to do our own traceback.
