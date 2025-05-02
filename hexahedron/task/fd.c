@@ -78,7 +78,7 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
              // Allocate a new fd
             fd_t *new_fd = kmalloc(sizeof(fd_t));
             memset(new_fd, 0, sizeof(fd_t));
-            new_fd->fd_number = process->fd_table->amount;
+            new_fd->fd_number = i;
             new_fd->node = node;
             process->fd_table->fds[i] = new_fd;
             process->fd_table->amount++;
