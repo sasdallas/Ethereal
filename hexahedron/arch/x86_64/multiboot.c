@@ -456,20 +456,20 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
  * @brief x86_64-specific parser function for Multiboot1
  * @param bootinfo The boot information
  * @param mem_size Output pointer to mem_size
- * @param kernel_address Output pointer to highest valid kernel address
+ * @param first_free_page First free page output
  * 
  * This is here because paging is already enabled in x86_64, meaning
  * we have to initialize the allocator. It's very hacky, but it does end up working.
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
-void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *kernel_address) {
+void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page) {
     // Store structure for later use
     stored_bootinfo = bootinfo;
     is_mb2 = 0;
 
-    extern uintptr_t __kernel_end;
+
     extern uintptr_t __kernel_end_phys;
-    uintptr_t kernel_addr = (uintptr_t)&__kernel_end;
+    uintptr_t kernel_addr = (uintptr_t)&__kernel_end_phys;
     uintptr_t msize = (uintptr_t)&__kernel_end_phys;
 
     // Check if memory map was provided 
@@ -507,7 +507,7 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
     kernel_addr = (kernel_addr + 0x1000) & ~0xFFF;
 
     // Set pointers
-    *kernel_address = kernel_addr;
+    *first_free_page = kernel_addr;
     *mem_size = msize; 
 }
 
@@ -515,13 +515,13 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
  * @brief x86_64-specific parser function for Multiboot2
  * @param bootinfo The boot information
  * @param mem_size Output pointer to mem_size
- * @param kernel_address Output pointer to highest valid kernel address
+ * @param first_free_page First free page output
  * 
  * This is here because paging is already enabled in x86_64, meaning
  * we have to initialize the allocator. It's very hacky, but it does end up working.
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
-void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *kernel_address) {
+void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page) {
     // Store bootinfo
     void *updated_bootinfo = (void*)((uint8_t*)bootinfo + 8); // TODO: ugly af
     stored_bootinfo = updated_bootinfo;
@@ -558,7 +558,7 @@ void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
 
     // Update variables
     *mem_size = highest_address;
-    *kernel_address = kernel_end_address;
+    *first_free_page = kernel_end_address;
 
     dprintf(DEBUG, "Processed OK\n");
 

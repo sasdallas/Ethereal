@@ -183,10 +183,10 @@ void arch_panic_finalize() {
 /**** INTERNAL ARCHITECTURE FUNCTIONS ****/
 
 
-extern uintptr_t __bss_end;
-static uintptr_t highest_kernel_address = ((uintptr_t)&__bss_end);  // This is ONLY used until memory management is initialized.
-                                                                    // mm will take over this
-static uintptr_t memory_size = 0x0;                                 // Same as above
+extern uintptr_t __kernel_end_phys;
+static uintptr_t first_free_page = ((uintptr_t)&__kernel_end_phys);         // This is ONLY used until memory management is initialized.
+                                                                            // mm will take over this
+static uintptr_t memory_size = 0x0;                                         // Same as above
 
 /**
  * @brief Zeroes and allocates bytes for a structure at the end of the kernel
@@ -255,22 +255,22 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
     arch_initialize_syscall_handler();
 
     // Align kernel address
-    highest_kernel_address += PAGE_SIZE;
-    highest_kernel_address &= ~0xFFF;
+    first_free_page += PAGE_SIZE;
+    first_free_page &= ~0xFFF;
 
     // Parse Multiboot information
     if (multiboot_magic == MULTIBOOT_MAGIC) {
         dprintf(INFO, "Found a Multiboot1 structure\n");
-        arch_parse_multiboot1_early(bootinfo, &memory_size, &highest_kernel_address);
+        arch_parse_multiboot1_early(bootinfo, &memory_size, &first_free_page);
     } else if (multiboot_magic == MULTIBOOT2_MAGIC) {
         dprintf(INFO, "Found a Multiboot2 structure\n");
-        arch_parse_multiboot2_early(bootinfo, &memory_size, &highest_kernel_address);
+        arch_parse_multiboot2_early(bootinfo, &memory_size, &first_free_page);
     } else {
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** Unknown multiboot structure when checking kernel.\n");
     }
 
     // Now, we can initialize memory systems.
-    mem_init(memory_size, highest_kernel_address);
+    mem_init(memory_size, first_free_page);
 
     // Print out allocator information
     allocator_info_t *info = alloc_getInfo();

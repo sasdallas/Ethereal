@@ -58,26 +58,25 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo);
  * @brief x86_64-specific parser function for Multiboot1
  * @param bootinfo The boot information
  * @param mem_size Output pointer to mem_size
- * @param kernel_address Output pointer to highest valid kernel address
+ * @param first_free_page First free page output
  * 
  * This is here because paging is already enabled in x86_64, meaning
  * we have to initialize the allocator. It's very hacky, but it does end up working.
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
-void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *kernel_address);
+void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page);
 
 /**
  * @brief x86_64-specific parser function for Multiboot2
  * @param bootinfo The boot information
  * @param mem_size Output pointer to mem_size
- * @param kernel_address Output pointer to highest valid kernel address
+ * @param first_free_page First free page output
  * 
  * This is here because paging is already enabled in x86_64, meaning
  * we have to initialize the allocator. It's very hacky, but it does end up working.
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
-void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *kernel_address);
-
+void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page);
 
 /**
  * @brief Mark/unmark valid spots in memory

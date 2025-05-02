@@ -872,14 +872,14 @@ extern uintptr_t __kernel_start, __kernel_end;
     
     // !!!: Not only is this using 2MB paging bad, it also maps unnecessary memory.
     for (size_t i = 0; i < MEM_PHYSMEM_MAP_SIZE / PAGE_SIZE_LARGE / 512; i++) {
-        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.address = KERNEL_PHYS(&mem_identityBasePD[MEM_PAGEDIR_INDEX(i)]) >> MEM_PAGE_SHIFT;
-        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.present = 1;
-        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.rw = 1;
-        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.usermode = 1;  // NOTE: Do we want to do this?
+        mem_identityBasePDPT[i].bits.address = KERNEL_PHYS(&mem_identityBasePD[i]) >> MEM_PAGE_SHIFT;
+        mem_identityBasePDPT[i].bits.present = 1;
+        mem_identityBasePDPT[i].bits.rw = 1;
+        mem_identityBasePDPT[i].bits.usermode = 1;  // NOTE: Do we want to do this?
 
         // Using 512-page blocks
         for (size_t j = 0; j < 512; j++) {
-            mem_identityBasePD[MEM_PAGEDIR_INDEX(i)][j].data = ((i << 30) + (j << 21)) | 0x80 | 0x03;
+            mem_identityBasePD[i][j].data = ((i << 30) + (j << 21)) | 0x80 | 0x03;
         }
     }
 
@@ -916,7 +916,7 @@ extern uintptr_t __kernel_start, __kernel_end;
 
     // Map a bunch o' entries
     for (size_t i = 0; i < frame_pages; i++) {
-        mem_heapBasePT[i].bits.address = ((KERNEL_PHYS(kernel_addr + (i << 12))) >> MEM_PAGE_SHIFT);
+        mem_heapBasePT[i].bits.address = ((first_free_page + (i << 12)) >> MEM_PAGE_SHIFT);
         mem_heapBasePT[i].bits.present = 1;
         mem_heapBasePT[i].bits.rw = 1;
     }
@@ -935,6 +935,7 @@ extern uintptr_t __kernel_start, __kernel_end;
     uintptr_t *frames = (uintptr_t*)MEM_HEAP_REGION;
 
     // Initialize PMM
+    LOG(DEBUG, "Initializing physical memory manager...\n")
     pmm_init(mem_size, frames); 
 
     // Call back to architecture to mark/unmark memory
@@ -942,6 +943,8 @@ extern uintptr_t __kernel_start, __kernel_end;
     extern void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size);
     arch_mark_memory(kernel_pts * 512 * PAGE_SIZE, mem_size);
 
+    // Setup kernel heap to point to after frames
+    mem_kernelHeap = MEM_HEAP_REGION + frame_bytes;
 
     for (;;);
 }
