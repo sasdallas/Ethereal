@@ -298,7 +298,12 @@ longmode_entry:
     mov %ax, %gs
     mov %ax, %ss
 
-.longmode_move_to_kernel:
+.longmode_kachow:
+    // Indirect jump!!
+    movabsq $longmode_actual, %rax
+    jmp *%rax
+
+longmode_actual:
     // If we jump here, then we don't have to setup segments.
     cli
 
@@ -311,8 +316,8 @@ longmode_entry:
     movq $KERNEL_LOAD_ADDRESS, %rax
     addq %rax, %rsp
 
-    callq arch_main
-
+    call arch_main
+    
 .longmode_halt:
     cli
     hlt
