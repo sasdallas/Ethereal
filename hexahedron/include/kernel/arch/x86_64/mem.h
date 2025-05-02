@@ -118,8 +118,8 @@ typedef union page {
  * For x86_64, it also sets up the PMM allocator.
  * 
  * @param mem_size The size of memory (aka highest possible address)
- * @param kernel_addr The first free page after the kernel
+ * @param first_free_page The first free page after the kernel
  */
-void mem_init(uintptr_t mem_size, uintptr_t kernel_addr);
+void mem_init(uintptr_t mem_size, uintptr_t first_free_page);
 
 #endif
