@@ -6,6 +6,8 @@ SECTIONS
     /* Kernel is loaded at 1M */
     . = 1M;
 
+    __kernel_start_phys = .;
+
     /* Multiboot and initial trampoline */
     __multiboot_start = .;
     .multiboot.data : {
@@ -64,7 +66,14 @@ SECTIONS
         __bss_end = .;
 	}
 
-    __kernel_end_physical = . - 0xFFFFF00000000000;
+    .lbss ALIGN (4K) : AT (ADDR (.lbss) - 0xFFFFF00000000000)
+    {
+        __lbss_start = .;
+        *(.lbss)
+        __lbss_end = .;
+    }
+
+    __kernel_end_phys = . - 0xFFFFF00000000000;
     __kernel_end = .;
 
     /DISCARD/ :

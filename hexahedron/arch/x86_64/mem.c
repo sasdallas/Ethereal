@@ -61,7 +61,7 @@ page_t mem_kernelPML[3][512] __attribute__((aligned(PAGE_SIZE))) = {0};
 
 // Low base PDPT/PD/PT (identity mapping space for kernel/other stuff)
 page_t mem_identityBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0}; 
-page_t mem_identityBasePD[64][512] __attribute__((aligned(PAGE_SIZE))) = {0};
+page_t mem_identityBasePD[128][512] __attribute__((aligned(PAGE_SIZE))) = {0};
 
 // High base PDPT/PD/PT (identity mapping space for anything)
 page_t mem_highBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0};
@@ -814,12 +814,14 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
 
     LOG(INFO, "Initializing memory system - memory size is %016llX, kernel address is %016llX\n", mem_size, kernel_addr);
 
+extern uintptr_t __kernel_start_phys, __kernel_end_phys;
+    LOG(DEBUG, "Physical location of kernel: %p - %p\n", &__kernel_start_phys, &__kernel_end_phys);
+
     // First, we need to remap the kernel
     // Calculate how many pages the kernel needs
-    size_t kernel_pages = ((kernel_addr - (uintptr_t)&__kernel_start) / PAGE_SIZE) * 2;
-    size_t kernel_pts = 11;
+    size_t kernel_pages = (MEM_ALIGN_PAGE(kernel_addr - (uintptr_t)&__kernel_start) / PAGE_SIZE);
+    size_t kernel_pts = (kernel_pages >= 512) ? (kernel_pages / 512) + ((kernel_pages%512) ? 1 : 0) : 1;
 
-    
     // Sanity check to make sure Hexahedron isn't bloated
     if ((kernel_pts / 512) / 512 > 1) {
         kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "mem", "*** Hexahedron is too big - requires %i PDPTs when 1 is given\n", (kernel_pts / 512) / 512);
@@ -865,7 +867,7 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
     LOG(DEBUG, "Initializing physical memory mapping (%p - PML %d)...\n", MEM_PHYSMEM_MAP_REGION, identity_map_idx);
 
     // Identity map from -128GB using 2MiB pages
-    for (uintptr_t i = MEM_PHYSMEM_MAP_REGION; i < MEM_PHYSMEM_MAP_REGION + MEM_PHYSMEM_MAP_SIZE; i += (PAGE_SIZE * 512)) {
+    for (size_t i = 0; i < MEM_PHYSMEM_MAP_SIZE / PAGE_SIZE_LARGE / 512; i++) {
         mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.address = KERNEL_PHYS(&mem_identityBasePD[MEM_PAGEDIR_INDEX(i)]) >> MEM_PAGE_SHIFT;
         mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.present = 1;
         mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.rw = 1;
