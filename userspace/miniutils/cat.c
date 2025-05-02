@@ -38,6 +38,11 @@ int main(int argc, char *argv[]) {
         version();
     }
 
+    if (argc < 2) {
+        // temporary
+        return 0;
+    }
+
     // Stat to make sure
     if (argc > 1) {
         struct stat st;
