@@ -131,10 +131,14 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
 
     // Did we find it and did they want to create it?
     if (!node && (flags & O_CREAT)) {
-        // Yes... uh, what?
-        // I guess this means that kopen ignored the flag, so assume EROFS?
-        LOG(WARN, "Failed to create \"%s\" - assuming read-only file system\n", pathname);
-        return -EROFS;
+        // Ok, make the file using some garbage hacks
+        int ret = vfs_creat(&node, (char*)pathname, mode);
+        if (ret < 0) {
+            return ret;
+        }
+
+        // HACK: Open the node
+        fs_open(node, flags);
     }
 
     // Did they want a directory?
