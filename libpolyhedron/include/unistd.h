@@ -68,6 +68,7 @@ int mkdir(const char *pathname, mode_t mode);
 int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);
 int system(const char *command);
+int unlink(const char *pathname);
 
 #endif
 
