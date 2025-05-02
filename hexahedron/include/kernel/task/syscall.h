@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/times.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -87,5 +88,6 @@ long sys_chdir(const char *path);
 long sys_fchdir(int fd);
 long sys_uname(struct utsname *buf);
 pid_t sys_getpid();
+clock_t sys_times(struct tms *buf);
 
 #endif

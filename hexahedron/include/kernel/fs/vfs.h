@@ -50,6 +50,7 @@ typedef ssize_t (*write_t)(struct fs_node *, off_t, size_t, uint8_t*);
 typedef struct dirent* (*readdir_t)(struct fs_node *, unsigned long);
 typedef struct fs_node* (*finddir_t)(struct fs_node *, char *);
 
+typedef struct fs_node* (*create_t)(struct fs_node *, char *, mode_t);
 typedef int (*mkdir_t)(struct fs_node *, char *, mode_t);
 typedef int (*unlink_t)(struct fs_node *, char *);
 typedef int (*readlink_t)(struct fs_node *, char *, size_t);
@@ -81,7 +82,7 @@ typedef struct fs_node {
     close_t close;          // Close function
     readdir_t readdir;      // Readdir function
     finddir_t finddir;      // Finddir function
-    // Create is not included - it can be done with open(O_CREAT) 
+    create_t create;        // Create function
     mkdir_t mkdir;          // Mkdir function
     unlink_t unlink;        // Unlink function
     ioctl_t ioctl;          // I/O control function
@@ -96,15 +97,18 @@ typedef struct fs_node {
 
 // Hexahedron uses a mount callback system that works similar to interrupt handlers.
 // Filesystems will register themselves with vfs_registerFilesystem() and provide a mount callback.
-// Then when the user wants to mount something, all they have to do is call vfs_mountFilesystem which
-// will try all possible filesystems on the drive.
-// Note that vfs_mountFilesystem, vfs_mountFilesystemType, and vfs_mount are not the same
+// Then when the user wants to mount something, all they have to do is call vfs_mountFilesystemType with the type to use.
 
-typedef struct fs_node* (*mount_callback)(char *argument, char *mountpoint); // Argument can be whatever, it's fs-specific.
+/**
+ * @brief VFS mount callback
+ * @param argument Argument provided to VFS function
+ * @param mountpoint Wherever you want to mount the system
+ */
+typedef struct fs_node* (*vfs_mount_callback_t)(char *argument, char *mountpoint); // Argument can be whatever, it's fs-specific.
 
 typedef struct vfs_filesystem {
-    char *name;             // Name of the filesystem
-    mount_callback mount;   // Mount callback
+    char *name;                     // Name of the filesystem
+    vfs_mount_callback_t mount;     // Mount callback
 } vfs_filesystem_t;
 
 // We also use custom tree nodes for each VFS entry.
@@ -170,6 +174,14 @@ struct dirent *fs_readdir(fs_node_t *node, unsigned long index);
 fs_node_t *fs_finddir(fs_node_t *node, char *path);
 
 /**
+ * @brief Create new entry
+ * @param node The node to run create() on
+ * @param name The name of the new entry to create
+ * @param mode The mode
+ */
+fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode);
+
+/**
  * @brief Make directory
  * @param path The path of the directory
  * @param mode The mode of the directory created
@@ -194,6 +206,18 @@ int fs_unlink(char *name);
 int fs_ioctl(fs_node_t *node, unsigned long request, char *argp);
 
 /**
+ * @brief creat() equivalent for VFS
+ * @param node The node to output to
+ * @param path The path to create
+ * @param mode The mode to create with
+ * @returns Error code
+ * 
+ * @warning This logic would much better fit into the @c kopen function with @c O_CREAT
+ * @warning Some more details of this are garbage, such as errno returning with @c fs_create
+ */
+int vfs_creat(fs_node_t **node, char *path, mode_t mode);
+
+/**
  * @brief Initialize the virtual filesystem with no root node.
  */
 void vfs_init();
@@ -211,7 +235,7 @@ tree_node_t *vfs_mount(fs_node_t *node, char *path);
  * @param name The name of the filesystem
  * @param fs_callback The callback to use
  */
-int vfs_registerFilesystem(char *name, mount_callback mount);
+int vfs_registerFilesystem(char *name, vfs_mount_callback_t mount);
 
 /**
  * @brief Try to mount a specific filesystem type

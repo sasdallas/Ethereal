@@ -3,6 +3,7 @@
  * @brief Virtual filesystem handler
  * 
  * @warning Some code in here can be pretty messy.
+ * @todo Some errno support would be really helpful.. could implement a @c vfs_getError system
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
@@ -42,7 +43,7 @@ hashmap_t *vfs_filesystems = NULL;
 /* Locks */
 spinlock_t *vfs_lock;
 
-/* Old Ethereal Operating System implemented a CWD system, but that was just for the kernel CLI */
+/* Old reduceOS implemented a CWD system, but that was just for the kernel CLI */
 
 /**
  * @brief Standard POSIX open call
@@ -151,6 +152,22 @@ fs_node_t *fs_finddir(fs_node_t *node, char *path) {
 }
 
 /**
+ * @brief Create new entry
+ * @param node The node to run create() on
+ * @param name The name of the new entry to create
+ * @param mode The mode
+ */
+fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode) {
+    if (!node) return NULL;
+
+    if (node->flags == VFS_DIRECTORY && node->create) {
+        return node->create(node, name, mode);
+    }
+
+    return NULL;
+}
+
+/**
  * @brief Make directory
  * @param path The path of the directory
  * @param mode The mode of the directory created
@@ -180,6 +197,86 @@ int fs_ioctl(fs_node_t *node, unsigned long request, char *argp) {
     } else {
         return -ENOTSUP;
     }
+}
+
+/**
+ * @brief creat() equivalent for VFS
+ * @param node The node to output to
+ * @param path The path to create
+ * @param mode The mode to create with
+ * @returns Error code
+ * 
+ * @warning This logic would much better fit into the @c kopen function with @c O_CREAT
+ * @warning Some more details of this are garbage, such as errno returning with @c fs_create
+ */
+int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
+    // Make sure the path doesn't end in a /
+    if (*(path + strlen(path) - 1) == '/') {
+        LOG(WARN, "vfs_creat() called with path \"%s\". Directories are not accepted, please use mkdir()\n");
+        return -EINVAL;
+    }
+
+    // First we have to canonicalize the path using the current process' working directory
+    char *path_full = path;
+    if (current_cpu->current_process) {
+        path_full = vfs_canonicalizePath(current_cpu->current_process->wd_path, path);
+    }
+
+    LOG(DEBUG, "path_full = %s\n", path_full);
+
+    // Now we should calculate the end.
+    char *last_slash = strrchr(path_full, '/');
+    if (!last_slash) {
+        LOG(ERR, "last_slash not found\n");
+        kfree(path_full);
+        return -EINVAL;
+    }
+
+
+    // Hope this works..
+    *last_slash = 0;
+    char *parent_path = strdup(path_full);
+    fs_node_t *parent = kopen(parent_path, 0);
+    kfree(parent_path);
+    if (!parent) {
+        kfree(path_full);
+        return -ENOENT;
+    }
+
+    *last_slash = '/';
+    last_slash++;
+
+    LOG(DEBUG, "Creating file %s (file: %s)\n", path, last_slash);
+
+    // Make sure this is a directory
+    if (parent->flags != VFS_DIRECTORY) {
+        kfree(path_full);
+        fs_close(parent);
+        return -ENOTDIR;
+    }
+
+    // Make sure the file doesn't already exist
+    fs_node_t *node_test = fs_finddir(parent, last_slash);
+    if (node_test) {
+        fs_close(node_test);
+        kfree(path_full);
+        fs_close(parent);
+        return -EEXIST;
+    }
+
+    // Check to see if we can create the file
+    if (parent->create) {
+        *node = parent->create(parent, last_slash, mode);
+        if (*node) {
+            kfree(path_full);
+            fs_close(parent);
+            return 0;
+        }
+    }
+
+    kfree(path_full);
+    fs_close(parent);
+    return -EINVAL;
 }
 
 /**** VFS TREE FUNCTIONS ****/
@@ -485,7 +582,7 @@ _cleanup:
  * @param name The name of the filesystem
  * @param fs_callback The callback to use
  */
-int vfs_registerFilesystem(char *name, mount_callback mount) {
+int vfs_registerFilesystem(char *name, vfs_mount_callback_t mount) {
     if (!vfs_filesystems) {
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "vfs", "*** vfs_registerFilesystem before init\n");
         __builtin_unreachable();
@@ -518,7 +615,6 @@ fs_node_t *vfs_mountFilesystemType(char *name, char *argp, char *mountpoint) {
 
     if (!fs->mount) {
         LOG(WARN, "VFS found invalid filesystem '%s' when trying to mount\n", fs->name);
-        return NULL;
     }
 
     fs_node_t *node = fs->mount(argp, mountpoint);
