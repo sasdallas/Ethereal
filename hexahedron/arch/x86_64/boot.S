@@ -306,6 +306,11 @@ longmode_entry:
     pop %rdi
     pop %rsi
     pop %rdx
+
+    // Adjust stack pointer
+    movq $KERNEL_LOAD_ADDRESS, %rax
+    addq %rax, %rsp
+
     callq arch_main
 
 .longmode_halt:
