@@ -19,7 +19,7 @@
 
 #ifndef MEMCPY_DEFINED
 
-void* memcpy(void* restrict dest, const void* restrict src, size_t n) {
+void* memcpy(void* dest, const void*  src, size_t n) {
 	uint64_t * d_64 = dest;
 	const uint64_t * s_64 = src;
 
