@@ -298,7 +298,7 @@ longmode_entry:
     mov %ax, %gs
     mov %ax, %ss
 
-.longmode_kachow:
+.longmode_jump:
     // Indirect jump!!
     movabsq $longmode_actual, %rax
     jmp *%rax
@@ -317,7 +317,7 @@ longmode_actual:
     addq %rax, %rsp
 
     call arch_main
-    
+
 .longmode_halt:
     cli
     hlt

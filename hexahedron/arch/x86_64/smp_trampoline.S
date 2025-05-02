@@ -95,6 +95,14 @@ _ap_stack_temp:
 
 
 .code64
+
+_ap_startup_long_jump:
+    callq smp_finalizeAP
+
+    cli
+    hlt
+
+
 .align 16
 _ap_startup_long:
     /* Made it to long mode, setup segments */
@@ -108,7 +116,9 @@ _ap_startup_long:
     /* We need a temporary stack first */
     movl $0x1000 + _ap_stack_temp - _ap_bootstrap_start, %esp
 
-    /* We're good enough to jump to smp_finalizeAP */
-    callq smp_finalizeAP
+    // Indirect jump!!
+    movabsq $_ap_startup_long_jump, %rax
+    jmp *%rax
+
 
 _ap_bootstrap_end:

@@ -150,7 +150,7 @@ void smp_startAP(uint8_t lapic_id) {
     ap_startup_finished = 0;
 
     // Copy the bootstrap code. The AP might've messed with it.
-    memcpy((void*)bootstrap_page_remap, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
+    memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
 
     // Allocate a stack for the AP
     if (alloc_canHasValloc()) {
@@ -200,8 +200,11 @@ int smp_init(smp_info_t *info) {
     // !!!: This is a bit hacky as we're playing with fire here. What if PMM_BLOCK_SIZE != PAGE_SIZE?
     uintptr_t temp_frame = pmm_allocateBlock();
     uintptr_t temp_frame_remap = mem_remapPhys(temp_frame, PAGE_SIZE);
-    bootstrap_page_remap = mem_remapPhys(SMP_AP_BOOTSTRAP_PAGE, PAGE_SIZE);
-    memcpy((void*)temp_frame_remap, (void*)bootstrap_page_remap, PAGE_SIZE);
+
+    // Temporary map back in 0x1000
+    mem_mapAddress(NULL, SMP_AP_BOOTSTRAP_PAGE, SMP_AP_BOOTSTRAP_PAGE, MEM_PAGE_KERNEL);
+
+    memcpy((void*)temp_frame_remap, (void*)SMP_AP_BOOTSTRAP_PAGE, PAGE_SIZE);
 
     // Start APs
     // WARNING: Starting CPU0/BSP will triple fault (bad)
@@ -212,9 +215,13 @@ int smp_init(smp_info_t *info) {
     }
 
     // Finished! Unmap bootstrap code
-    memcpy((void*)bootstrap_page_remap, (void*)temp_frame_remap, PAGE_SIZE);
+    memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)temp_frame_remap, PAGE_SIZE);
     mem_unmapPhys(temp_frame_remap, PAGE_SIZE);
-    mem_unmapPhys(bootstrap_page_remap, PAGE_SIZE);
+
+    // Unmap bootstrap page
+    page_t *bootstrap_page = mem_getPage(NULL, SMP_AP_BOOTSTRAP_PAGE, MEM_DEFAULT);
+    if (bootstrap_page) bootstrap_page->bits.present = 0;
+    
     pmm_freeBlock(temp_frame);
 
 _finish_collection:
