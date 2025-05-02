@@ -6,15 +6,25 @@ SECTIONS
     /* Kernel is loaded at 1M */
     . = 1M;
 
+    /* Multiboot and initial trampoline */
+    __multiboot_start = .;
+    .multiboot.data : {
+        *(.multiboot.data)
+    }
+
+    .multiboot.text : {
+        *(.multiboot.text)
+    }
+    __multiboot_end = .;
+
+    /* Kernel address (virtual) */
+    . += 0xFFFFF00000000000;
+
     __kernel_start = .;
 
     /* Code section */
-    .text BLOCK(4K) : ALIGN (4k)
+	.text ALIGN (4K) : AT (ADDR (.text) - 0xFFFFF00000000000)
     {
-        __multiboot_start = .;
-        KEEP(*(.multiboot))
-        __multiboot_end = .;
-
         __bootstrap_start = .;
         *(.bootstrap)
         __bootstrap_end = .;
@@ -28,24 +38,25 @@ SECTIONS
         __ap_end = .;
     }
 
-    /* Read-only data */
-	.rodata BLOCK(4K) : ALIGN(4K)
-	{
-        __rodata_start = .;
-		*(.rodata)
-        __rodata_end = .;
-	}
 
 	/* Initialized data */
-	.data BLOCK(4K) : ALIGN(4K)
+	.data ALIGN (4K) : AT (ADDR (.data) - 0xFFFFF00000000000)
 	{
         __data_start = .;
 		*(.data)
         __data_end = .;
 	}
 
+    /* Read-only data */	
+    .rodata ALIGN (4K) : AT (ADDR (.rodata) - 0xFFFFF00000000000)
+	{
+        __rodata_start = .;
+		*(.rodata)
+        __rodata_end = .;
+	}
+
 	/* BSS */
-	.bss BLOCK(4K) : ALIGN(4K)
+	.bss ALIGN (4K) : AT (ADDR (.bss) - 0xFFFFF00000000000)
 	{
         __bss_start = .;
 		*(COMMON)
@@ -53,6 +64,7 @@ SECTIONS
         __bss_end = .;
 	}
 
+    __kernel_end_physical = . - 0xFFFFF00000000000;
     __kernel_end = .;
 
     /DISCARD/ :

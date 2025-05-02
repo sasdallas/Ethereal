@@ -71,7 +71,7 @@ _ap_startup_real:   /* 0x1040 */
     mov %eax, %cr4
 
     /* Load the base PML */
-    mov $mem_kernelPML, %eax
+    mov $(mem_kernelPML - 0xFFFFF00000000000), %eax
     mov %eax, %cr3
 
     /* Set LME bit */
@@ -109,8 +109,6 @@ _ap_startup_long:
     movl $0x1000 + _ap_stack_temp - _ap_bootstrap_start, %esp
 
     /* We're good enough to jump to smp_finalizeAP */
-    movq $smp_finalizeAP, %rax
-    jmpq *%rax
-
+    callq smp_finalizeAP
 
 _ap_bootstrap_end:

@@ -2,8 +2,10 @@
 # YOU MAY EDIT THIS
 
 # ACPICA settings
-USE_ACPICA = 1
+USE_ACPICA = 0
 
 ifeq ($(USE_ACPICA), 1)
 CFLAGS += -DACPICA_ENABLED
 endif
+
+CFLAGS += -mcmodel=large

@@ -60,14 +60,13 @@ static int mem_use5LevelPaging = 0;
 page_t mem_kernelPML[3][512] __attribute__((aligned(PAGE_SIZE))) = {0};
 
 // Low base PDPT/PD/PT (identity mapping space for kernel/other stuff)
-page_t mem_lowBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0}; 
-page_t mem_lowBasePD[512] __attribute__((aligned(PAGE_SIZE))) = {0};
-page_t mem_lowBasePT[512*12] __attribute__((aligned(PAGE_SIZE))) = {0};
+page_t mem_identityBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0}; 
+page_t mem_identityBasePD[64][512] __attribute__((aligned(PAGE_SIZE))) = {0};
 
 // High base PDPT/PD/PT (identity mapping space for anything)
-// NOTE: This is not my implementation of high base mapping (see ToaruOS)
 page_t mem_highBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0};
-page_t mem_highBasePDs[64][512] __attribute__((aligned(PAGE_SIZE))) = {0}; // If we're already using 2MiB paging, why bother with PTs? 
+page_t mem_highBasePD[512] __attribute__((aligned(PAGE_SIZE))) = {0}; // If we're already using 2MiB paging, why bother with PTs? 
+page_t mem_highBasePTs[512*12] __attribute__((aligned(PAGE_SIZE))) = {0};
 
 // Heap PDPT/PD/PT
 page_t mem_heapBasePDPT[512] __attribute__((aligned(PAGE_SIZE))) = {0};
@@ -728,6 +727,11 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
             return 0;
         }
 
+        if (regs_extended->cr2 > MEM_USERMODE_STACK_REGION && regs_extended->cr2 < MEM_USERMODE_STACK_REGION + PAGE_SIZE*2) {
+            mem_allocatePage(mem_getPage(NULL, regs_extended->cr2, MEM_CREATE), MEM_DEFAULT);
+            return 0;
+        }
+
         // TODO: This code can probably bug out - to be extensively tested
         printf(COLOR_CODE_RED "Process \"%s\" (PID: %d) encountered a page fault at address %p and will be shutdown\n" COLOR_CODE_RESET, current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2);
         LOG(ERR, "Process \"%s\" (PID: %d) encountered page fault at %p with no valid resolution (error code: 0x%x). Shutdown\n", current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2, regs->err_code);
@@ -786,6 +790,12 @@ extern void arch_panic_traceback(int depth, registers_t *regs);
     for (;;);
 }
 
+extern uintptr_t __kernel_start;
+#define KERNEL_PHYS(x) (uintptr_t)((uintptr_t)(x) - 0xFFFFF00000000000)
+
+#define ADDR_DECONSTRUCT(x) LOG(DEBUG, "DECONSTRUCT address %016llX: pml4 %d, pdpt %d, pd %d, pt %d\n", (uintptr_t)(x), MEM_PML4_INDEX((uintptr_t)(x)), MEM_PDPT_INDEX((uintptr_t)(x)), MEM_PAGEDIR_INDEX((uintptr_t)(x)), MEM_PAGETBL_INDEX((uintptr_t)(x)));
+
+
 /**
  * @brief Initialize the memory management subsystem
  * 
@@ -802,48 +812,14 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
     // Set the initial page region as the current page for this core.
     current_cpu->current_dir = (page_t*)&mem_kernelPML;
 
-    // 5 level paging? We don't care right now
-    mem_use5LevelPaging = cpu_pml5supported();
-    if (mem_use5LevelPaging) {
-        LOG(INFO, "5-level paging is supported by this CPU\n");
-    } else {
-        LOG(INFO, "5-level paging is not supported by this CPU\n");
-    }
+    LOG(INFO, "Initializing memory system - memory size is %016llX, kernel address is %016llX\n", mem_size, kernel_addr);
 
-    // First, create an identity map. This is important
-    // !!!: == THIS IS REALLY BAD (but makes things quick)
-    // !!!: We are basically going to use 2MiB pages in the identity map region and not use caching, since it isn't
-    // !!!: required. This is bad because most things expect a 4KB page, but 2MiB pages mean that we can fit a lot more.
-    // !!!: See https://github.com/klange/toaruos/blob/a54a0cbbee1ac18bceb2371e49876eab9abb3a11/kernel/arch/x86_64/mmu.c#L1048
+    // First, we need to remap the kernel
+    // Calculate how many pages the kernel needs
+    size_t kernel_pages = ((kernel_addr - (uintptr_t)&__kernel_start) / PAGE_SIZE) * 2;
+    size_t kernel_pts = 11;
 
-    // Map high base in PML
-    mem_kernelPML[0][511].data = (uintptr_t)&mem_highBasePDPT[0] | 0x07;
-
-    // Identity map from -128GB using 2MiB pages
-    for (size_t i = 0; i < MEM_PHYSMEM_MAP_SIZE / PAGE_SIZE_LARGE / 512; i++) {
-        mem_highBasePDPT[i].bits.address = ((uintptr_t)&mem_highBasePDs[i]) >> MEM_PAGE_SHIFT;
-        mem_highBasePDPT[i].bits.present = 1;
-        mem_highBasePDPT[i].bits.rw = 1;
-        mem_highBasePDPT[i].bits.usermode = 1;  // NOTE: Do we want to do this?
-
-        // Using 512-page blocks
-        for (size_t j = 0; j < 512; j++) {
-            mem_highBasePDs[i][j].data = ((i << 30) + (j << 21)) | 0x80 | 0x03;
-        }
-    }
-
-
-    // Now, map the kernel.
-    // Calculate the amount of pages for the kernel to fit in
-    // Do note: the kernel isn't actually this big, rather the lazy Multiboot system simply puts the end address right after all data structures. Probably need to imlement reclaiming.
-    uintptr_t kernel_end_aligned = MEM_ALIGN_PAGE(kernel_addr);
-    size_t kernel_pages = (kernel_end_aligned >> MEM_PAGE_SHIFT);
-    LOG(DEBUG, "Hexahedron is using %dKB of RAM in memory\n", kernel_pages * 4);
-
-    // How many of those pages can fit into PTs?
-    // !!!: Weird math
-    size_t kernel_pts = (kernel_pages >= 512) ? (kernel_pages / 512) + ((kernel_pages%512) ? 1 : 0) : 1;
-
+    
     // Sanity check to make sure Hexahedron isn't bloated
     if ((kernel_pts / 512) / 512 > 1) {
         kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "mem", "*** Hexahedron is too big - requires %i PDPTs when 1 is given\n", (kernel_pts / 512) / 512);
@@ -862,49 +838,51 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
         __builtin_unreachable();
     }
 
-    // Setup hierarchy (note: we don't setup the PML4 map just yet, that would be really bad.)
-    mem_lowBasePDPT[0].bits.address = ((uintptr_t)&mem_lowBasePD >> MEM_PAGE_SHIFT);
-    mem_lowBasePDPT[0].bits.present = 1;
-    mem_lowBasePDPT[0].bits.rw = 1;
-    mem_lowBasePDPT[0].bits.usermode = 1;
+    LOG(DEBUG, "Recreating kernel map (kernel is using %d KB in memory)...\n", (kernel_pages * PAGE_SIZE) / 1024);
 
-    // Start mappin' - we have approx. up to 0x600000 to identity map
+    // Make the kernel map
+    mem_highBasePDPT[0].bits.address = (KERNEL_PHYS(&mem_highBasePD)) >> MEM_PAGE_SHIFT;
+    mem_highBasePDPT[0].bits.present = 1;
+    mem_highBasePDPT[0].bits.rw = 1;
+    
     for (size_t i = 0; i < kernel_pts; i++) {
-        mem_lowBasePD[i].bits.address = ((uintptr_t)&mem_lowBasePT[i * 512] >> MEM_PAGE_SHIFT);
-        mem_lowBasePD[i].bits.present = 1;
-        mem_lowBasePD[i].bits.rw = 1;
-        mem_lowBasePD[i].bits.usermode = 1;
+        mem_highBasePD[i].bits.address = KERNEL_PHYS(&mem_highBasePTs[i*512]) >> MEM_PAGE_SHIFT;
+        mem_highBasePD[i].bits.present = 1;
+        mem_highBasePD[i].bits.rw = 1;
 
         for (size_t j = 0; j < 512; j++) {
-            mem_lowBasePT[(i * 512) + j].bits.address = ((PAGE_SIZE*512) * i + PAGE_SIZE * j) >> MEM_PAGE_SHIFT;
-            mem_lowBasePT[(i * 512) + j].bits.present = 1;
-            mem_lowBasePT[(i * 512) + j].bits.rw = 1;
+            mem_highBasePTs[(i * 512) + j].bits.address = ((PAGE_SIZE*512) * i + PAGE_SIZE * j) >> MEM_PAGE_SHIFT;
+            mem_highBasePTs[(i * 512) + j].bits.present = 1;
+            mem_highBasePTs[(i * 512) + j].bits.rw = 1;
         }
     }
 
+    // Set it now
+    mem_kernelPML[0][MEM_PML4_INDEX(((uintptr_t)&__kernel_start))].bits.address = KERNEL_PHYS(&mem_highBasePDPT) >> MEM_PAGE_SHIFT;
 
-    // Now we can map the PML4 and switch out the loader's (stupid 2MiB paging) initial page region with one that's suited for the kernel
-    mem_kernelPML[0][0].data = (uintptr_t)&mem_lowBasePDPT[0] | 0x07;
+    // Build the identity map
+    int identity_map_idx = MEM_PML4_INDEX(MEM_PHYSMEM_MAP_REGION);
+    LOG(DEBUG, "Initializing physical memory mapping (%p - PML %d)...\n", MEM_PHYSMEM_MAP_REGION, identity_map_idx);
 
-    LOG(INFO, "Finished identity mapping kernel, mapping heap...\n");
+    // Identity map from -128GB using 2MiB pages
+    for (uintptr_t i = MEM_PHYSMEM_MAP_REGION; i < MEM_PHYSMEM_MAP_REGION + MEM_PHYSMEM_MAP_SIZE; i += (PAGE_SIZE * 512)) {
+        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.address = KERNEL_PHYS(&mem_identityBasePD[MEM_PAGEDIR_INDEX(i)]) >> MEM_PAGE_SHIFT;
+        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.present = 1;
+        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.rw = 1;
+        mem_identityBasePDPT[MEM_PDPT_INDEX(i)].bits.usermode = 1;  // NOTE: Do we want to do this?
 
-    // Map the heap into the PML
-    mem_kernelPML[0][510].bits.address = ((uintptr_t)&mem_heapBasePDPT >> MEM_PAGE_SHIFT);
-    mem_kernelPML[0][510].bits.present = 1;
-    mem_kernelPML[0][510].bits.rw = 1;
-    mem_kernelPML[0][510].bits.usermode = 1;
-    
-    // Calculate the amount of pages required for our PMM
-    size_t frame_bytes = PMM_INDEX_BIT((mem_size >> 12) * 8);
-    frame_bytes = MEM_ALIGN_PAGE(frame_bytes);
-    size_t frame_pages = frame_bytes >> MEM_PAGE_SHIFT;
-
-    if (frame_pages > 512 * 3) {
-        // 512 * 3 = size of the heap base provided, so that's not great.
-        LOG(WARN, "Too much memory available - %i pages required for allocation bitmap (max 1536)\n", frame_pages);
-        // TODO: We can probably resolve this by just rewriting some parts of mem_mapAddress
+        // Using 512-page blocks
+        for (size_t j = 0; j < 512; j++) {
+            mem_identityBasePD[MEM_PAGEDIR_INDEX(i)][j].data = ((i << 30) + (j << 21)) | 0x80 | 0x03;
+        }
     }
 
+    // Set it in the kernel
+    mem_kernelPML[0][MEM_PML4_INDEX(MEM_PHYSMEM_MAP_REGION)].data = KERNEL_PHYS(&mem_identityBasePDPT) | 0x7;
+
+    LOG(DEBUG, "Initializing kernel heap mapping (%p  - PML %d)...\n", MEM_HEAP_REGION, MEM_PML4_INDEX(MEM_HEAP_REGION));
+
+    
     // Setup hierarchy (ugly)
     mem_heapBasePDPT[0].bits.address = ((uintptr_t)&mem_heapBasePD >> MEM_PAGE_SHIFT);
     mem_heapBasePDPT[0].bits.present = 1;
@@ -927,65 +905,13 @@ void mem_init(uintptr_t mem_size, uintptr_t kernel_addr) {
     mem_heapBasePD[2].bits.usermode = 1;
 
     // Map a bunch o' entries
-    for (size_t i = 0; i < frame_pages; i++) {
+    for (size_t i = 0; i < 24; i++) {
         mem_heapBasePT[i].bits.address = ((kernel_addr + (i << 12)) >> MEM_PAGE_SHIFT);
         mem_heapBasePT[i].bits.present = 1;
         mem_heapBasePT[i].bits.rw = 1;
     }
 
-    // Tada. We've finished setting up our heap, so now we need to use mem_remapPhys to remap our PML.
-    current_cpu->current_dir = (page_t*)mem_remapPhys((uintptr_t)current_cpu->current_dir, 0x0); // Size is arbitrary
-
-    // Now that we have a heap mapped, we can allocate frame bytes.
-    uintptr_t *frames = (uintptr_t*)MEM_HEAP_REGION;
-
-    // Initialize PMM
-    pmm_init(mem_size, frames); 
-
-    // Call back to architecture to mark/unmark memory
-    // !!!: Unmarking too much memory. Would kernel_addr work?
-    extern void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size);
-    arch_mark_memory(kernel_pts * 512 * PAGE_SIZE, mem_size);
-
-    // Setup kernel heap to point to after frames
-    mem_kernelHeap = MEM_HEAP_REGION + frame_bytes;
-
-    // Now that we have finished creating our basic memory system, we can map the kernel code to be R/O.
-    // Force map kernel code (text section)
-    extern uintptr_t __text_start, __text_end;
-    uintptr_t kernel_code_start = (uintptr_t)&__text_start;
-    uintptr_t kernel_code_end = (uintptr_t)&__text_end;
-
-    // Align kernel code end (as text section is positioned at the beginning)
-    kernel_code_end = kernel_code_end & ~0xFFF; // This should gurantee that we don't overmap into, say, BSS
-
-    for (uintptr_t i = kernel_code_start; i < kernel_code_end; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) pg->bits.rw = 0;
-    }
-
-    // Setup the PAT
-    // TODO: Write a better interface for the PAT
-    uint32_t pat_lo, pat_hi;
-    cpu_getMSR(IA32_PAT_MSR, &pat_lo, &pat_hi);
-
-    // Setup entry #7 (WC) 
-    pat_hi |= 0x1000000; 
-    pat_hi &= ~(0x6000000);
-
-    // Write back the MSR
-    cpu_setMSR(IA32_PAT_MSR, pat_lo, pat_hi);
-
-    // Initialize regions
-    mem_regionsInitialize();
-
-    // Initialize references
-    ref_init(MEM_ALIGN_PAGE(mem_size / PMM_BLOCK_SIZE));
-
-    // Register page fault
-    hal_registerExceptionHandler(14, mem_pageFault);
-
-    LOG(INFO, "Memory management initialized\n");
+    for (;;);
 }
 
 /**

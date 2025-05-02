@@ -54,11 +54,11 @@ typedef union page {
 #define MEM_PAGE_SHIFT  12
 
 
-// IMPORTANT: THIS IS THE HEXAHEDRON MEMORY MAP CONFIGURED FOR I386
-// 0x0000000000000000 - 0x0000000000200000: Kernel code - this can be expanded a decent amount.
+// IMPORTANT: THIS IS THE HEXAHEDRON MEMORY MAP CONFIGURED FOR X86_64
 // 0x00000000A0000000 - 0x00000000F0000000: DMA region (in low memory)
 // 0x0000600000000000 - 0x0000700000000000: Usermode stack. Only a small amount of this is mapped to start with
-// 0x0000800000000000 - 0x0000800000400000: Framebuffer memory (todo: this can probably be relocated).  
+// 0x0000800000000000 - 0x0000800000400000: Framebuffer memory (NO LONGER IN USE).
+// 0xFFFFF00000000000 - 0xFFFFF00000000000: Kernel code in memory
 // 0xFFFFFF0000000000 - 0xFFFFFF0000010000: Heap memory 
 // 0xFFFFFF8000000000 - 0xFFFFFF9000000000: High base region for identity mapping
 // 0xFFFFFFF000000000 - 0xFFFFFFF100000000: MMIO region
