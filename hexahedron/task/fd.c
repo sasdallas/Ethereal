@@ -22,6 +22,8 @@
  * @returns 0 on success
  */
 int fd_destroyTable(struct process *process) {
+    if (!process->fd_table) return 1;
+
     spinlock_acquire(&process->fd_table->lock);
     // Does the process fd table still have any references?
     if (process->fd_table->references > 1) {
@@ -70,18 +72,24 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
         process->fd_table->fds = krealloc(process->fd_table->fds, sizeof(fd_t*) * process->fd_table->total);
     }
 
-    // TODO: Search through the file descriptor list to find a better spot. This sucks.
+    // Search through the file descriptor list to find a spot
+    for (unsigned int i = 0; i < process->fd_table->total; i++) {
+        if (!process->fd_table->fds[i]) {
+             // Allocate a new fd
+            fd_t *new_fd = kmalloc(sizeof(fd_t));
+            memset(new_fd, 0, sizeof(fd_t));
+            new_fd->fd_number = process->fd_table->amount;
+            new_fd->node = node;
+            process->fd_table->fds[i] = new_fd;
+            process->fd_table->amount++;
+            
+            spinlock_release(&process->fd_table->lock);
+            return new_fd;
+        }
+    }
 
-    // Allocate a new fd
-    fd_t *new_fd = kmalloc(sizeof(fd_t));
-    memset(new_fd, 0, sizeof(fd_t));
-    new_fd->fd_number = process->fd_table->amount;
-    new_fd->node = node;
-    process->fd_table->fds[process->fd_table->amount] = new_fd;
-    process->fd_table->amount++;
-
-    spinlock_release(&process->fd_table->lock);
-    return new_fd;   
+    // ???
+    return NULL;
 }
 
 /**
@@ -91,5 +99,21 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
  * @returns 0 on success
  */
 int fd_remove(struct process *process, int fd_number) {
+    if (!process || !process->fd_table) return 1;
+    if ((size_t)fd_number > process->fd_table->total) return 1;
+
+    spinlock_acquire(&process->fd_table->lock);
+
+    // Get the file descriptor
+    fd_t *fd = process->fd_table->fds[fd_number];
+    fs_close(fd->node);
+    kfree(fd);
+    process->fd_table->fds[fd_number] = NULL;
+
+    process->fd_table->amount--;
+
+
+    spinlock_release(&process->fd_table->lock);
+
     return 0;
 }
