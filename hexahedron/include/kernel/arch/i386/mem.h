@@ -101,14 +101,16 @@ typedef union page {
 #define MEM_DRIVER_REGION               (uintptr_t)0xA0000000
 #define MEM_PHYSMEM_CACHE_REGION        (uintptr_t)0xB0000000
 #define MEM_PHYSMEM_MAP_REGION          (uintptr_t)0xC0000000
+#define MEM_HEAP_REGION                 (uintptr_t)0xD0000000
 // #define MEM_FRAMEBUFFER_REGION          (uintptr_t)0xFD000000
+#define MEM_USERMODE_DEVICE_REGION      (uintptr_t)0xF0000000
 #define MEM_RECURSIVE_PAGING_REGION     (uintptr_t)0xFFC00000
 
 #define MEM_USERMODE_STACK_SIZE         (uintptr_t)0x10000000
 #define MEM_DMA_REGION_SIZE             (uintptr_t)0x10000000 
 #define MEM_MMIO_REGION_SIZE            (uintptr_t)0x10000000
 #define MEM_DRIVER_REGION_SIZE          (uintptr_t)0x10000000 // !!!: This region is bad - we should have much more space for drivers (but i386 is so damn limited)
-#define MEM_PHYSMEM_MAP_SIZE            (uintptr_t)0x20000000
+#define MEM_PHYSMEM_MAP_SIZE            (uintptr_t)0x10000000
 #define MEM_PHYSMEM_CACHE_SIZE          (uintptr_t)0x10000000
 
 

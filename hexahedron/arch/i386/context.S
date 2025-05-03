@@ -105,6 +105,7 @@ arch_load_context:
 arch_enter_kthread:
     /* Pop kthread pointer and jump to it */
     popl %esi
+    pushl $0xBAD11BAD       // Each thread will pop this as return address. THEY SHOULD NOT RETURN.
     jmpl *%esi
 
 /* Restore context */

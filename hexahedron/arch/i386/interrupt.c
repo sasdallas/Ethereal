@@ -210,8 +210,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         smp_acknowledgeCoreShutdown();
         for (;;);
     }
-
-
+    
     // Looks like no one caught this exception.
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
 
@@ -273,6 +272,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
 void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended) {
     // Is this a system call?
     if (regs->int_no == ARCH_SYSCALL_NUMBER) {
+
         syscall_t syscall;
         syscall.syscall_number = regs->eax;
         syscall.parameters[0] = regs->ebx;
@@ -281,6 +281,9 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         syscall.parameters[3] = regs->esi;
         syscall.parameters[4] = regs->edi;
         syscall.parameters[5] = regs->ebp;
+
+        // HACK
+        current_cpu->current_process->regs = regs;
 
         // Handle
         syscall_handle(&syscall); // ???: Stack-based syscall OK?

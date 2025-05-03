@@ -332,7 +332,8 @@ page_t *mem_clone(page_t *dir) {
     page_t *dest = mem_createVAS();
 
     // Now start copying PDEs
-    for (int pde = 0; pde < 1024; pde++) {
+    memcpy(&dest[MEM_PAGEDIR_INDEX(MEM_USERMODE_STACK_REGION)], &dir[MEM_PAGEDIR_INDEX(MEM_USERMODE_STACK_REGION)], 512 * sizeof(page_t));
+    for (size_t pde = 0; pde < MEM_PAGEDIR_INDEX(MEM_USERMODE_STACK_REGION); pde++) {
         page_t *src_pde = &dir[pde];
         if (!(src_pde->bits.present)) continue; // PDE isn't present
 
@@ -634,7 +635,7 @@ void mem_freePage(page_t *page) {
  */
 void mem_init(uintptr_t high_address) {
     if (!high_address) kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "mem");
-    mem_kernelHeap = MEM_ALIGN_PAGE(high_address);
+    mem_kernelHeap = MEM_HEAP_REGION;
 
     // Get ourselves a page directory
     // !!!: Is this okay? Do we need to again put things in data structures?
@@ -698,8 +699,8 @@ void mem_init(uintptr_t high_address) {
         if (pages_mapped == (int)frame_pages) break;
     }
 
-    uintptr_t heap_start_aligned = ((uintptr_t)mem_kernelHeap + 0xFFF) & ~0xFFF;
-    uintptr_t kernel_pages = (uintptr_t)heap_start_aligned >> MEM_PAGE_SHIFT;
+    uintptr_t kend_aligned = ((uintptr_t)high_address + 0xFFF) & ~0xFFF;
+    uintptr_t kernel_pages = (uintptr_t)kend_aligned >> MEM_PAGE_SHIFT;
 
     // Calculate cycles and reset values
     loop_cycles = (kernel_pages + 1024) / 1024;
@@ -756,6 +757,12 @@ void mem_init(uintptr_t high_address) {
         kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "mem", "*** BAD CODING DECISIONS HAVE LED TO THIS - Kernel directory is not in cache! Report this as a bug!!\n");
     }
 
+    // Enable global pages
+    asm volatile ("movl %%cr4, %%eax\n"
+                    "orl $128, %%eax\n"
+                    "movl %%eax, %%cr4\n" ::: "eax");
+
+    // Switch directories
     mem_kernelDirectory = (page_t*)((uintptr_t)page_directory | MEM_PHYSMEM_CACHE_REGION);
     mem_load_pdbr((uintptr_t)page_directory); // Load PMM block only (CR3 expects a physical address)
     current_cpu->current_dir = mem_kernelDirectory;

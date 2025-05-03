@@ -28,15 +28,21 @@ void __create_environ(char **envp) {
         envc++;
     }
 
+    envc++;
+
     // Now start copying
     environ = malloc(envc * sizeof(char*));
     for (int i = 0; i < envc; i++) {
-        environ[i] = strdup(envp[i]);
+        if (envp[i]) environ[i] = strdup(envp[i]);
+        else environ[i] = NULL;
     }
+
+    envc--;
 }
 
-void __libc_main(int argc, char **argv, char **envp, int (*main)(int, char**)) {
+__attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, char **argv, char **envp) {
     // TODO: Call constructors 
     __create_environ(envp);
     exit(main(argc, argv));
+    __builtin_unreachable();
 }

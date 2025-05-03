@@ -16,9 +16,9 @@
 .extern __libc_main
 
 _start:
-    popq %rdi // argc
-    popq %rsi // argv
-    popq %rdx // envp
+    popq %rsi // argc
+    popq %rdx // argv
+    popq %rcx // envp
 
-    mov $main, %rcx 
+    mov $main, %rdi 
     callq __libc_main

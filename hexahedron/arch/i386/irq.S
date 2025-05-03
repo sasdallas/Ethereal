@@ -156,9 +156,10 @@ halCommonIRQHandler:
 
 
 
+
 /* Handler definitions */
 ISR_NOERRCODE   halDivisionException,               0
-ISR_NOERRCODE   halDebugException,                  1
+// debugException is a stub
 ISR_NOERRCODE   halNMIException,                    2
 ISR_NOERRCODE   halBreakpointException,             3
 ISR_NOERRCODE   halOverflowException,               4
@@ -201,7 +202,13 @@ IRQ             halIRQ12,   44
 IRQ             halIRQ13,   45
 IRQ             halIRQ14,   46
 IRQ             halIRQ15,   47
-     
+    
+/* ISR 1 */
+.global halDebugException
+halDebugException:
+    /* STUB */
+    iret
+
 /* ISR 123 */
 .global halLocalAPICTimerInterrupt
 halLocalAPICTimerInterrupt:
