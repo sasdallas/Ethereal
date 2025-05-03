@@ -2,18 +2,9 @@
  * @file hexahedron/include/kernel/mem/alloc.h
  * @brief Provides allocator definitions, supporting Hexahedron's multiple allocator system.
  * 
- * Hexahedron allows for a choice of allocators, similar to Linux.
- * We don't support multiple simultaneously, but at compile-time it is possibly to change the current in-use 
- * memory allocator.
- * 
- * Every memory allocator should contain:
- * - The main allocator logic
- * - Any header files needed
- * - All the support files it needs to interact with the architecture-based memory system.
- * - Certain elements to allow it to interop with Hexahedron, including panicking.
- * 
- * All of the above should be contained in a single directory (e.g. hexalloc or toaru_alloc).
- * 
+ * @warning
+ *  Hexahedron used to allow for multiple allocator systems.
+ *  This system will be phased out soon.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
@@ -43,6 +34,14 @@ typedef struct _allocator_info {
 
     // TODO: More flags will be added
 } allocator_info_t;
+
+
+/**** MACROS ****/
+
+// NOTE: These will not be used everywhere in the kernel.
+
+/* Allocate and zero out allocation */ 
+#define kzalloc(a) ({ void *p = alloc_malloc(a); memset(p, 0, a); p; })
 
 /**** FUNCTIONS ****/
 
