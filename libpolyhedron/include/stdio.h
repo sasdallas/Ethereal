@@ -57,6 +57,8 @@ typedef int (*xvas_callback)(void *, char);
 /* EOF */
 #define EOF (-1)
 
+#define FILENAME_MAX        255
+
 
 /**** TYPES ****/
 
@@ -79,6 +81,8 @@ typedef struct _iobuf {
 extern FILE *stdin;
 extern FILE *stdout;
 extern FILE *stderr;
+
+typedef off_t fpos_t;
 
 /**** FUNCTIONS ****/
 
@@ -110,6 +114,9 @@ int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int ferror( FILE *stream );
 int fileno(FILE *stream);
+
+int fgetpos(FILE *stream, fpos_t *pos);
+int fsetpos(FILE *stream, const fpos_t *pos);
 
 void setbuf(FILE *stream, char *buf);
 void setbuffer(FILE *stream, char *buf, size_t size);

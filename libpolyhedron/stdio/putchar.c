@@ -20,3 +20,7 @@
 int putchar(int ch) {
     return fputc(ch, stdout);
 }
+
+int putc(int c, FILE *stream) {
+    return fputc(c, stream);
+}
