@@ -78,7 +78,7 @@ static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t
 
     // TODO: This is really really bad.. like actually horrendous. We should also be putting the thread to sleep
     for (size_t i = 0; i < size; i += sizeof(key_event_t)) {
-        while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
+        if (!KEY_CONTENT_AVAILABLE(buf)) return i;
         periphfs_getKeyboardEvent((key_event_t*)(buffer + i));
     }
 
@@ -119,7 +119,10 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
  * @brief ioctl
  */
 int periph_ioctl(fs_node_t *node, unsigned long request, void *argp) {
-    return KEY_CONTENT_AVAILABLE((key_buffer_t*)node->dev);
+    int r = KEY_CONTENT_AVAILABLE((key_buffer_t*)node->dev);
+    if (r) LOG(DEBUG, "Reporting that key content is available\n");
+    else LOG(DEBUG, "No key content is available\n");
+    return r;
 }
 
 /**
