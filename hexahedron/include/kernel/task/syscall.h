@@ -52,7 +52,7 @@ typedef long (*syscall_func_t)(long, long, long, long, long);
 #define SYSCALL_VALIDATE_PTR(ptr) if (!mem_validate((void*)ptr, PTR_USER | PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
 
 /* Pointer validation (range) */
-#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)ptr + (uintptr_t)size; i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
+#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE((uintptr_t)ptr); i < (uintptr_t)(ptr + size); i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
 
 
 /**** FUNCTIONS ****/
