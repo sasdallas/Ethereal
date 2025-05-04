@@ -24,6 +24,8 @@
 /**** DEFINITIONS ****/
 #define PMM_BLOCK_SIZE  4096
 
+#define PMM_ALIGN(block) ((block & ~(0x3FF)))
+
 /**** FUNCTIONS ****/
 
 /**

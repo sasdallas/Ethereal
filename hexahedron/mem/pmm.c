@@ -35,6 +35,9 @@ uintptr_t    pmm_maxBlocks = 0;
 // Spinlock
 static spinlock_t frame_lock = { 0 };
 
+// Log method
+#define LOG(status, ...) dprintf_module(status, "MEM:PMM", __VA_ARGS__)
+
 /**
  * @brief Initialize the physical memory system.
  * @param memsize Available physical memory in bytes.
@@ -127,8 +130,20 @@ void pmm_initializeRegion(uintptr_t base, uintptr_t size) {
     spinlock_acquire(&frame_lock);
 
     // Careful not to cause a div by zero on base.
-    int align = (base == 0x0) ? 0x0: base / PMM_BLOCK_SIZE;
-    int blocks = size / PMM_BLOCK_SIZE;
+    int align = (base == 0) ? 0 : (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
+    int blocks = PMM_ALIGN(size) / PMM_BLOCK_SIZE;
+
+    // Check
+    if ((uintptr_t)align > nframes) {
+        // Nothing we can do
+        LOG(ERR, "Cannot initialize address range %p - %p\n", base, base+size);
+        return;
+    }
+
+    if ((uintptr_t)(align + blocks) > nframes) {
+        LOG(WARN, "Initializing address range %p - %p instead of %p - %p\n", base, base+((nframes-(uintptr_t)align)*PMM_BLOCK_SIZE), base, base+size);
+        blocks = (nframes - (uintptr_t)align);
+    }
 
     for (; blocks > 0; blocks--) {
         pmm_clearFrame(align++);
@@ -149,8 +164,20 @@ void pmm_deinitializeRegion(uintptr_t base, uintptr_t size) {
     spinlock_acquire(&frame_lock);
 
     // Careful not to cause a div by zero on base.
-    int align = (base == 0x0) ? 0x0: base / PMM_BLOCK_SIZE;
-    int blocks = size / PMM_BLOCK_SIZE;
+    int align = (base == 0) ? 0 : (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
+    int blocks = PMM_ALIGN(size) / PMM_BLOCK_SIZE;
+
+    // Check
+    if ((uintptr_t)align > nframes) {
+        // Nothing we can do
+        LOG(ERR, "Cannot deinitialize address range %p - %p\n", base, base+size);
+        return;
+    }
+
+    if ((uintptr_t)(align + blocks) > nframes) {
+        LOG(WARN, "Deinitializing address range %p - %p instead of %p - %p\n", base, (nframes-(uintptr_t)align), base, base+size);
+        blocks = (nframes - (uintptr_t)align);
+    }
 
     for (; blocks > 0; blocks--) {
         pmm_setFrame(align++);

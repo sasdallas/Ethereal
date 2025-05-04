@@ -194,6 +194,7 @@ static uintptr_t memory_size = 0x0;                                         // S
  * @returns The address to which the structure can be placed at 
  */
 uintptr_t arch_allocate_structure(size_t bytes) {
+    dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
     return (uintptr_t)kmalloc(bytes);
 }
 
@@ -204,6 +205,7 @@ uintptr_t arch_allocate_structure(size_t bytes) {
  * @returns The address to which it was relocated.
  */
 uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size) {
+    if (!size) return 0x0;
     uintptr_t location = arch_allocate_structure(size);
     memcpy((void*)location, (void*)mem_remapPhys(structure_ptr, size), size);
     return location;

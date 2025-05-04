@@ -248,9 +248,13 @@ generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
     multiboot1_mod_t *module = (multiboot1_mod_t*)MBRELOC(bootinfo->mods_addr);
     parameters->module_start = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
     parameters->module_start->cmdline = (char*)arch_relocate_structure(MBRELOC(module->cmdline), strlen((char*)MBRELOC(module->cmdline)));
+    
+    dprintf(DEBUG, "Relocating module %p - %p (%d)\n", module->mod_start, module->mod_end, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
     uintptr_t relocated = arch_relocate_structure((uintptr_t)module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
     parameters->module_start->mod_start = relocated; 
     parameters->module_start->mod_end = relocated + (module->mod_end - module->mod_start);
+
+    
 
     if ((module->mod_end - module->mod_start) > PMM_BLOCK_SIZE) {
         // Reinitialize the region.
@@ -287,7 +291,8 @@ _done_modules:
         __builtin_unreachable();
     }
 
-    parameters->mem_size = bootinfo->mem_upper + bootinfo->mem_lower;
+    // mem_upper and mem_lower can be inaccurate
+    // parameters->mem_size = bootinfo->mem_upper +s bootinfo->mem_lower;
 
     parameters->mmap_start = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
 
@@ -295,6 +300,8 @@ _done_modules:
     generic_mmap_desc_t *last_mmap_descriptor = parameters->mmap_start;
     generic_mmap_desc_t *descriptor = parameters->mmap_start;
     
+
+    uintptr_t memory_size = 0x0;
 
     for (mmap = (multiboot1_mmap_entry_t*)MBRELOC(bootinfo->mmap_addr);
                 (uintptr_t)mmap < MBRELOC(bootinfo->mmap_addr) + bootinfo->mmap_length;
@@ -308,6 +315,7 @@ _done_modules:
         switch (mmap->type) {
             case MULTIBOOT_MEMORY_AVAILABLE:
                 descriptor->type = GENERIC_MEMORY_AVAILABLE;
+                memory_size = descriptor->address + descriptor->length;
                 break;
             
             case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE:
@@ -341,6 +349,9 @@ _done_modules:
         // Reallocate & repeat
         descriptor = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
     }
+
+    // Set memory size
+    parameters->mem_size = memory_size;
 
     last_mmap_descriptor->next = NULL;
 
@@ -418,16 +429,15 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
             if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
                 // Available!
                 dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as available memory\n", mmap->addr, mmap->addr + mmap->len, mmap->len / 1024);
-                pmm_initializeRegion((uintptr_t)mmap->addr, (uintptr_t)mmap->len);
+                pmm_initializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
             } else {
                 // Make sure mmap->addr isn't out of memory - most emulators like to have reserved
                 // areas outside of their actual memory space, which the PMM really does not like.
 
-                // As well as that, QEMU bugs out and forgets about certain DMA regions (see below), so
-                // don't uninitialize anything below 0x10000 
-                if (mmap->addr > 0x100000 && mmap->addr + mmap->len < mem_size) {
+                // !!!: Hack
+                if (mmap->addr >= 0x100000 && mmap->addr + mmap->len < mem_size) {
                     dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as unavailable memory\n", mmap->addr, mmap->addr + mmap->len, mmap->len / 1024); 
-                    pmm_deinitializeRegion((uintptr_t)mmap->addr, (uintptr_t)mmap->len);
+                    pmm_deinitializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
                 }
             }
 
@@ -435,20 +445,9 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
         }
     }
 
-    // While working on previous versions of Ethereal Operating System, I accidentally brute-forced this.
-    // QEMU doesn't properly unmark DMA regions, apparently - according to libvfio-user issue $493
-    // https://github.com/nutanix/libvfio-user/issues/463
-    
-    // These DMA regions occur within the range of 0xC0000 - 0xF0000, but we'll unmap
-    // the rest of the memory too. x86 real mode's memory map dictates that the first 1MB
-    // or so is reserved from like 0x0-0xFFFFF for BIOS structures.
-    // TODO: It may be possible to reinitialize this memory later
-    dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as reserved memory (QEMU bug)\n", (uint64_t)0x0, (uint64_t)0x100000, ((uint64_t)0x100000 - (uint64_t)0x0) / 1024);
-    pmm_deinitializeRegion(0x00000, 0x100000);
-
     // Unmark kernel regions
-    dprintf(DEBUG, "Marked memory descriptor %016X - %016X (%i KB) as kernel memory\n", 0x100000, 0x200000, (0x100000) / 1024);
-    pmm_deinitializeRegion(0x100000, highest_address - 0x100000);
+    dprintf(DEBUG, "Marked memory descriptor %016X - %016X (%i KB) as kernel memory\n", 0, highest_address, highest_address / 1024);
+    pmm_deinitializeRegion(0x0, highest_address);
 
     // Done!
     dprintf(DEBUG, "Marked valid memory - PMM has %i free blocks / %i max blocks\n", pmm_getFreeBlocks(), pmm_getMaximumBlocks());
