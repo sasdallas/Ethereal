@@ -200,6 +200,84 @@ int fs_ioctl(fs_node_t *node, unsigned long request, char *argp) {
 }
 
 /**
+ * @brief mmap() a file. This is done either via the VFS' internal method or the file's
+ * @param file The file to map
+ * @param addr The address that was allocated for mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ * @returns Error code
+ */
+int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
+    if (!node) return -EINVAL;
+
+    // Check if node wants to use its custom mmap
+    if (node->mmap) {
+        return node->mmap(node, addr, size, off);
+    }
+
+    // Load the file in at the address
+    // TODO: False reading!!!! SAVE MEMORY!!
+    ssize_t actual_size = fs_read(node, off, size, addr);
+
+    // File is loaded, we're done here.
+    return 0;
+}
+
+/**
+ * @brief msync() a file
+ * @param file The file to sync
+ * @param addr The address that was allocated by mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ */
+int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
+    if (!node) return -EINVAL;
+
+    // Check if the node wants to use its custom msync
+    if (node->msync) {
+        return node->msync(node, addr, size, off);
+    }
+
+    // Else, write the content in chunks (carefully avoiding potentially unallocated chunks)
+    for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+        if (pg) {
+            if (!pg->bits.present) continue;
+            
+            // Has the page been touched?
+            if (PAGE_IS_DIRTY(pg)) {
+                // Yes, write it to the file
+                // Depending on whether this iteration is the last write as much
+                uintptr_t sz = ((i - (uintptr_t)(addr + size)));
+                if (sz > PAGE_SIZE) sz = PAGE_SIZE;
+                fs_write(node, off+(i-(uintptr_t)addr), sz, (uint8_t*)i);
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief munmap a file
+ * @param file The file to munmap()
+ * @param addr The address that was allocated by mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ */
+int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
+    if (!node) return -EINVAL;
+
+    // Check if the node wants to use its custom munmap
+    if (node->munmap) {
+        return node->munmap(node, addr, size, off);
+    }
+
+    // Else, just do an msync on the file
+    return fs_msync(node, addr, size, off);
+}
+
+/**
  * @brief creat() equivalent for VFS
  * @param node The node to output to
  * @param path The path to create
@@ -221,8 +299,6 @@ int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
     if (current_cpu->current_process) {
         path_full = vfs_canonicalizePath(current_cpu->current_process->wd_path, path);
     }
-
-    LOG(DEBUG, "path_full = %s\n", path_full);
 
     // Now we should calculate the end.
     char *last_slash = strrchr(path_full, '/');

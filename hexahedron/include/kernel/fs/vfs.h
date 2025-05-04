@@ -56,7 +56,9 @@ typedef int (*unlink_t)(struct fs_node *, char *);
 typedef int (*readlink_t)(struct fs_node *, char *, size_t);
 typedef int (*ioctl_t)(struct fs_node*, unsigned long, void *);
 typedef int (*symlink_t)(struct fs_node*, char *, char *);
-
+typedef int (*mmap_t)(struct fs_node*, void *, size_t, off_t);
+typedef int (*msync_t)(struct fs_node*, void *, size_t, off_t);
+typedef int (*munmap_t)(struct fs_node*, void *, size_t, off_t);
 
 // Inode structure
 typedef struct fs_node {
@@ -88,8 +90,11 @@ typedef struct fs_node {
     ioctl_t ioctl;          // I/O control function
     readlink_t readlink;    // Readlink function
     symlink_t symlink;      // Symlink function
+    mmap_t mmap;            // Mmap function
+    msync_t msync;          // Msync function
+    munmap_t munmap;        // Munmap function
 
-    // Last file stuff
+    // Other
     struct fs_node *ptr;    // Used by mountpoints and symlinks
     int64_t refcount;       // Reference count on the file
     void *dev;              // Device structure
@@ -180,6 +185,34 @@ fs_node_t *fs_finddir(fs_node_t *node, char *path);
  * @param mode The mode
  */
 fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode);
+
+/**
+ * @brief mmap() a file. This is done either via the VFS' internal method or the file's
+ * @param file The file to map
+ * @param addr The address that was allocated for mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ * @returns Error code
+ */
+int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off);
+
+/**
+ * @brief msync() a file
+ * @param file The file to sync
+ * @param addr The address that was allocated by mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ */
+int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off);
+
+/**
+ * @brief munmap a file
+ * @param file The file to munmap()
+ * @param addr The address that was allocated by mmap()
+ * @param size The size of the mapping created
+ * @param off The offset of the file
+ */
+int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off);
 
 /**
  * @brief Make directory
