@@ -46,13 +46,27 @@ typedef struct syscall {
  */
 typedef long (*syscall_func_t)(long, long, long, long, long);
 
+/**
+ * @brief mmap context
+ * 
+ * This is used to bypass the 5 parameter limit
+ */
+typedef struct sys_mmap_context {
+    void *addr;
+    size_t len;
+    int prot;
+    int flags;
+    int filedes;
+    off_t off;
+} sys_mmap_context_t;
+
 /**** MACROS ****/
 
 /* Pointer validation */
 #define SYSCALL_VALIDATE_PTR(ptr) if (!mem_validate((void*)ptr, PTR_USER | PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
 
 /* Pointer validation (range) */
-#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE((uintptr_t)ptr); i < (uintptr_t)(ptr + size); i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
+#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)(ptr + size); i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
 
 
 /**** FUNCTIONS ****/
@@ -89,5 +103,7 @@ long sys_fchdir(int fd);
 long sys_uname(struct utsname *buf);
 pid_t sys_getpid();
 clock_t sys_times(struct tms *buf);
+long sys_mmap(sys_mmap_context_t *context);
+long sys_munmap(void *addr, size_t len);
 
 #endif

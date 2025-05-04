@@ -36,7 +36,7 @@
 #define THREAD_FLAG_CHILD           0x04    // Thread is a child. NOT PRESERVED. Tells thread_create() not to allocate a stack and mess up potential CoW
 
 // Stack size of thread
-#define THREAD_STACK_SIZE           PAGE_SIZE * 4
+#define THREAD_STACK_SIZE           PAGE_SIZE * 16
 
 /**** TYPES ****/
 

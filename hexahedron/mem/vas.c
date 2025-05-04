@@ -280,6 +280,8 @@ int vas_free(vas_t *vas, vas_allocation_t *allocation) {
         }
     }
 
+    // TODO: Free pages? CoW will handle this..
+
     // Free and return
     kfree(allocation);
     vas->allocations--;
@@ -301,7 +303,6 @@ vas_allocation_t *vas_get(vas_t *vas, uintptr_t address) {
 
     vas_allocation_t *n = vas->head;
     while (n) {
-        LOG(DEBUG, "find %p in %p - %p\n", address, n->base, n->base + n->size);
         if (IN_RANGE(address, n->base, n->base + n->size)) {
             // Found!
             spinlock_release(vas->lock);

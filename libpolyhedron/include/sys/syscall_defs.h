@@ -67,6 +67,8 @@ DECLARE_SYSCALL1(fchdir, int);
 DECLARE_SYSCALL1(uname, struct utsname*);
 DECLARE_SYSCALL0(getpid);
 DECLARE_SYSCALL1(times, struct tms*);
+DECLARE_SYSCALL1(mmap, void*); // not really a void* (wink)
+DECLARE_SYSCALL2(munmap, void*, size_t);
 
 #endif
 

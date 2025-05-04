@@ -14,6 +14,7 @@
 #include <kernel/task/process.h>
 #include <kernel/arch/arch.h>
 #include <kernel/loader/elf_loader.h>
+#include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
 #include <kernel/fs/vfs.h>
@@ -30,6 +31,10 @@
 
 /* Process tree */
 tree_t *process_tree = NULL;
+
+/* Global process list */
+/* TODO: not */
+list_t *process_list = NULL;
 
 /* PID bitmap */
 uint32_t *pid_bitmap = NULL;
@@ -54,6 +59,9 @@ void process_reaper(void *ctx);
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:PROCESS", __VA_ARGS__)
 
+/* Prototype */
+pid_t process_allocatePID();
+
 /**
  * @brief Initialize the process system, starting the idle process
  * 
@@ -62,9 +70,13 @@ void process_reaper(void *ctx);
  * BSP.
  */
 void process_init() {
+    // Mark PID 0 as in use
+    process_allocatePID(); // !!!
+
     // Initialize tree
     process_tree = tree_create("process tree");
-    
+    process_list = list_create("process list");
+
     // Initialize scheduler
     scheduler_init();
 
@@ -246,6 +258,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->priority = priority;
     process->gid = process->uid = 0;
     process->pid = process_allocatePID();
+    process->vas = vas_create("process vas", 0x0, MEM_DMA_REGION, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -262,6 +275,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 
     // Create process' kernel stack
     process->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
+    // memset((void*)process->kstack - PROCESS_KSTACK_SIZE, 0, PROCESS_KSTACK_SIZE*2);
     dprintf(DEBUG, "Process '%s' has had its kstack %p allocated in page directory %p\n", name, process->kstack, current_cpu->current_dir);
     
     // Make directory
@@ -292,6 +306,8 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         memset(process->fd_table->fds, 0, sizeof(fd_t*) * PROCESS_FD_BASE_AMOUNT);
     }
 
+    if (process_list) list_append(process_list, (void*)process);
+
 #ifdef __ARCH_I386__
     // !!!: very dirty hack
     // !!!: resets pages in process->kstack to be global, meaning they won't be invalidated when the TLB flushes (mem_switchDirectory)
@@ -319,7 +335,7 @@ process_t *process_createKernel(char *name, unsigned int flags, unsigned int pri
     proc->main_thread = thread_create(proc, proc->dir, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
 
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, data);
-    THREAD_PUSH_STACK(SP(proc->main_thread->context), kthread_t, entrypoint);
+    THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, entrypoint);
 
     return proc;
 }
@@ -355,6 +371,9 @@ process_t *process_spawnIdleTask() {
     // !!!: Hack
     process_freePID(idle->pid);
     idle->pid = -1; // Not actually a process
+    
+    // !!!: remove
+    // if (process_list) list_delete(process_list, list_find(process_list, (void*)idle));
 
     // Create a new thread
     idle->main_thread = thread_create(idle, NULL, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
@@ -371,6 +390,25 @@ void process_destroy(process_t *proc) {
     if (!proc || !(proc->flags & PROCESS_STOPPED)) return;
 
     LOG(DEBUG, "Destroying process \"%s\"...\n", proc->name);
+
+    process_freePID(proc->pid);
+    list_delete(process_list, list_find(process_list, (void*)proc));
+
+    if (proc->mmap) {
+        process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
+
+        foreach(mmap_node, proc->mmap) {
+            if (prev) process_removeMapping(current_cpu->current_process, prev);
+
+            if (mmap_node && mmap_node->value) {
+                process_mapping_t *map = (process_mapping_t*)mmap_node->value;
+                prev = map;
+            }
+        }
+
+        if (prev) process_removeMapping(current_cpu->current_process, prev);
+        list_destroy(proc->mmap, false);
+    }
 
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
@@ -443,6 +481,10 @@ process_t *process_spawnInit() {
     // Create a new process
     process_t *init = process_createStructure(NULL, "init", PROCESS_STARTED | PROCESS_RUNNING, PRIORITY_HIGH);
 
+    // !!!: hack
+    process_freePID(init->pid);
+    init->pid = 0;
+
     // Set as parent node (all processes stem from this one)
     tree_set_parent(process_tree, (void*)init);
     init->node = process_tree->root;
@@ -482,6 +524,10 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
         LOG(ERR, "Invalid ELF binary detected when trying to start execution\n");
         return -EINVAL;
     }
+
+    // Setup new name
+    kfree(current_cpu->current_process->name);
+    current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
     // Destroy previous threads
     if (current_cpu->current_process->main_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
@@ -542,8 +588,6 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
     int envc = 0;
     char **p = envp;
     while (*p++) envc++;
-
-    // test
 
     // Push contents of envc onto the stack
     char *envp_pointers[envc]; // The array we pass to libc is a list of pointers, so we push the strings and then the pointers

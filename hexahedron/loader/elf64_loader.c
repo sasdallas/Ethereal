@@ -20,6 +20,8 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
 #include <kernel/debug.h>
+#include <kernel/mem/vas.h>
+#include <kernel/processor_data.h>
 
 #include <string.h>
 
@@ -374,6 +376,11 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                     if (pg) {
                         mem_allocatePage(pg, MEM_DEFAULT);
                     }
+                }
+        
+                // !!!: HACK
+                if (current_cpu->current_process) {
+                    vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz));
                 }
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);

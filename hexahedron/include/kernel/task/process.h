@@ -24,6 +24,9 @@
 #include <kernel/task/scheduler.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/fd.h>
+#include <kernel/task/mem.h>
+
+#include <kernel/mem/vas.h>
 
 #include <kernel/processor_data.h>
 #include <kernel/fs/vfs.h>
@@ -78,6 +81,8 @@ typedef struct process {
     // MEMORY REGIONS
     uintptr_t heap;             // Heap of the process. Positioned after the ELF binary
     uintptr_t heap_base;        // Base location of the heap
+    vas_t *vas;                 // Process virtual address space
+    list_t *mmap;               // mmap() mappings
 
     // OTHER
     uintptr_t kstack;           // Kernel stack (see PROCESS_KSTACK_SIZE)

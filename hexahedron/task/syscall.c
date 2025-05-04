@@ -50,7 +50,10 @@ static syscall_func_t syscall_table[] = {
     [SYS_CHDIR]         = (syscall_func_t)(uintptr_t)sys_chdir,
     [SYS_FCHDIR]        = (syscall_func_t)(uintptr_t)sys_fchdir,
     [SYS_UNAME]         = (syscall_func_t)(uintptr_t)sys_uname,
-    [SYS_GETPID]        = (syscall_func_t)(uintptr_t)sys_getpid
+    [SYS_GETPID]        = (syscall_func_t)(uintptr_t)sys_getpid,
+    [SYS_TIMES]         = (syscall_func_t)(uintptr_t)0xCAFECAFE,
+    [SYS_MMAP]          = (syscall_func_t)(uintptr_t)sys_mmap,
+    [SYS_MUNMAP]        = (syscall_func_t)(uintptr_t)sys_munmap
 };
 
 /* Unimplemented system call */
@@ -325,7 +328,7 @@ long sys_ioctl(int fd, unsigned long request, void *argp) {
  * @brief Change data segment size
  */
 void *sys_brk(void *addr) {
-    LOG(DEBUG, "sys_brk addr %p\n", addr);
+    LOG(DEBUG, "sys_brk addr %p (curheap: %p - %p)\n", addr, current_cpu->current_process->heap_base, current_cpu->current_process->heap);
 
     // Validate pointer is in range
     if ((uintptr_t)addr < current_cpu->current_process->heap_base) {
@@ -577,4 +580,13 @@ long sys_uname(struct utsname *buf) {
 
 pid_t sys_getpid() {
     return current_cpu->current_process->pid;
+}
+
+long sys_mmap(sys_mmap_context_t *context) {
+    SYSCALL_VALIDATE_PTR(context);
+    return (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+}
+
+long sys_munmap(void *addr, size_t len) {
+    return process_munmap(addr, len);
 }

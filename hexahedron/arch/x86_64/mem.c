@@ -26,6 +26,7 @@
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/task/process.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -732,6 +733,12 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
 
         if (regs_extended->cr2 > MEM_USERMODE_STACK_REGION && regs_extended->cr2 < MEM_USERMODE_STACK_REGION + PAGE_SIZE*2) {
             mem_allocatePage(mem_getPage(NULL, regs_extended->cr2, MEM_CREATE), MEM_DEFAULT);
+            return 0;
+        }
+
+        // Check for VAS fault
+        // Default hint is 0x2000
+        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x2000)) {
             return 0;
         }
 
