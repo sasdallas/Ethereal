@@ -76,7 +76,12 @@ int scheduler_insertThread(thread_t *thread) {
     if (!thread || !thread_queue) return -1;
 
     spinlock_acquire(&scheduler_lock);
-    list_append(thread_queue, (void*)thread);
+    if (thread->sched_node) {
+        list_append_node(thread_queue, thread->sched_node);
+    } else {
+        list_append(thread_queue, (void*)thread);
+        thread->sched_node = list_find(thread_queue, (void*)thread);
+    }
     spinlock_release(&scheduler_lock);
 
     // LOG(INFO, "Inserted thread %p for process '%s' (priority: %d)\n", thread, thread->parent->name, thread->parent->priority);
@@ -92,7 +97,7 @@ int scheduler_removeThread(thread_t *thread) {
     if (!thread) return -1;
 
     spinlock_acquire(&scheduler_lock);
-    node_t *thread_node = list_find(thread_queue, thread);
+    node_t *thread_node = thread->sched_node;
 
     if (!thread_node) {
         LOG(WARN, "Could not delete thread %p (process '%s') because it was not found in the queue\n", thread, thread->parent->name);
@@ -169,9 +174,6 @@ thread_t *scheduler_get() {
 
         // Get thread and free node
         thread = (thread_t*)(thread_node->value);
-
-        // Now free the node
-        kfree(thread_node);
 
         if (thread->status & THREAD_STATUS_STOPPING) {
             // Update status to be STOPPED

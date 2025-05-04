@@ -36,7 +36,7 @@
 #define THREAD_FLAG_CHILD           0x04    // Thread is a child. NOT PRESERVED. Tells thread_create() not to allocate a stack and mess up potential CoW
 
 // Stack size of thread
-#define THREAD_STACK_SIZE           4096
+#define THREAD_STACK_SIZE           PAGE_SIZE * 4
 
 /**** TYPES ****/
 
@@ -52,7 +52,8 @@ typedef struct thread {
     unsigned int status;        // Status of this thread
     unsigned int flags;         // Flags of the thread
 
-    // SCHEDULER TIMES
+    // SCHEDULER VARIABLES
+    node_t *sched_node;         // Scheduler node
     time_t preempt_ticks;       // Ticks until the thread is preempted
     time_t total_ticks;         // Total amount of ticks the thread has been running for
     time_t start_ticks;         // Starting ticks
