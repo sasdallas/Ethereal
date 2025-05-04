@@ -32,6 +32,13 @@
 #define VAS_ONLY_REAL       0x4     // Do not give fake memory to the VAS
 #define VAS_GLOBAL          0x8     // The VAS is global and should be replicated across all directories
 
+/* Allocation protection flags */
+#define VAS_PROT_READ       0x1     // Allow reads
+#define VAS_PROT_WRITE      0x2     // Allow writes
+#define VAS_PROT_EXEC       0x4     // Allow execution
+
+#define VAS_PROT_DEFAULT    VAS_PROT_READ | VAS_PROT_WRITE | VAS_PROT_EXEC
+
 /**** TYPES ****/
 
 /**
@@ -43,8 +50,9 @@
 typedef struct vas_allocation {
     uintptr_t base;                 // Base of allocation
     size_t size;                    // Size of allocation
+    uint8_t prot;                   // Protection flags
     struct vas_allocation *next;    // Next allocation in the chain
-    struct vas_allocation *prev;    // Previous allocation in the chain 
+    struct vas_allocation *prev;    // Previous allocation in the chain
 } vas_allocation_t;
 
 /**
@@ -117,5 +125,14 @@ vas_allocation_t *vas_get(vas_t *vas, uintptr_t address);
  * @brief Dump VAS information
  */
 void vas_dump(vas_t *vas);
+
+/**
+ * @brief Handle a VAS fault and give the memory if needed
+ * @param vas The VAS
+ * @param address The address the fault occurred at
+ * @param size If the allocation spans over a page, this will be used as a hint for the amount to actually map in (for speed)
+ * @returns 1 on fault resolution
+ */
+int vas_fault(vas_t *vas, uintptr_t address, size_t size);
 
 #endif

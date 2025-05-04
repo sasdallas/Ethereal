@@ -65,6 +65,10 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags) {
 vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size) {
     if (!vas) return NULL;
 
+    // Align
+    address = MEM_ALIGN_PAGE_DESTRUCTIVE(address);
+    if (size & (PAGE_SIZE-1)) size = MEM_ALIGN_PAGE(size);
+
     if (!RANGE_IN_RANGE(address, address+size, vas->base, vas->base + vas->size)) {
         // Outside of the VAS range!
         LOG(ERR, "Cannot reserve region outside of VAS space: %p - %p (VAS: %p - %p)\n", address, address + size, vas->base, vas->base + vas->size);
@@ -80,26 +84,40 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size) {
     vas_allocation_t *allocation = kzalloc(sizeof(vas_allocation_t));
     allocation->base = address;
     allocation->size = size;
+    allocation->prot = VAS_PROT_DEFAULT;
 
     LOG(DEBUG, "[ALLO] Allocate %p - %p\n", address, size);
 
     // Sanity check and to find the spot where we need to place
     vas_allocation_t *n = vas->head;
+
+    // If n exists but we can just fit it in the hole of 0 - n do that
+    if (n) {
+        if (RANGE_IN_RANGE(address, address+size, 1, n->base)) {
+            vas->head = allocation;
+            allocation->next = n;
+            n->prev = allocation;
+            goto _finish_allocation;
+        }
+    }
+
     while (n) {
         if (RANGE_IN_RANGE(n->base, n->base + n->size, address, address + size)) {
             LOG(WARN, "Reserving a VAS region (%p - %p) which is contained within another allocation (%p - %p)\n", n->base, n->base + n->size, address, address+size);
             LOG(WARN, "This is undefined behavior and may result in very bad consequences.\n");
+            return NULL;
         }
 
         if (RANGE_IN_RANGE(address, address + size, n->base, n->base + n->size)) {
             LOG(WARN, "Reserving a VAS region (%p - %p) which is contained within another allocation (%p - %p)\n", address, address+size, n->base, n->base + n->size);
             LOG(WARN, "This is undefined behavior and may result in very bad consequences.\n");
+            return NULL;
         }
 
         // If we are still iterating and n->base + n->size is greater than address, we could not find a hole. Panic.
         if (n->base + n->size > address) {
             // !!!: We have to resolve this.. how?
-            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "vas", "*** VAS \"%s\" tried to reserve %p - %p but it was taken already.\n", address, address+size);
+            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "vas", "*** VAS \"%s\" tried to reserve %p - %p but it was taken already.\n", vas->name, address, address+size);
             __builtin_unreachable();
         }
 
@@ -109,6 +127,7 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size) {
         if (!n->next) {
             // That's all we have allocated.
             n->next = allocation;
+            allocation->prev = n;
             vas->tail = allocation;
             goto _finish_allocation;
         }
@@ -154,6 +173,9 @@ _finish_allocation:
 vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     if (!vas || !size) return NULL;
 
+    // Align
+    size = MEM_ALIGN_PAGE(size);
+
     // Acquire a VAS lock
     spinlock_acquire(vas->lock);
 
@@ -174,6 +196,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
             allocation->base = vas->base;
             allocation->size = size;
             allocation->next = n;
+            allocation->prot = VAS_PROT_DEFAULT;
             n->prev = allocation;
             vas->head = allocation;
             goto _finish_allocation;
@@ -202,6 +225,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
             n->next = allocation;
             allocation->prev = n;
             allocation->next->prev = allocation;
+            allocation->prot = VAS_PROT_DEFAULT;
 
             goto _finish_allocation;
         }
@@ -222,6 +246,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     allocation->base = highest_address;
     allocation->size = size;
     allocation->prev = vas->tail;
+    allocation->prot = VAS_PROT_DEFAULT;
     vas->tail->next = allocation;
     vas->tail = allocation;
 
@@ -276,6 +301,7 @@ vas_allocation_t *vas_get(vas_t *vas, uintptr_t address) {
 
     vas_allocation_t *n = vas->head;
     while (n) {
+        LOG(DEBUG, "find %p in %p - %p\n", address, n->base, n->base + n->size);
         if (IN_RANGE(address, n->base, n->base + n->size)) {
             // Found!
             spinlock_release(vas->lock);
@@ -295,6 +321,38 @@ vas_allocation_t *vas_get(vas_t *vas, uintptr_t address) {
  * @returns 0 on success
  */
 int vas_destroy(vas_t *vas) {
+    return 1;
+}
+
+/**
+ * @brief Handle a VAS fault and give the memory if needed
+ * @param vas The VAS
+ * @param address The address the fault occurred at
+ * @param size If the allocation spans over a page, this will be used as a hint for the amount to actually map in (for speed)
+ * @returns 1 on fault resolution
+ */
+int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
+    if ((vas->flags & VAS_NO_COW || vas->flags & VAS_ONLY_REAL)) {
+        // Can't be something we have to resolve
+        return 0;
+    }
+
+    // Try to get the allocation corresponding to address
+    vas_allocation_t *alloc = vas_get(vas, address);
+    if (!alloc) return 0;
+
+    // There's an allocation here - its probably lazy. How much can we map in?
+    size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
+
+    for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + actual_map_size; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
+        
+        // Allocate corresponding to prot flags
+        int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL);
+        if (pg) mem_allocatePage(pg, flags);
+    }
+
+    LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), address+actual_map_size);
     return 1;
 }
 
