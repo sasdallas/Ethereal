@@ -47,6 +47,9 @@ _Begin_C_Header
 #define SYS_UNAME           31
 #define SYS_GETPID          32
 #define SYS_TIMES           33
+#define SYS_MMAP            34
+#define SYS_MPROTECT        35
+#define SYS_MUNMAP          36
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

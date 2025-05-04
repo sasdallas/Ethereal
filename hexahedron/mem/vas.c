@@ -152,7 +152,7 @@ _finish_allocation:
  * @returns The allocation or NULL if no memory could be found
  */
 vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
-    if (!vas) return NULL;
+    if (!vas || !size) return NULL;
 
     // Acquire a VAS lock
     spinlock_acquire(vas->lock);
@@ -164,6 +164,22 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
 
     // Start searching for holes in the VAS
     vas_allocation_t *n = vas->head;
+
+    // Real quick - can we fit an allocation in between VAS base and the first allocation/reservation?
+    if (n) {
+        uintptr_t distance = n->base - vas->base;
+        if (IN_RANGE_EXCLUSIVE(size, 0, distance)) {
+            // Yes!
+            allocation = kzalloc(sizeof(vas_allocation_t));
+            allocation->base = vas->base;
+            allocation->size = size;
+            allocation->next = n;
+            n->prev = allocation;
+            vas->head = allocation;
+            goto _finish_allocation;
+        }
+    }
+
     while (n) {
         if (n->base + n->size > highest_address) highest_address = n->base + n->size;
 
