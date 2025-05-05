@@ -115,6 +115,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     // TODO: Protect allocation
     // TODO: Mark it?
 
+    map->addr = (void*)alloc->base;
+
     // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
     if (filedes == -1 || flags & MAP_ANONYMOUS) {
         list_append(current_cpu->current_process->mmap, (void*)map);
@@ -165,7 +167,7 @@ int process_munmap(void *addr, size_t len) {
     // Find a corresponding mapping
     foreach(map_node, current_cpu->current_process->mmap) {
         process_mapping_t *map = (process_mapping_t*)(map_node->value);
-        if (map->addr == addr && map->size == len) {
+        if (RANGE_IN_RANGE((uintptr_t)addr, (uintptr_t)addr+len, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
             // TODO: "Close enough" system? 
             return process_removeMapping(current_cpu->current_process, map);
         }
