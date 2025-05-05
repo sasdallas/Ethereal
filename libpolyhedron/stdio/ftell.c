@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <unistd.h>
 
 long ftell(FILE *stream) {
     // Flush everything

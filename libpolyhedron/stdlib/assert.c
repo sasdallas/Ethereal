@@ -12,8 +12,9 @@
  */
 
 #include <assert.h>
+#include <stdio.h>
 
-void __assert_failed(char *file, int line, char *stmt) {
+void __assert_failed(const char *file, int line, const char *stmt) {
 #if defined(__LIBK)
 #include <kernel/panic.h>
    kernel_panic_extended(ASSERTION_FAILED, "libpoly", "*** Assertion (%s:%i) failed: %s\n", file, line, stmt);

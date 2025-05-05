@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <unistd.h>
 
 int fseek(FILE *stream, long offset, int whence) {
     // Flush everything

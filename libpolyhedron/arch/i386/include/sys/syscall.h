@@ -50,6 +50,7 @@ _Begin_C_Header
 #define SYS_MMAP            34
 #define SYS_MPROTECT        35
 #define SYS_MUNMAP          36
+#define SYS_MSYNC           37
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

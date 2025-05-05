@@ -13,9 +13,14 @@
 
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <time.h>
 
 DEFINE_SYSCALL1(usleep, SYS_USLEEP, useconds_t);
 
 int usleep(useconds_t usec) {
     __sets_errno(__syscall_usleep(usec));
+}
+
+unsigned int sleep(unsigned int seconds) {
+    return usleep(seconds * CLOCKS_PER_SEC); // !!!: CHECK THIS
 }

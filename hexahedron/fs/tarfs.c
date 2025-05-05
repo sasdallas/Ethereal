@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <dirent.h>
 
 /* Macro to round to 512 (for size) */
 #define USTAR_SIZE(size) ((size % 512) ? (size + (512 - (size % 512))) : size)
