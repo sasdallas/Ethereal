@@ -180,7 +180,7 @@ void mem_destroyVAS(page_t *vas) {
                             page_t *pt = (page_t*)mem_remapPhys((pd[pde].bits.address << MEM_PAGE_SHIFT), 0);
                             for (size_t pte = 0; pte < 512; pte++) {
                                 page_t *pg = &pt[pte];
-                                if (pg->bits.usermode && pg->bits.present) {
+                                if (pg->bits.usermode && pg->bits.present && pg->bits.address) {
                                     // Free this page (only if refcounts == 0)
                                     uintptr_t address = ((pml4e << (9 * 3 + 12)) | (pdpte << (9*2 + 12)) | (pde << (9 + 12)) | (pte << MEM_PAGE_SHIFT));
                                     LOG(DEBUG, "Usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
@@ -749,6 +749,12 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         return 0;
     }
 
+    if (current_cpu->current_process && current_cpu->current_process->vas) {
+        // Check for fault
+        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x2000)) {
+            return 0;
+        }
+    }
 
     // Page fault, get the address
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
