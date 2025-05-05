@@ -104,7 +104,10 @@ struct sigaction {
     int sa_flags;                   // Special flags
 };
 
+/**** FUNCTIONS ****/
 
+sighandler_t signal(int signum, sighandler_t handler);
+int raise(int sig);
 
 #endif
 

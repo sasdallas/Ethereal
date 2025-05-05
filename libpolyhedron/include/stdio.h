@@ -20,7 +20,8 @@ _Begin_C_Header
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <unistd.h>
+#include <sys/types.h>
+#include <libgen.h>
 
 /**** TYPES ****/
 
@@ -87,6 +88,7 @@ typedef off_t fpos_t;
 /**** FUNCTIONS ****/
 
 int putchar(int ch);
+int putc(int ch, FILE *stream);
 int printf(const char * __restrict, ...);
 int puts(const char *);
 int vsnprintf(char *str, size_t size, const char *format, va_list ap);
@@ -113,7 +115,9 @@ int fseek(FILE *stream, long offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int ferror( FILE *stream );
+int feof(FILE *stream);
 int fileno(FILE *stream);
+void rewind(FILE *stream);
 
 int fgetpos(FILE *stream, fpos_t *pos);
 int fsetpos(FILE *stream, const fpos_t *pos);
@@ -124,10 +128,15 @@ void setlinebuf(FILE *stream);
 int setvbuf(FILE *stream, char *buf, int mode, size_t size);
 
 void perror(const char *s);
+FILE *popen(const char *command, const char *type);
+int pclose(FILE *stream);
 
 int scanf(const char *format, ...);
 int fscanf(FILE *stream, const char *format, ...);
 int sscanf(const char *str, const char *format, ...);
+
+int remove(const char *pathname);
+FILE *tmpfile();
 
 #endif
 

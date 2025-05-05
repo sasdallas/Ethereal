@@ -41,6 +41,7 @@ struct tm {
     // incompliant
     const char* _tm_zone_name;
     int _tm_zone_offset;
+    long int tm_gmtoff;
 };
 
 /**** DEFINITIONS ****/

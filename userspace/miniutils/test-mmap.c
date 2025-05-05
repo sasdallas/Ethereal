@@ -14,6 +14,9 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 int main(int argc, char *argv[]) {
     // Get some memory!
@@ -58,6 +61,31 @@ int main(int argc, char *argv[]) {
     printf("mmap: unmapped file\n");
 
     
+    printf("mmap: mapping fb\n");
+    int fb = open("/device/fb0", O_RDWR);
+    if (fb < 0) {
+        printf("test-mmap: fbopen failed: /device/fb0: %s\n", strerror(errno));
+        return 1;
+    }
+
+#include <kernel/gfx/video.h>
+
+    video_info_t info;
+    if (ioctl(fb, IO_VIDEO_GET_INFO, &info) < 0) {
+        printf("test-mmap: ioctl failed: /device/fb0: %s\n", strerror(errno));
+        return 1;
+    }
+
+    size_t bufsz = (info.screen_width * 4) + (info.screen_height * info.screen_pitch);
+
+    void *fb_map = mmap(NULL, bufsz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fb, 0);
+    if (fb_map == MAP_FAILED) {
+        printf("test-mmap: fbmap failed: /device/fb0: %s\n", strerror(errno));
+        return 1;
+    }
+
+    memset(fb_map, 0xFF, bufsz);
+    munmap(fb_map, bufsz);
 
     return 0;
 }

@@ -18,7 +18,8 @@ _Begin_C_Header
 #ifndef _INTTYPES_H
 #define _INTTYPES_H
 
-
+/**** INCLUDES ****/
+#include <stdint.h>
 
 #endif
 

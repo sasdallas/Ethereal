@@ -3,8 +3,6 @@
 
 include ../make.config
 
-$(info $(CFLAGS))
-
 # Working directory
 WORKING_DIR = $(shell pwd)
 
@@ -21,6 +19,7 @@ C_OUTPUTS = $(patsubst %.c, $(OBJ_DIR)/%, $(C_SRCS))
 
 MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)
+	-@mkdir -p $(INITRD)/bin/
 
 $(OBJ_DIR)/%: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@.o
@@ -31,5 +30,5 @@ $(OBJ_DIR)/%: %.c Makefile
 install: MAKE_OUTPUT $(C_OUTPUTS)
 
 clean:
-	rm -rf $(OBJ_DIR)
+	-rm -rf $(OBJ_DIR)
 

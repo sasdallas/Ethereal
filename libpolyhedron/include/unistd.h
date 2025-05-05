@@ -33,6 +33,13 @@ _Begin_C_Header
 
 extern char **environ;
 
+/**** DEFINITIONS ****/
+
+#define F_OK    0
+#define R_OK    4
+#define W_OK    2
+#define X_OK    1
+
 /**** FUNCTIONS ****/
 
 void exit(int status);
@@ -49,6 +56,7 @@ void *sbrk(intptr_t increment);
 pid_t fork();
 off_t lseek(int fd, off_t offset, int whence);
 int usleep(useconds_t usec);
+unsigned int sleep(unsigned int seconds);
 int execvpe(const char *file, const char *argv[], char *envp[]);
 int execve(const char *pathname, const char *argv[], char *envp[]);
 int execv(const char *path, const char *argv[]);
@@ -69,6 +77,8 @@ int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);
 int system(const char *command);
 int unlink(const char *pathname);
+int access(const char *path, int amode);
+int isatty(int fd);
 
 #endif
 

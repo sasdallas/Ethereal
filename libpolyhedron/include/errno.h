@@ -91,12 +91,12 @@
 #define ETOOMANYREFS 129
 #define EDQUOT 132
 #define ESTALE 133
-#define ENOTSUP 134		/* Not supported */
-#define EILSEQ 138		/* Illegal byte sequence */
-#define EOVERFLOW 139	/* Value too large for defined data type */
-#define ECANCELED 140	/* Operation canceled */
+#define ENOTSUP 134		    /* Not supported */
+#define EILSEQ 138		    /* Illegal byte sequence */
+#define EOVERFLOW 139	    /* Value too large for defined data type */
+#define ECANCELED 140	    /* Operation canceled */
 #define ENOTRECOVERABLE 141	/* State not recoverable */
-#define EOWNERDEAD 142	/* Previous owner died */
+#define EOWNERDEAD 142	    /* Previous owner died */
 #define EWOULDBLOCK EAGAIN	/* Operation would block */
 #define ERESTARTSYS 512     /* Restart system call*/
 

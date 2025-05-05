@@ -3,8 +3,6 @@
 
 include ../make.config
 
-$(info $(CFLAGS))
-
 # Working directory
 WORKING_DIR = $(shell pwd)
 
@@ -45,9 +43,9 @@ $(OBJ_DIR)/%.o: %.S Makefile
 	$(LD) -o $(OUTPUT_FILE) $(C_OBJS) $(LDFLAGS) $(LIBS)
 
 ifeq ($(INITRD_INSTALL),YES)
-install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) install_initrd install_actual
+install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_initrd install_actual
 else
-install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) install_actual
+install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_actual 
 endif
 	
 install_actual:
@@ -62,4 +60,4 @@ install_initrd:
 clean:
 	-rm ./$(OUTPUT_FILE)
 	-rm -rf $(DESTDIR)$(OUTPUT_DIR)/$(OUTPUT_FILE)
-	
+	-rm -rf $(OBJ_DIR)
