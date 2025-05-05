@@ -16,6 +16,7 @@
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
 #include <sys/mman.h>
+#include <errno.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:MEM", __VA_ARGS__)
