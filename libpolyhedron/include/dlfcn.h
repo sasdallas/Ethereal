@@ -1,5 +1,5 @@
 /**
- * @file libpolyhedron/include/dflcn.h
+ * @file libpolyhedron/include/dlfcn.h
  * @brief dlfcn
  * 
  * 
