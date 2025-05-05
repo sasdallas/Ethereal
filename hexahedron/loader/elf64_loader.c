@@ -367,6 +367,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 break;
             
             case PT_LOAD:
+            case PT_TLS:
                 // We have to load and map it into memory
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
                 LOG(DEBUG, "PHDR #%d - OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
