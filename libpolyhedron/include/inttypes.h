@@ -21,6 +21,32 @@ _Begin_C_Header
 /**** INCLUDES ****/
 #include <stdint.h>
 
+/**** DEFINITIONS ****/
+
+/* Integer format specifiers */
+#define PRIi8           "i"
+#define PRIi16          "i"
+#define PRIi32          "i"
+#define PRIi64          "li"
+
+/* Hex format specifiers */
+#define PRIx8           "x"
+#define PRIx16          "x"
+#define PRIx32          "x"
+#define PRIx64          "lx"
+
+/* Unsigned format specifiers */
+#define PRIu8           "u"
+#define PRIu16          "u"
+#define PRIu32          "u"
+#define PRIu64          "lu"
+
+/* Decimal format specifiers */
+#define PRId8           "d"
+#define PRId16          "d"
+#define PRId32          "d"
+#define PRId64          "lds"
+
 #endif
 
 _End_C_Header

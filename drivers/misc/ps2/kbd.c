@@ -103,8 +103,6 @@ int ps2_keyboardIRQ(void *context) {
 	int event_type = (ch >= 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
 	if (ch >= 0x80) ch -= 0x80;
 
-    // if (ch > 0x58) return 0;
-
     // Determine the scancode we should print
     char ascii = 0;
     if (held_shift_key) {
