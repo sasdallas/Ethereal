@@ -31,7 +31,7 @@ typedef long long jmp_buf[_JBLEN];
 /**** FUNCTIONS ****/
 
 void   longjmp(jmp_buf j, int r);
-int    setjmp(jmp_buf j)
+int    setjmp(jmp_buf j);
 
 #endif
 

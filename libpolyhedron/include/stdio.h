@@ -45,6 +45,7 @@ typedef int (*xvas_callback)(void *, char);
 #define READ_BUFFER_SIZE        8192
 #define WRITE_BUFFER_SIZE       8192
 
+
 /* Seek settings */
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -58,7 +59,10 @@ typedef int (*xvas_callback)(void *, char);
 /* EOF */
 #define EOF (-1)
 
-#define FILENAME_MAX        255
+
+#define BUFSIZ                  READ_BUFFER_SIZE
+#define FILENAME_MAX            4096
+#define L_tmpnam                20
 
 
 /**** TYPES ****/
@@ -71,6 +75,7 @@ typedef struct _iobuf {
     char *rbuf;             // Read buffer
     size_t rbufsz;          // Read buffer size 
     int eof;                // End of file
+    int ungetc;             // ungetc support
 
     char *wbuf;             // File write buffer
     size_t wbuflen;         // Length of buffer contents
@@ -104,6 +109,7 @@ int getc(FILE *stream);
 int getchar();
 
 FILE *fopen(const char *pathname, const char *mode);
+FILE *fdopen(int fildes, const char *mode);
 int fclose(FILE *stream);
 int fputc(int c, FILE *f);
 int fputs(const char *s, FILE *f);
@@ -114,10 +120,12 @@ long ftell(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+int ungetc(int c, FILE *stream);
 int ferror( FILE *stream );
 int feof(FILE *stream);
 int fileno(FILE *stream);
 void rewind(FILE *stream);
+void clearerr(FILE *stream);
 
 int fgetpos(FILE *stream, fpos_t *pos);
 int fsetpos(FILE *stream, const fpos_t *pos);

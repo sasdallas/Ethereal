@@ -57,6 +57,8 @@ unsigned long int strtoul(const char*, char**, int);
 long int strtol(const char*, char**, int);
 long long int strtoll(const char*, char**, int);
 double strtod(const char*, char**);
+float strtof(const char *nptr, char **endptr);
+long double strtold(const char *str, char **endptr);
 div_t div(int x, int y);
 ldiv_t ldiv(long x, long y);
 lldiv_t lldiv(long long x, long long y);
