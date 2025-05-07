@@ -13,6 +13,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void __assert_failed(const char *file, int line, const char *stmt) {
 #if defined(__LIBK)

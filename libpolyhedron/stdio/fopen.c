@@ -76,4 +76,12 @@ FILE *fopen(const char *pathname, const char *mode) {
     return f;
 }
 
+FILE *fdopen(int fildes, const char *mode) {
+    // TODO: Properly do this?
+    FILE *f = malloc(sizeof(FILE));
+    memset(f, 0, sizeof(FILE));
+    f->fd = fildes;
+    return f;
+}
+
 #endif
