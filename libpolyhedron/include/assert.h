@@ -18,7 +18,7 @@ _Begin_C_Header
 #ifndef ASSERT_H
 #define ASSERT_H
 
-#include <stdlib.h>
+#undef assert
 
 void __assert_failed(const char *file, int line, const char *stmt);
 #define assert(statement) (statement) ? (void)0 : __assert_failed(__FILE__, __LINE__, #statement)

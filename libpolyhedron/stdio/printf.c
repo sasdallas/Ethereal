@@ -138,9 +138,7 @@ static size_t print_hex(unsigned long long value, unsigned int width, int (*call
 	return written;
 }
 
-/*
- * vasprintf()
- */
+/* xvasprintf is Ethereal code and not ToaruOS. Above functions are ToaruOS */ 
 size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args) {
 	if (!fmt || !callback || !args) return 0;
 	size_t written = 0;
@@ -437,6 +435,16 @@ size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * f
 				// %c: Singled character
 				OUT((char)(va_arg(args, int)));
 				break;
+
+		#ifndef __LIBK
+			case 'g':
+				fprintf(stderr, "xvasprintf: %%g format is not supported");
+				break;
+
+			case 'f':
+				fprintf(stderr, "xvasprintf: %%f format is not supported");
+				break;
+		#endif
 
 			default: ;
 				OUT(*f);
