@@ -16,12 +16,94 @@
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/loader/driver.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/fs/periphfs.h>
 #include <kernel/debug.h>
 #include <stdio.h>
 #include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:USBKBD", __VA_ARGS__)
+
+#define SCANCODE_INVALID -1
+
+/* Scancode conversion */
+static char usbkbd_scancode_table_lower[] = {
+    SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+    '\n', SCANCODE_ESC, '\b', '\t', ' ', '-', '=', '[', ']',
+    '\\', SCANCODE_INVALID, ';', '\'', '`', ',', '.', '/', SCANCODE_INVALID, // "..." and Caps Lock ???
+    SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5,
+    SCANCODE_F6, SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
+    SCANCODE_F11, SCANCODE_F12, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
+    // TODO: I do not care about the rest
+    [225] = SCANCODE_LEFT_SHIFT,
+    [229] = SCANCODE_RIGHT_SHIFT,
+};
+
+/* Scancode conversion */
+static char usbkbd_scancode_table_upper[] = {
+    SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+    '\n', SCANCODE_ESC, '\b', '\t', ' ', '_', '+', '{', '}',
+    '|', SCANCODE_INVALID, ':', '\"', '~', '<', '>', '?', SCANCODE_INVALID, // "..." and Caps Lock ???
+    SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5,
+    SCANCODE_F6, SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
+    SCANCODE_F11, SCANCODE_F12, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
+    // TODO: I do not care about the rest
+    [225] = SCANCODE_LEFT_SHIFT,
+    [229] = SCANCODE_RIGHT_SHIFT,
+};
+
+/**
+ * @brief Keyboard device loop thread
+ * @param ctx The @c usbkbd_t structure
+ */
+void usbkbd_thread(void *ctx) {
+    usbkbd_t *kbd = (usbkbd_t*)ctx;
+    
+    // TODO: Temporary while API adds interrupt 
+    kbd->intf->dev->interrupt(kbd->intf->dev->c, kbd->intf->dev, &kbd->transfer);
+    while (1) {
+        while (kbd->transfer.status == USB_TRANSFER_IN_PROGRESS) arch_pause();
+        kbd->transfer.status = USB_TRANSFER_IN_PROGRESS;
+        
+        int auto_repeat_flag = 0;
+
+        // Let's print!
+        for (int i = 2; i < 8; i++) {
+            char ch = usbkbd_scancode_table_lower[kbd->data.data[i]];        
+            if (kbd->data.data[0] & KBD_MOD_LEFT_SHIFT || kbd->data.data[0] & KBD_MOD_RIGHT_SHIFT) {
+                // Use upper scancodes
+                ch = usbkbd_scancode_table_upper[kbd->data.data[i]];
+            }
+
+            if (ch == SCANCODE_INVALID) continue;
+
+            if (memchr(kbd->last_data.data + 2, kbd->data.data[i], 6)) {
+                // Duplicate
+                auto_repeat_flag = 1;
+                if (kbd->auto_repeat_wait) continue; 
+            }
+
+            periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, ch);
+        }      
+
+        if (!auto_repeat_flag) {
+            kbd->auto_repeat_wait = KBD_DEFAULT_WAIT;
+        } else if (kbd->auto_repeat_wait && auto_repeat_flag) {
+            kbd->auto_repeat_wait--;
+        }
+
+        // Check to update?
+        memcpy(&kbd->last_data, &kbd->data, sizeof(usb_kbd_data_t));
+        kbd->intf->dev->interrupt(kbd->intf->dev->c, kbd->intf->dev, &kbd->transfer);
+        arch_pause();
+    }
+}
 
 /**
  * @brief Initialize keyboard device
@@ -61,29 +143,18 @@ USB_STATUS usbkbd_initializeDevice(USBInterface_t *intf) {
 
     
     // Setup remaining transfer stuff
-    usb_kbd_data_t *data = kmalloc(sizeof(usb_kbd_data_t));
-    memset(data, 0, sizeof(usb_kbd_data_t));
-
+    kbd->intf = intf;
     kbd->transfer.endp = kbd->endp;
     kbd->transfer.req = 0;
     kbd->transfer.length = 8;
-    kbd->transfer.data = (void*)data;
+    kbd->transfer.data = (void*)kbd->data.data;
     kbd->transfer.status = USB_TRANSFER_IN_PROGRESS;
-
-    // TODO: Temporary while API adds interrupt 
-    intf->dev->interrupt(intf->dev->c, intf->dev, &kbd->transfer);
-    while (1) {
-        while (kbd->transfer.status == USB_TRANSFER_IN_PROGRESS);
-        kbd->transfer.status = USB_TRANSFER_IN_PROGRESS;
-        for (uint8_t i = 0; i < 8; i++) {
-            printf("%02x ", data->data[i]);
-        }
-
-        printf("\n");
-        intf->dev->interrupt(intf->dev->c, intf->dev, &kbd->transfer);
-    }
+    kbd->auto_repeat_wait = KBD_DEFAULT_WAIT;
 
     intf->driver->s = (void*)kbd;
+
+    kbd->proc = process_createKernel("usbkbd_poller", PROCESS_KERNEL, PRIORITY_HIGH, usbkbd_thread, (void*)kbd);
+    scheduler_insertThread(kbd->proc->main_thread);
     return USB_SUCCESS;
 }
 

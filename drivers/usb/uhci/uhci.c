@@ -24,6 +24,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
+#include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -412,6 +413,7 @@ int uhci_interrupt(USBController_t *controller, USBDevice_t *dev, USBTransfer_t 
     // Wait for the transfer to finish
     while (transfer->status == USB_TRANSFER_IN_PROGRESS) {
         uhci_waitForQH(controller, qh);
+        arch_pause(); // !!! TEMPORARY
     }
 
     // Destroy the queue head
