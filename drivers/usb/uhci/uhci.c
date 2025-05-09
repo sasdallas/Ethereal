@@ -103,7 +103,7 @@ uhci_td_t *uhci_createTD(uhci_t *hc, int speed, uint32_t toggle, uint32_t devadd
     td->token.d = toggle;
 
     // Setup buffer
-    td->buffer = (uint32_t)(uintptr_t)data;
+    td->buffer = (uint32_t)(uintptr_t)mem_getPhysicalAddress(NULL, (uintptr_t)data);
 
     // LOG(DEBUG, "[TD] New TD created at %p/%p - type 0x%x ls %i devaddr 0x%x toggle 0x%x endp 0x%x\n", td, mem_getPhysicalAddress(NULL, (uintptr_t)td), td->token.pid, td->cs.ls, td->token.device_addr, td->token.d, td->token.endpt);
     // LOG(DEBUG, "[TD] Pool system has %d bytes remaining\n", hc->td_pool->allocated - hc->td_pool->used);
@@ -331,7 +331,7 @@ int uhci_control(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *t
     uint32_t toggle = 0; // Toggle bit
 
     // Create the SETUP transfer descriptor
-    uhci_td_t *td_setup = uhci_createTD(hc, dev->speed, toggle, dev->address, transfer->endpoint, UHCI_PACKET_SETUP, 8, (void*)mem_getPhysicalAddress(NULL, (uintptr_t)transfer->req));
+    uhci_td_t *td_setup = uhci_createTD(hc, dev->speed, toggle, dev->address, transfer->endpoint, UHCI_PACKET_SETUP, 8, (void*)(uintptr_t)transfer->req);
     QH_LINK_TD(qh, td_setup);
 
     // Now create the DATA descriptors. These need to be limited to dev->mps but do not need to be padded.
@@ -347,7 +347,7 @@ int uhci_control(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *t
         toggle ^= 1;
         uhci_td_t *td = uhci_createTD(hc, dev->speed, toggle, dev->address, transfer->endpoint, 
                                         (transfer->req->bmRequestType & USB_RT_D2H) ? UHCI_PACKET_IN : UHCI_PACKET_OUT, 
-                                        transaction_size, (void*)mem_getPhysicalAddress(NULL, (uintptr_t)buffer));
+                                        transaction_size, (void*)(uintptr_t)buffer);
         
         TD_LINK_TD(qh, last, td);
 
