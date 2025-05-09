@@ -36,6 +36,7 @@
 
 #define SCANCODE_LEFT_SHIFT             0x13
 #define SCANCODE_RIGHT_SHIFT            0x14
+#define SCANCODE_ESC                    0x15
 
 #define EVENT_KEY_RELEASE               0x00
 #define EVENT_KEY_PRESS                 0x01
