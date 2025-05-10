@@ -260,6 +260,8 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->pid = process_allocatePID();
     process->vas = vas_create("process vas", 0x0, MEM_DMA_REGION, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
+    vas_reserve(process->vas, 0x0, PROCESS_MMAP_MINIMUM);
+
     // Create working directory
     if (parent && parent->wd_path) {
         process->wd_path = strdup(parent->wd_path);
