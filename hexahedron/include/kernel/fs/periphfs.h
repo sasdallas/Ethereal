@@ -38,12 +38,24 @@
 #define SCANCODE_RIGHT_SHIFT            0x14
 #define SCANCODE_ESC                    0x15
 
+/* Key event types */
 #define EVENT_KEY_RELEASE               0x00
 #define EVENT_KEY_PRESS                 0x01
 #define EVENT_KEY_MODIFIER_RELEASE      0x02
 #define EVENT_KEY_MODIFIER_PRESS        0x03
 
+/* Mouse event types */
+#define EVENT_MOUSE_UPDATE              0x04    // We really only have one event for this system.
+                                                // The packet sent contains the buttons held, X and Y coordinates, and whatever else could be needed
+
+/* Mouse button modifiers */
+#define MOUSE_BUTTON_LEFT               0x01    // Left button
+#define MOUSE_BUTTON_RIGHT              0x02    // Right button
+#define MOUSE_BUTTON_MIDDLE             0x04    // Middle button
+
+/* Default event queue size */
 #define KBD_QUEUE_EVENTS                4096
+#define MOUSE_QUEUE_EVENTS              4096
 
 /**** TYPES ****/
 
@@ -58,16 +70,37 @@ typedef struct key_event {
 /**
  * @brief Keyboard queue buffer
  */
-typedef struct key_buffer_t {
+typedef struct key_buffer {
     spinlock_t lock;
     key_event_t event[KBD_QUEUE_EVENTS];
     volatile int head;
     volatile int tail;
 } key_buffer_t;
 
+/**
+ * @brief Mouse event
+ */
+typedef struct mouse_event {
+    int event_type;         // Type of event
+    uint32_t buttons;       // Buttons currently being pushed
+    int x_difference;       // X difference
+    int y_difference;       // Y difference
+} mouse_event_t;
+
+/**
+ * @brief Mouse queue buffer
+ */
+typedef struct mouse_buffer {
+    spinlock_t lock;
+    mouse_event_t event[MOUSE_QUEUE_EVENTS];
+    volatile int head;
+    volatile int tail;
+} mouse_buffer_t;
+ 
 /**** MACROS ****/
 
 #define KEY_CONTENT_AVAILABLE(buffer) ((buffer)->head != (buffer)->tail)
+#define MOUSE_CONTENT_AVAILABLE KEY_CONTENT_AVAILABLE
 
 
 /**** FUNCTIONS ****/
@@ -84,5 +117,14 @@ void periphfs_init();
  * @returns 0 on success
  */
 int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode);
+
+/**
+ * @brief Write a new event to the mouse interface
+ * @param event_type The type of event to write
+ * @param buttons Buttons being pressed
+ * @param x_diff The X difference in the mouse
+ * @param y_diff The Y difference in the mouse
+ */
+int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff);
 
 #endif

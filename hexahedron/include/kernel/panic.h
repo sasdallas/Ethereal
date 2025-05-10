@@ -21,7 +21,7 @@
 
 /**** STOP CODES ****/
 
-#define     KERNEL_STOP_CODES               14
+#define     KERNEL_STOP_CODES               15
 
 #define     KERNEL_DEBUG_TRAP               0x00000000 // Debugging trap
 #define     MEMORY_MANAGEMENT_ERROR         0x00000001 // Memory management failure
@@ -37,7 +37,7 @@
 #define     DRIVER_LOADER_ERROR             0x0000000B // The driver loader encountered an error
 #define     DRIVER_LOAD_FAILED              0x0000000C // A critical driver failed to load
 #define     SCHEDULER_ERROR                 0x0000000D // The task scheduler encountered an error
-
+#define     CRITICAL_PROCESS_DIED           0x0000000E // A process critical to system execution has died unexpectedly and could not be respawned
 
 /**** MESSAGES ****/
 

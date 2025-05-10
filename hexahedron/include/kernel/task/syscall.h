@@ -104,6 +104,8 @@ long sys_uname(struct utsname *buf);
 pid_t sys_getpid();
 clock_t sys_times(struct tms *buf);
 long sys_mmap(sys_mmap_context_t *context);
+long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
+long sys_msync(void *addr, size_t len, int flags);
 
 #endif

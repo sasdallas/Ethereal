@@ -142,6 +142,7 @@ _write_format: ;
  * You can call this but it's not recommended. Use dprintf().
  */
 int dprintf_internal(char *module, DEBUG_LOG_TYPE status, char *format, ...) {
+    if (!debug_getOutput()) return 0;
     va_list ap;
     va_start(ap, format);
     int returnValue = dprintf_va(module, status, format, ap);

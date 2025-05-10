@@ -31,7 +31,8 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
     "INITIAL_RAMDISK_CORRUPTED",
     "DRIVER_LOADER_ERROR",
     "DRIVER_LOAD_FAILED",
-    "TASK_SCHEDULER_ERROR"
+    "TASK_SCHEDULER_ERROR",
+    "CRITICAL_PROCESS_DIED"
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
@@ -48,5 +49,6 @@ char *kernel_panic_messages[KERNEL_STOP_CODES] = {
     "The initial startup disk (initrd.tar.img) was not found or was corrupted.\n",
     "The driver loader encountered a malformatted/invalid driver entry.\n",
     "A critical driver failed to load correctly.\n",
-    "The task scheduler encountered an error.\n"
+    "The task scheduler encountered an error.\n",
+    "A process critical to the system has died and could not be respawned.\n"
 };
