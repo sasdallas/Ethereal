@@ -73,12 +73,33 @@
 #define PS2_KEYBOARD_SET_SCANCODE       0xF0    // Get/set scancode
 #define PS2_KEYBOARD_SCANCODE           2       // Scancode to use
 
+// Mouse shenanigans
+#define PS2_MOUSE_GET_DEVICE_ID             0xF2    // Get device ID
+#define PS2_MOUSE_SET_DEFAUTS               0xF6    // Set device defaults
+#define PS2_MOUSE_ENABLE_DATA_REPORTING     0xF4    // Enable data reporting
+#define PS2_MOUSE_RESET                     0xFF    // Reset the mouse
+
+// Mouse data byte
+#define PS2_MOUSE_DATA_LEFTBTN              0x01
+#define PS2_MOUSE_DATA_RIGHTBTN             0x02
+#define PS2_MOUSE_DATA_MIDDLEBTN            0x04
+#define PS2_MOUSE_DATA_SIGN_X               0x10
+#define PS2_MOUSE_DATA_SIGN_Y               0x20
+#define PS2_MOUSE_DATA_X_OVERFLOW           0x40
+#define PS2_MOUSE_DATA_Y_OVERFLOW           0x80
+
+
 /**** FUNCTIONS ****/
 
 /**
  * @brief Initialize the PS/2 keyboard
  */
 void kbd_init();
+
+/**
+ * @brief Initialize the PS/2 mouse
+ */
+void mouse_init();
 
 /**
  * @brief Wait for input buffer to be empty

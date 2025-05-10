@@ -95,17 +95,6 @@ void ps2_sendCommandParameter(uint8_t command, uint8_t data) {
 }
 
 /**
- * @brief Send something to the mouse PS/2 port (PORT2)
- * @param data What to send
- * @returns Usually an ACK value (0xFA)
- */
-uint8_t ps2_writeMouse(uint8_t data) {
-    ps2_sendCommandParameter(PS2_COMMAND_WRITE_PORT2, data);
-    ps2_waitForOutput();
-    return inportb(PS2_DATA);
-}
-
-/**
  * @brief Driver initialize method
  */
 int driver_init(int argc, char **argv) {
@@ -184,6 +173,9 @@ int driver_init(int argc, char **argv) {
 
     // Initialize keyboard
     kbd_init();
+
+    // Initialize mouse
+    mouse_init();
 
     return 0;
 }
