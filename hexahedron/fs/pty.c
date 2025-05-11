@@ -251,18 +251,27 @@ ssize_t pty_readMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
 ssize_t pty_readSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     pty_t *pty = (pty_t*)node->dev;
 
-
-    // !!!: HORRIBLE THIS IS JUST FOR TESTING IGNORE IGNORE IGNORE
-    ssize_t read = 0;
-    uint8_t *b = buffer;
-    for (; (size_t)read < size; read++) {
-        while (circbuf_read(pty->in, 1, b)) {
-            while (pty->in->head == pty->in->tail) arch_pause();
+    // Check for canonical mode
+    if (LFLAG(ICANON) || CC(VMIN) == 0) {
+        // Either we're in canonical mode, or VMIN == 0 so just read from the circular buffer
+        for (size_t i = 0; i < size; i++) {
+            // !!!: VERY BAD
+            while (circbuf_read(pty->in, 1, buffer+i)) {
+                while (!circbuf_available(pty->in)) arch_pause(); // !!!: We NEED to be putting the thread to sleep.
+            } 
+        }
+    } else {
+        // We need to follow VMIN
+        size_t sz_to_read = CC(VMIN);
+        if (size < sz_to_read) sz_to_read = size;
+        size_t read = 0;
+        for (size_t i = 0; i < sz_to_read; i++) {
+            while (circbuf_read(pty->in, 1, buffer+i)) {
+                while (!circbuf_available(pty->in)) arch_pause(); // !!!: We NEED to be putting the thread to sleep.
+            } 
         }
 
-        if (*b == '\n') return read;
-
-        b++;
+        return sz_to_read;
     }
 
     return size;
