@@ -4,11 +4,11 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
 #include <fcntl.h>
@@ -43,5 +43,14 @@ int main(int argc, char *argv[]) {
     printf("\tst_blksize: %d\n", st.st_blksize);
     printf("\tst_blocks: %d\n", st.st_blocks);
 
+    printf("type: ");
+    if (S_ISBLK(st.st_mode)) printf("blk\n");
+    else if (S_ISCHR(st.st_mode)) printf("chr\n");
+    else if (S_ISDIR(st.st_mode)) printf("dir\n");
+    else if (S_ISFIFO(st.st_mode)) printf("fifo\n");
+    else if (S_ISREG(st.st_mode)) printf("reg\n");
+    else if (S_ISLNK(st.st_mode)) printf("lnk\n");
+    else if (S_ISSOCK(st.st_mode)) printf("sock\n");
+    else printf("not found\n");
     return 0;
 }
