@@ -8,6 +8,8 @@
  * 
  * Hexahedron's process system will create VASes for each process. 
  * 
+ * @todo CoW and proper destruction
+ * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -322,7 +324,21 @@ vas_allocation_t *vas_get(vas_t *vas, uintptr_t address) {
  * @returns 0 on success
  */
 int vas_destroy(vas_t *vas) {
-    return 1;
+    if (!vas) return 1;
+    spinlock_acquire(vas->lock);
+
+    vas_allocation_t *alloc = vas->head;
+    while (alloc) {
+        // TODO: mem_destroyVAS already frees memory so we need to move that to here (for CoW and more)
+        vas_allocation_t *next = alloc->next;
+        kfree(alloc);
+        alloc = next;
+    }
+
+    kfree(vas);
+    spinlock_destroy(vas->lock);
+
+    return 0;
 }
 
 /**

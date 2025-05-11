@@ -135,4 +135,11 @@ void vas_dump(vas_t *vas);
  */
 int vas_fault(vas_t *vas, uintptr_t address, size_t size);
 
+/**
+ * @brief Destroy a VAS and free the memory in use
+ * @param vas The VAS to destroy
+ * @returns 0 on success
+ */
+int vas_destroy(vas_t *vas);
+
 #endif
