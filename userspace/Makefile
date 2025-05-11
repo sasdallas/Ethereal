@@ -2,7 +2,7 @@
 include ./make.config
 
 # List of apps to compile
-APPS = init miniutils
+APPS = init miniutils essence
 
 APPS_TARGETS_INSTALL := $(patsubst %, install-%, $(APPS))
 APPS_TARGETS_CLEAN := $(patsubst %, clean-%, $(APPS))
