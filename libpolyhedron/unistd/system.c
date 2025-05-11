@@ -13,8 +13,23 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <sys/wait.h>
+#include <stdlib.h>
 
 int system(const char *command) {
-    printf("system %s\n", command);
-    return 1;
+    pid_t cpid = fork();
+    if (!cpid) {
+        const char *args[] = {
+            "/device/initrd/bin/essence",
+            "-c",
+            command,
+            NULL
+        };
+        execvpe("/device/initrd/bin/essence", args, environ);
+        exit(EXIT_FAILURE);
+    }
+
+    int wstatus;
+    waitpid(cpid, &wstatus, 0);
+    return WEXITSTATUS(wstatus);
 }
