@@ -53,8 +53,12 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETPID]        = (syscall_func_t)(uintptr_t)sys_getpid,
     [SYS_TIMES]         = (syscall_func_t)(uintptr_t)0xCAFECAFE,
     [SYS_MMAP]          = (syscall_func_t)(uintptr_t)sys_mmap,
-    [SYS_MUNMAP]        = (syscall_func_t)(uintptr_t)sys_munmap
+    [SYS_MUNMAP]        = (syscall_func_t)(uintptr_t)sys_munmap,
+    [SYS_MSYNC]         = (syscall_func_t)(uintptr_t)0xCAFECAFE,
+    [SYS_MPROTECT]      = (syscall_func_t)(uintptr_t)0xCAFECAFE,
+    [SYS_DUP2]          = (syscall_func_t)(uintptr_t)sys_dup2
 };
+
 
 /* Unimplemented system call */
 #define SYSCALL_UNIMPLEMENTED(syscall) kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "syscall", "*** The system call \"%s\" is unimplemented\n", syscall)
@@ -589,4 +593,14 @@ long sys_mmap(sys_mmap_context_t *context) {
 
 long sys_munmap(void *addr, size_t len) {
     return process_munmap(addr, len);
+}
+
+long sys_dup2(int oldfd, int newfd) {
+    if (!FD_VALIDATE(current_cpu->current_process, oldfd)) {
+        return -EBADF;
+    }   
+
+    int err = fd_duplicate(current_cpu->current_process, oldfd, newfd);
+    if (err != 0) return err;
+    return newfd;
 }

@@ -51,6 +51,7 @@ _Begin_C_Header
 #define SYS_MPROTECT        35
 #define SYS_MUNMAP          36
 #define SYS_MSYNC           37
+#define SYS_DUP2            38
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

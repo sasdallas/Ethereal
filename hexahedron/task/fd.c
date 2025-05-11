@@ -16,6 +16,7 @@
 #include <kernel/mem/alloc.h>
 #include <string.h>
 #include <kernel/debug.h>
+#include <errno.h>
 
 /**
  * @brief Destroy a file descriptor table for a process
@@ -118,5 +119,43 @@ int fd_remove(struct process *process, int fd_number) {
 
     spinlock_release(&process->fd_table->lock);
 
+    return 0;
+}
+
+/**
+ * @brief Duplicate a file descriptor for a process
+ * @param process The process to duplicate the file descriptor to
+ * @param oldfd The old file descriptor to duplicate
+ * @param newfd The new file descriptor to duplicate
+ * @returns 0 on success
+ */
+int fd_duplicate(struct process *process, int oldfd, int newfd) {
+    if (!process || !process->fd_table) return 1;
+    if ((size_t)oldfd > process->fd_table->total || (size_t)newfd > process->fd_table->total) return 1;
+
+    spinlock_acquire(&process->fd_table->lock);
+
+    // Get the file descriptor
+    fd_t *fd_old = process->fd_table->fds[oldfd];
+    if (!fd_old) return -EBADF;
+
+    fd_t *fd = process->fd_table->fds[newfd];
+    if (fd) {
+        // Close existing file
+        fs_close(fd->node);
+    } else {
+        // Allocate a file descriptor there
+        fd = kzalloc(sizeof(fd_t));
+    }
+
+    // Setup parameters
+    fd->node = fd_old->node;
+    fd->fd_number = newfd;
+    fd->offset = fd_old->offset;
+    fd->mode = fd_old->mode;
+    fs_open(fd->node, 0);
+
+    // Done
+    spinlock_release(&process->fd_table->lock);
     return 0;
 }

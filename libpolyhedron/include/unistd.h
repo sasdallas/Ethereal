@@ -70,6 +70,7 @@ int chdir(const char *path);
 int fchdir(int fd);
 pid_t getpid();
 clock_t times(struct tms *buf);
+int dup2(int oldfd, int newfd);
 
 /* STUBS */
 int mkdir(const char *pathname, mode_t mode);

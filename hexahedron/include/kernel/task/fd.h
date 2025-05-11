@@ -81,5 +81,13 @@ fd_t *fd_add(struct process *process, fs_node_t *file);
  */
 int fd_remove(struct process *process, int fd_number);
 
+/**
+ * @brief Duplicate a file descriptor for a process
+ * @param process The process to duplicate the file descriptor to
+ * @param oldfd The old file descriptor to duplicate
+ * @param newfd The new file descriptor to duplicate
+ * @returns 0 on success
+ */
+int fd_duplicate(struct process *process, int oldfd, int newfd);
 
 #endif
