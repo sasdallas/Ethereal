@@ -74,7 +74,6 @@ int main(int argc, char *argv[]) {
     memset(buffer, 0, 4097);
     for (int i = 0; i < flen; i += 4096) {
         size_t l = fread(buffer, 1, 4096, f);
-        buffer[l] = 0;
 
         printf("%s", buffer);
     }

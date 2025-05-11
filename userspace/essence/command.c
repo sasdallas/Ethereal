@@ -36,23 +36,18 @@ int essence_last_exit_status = 0;
  * @param cmd The command to run
  * @param argc Argument count to the command
  * @param argv The argument pointer
- * @returns The PID of the child process created
+ * @returns The exit status of the child process created
  */
-pid_t essence_executeBuiltinCommand(command_t cmd, int argc, char *argv[]) {
-    // Fork!
-    pid_t cpid = fork();
-    if (cpid) return cpid; // We are the parent, return the child PID
-
+int essence_executeBuiltinCommand(command_t cmd, int argc, char *argv[]) {
     // First validate that argc is enough
     if (argc < cmd.minimum_argc) {
         // Do usage
         cmd.usage();
-        exit(0);
+        return 0;
     }
 
     // It is, now try to execute the command
-    exit(cmd.cmd(argc, argv));
-    __builtin_unreachable();
+    return cmd.cmd(argc, argv);
 }
 
 
@@ -73,8 +68,6 @@ int essence_waitForExecution(pid_t cpid) {
         }
 
         if (pid == cpid) {
-            // printf("Process finished with exitcode %d\n", WEXITSTATUS(wstatus));
-            
             exit_code = WEXITSTATUS(wstatus);
             break;
         }
@@ -98,8 +91,8 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
     for (size_t i = 0; i < sizeof(command_list) / sizeof(command_t); i++) {
         if (!strcmp(command_list[i].name, cmd)) {
             // We have a builtin command, try executing that
-            cpid = essence_executeBuiltinCommand(command_list[i], argc, argv);
-            goto _start_child_execution;
+            essence_last_exit_status = essence_executeBuiltinCommand(command_list[i], argc, argv);
+            return;
         }
     }
 
@@ -120,8 +113,6 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
         }
     }
 
-
-_start_child_execution:
     if (cpid < 0) return;
     essence_last_exit_status = essence_waitForExecution(cpid);
 }

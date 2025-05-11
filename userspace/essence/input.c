@@ -17,43 +17,65 @@
 #include <string.h>
 #include <unistd.h>
 
+#define CSR_SHOW() { putchar('\030'); fflush(stdout); }
+#define CSR_HIDE() { printf("\b"); fflush(stdout); }
+#define PUTCHAR_FLUSH(c) { putchar(c); fflush(stdout); }
+
+
+#define DEFAULT_BUFSIZE 128
 
 /**
  * @brief Get a fully processed line of input
  */
 char *essence_getInput() {
-    char *buf = malloc(1024);
-    memset(buf, 0, 1024);
+    size_t bufsz = DEFAULT_BUFSIZE;
+    char *buffer = malloc(bufsz);
+    memset(buffer, 0, bufsz);
 
 
-    // !!!: BAD
-    int i = 0;
+    int i = 0;  
+    int c;
+
     while (1) {
-        char ch = getchar();
-        if (ch == '\n') {
-            // Flush, we're done
-            putchar(ch);
-            printf("debug: Essence input reading completed: %p (%d)\n", buf, strlen(buf));
-            return buf;
+        CSR_SHOW();
+        c = getchar();
+
+        switch (c) {
+            case '\b':
+                // Backspace character
+                CSR_HIDE();
+                if (i > 0) {
+                    // Have space, go ahead
+                    i--;
+                    printf("\b");
+                    fflush(stdout);
+                }
+                break;
+
+            case '\n':
+                // Newline, flush
+                buffer[i] = 0;
+                CSR_HIDE();
+                PUTCHAR_FLUSH('\n');
+                return buffer;
+
+            default:
+                putchar('\b');
+                PUTCHAR_FLUSH(c);
+                
+
+                // Write char to buffer
+                buffer[i] = c;
+                i++;
+                if ((size_t)i >= bufsz) {
+                    bufsz = bufsz + DEFAULT_BUFSIZE;
+                    buffer = realloc(buffer, bufsz);
+                }
+                break;
         }
 
-        if (ch == '\t') {
-            // Autocomplete?
-            printf("essence: Autocomplete unavailable\n");
-            continue;
-        }
 
-        if (ch == '\b') {
-            // Backspace
-            buf[i] = 0;
-            i--;
-        }
-
-        buf[i] = ch;
-        putchar(ch);
-        fflush(stdout);
-        i++;
     }
 
-    return buf;
+    return buffer;
 }
