@@ -553,7 +553,11 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
     LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
     page_t *last_dir = current_cpu->current_process->dir;
     current_cpu->current_process->dir = mem_clone(NULL);
+    vas_destroy(current_cpu->current_process->vas);
     mem_destroyVAS(last_dir);
+
+    // Create a new VAS
+    current_cpu->current_process->vas = vas_create("process vas", PROCESS_MMAP_MINIMUM, MEM_DMA_REGION, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
 
     // Switch to directory
     mem_switchDirectory(current_cpu->current_process->dir);
