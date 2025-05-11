@@ -1,6 +1,6 @@
 # config.sh - Configure the kernel. You shouldn't touch any of this unless you know what you're doing.
 
-HEADER_PROJECTS="base libpolyhedron libkstructures external hexahedron"                 # Projects to install headers for. This is always done first
+HEADER_PROJECTS="base libpolyhedron libkstructures external hexahedron userspace"                 # Projects to install headers for. This is always done first
 PROJECTS="libpolyhedron libkstructures external drivers hexahedron userspace"           # Projects to enter and run make install.
 
 # !! EDIT THIS TO CHANGE BUILD CONFIGURATION !!

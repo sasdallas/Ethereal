@@ -7,11 +7,18 @@ APPS = init miniutils essence
 APPS_TARGETS_INSTALL := $(patsubst %, install-%, $(APPS))
 APPS_TARGETS_CLEAN := $(patsubst %, clean-%, $(APPS))
 
+USERSPACE_LIB_DIRECTORY = lib
+
 # Target disabled
 all:
 	@echo "=== TARGET DISABLED ==="
 	@echo "Please use make install"
 
+install-lib:
+	$(MAKE) -C $(USERSPACE_LIB_DIRECTORY) install
+
+clean-lib:
+	$(MAKE) -C $(USERSPACE_LIB_DIRECTORY) clean
 
 install-%:
 	$(MAKE) -C $(subst $e-,/,$(patsubst install-%, %, $@)) install
@@ -32,6 +39,9 @@ PRINT_HEADER:
 	@echo
 	@echo
 
-install: PRINT_HEADER MAKE_DIRS $(APPS_TARGETS_INSTALL)
+install: PRINT_HEADER MAKE_DIRS install-lib $(APPS_TARGETS_INSTALL)
 
-clean: $(APPS_TARGETS_CLEAN)
+install-headers:
+	make -C $(USERSPACE_LIB_DIRECTORY) install-headers
+
+clean: clean-lib $(APPS_TARGETS_CLEAN)
