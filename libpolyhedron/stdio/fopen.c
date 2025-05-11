@@ -69,6 +69,7 @@ FILE *fopen(const char *pathname, const char *mode) {
     FILE *f = malloc(sizeof(FILE));
     memset(f, 0, sizeof(FILE));
     f->fd = fd;
+    f->ungetc = EOF;
 
     // TODO: Need to keep a list of files to cleanup at the end..
 
@@ -81,6 +82,7 @@ FILE *fdopen(int fildes, const char *mode) {
     FILE *f = malloc(sizeof(FILE));
     memset(f, 0, sizeof(FILE));
     f->fd = fildes;
+    f->ungetc = EOF;
     return f;
 }
 
