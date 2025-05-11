@@ -145,12 +145,6 @@ char **essence_parse(char *in_command, int *out_argc) {
         argc++;
     }
 
-    printf("debug: Essence parsing completed. argc = %d\n", argc);
-
-    for (int i = 0; i < argc; i++) {
-        printf("\t%s\n", argv[i]);
-    }
-
     // Clean up
     argv[argc] = NULL;
     *out_argc = argc;
