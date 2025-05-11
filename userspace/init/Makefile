@@ -40,7 +40,7 @@ $(OBJ_DIR)/%.o: %.S Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 ./$(OUTPUT_FILE): $(C_OBJS)
-	$(LD) -o $(OUTPUT_FILE) $(C_OBJS) $(LDFLAGS) $(LIBS)
+	$(LD) -o $(OUTPUT_FILE) $(C_OBJS) $(LIBS) $(LDFLAGS)
 
 ifeq ($(INITRD_INSTALL),YES)
 install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_initrd install_actual

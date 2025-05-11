@@ -15,6 +15,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <stdio.h>
 
 /* Maximum supported argv */
@@ -76,7 +77,6 @@ char **essence_parse(char *in_command, int *out_argc) {
                 p++;
                 if (*p == '$') {
                     // Shell PID
-                    printf("essence: shell pid\n");
                     snprintf(tmp, 128, "%d", getpid());
                     len++;
                 } else if (*p == '?') {
@@ -92,7 +92,7 @@ char **essence_parse(char *in_command, int *out_argc) {
                     char *p2 = p;
                     char saved = 0;
                     while (*p2) {
-                        if (*p2 == ' ') {
+                        if (*p2 == ' ' || !isalnum(*p2)) {
                             saved = *p2;
                             *p2 = 0;
                             break;

@@ -47,8 +47,21 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-c")) {
             // They want us to execute a command
-            execvpe((const char*)argv[2], (const char**)&argv[2], NULL);
-            return EXIT_FAILURE;
+            int argc;
+            char **new_argv = essence_parse(argv[i+1], &argc);
+
+            if (!argv) {
+                printf("essence: error parsing %s\n", argv[i+1]);
+                return 125;
+            }
+
+            essence_executeCommand(new_argv[0], argc, new_argv);
+            return 0;
+        }
+        if (!strcmp(argv[i], "--version")) {
+            // They want us to print our version
+            printf("Essence %d.%d.%d\n", ESSENCE_VERSION_MAJOR, ESSENCE_VERSION_MINOR, ESSENCE_VERSION_LOWER);
+            return 0;
         }
     }
     
