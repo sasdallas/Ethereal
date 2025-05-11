@@ -73,8 +73,7 @@ int main(int argc, char *argv[]) {
     char *buffer = malloc(4097);
     memset(buffer, 0, 4097);
     for (int i = 0; i < flen; i += 4096) {
-        size_t l = fread(buffer, 1, 4096, f);
-
+        fread(buffer, 1, 4096, f);
         printf("%s", buffer);
     }
 
