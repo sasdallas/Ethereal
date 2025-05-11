@@ -192,7 +192,8 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     // Real quick - can we fit an allocation in between VAS base and the first allocation/reservation?
     if (n && n->base) {
         uintptr_t distance = n->base - vas->base;
-        if (IN_RANGE_EXCLUSIVE(size, 0, distance)) {
+        
+        if (distance && IN_RANGE_EXCLUSIVE(size, 0, distance)) {
             // Yes!
             allocation = kzalloc(sizeof(vas_allocation_t));
             allocation->base = vas->base;
