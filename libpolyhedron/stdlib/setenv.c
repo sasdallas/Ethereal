@@ -63,7 +63,7 @@ int putenv(char *string) {
     char **envp = environ;
     while (*envp) {
         if (strstr(*envp, name) && (*envp)[strlen(name)] == '=') {
-            *envp = strdup(string); // !!!: Is this good?
+            *envp = string; // !!!: Is this good?
             return 0;
         }
         envp++;
