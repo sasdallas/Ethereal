@@ -198,6 +198,7 @@ node_t *list_find(list_t *list, void *item) {
  * @note This does not free the node structure, if you need to use it.
  */
 void list_delete(list_t *list, node_t *node) {
+    if (!node) return;
     if (node == list->head) list->head = node->next;
     if (node == list->tail) list->tail = node->prev;
     if (node->next) node->next->prev = node->prev;
