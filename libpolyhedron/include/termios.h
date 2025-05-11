@@ -155,6 +155,46 @@ _Begin_C_Header
 #define TCOOFF      2       // Suspend output
 #define TCOON       3       // Restart output
 
+/* TCGET/TCSET (A) */
+#define TCGETS      0x2000  // Get the current serial port setting
+#define TCSETS      0x2001  // Set the current serial port setting
+#define TCSETSW     0x2002  // Set the current serial port setting and allow buffer to drain
+#define TCSETSF     0x2003  // Set the current serial port setting, allow output buffer to drain, and discard pending input
+
+/* TIOC */
+#define TIOCGWINSZ          0x2100  // Get window size
+#define TIOCSWINSZ          0x2101  // Set window size
+#define TIOCGLCKTRMIOS      0x2102  // Get whether termios is locked
+#define TIOCSLCKTRMIOS      0x2103  // Set whether termios is locked
+#define TIOCSBRK            0x2104  // Turn break on
+#define TIOCCBRK            0x2105  // Turn break off
+#define FIONREAD            0x2106  // Get number of bytes in the output buffer
+#define TIOCINQ             FIONREAD
+#define TCFLSH              0x2107  // Flush
+#define TIOCSERGETLSR       0x2108  // Get line status register
+#define TIOCSTI             0x2109  // Insert given byte into the output queue
+#define TIOCCONS            0x210A  // Redirect output from /device/tty0 to a given terminal
+#define TIOCSCTTY           0x210B  // Make the given terminal the controlling terminal of the calling process
+#define TIOCNOTTY           0x210C  // Give up this controlling terminal (sends SIGHUP and SIGCONT to the foreground process grou)
+#define TIOCGPGRP           0x210D  // Get process group ID
+#define TIOCSPGRP           0x210E  // Set process group ID
+#define TIOCGSID            0x210F  // Get session ID
+#define TIOCEXCL            0x2110  // Place terminal in exclusive mode
+#define TIOCGEXCL           0x2111  // Get whether terminal is in exclusive mode
+#define TIOCNXCL            0x2112  // Disable exclusive mode
+#define TIOCGETD            0x2113  // Get line discipline
+#define TIOCSETD            0x2114  // Set line discipline
+#define TIOCPKT             0x2115  // Enable or disable packet mode
+#define TIOCGPKT            0x2116  // Get packet mode
+#define TIOCSPTLCK          0x2117  // Set or remove the lock of the PTY slave
+#define TIOCGPTLCK          0x2118  // Get current lock state of PTY slave
+#define TIOCGPTPEER         0x2119  // Get a new file descriptor that refers to the peer PTY slave
+#define TIOCMGET            0x211A  // Get modem settings
+#define TIOCMSET            0x211B  // Set modem settings
+#define TIOCMBIC            0x211C  // Get status of modem bits
+#define TIOCMBIS            0x211D  // Set indicated modem bits
+#define TCXONC              0x211E  // Software flow control
+
 /**** TYPES ****/
 
 typedef unsigned int cc_t;
