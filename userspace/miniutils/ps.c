@@ -29,6 +29,7 @@ char *get_process_name(char *proc_dir_name) {
     fclose(f);
 
     char *procname = strrchr(buffer, ':');
+    if (!*(procname)) return "(error getting name)";
     procname++;
     return procname;
 }
