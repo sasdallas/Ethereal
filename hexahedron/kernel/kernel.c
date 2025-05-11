@@ -36,6 +36,9 @@
 #include <kernel/fs/ramdev.h>
 #include <kernel/fs/null.h>
 #include <kernel/fs/periphfs.h>
+#include <kernel/fs/pty.h>
+#include <kernel/fs/tmpfs.h>
+#include <kernel/fs/kernelfs.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -119,34 +122,36 @@ void kernel_loadDrivers() {
 
 struct timeval tv_start;
 
-void kthread() {
+void kthread(void *ctx) {
     int iterations = 0;
     for (;;) {
-        if (current_cpu->current_process->pid == 1) {
-            terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
+        // if (current_cpu->current_process->pid == 1) {
+        //     terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
 
-            #include <kernel/drivers/clock.h>
+        //     #include <kernel/drivers/clock.h>
             
             
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            if (!tv_start.tv_sec) tv_start = tv;
+        //     struct timeval tv;
+        //     gettimeofday(&tv, NULL);
+        //     if (!tv_start.tv_sec) tv_start = tv;
 
-            terminal_setXY(100, 100);
-            printf("==== CURRENT PROCESSES\n");
-            for (unsigned i = 0; i < arch_get_generic_parameters()->cpu_count; i++) {
-                if (processor_data[i].current_process && processor_data[i].current_thread) printf("\tCPU%d: Process \"%s\" (%ld ticks so far)\n", i, processor_data[i].current_process->name, processor_data[i].current_thread->total_ticks);
-                else printf("\tCPU%d: No thread/no process\n", i);
-            }
+        //     terminal_setXY(100, 100);
+        //     printf("==== CURRENT PROCESSES\n");
+        //     for (unsigned i = 0; i < arch_get_generic_parameters()->cpu_count; i++) {
+        //         if (processor_data[i].current_process && processor_data[i].current_thread) printf("\tCPU%d: Process \"%s\" (%ld ticks so far)\n", i, processor_data[i].current_process->name, processor_data[i].current_thread->total_ticks);
+        //         else printf("\tCPU%d: No thread/no process\n", i);
+        //     }
 
-            extern volatile int task_switches;
-            if ((tv.tv_sec - tv_start.tv_sec)) {
-                printf("==== TASK SWITCHES: %d (%d switches per second)\n", task_switches, task_switches / (tv.tv_sec - tv_start.tv_sec));
-            } else {
-                printf("==== TASK SWITCHES: %d (give it a second, scheduler is waking up)\n", task_switches);
-            }
-            printf("==== WE HAVE NOT CRASHED FOR %d SECONDS\n", tv.tv_sec - tv_start.tv_sec);
-        }
+        //     extern volatile int task_switches;
+        //     if ((tv.tv_sec - tv_start.tv_sec)) {
+        //         printf("==== TASK SWITCHES: %d (%d switches per second)\n", task_switches, task_switches / (tv.tv_sec - tv_start.tv_sec));
+        //     } else {
+        //         printf("==== TASK SWITCHES: %d (give it a second, scheduler is waking up)\n", task_switches);
+        //     }
+        //     printf("==== WE HAVE NOT CRASHED FOR %d SECONDS\n", tv.tv_sec - tv_start.tv_sec);
+        // }
+
+        LOG(DEBUG, "CTX is: %p\n", ctx);
 
         arch_pause();
     }
@@ -176,6 +181,13 @@ void kmain() {
     zerodev_init();
     debug_mountNode();
     periphfs_init();
+    pty_init();
+    kernelfs_init();
+    tmpfs_init();
+
+    // TEMPORARY
+    vfs_mountFilesystemType("tmpfs", "rootfs", "/");
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");
     vfs_dump();
 
     // Networking
@@ -210,8 +222,12 @@ void kmain() {
 
     // At this point in time if the user wants to view debugging output not on the serial console, they
     // can. Look for kernel boot argument "--debug=console"
-    if (kargs_has("--debug") && !strcmp(kargs_get("--debug"), "console")) {
-        debug_setOutput(terminal_print);
+    if (kargs_has("--debug")) {
+        if (!strcmp(kargs_get("--debug"), "console")) {
+            debug_setOutput(terminal_print);
+        } else if (!strcmp(kargs_get("--debug"), "none")) {
+            debug_setOutput(NULL);
+        }
     }
 
     // Load symbols
@@ -226,7 +242,6 @@ void kmain() {
 
     LOG(INFO, "Loaded %i symbols from symbol map\n", symbols);
     printf("Loaded kernel symbol map from initial ramdisk successfully\n");
-
 
     // Unmap 0x0 (fault detector, temporary)
     page_t *pg = mem_getPage(NULL, 0, MEM_CREATE);
@@ -244,7 +259,6 @@ void kmain() {
         LOG(WARN, "Not loading any drivers, found argument \"--no-load-drivers\".\n");
         printf(COLOR_CODE_YELLOW    "Refusing to load drivers because of kernel argument \"--no-load-drivers\" - careful!\n" COLOR_CODE_RESET);
     }
-    
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
 
@@ -252,12 +266,7 @@ void kmain() {
     current_cpu->current_process = process_spawnInit();
 
     // !!!: TEMPORARY
-
-    #ifdef __ARCH_I386__
-    const char *path = "/device/initrd/test_app";
-    #else
     const char *path = "/device/initrd/bin/init";
-    #endif
 
     fs_node_t *file;
     if (kargs_has("exec")) {
@@ -268,7 +277,8 @@ void kmain() {
     }
 
     if (file) {
-        char *argv[] = { "test_argv1", "test_argv2", NULL };
+        char *argv[] = { "init", "headless", NULL };
+        if (!kargs_has("--headless")) argv[1] = "test\0";
         char *envp[] = { "TEST_ENV=test1", "FOO=bar", NULL };
         process_execute(file, 2, argv, envp);
     } else {
