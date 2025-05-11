@@ -235,6 +235,7 @@ int sys_close(int fd) {
  */
 static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
     // Convert VFS flags to st_dev
+    statbuf->st_dev = 0;
     if (f->flags == VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
     if (f->flags == VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
     if (f->flags == VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device

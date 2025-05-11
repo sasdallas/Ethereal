@@ -26,14 +26,14 @@ _Begin_C_Header
 
 /**** DEFINITIONS ****/
 
-#define S_IFMT          0       // Type of file
-#define S_IFBLK         1       // Block special
-#define S_IFCHR         2       // Character special
-#define S_IFIFO         3       // FIFO special
-#define S_IFREG         4       // Regular
-#define S_IFDIR         5       // Directory
-#define S_IFLNK         6       // Symbolic link
-#define S_IFSOCK        7       // Socket
+#define S_IFBLK         0x01        // Block special
+#define S_IFCHR         0x02        // Character special
+#define S_IFIFO         0x04        // FIFO special
+#define S_IFREG         0x08        // Regular
+#define S_IFDIR         0x10        // Directory
+#define S_IFLNK         0x20        // Symbolic link
+#define S_IFSOCK        0x40        // Socket
+#define S_IFMT          0x7F        // Format of file
 
 #define S_IRUSR         0x001   // Read permission, owner
 #define S_IWUSR         0x002   // Write permission, owner
@@ -57,13 +57,13 @@ _Begin_C_Header
 
 /**** MACROS ****/
 
-#define S_ISBLK(m) ((m & S_IFBLK) == S_IFBLK)
-#define S_ISCHR(m) ((m & S_IFCHR) == S_IFCHR)
-#define S_ISDIR(m) ((m & S_IFDIR) == S_IFDIR)
-#define S_ISFIFO(m) ((m & S_IFIFO) == S_IFIFO)
-#define S_ISREG(m) ((m & S_IFREG) == S_IFREG)
-#define S_ISLNK(m) ((m & S_IFLNK) == S_IFLNK)
-#define S_ISSOCK(m) ((m & S_ISSOCK) == S_ISSOCK)
+#define S_ISBLK(m) ((m & S_IFMT) == S_IFBLK)
+#define S_ISCHR(m) ((m & S_IFMT) == S_IFCHR)
+#define S_ISDIR(m) ((m & S_IFMT) == S_IFDIR)
+#define S_ISFIFO(m) ((m & S_IFMT) == S_IFIFO)
+#define S_ISREG(m) ((m & S_IFMT) == S_IFREG)
+#define S_ISLNK(m) ((m & S_IFMT) == S_IFLNK)
+#define S_ISSOCK(m) ((m & S_IFMT) == S_IFSOCK)
 
 /**** TYPES ****/
 
