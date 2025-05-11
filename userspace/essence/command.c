@@ -22,7 +22,7 @@ int essence_command(int argc, char *argv[]);
 
 /* Command list */
 command_t command_list[] = {
-    ESSENCE_REGISTER_COMMAND("essence", 1, NULL, essence_command),
+    ESSENCE_REGISTER_COMMAND("version", 1, NULL, essence_command),
     ESSENCE_REGISTER_COMMAND("cd", 1, NULL, cd),
     ESSENCE_REGISTER_COMMAND("env", 1, NULL, env),
     ESSENCE_REGISTER_COMMAND("export", 1, NULL, export),
