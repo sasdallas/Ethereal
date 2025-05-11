@@ -66,7 +66,7 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
         if (!(flags & THREAD_FLAG_CHILD)) {
             // !!!: Wow, this is bad. This is a hack for fork() support that prevents reallocating the child's stack as CoW is done on it
             // TODO: Probably just check if the region needs CoW?
-            mem_allocate(thr->stack - THREAD_STACK_SIZE, THREAD_STACK_SIZE, MEM_DEFAULT, MEM_DEFAULT);
+            mem_allocate(thr->stack - THREAD_STACK_SIZE, THREAD_STACK_SIZE + PAGE_SIZE, MEM_DEFAULT, MEM_DEFAULT);
         }
     } else {
         // Don't bother, use the parent's kernel stack

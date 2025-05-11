@@ -117,6 +117,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
 
     map->addr = (void*)alloc->base;
 
+    vas_dump(current_cpu->current_process->vas);
+
     // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
     if (filedes == -1 || flags & MAP_ANONYMOUS) {
         list_append(current_cpu->current_process->mmap, (void*)map);

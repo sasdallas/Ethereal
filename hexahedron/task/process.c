@@ -400,7 +400,10 @@ void process_destroy(process_t *proc) {
         process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
 
         foreach(mmap_node, proc->mmap) {
-            if (prev) process_removeMapping(current_cpu->current_process, prev);
+            if (prev) {
+                process_removeMapping(current_cpu->current_process, prev);
+                prev = NULL;
+            }
 
             if (mmap_node && mmap_node->value) {
                 process_mapping_t *map = (process_mapping_t*)mmap_node->value;
@@ -408,7 +411,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        if (prev) process_removeMapping(current_cpu->current_process, prev);
+        // if (prev) process_removeMapping(current_cpu->current_process, prev);
         list_destroy(proc->mmap, false);
     }
 

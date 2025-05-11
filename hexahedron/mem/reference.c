@@ -46,7 +46,7 @@ void ref_init(size_t bytes) {
 int ref_get(uintptr_t frame) {
     if (frame >= ref_frame_count) {
         LOG(ERR, "Attempt to access reference count for frame %p which is outside of allocated frames %d\n", frame, ref_frame_count);
-        return 0;
+        return -1;
     } 
 
     spinlock_acquire(&ref_lock);
@@ -64,7 +64,7 @@ int ref_get(uintptr_t frame) {
 int ref_set(uintptr_t frame, uint8_t refs) {
     if (frame >= ref_frame_count) {
         LOG(ERR, "Attempt to access reference count for frame %p which is outside of allocated frames %d\n", frame, ref_frame_count);
-        return 0;
+        return -1;
     } 
 
     spinlock_acquire(&ref_lock);
@@ -82,7 +82,7 @@ int ref_set(uintptr_t frame, uint8_t refs) {
 int ref_increment(uintptr_t frame) {
     if (frame >= ref_frame_count) {
         LOG(ERR, "Attempt to access reference count for frame %p which is outside of allocated frames %d\n", frame, ref_frame_count);
-        return 0;
+        return -1;
     } 
 
     spinlock_acquire(&ref_lock);
@@ -107,7 +107,7 @@ int ref_increment(uintptr_t frame) {
 int ref_decrement(uintptr_t frame) {
     if (frame >= ref_frame_count) {
         LOG(ERR, "Attempt to access reference count for frame %p which is outside of allocated frames %d\n", frame, ref_frame_count);
-        return 0;
+        return -1;
     } 
 
     spinlock_acquire(&ref_lock);
