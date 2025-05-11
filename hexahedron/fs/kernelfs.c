@@ -52,9 +52,7 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
     if (off > (off_t)node->length) return 0;
     if (off + size > node->length) size = (off_t)node->length - off; 
 
-    LOG(DEBUG, "Processes read() copy %s to buffer %p sz %d\n",tmp_buffer, buffer, size);
-    // if (buffer) strncpy((char*)buffer, tmp_buffer, min(node->length, size));
-    if (buffer) strcpy((char*)buffer, "balls");
+    if (buffer) strncpy((char*)buffer, tmp_buffer, min(node->length, size));
     return size;
 
 }
