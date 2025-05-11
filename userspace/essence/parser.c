@@ -34,31 +34,6 @@
 #define ESSENCE_NEW_ARGV() { buffer[buffer_len] = 0; argv[argc] = buffer; argc++; buffer = malloc(128); buffer_len = 0; buffer_size = 128; } 
 
 /**
- * @brief Process special tokens
- */
-static int essence_parseSpecialToken(char *token, char **argv, int *out_argc) {
-    // Essence supports the following tokens:
-    // $variable / ${variable} for getting an env
-    // $0 / $1 / $2 / ... for getting the shell's argv
-    // $$ for getting the shell PID
-    // $? for last command exit status
-    // * for wildcard
-
-    int argc = *out_argc;
-
-    // Let's start parsing this token
-    while (*token) {
-        // Start checking to see if it's a special token
-        switch (*token) {
-            case '$':
-            // 
-
-        }
-
-    }
-}
-
-/**
  * @brief Parse a command into argc and argv
  * @param in_command The input command string to parse
  * @param out_argc Output for argc
@@ -145,8 +120,7 @@ char **essence_parse(char *in_command, int *out_argc) {
                 }
 
                 // Place tmp as an argument
-                printf("processing finished (%d): %s\n", len, tmp);
-                for (int i = 0; i < strlen(tmp); i++) ESSENCE_PUSH(tmp[i]);
+                for (size_t i = 0; i < strlen(tmp); i++) ESSENCE_PUSH(tmp[i]);
                 p += len;
 
                 ESSENCE_NEXT_CHARACTER();
