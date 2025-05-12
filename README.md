@@ -21,7 +21,7 @@ Currently, the project is developing its usermode stages.
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-hspq2m58dowe1.png?width=640&crop=smart&auto=webp&s=8764354d2764cb8bfaa77d1a79f710485880d780)\
 *Ethereal running uname*
 
-![fixed](https://github.com/user-attachments/assets/bfdce356-5555-436b-990d-3aad65d22dea)
+![fixed](https://github.com/user-attachments/assets/bfdce356-5555-436b-990d-3aad65d22dea)\
 *Ethereal running a neofetch clone made for it (whatarewe)*
 
 ## Features
