@@ -23,6 +23,40 @@
                             dprintf(NOHEADER, __VA_ARGS__);
 
 /**
+ * @brief Reset an xHCI controller
+ * @param xhci The controller that needs to be reset
+ * @returns 0 on success
+ */
+static int xhci_resetController(xhci_t *xhci) {
+    // To reset the xHCI controller, we have to:
+    // 1. Clear the R/S bit in USBCMD
+    // 2. Wait for HCHalted to set
+    // 3. Set HCRST
+    // 4. Wait for HCRST to clear
+
+    // Clear the R/S bit
+    xhci->opregs->usbcmd &= ~(XHCI_USBCMD_RUN_STOP);
+
+    // Wait for HCHalted to set 
+    if (XHCI_TIMEOUT((xhci->opregs->usbsts & XHCI_USBSTS_HCH), 200)) {
+        LOG(ERR, "Controller reset failed: HCHalted timeout expired\n");
+        return 1;
+    }
+
+    // Set HCRST
+    xhci->opregs->usbcmd |= XHCI_USBCMD_HCRESET;
+
+    // Wait for HCRESET to clear
+    if (XHCI_TIMEOUT(!(xhci->opregs->usbcmd & XHCI_USBCMD_HCRESET), 1000)) {
+        LOG(ERR, "Controller reset failed: Timeout expired while waiting for completion\n");
+        return 1;
+    }
+
+    LOG(INFO, "Reset controller success\n");;
+    return 0;
+}
+
+/**
  * @brief Initialize an xHCI controller
  * @param device The PCI device of the xHCI controller
  */
@@ -56,9 +90,16 @@ int xhci_initController(uint32_t device) {
 
     // Get some capability information
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
+    xhci->opregs = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->capregs->caplength);
 
     LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
 
+    // Reset the controller
+    if (xhci_resetController(xhci)) {
+        mem_unmapMMIO(xhci->mmio_addr, size);
+        kfree(xhci);
+        return 1;
+    } 
 
     return 1;
 }

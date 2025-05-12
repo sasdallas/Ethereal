@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include "xhci_common.h"
 #include "xhci_regs.h"
+#include "xhci_util.h"
 
 /**** TYPES ****/
 
