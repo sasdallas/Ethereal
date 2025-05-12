@@ -118,7 +118,7 @@ static void font_putCharacterPSF(int c, int _x, int _y, color_t fg, color_t bg) 
         uint32_t mask = 1 << (current_font->width + 1);
         
         // Display a row
-        for (uint32_t w = 0; w < current_font->width; w++) {
+        for (uint32_t w = 0; w < current_font->width+1; w++) {
             if (*((unsigned int*)glyph) & mask) {
                 // video_plotPixel(x + w, y + h, fg);
                 *((uint32_t*)(fb + (w*4))) = fg.rgb;
@@ -217,63 +217,63 @@ int font_loadPSF(fs_node_t *file) {
     memset(psf, 0, sizeof(font_psf_t));
     psf->psf_data = buffer;
 
-    // Do we need to do unicode translation?
-    if (psf_header->flags) {
-        // Yes, translate
-        psf->unicode = kcalloc(USHRT_MAX, 2);
+    // // Do we need to do unicode translation?
+    // if (psf_header->flags) {
+    //     // Yes, translate
+    //     psf->unicode = kcalloc(USHRT_MAX, 2);
         
-        // Get the table offset
-        uint8_t *table = (uint8_t*)(buffer +  psf_header->headersize + (psf_header->glyphs * psf_header->glyph_bytes));
-        uint16_t glyph = 0;
+    //     // Get the table offset
+    //     uint8_t *table = (uint8_t*)(buffer +  psf_header->headersize + (psf_header->glyphs * psf_header->glyph_bytes));
+    //     uint16_t glyph = 0;
 
-        LOG(DEBUG, "Processing unicode table at offset 0x%x\n", table - buffer);
+    //     LOG(DEBUG, "Processing unicode table at offset 0x%x\n", table - buffer);
 
-        while (table < buffer + file->length) {
-            uint8_t sequence = *(uint8_t*)table;
+    //     while (table < buffer + file->length) {
+    //         uint8_t sequence = *(uint8_t*)table;
 
-            // Translate
-            if (sequence == 0xFF) {
-                glyph++;
-                table++;
-                continue;
-            } else if (sequence & 128) {
-                wchar_t uc = 0;
+    //         // Translate
+    //         if (sequence == 0xFF) {
+    //             glyph++;
+    //             table++;
+    //             continue;
+    //         } else if (sequence & 128) {
+    //             wchar_t uc = 0;
 
-                // Convert from UTF-8 to unicode
-                if ((sequence & 0xE0) == 0xC0) {
-                    uc = ((table[0] & 0x1F) << 6);
-                    uc |= (table[1] & 0x3F);
-                    table += 2;
-                } else if ((sequence & 0xF0) == 0xE0) {
-                    uc = (table[0] & 0xF) << 12;
-                    uc |= (table[1] & 0x3F) << 6;
-                    uc |= (table[2] & 0x3F);
-                    table += 3;
-                } else if ((sequence & 0xF8) == 0xF0) {
-                    uc = (table[0] & 0x7) << 18;
-                    uc |= (table[1] & 0x3F) << 12;
-                    uc |= (table[2] & 0x3F) << 6;
-                    uc |= (table[3] & 0x3F);
-                    table += 4;
-                } else if ((sequence & 0xFC) == 0xF8) {
-                    uc = (table[0] & 0x3) << 24;
-                    uc |= (table[1] & 0x3F) << 18;
-                    uc |= (table[2] & 0x3F) << 12;
-                    uc |= (table[3] & 0x3F) << 6;
-                    uc |= (table[4] & 0x3F);
-                    table += 5;
-                } else {
+    //             // Convert from UTF-8 to unicode
+    //             if ((sequence & 0xE0) == 0xC0) {
+    //                 uc = ((table[0] & 0x1F) << 6);
+    //                 uc |= (table[1] & 0x3F);
+    //                 table += 2;
+    //             } else if ((sequence & 0xF0) == 0xE0) {
+    //                 uc = (table[0] & 0xF) << 12;
+    //                 uc |= (table[1] & 0x3F) << 6;
+    //                 uc |= (table[2] & 0x3F);
+    //                 table += 3;
+    //             } else if ((sequence & 0xF8) == 0xF0) {
+    //                 uc = (table[0] & 0x7) << 18;
+    //                 uc |= (table[1] & 0x3F) << 12;
+    //                 uc |= (table[2] & 0x3F) << 6;
+    //                 uc |= (table[3] & 0x3F);
+    //                 table += 4;
+    //             } else if ((sequence & 0xFC) == 0xF8) {
+    //                 uc = (table[0] & 0x3) << 24;
+    //                 uc |= (table[1] & 0x3F) << 18;
+    //                 uc |= (table[2] & 0x3F) << 12;
+    //                 uc |= (table[3] & 0x3F) << 6;
+    //                 uc |= (table[4] & 0x3F);
+    //                 table += 5;
+    //             } else {
 
-                    table++;
-                }
+    //                 table++;
+    //             }
 
-                // Store translation
-                psf->unicode[uc] = glyph;
-            } else {
-                table++;
-            }
-        }
-    }
+    //             // Store translation
+    //             psf->unicode[uc] = glyph;
+    //         } else {
+    //             table++;
+    //         }
+    //     }
+    // }
 
     // Unload current font
     if (current_font && current_font->data) kfree(current_font->data); // NOTE: Unless we plan on supporting custom fonts in the future this should be fine.
