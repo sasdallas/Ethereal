@@ -142,6 +142,17 @@ int xhci_initController(uint32_t device) {
     LOG(DEBUG, "DCBAA: %016llX (entry 0/scratchpad array: %016llX)\n", xhci->opregs->dcbaap, xhci->dcbaa_virt[0]);
 
 
-    
+    // Enable the command ring
+    if (xhci_initializeCommandRing(xhci)) {
+        LOG(ERR, "Error while initializing command ring\n");
+        
+        // TODO: Free scratcpad
+        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
+        kfree(xhci->dcbaa_virt);
+        mem_unmapMMIO(xhci->mmio_addr, size);
+        kfree(xhci);
+        return 1;
+    }
+
     return 1;
 }
