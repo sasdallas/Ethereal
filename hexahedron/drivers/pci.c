@@ -1,7 +1,8 @@
 /**
- * @file hexahedron/drivers/x86/pci.c
- * @brief PCI driver for x86
+ * @file hexahedron/drivers/pci.c
+ * @brief PCI driver
  * 
+ * @todo Support MSI and MSI-X
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
@@ -144,12 +145,12 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
         bar_out->type = PCI_BAR_MEMORY64;
 
         // Read the rest of the address
-        uint32_t bar_address_high = pci_readConfigOffset(bus, slot, func, offset + 1, 4);
+        uint32_t bar_address_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
         
         // And the rest of the size
-        pci_writeConfigOffset(bus, slot, func, offset + 1, 0xFFFFFFFF);
-        uint32_t bar_size_high = pci_readConfigOffset(bus, slot, func, offset + 1, 4);
-        pci_writeConfigOffset(bus, slot, func, offset + 1, bar_address_high);
+        pci_writeConfigOffset(bus, slot, func, offset + 4, 0xFFFFFFFF);
+        uint32_t bar_size_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
+        pci_writeConfigOffset(bus, slot, func, offset + 4, bar_address_high);
 
         // Now put the values in
         bar_out->address = (bar_address & 0xFFFFFFF0) | ((uint64_t)(bar_address_high & 0xFFFFFFFF) << 32);
