@@ -18,6 +18,14 @@
 #include <kernel/debug.h>
 #include <string.h>
 
+#ifdef __ARCH_I386__
+#include <kernel/arch/i386/hal.h>
+#elif defined(__ARCH_X86_64__)
+#include <kernel/arch/x86_64/hal.h>
+#else
+#error "HAL"
+#endif
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:CON ] "); \
                             dprintf(NOHEADER, __VA_ARGS__);
@@ -38,21 +46,97 @@ static int xhci_resetController(xhci_t *xhci) {
     xhci->opregs->usbcmd &= ~(XHCI_USBCMD_RUN_STOP);
 
     // Wait for HCHalted to set 
-    if (XHCI_TIMEOUT((xhci->opregs->usbsts & XHCI_USBSTS_HCH), 200)) {
-        LOG(ERR, "Controller reset failed: HCHalted timeout expired\n");
-        return 1;
+    // if (XHCI_TIMEOUT((xhci->opregs->usbsts & XHCI_USBSTS_HCH), 200)) {
+    //     LOG(ERR, "Controller reset failed: HCHalted timeout expired\n");
+    //     return 1;
+    // }
+
+    // TEMPORARY
+    while (1) {
+        uint32_t usbsts = xhci->opregs->usbsts;
+        if (usbsts & XHCI_USBSTS_HCH) {
+            break;
+        }
+
+        LOG(DEBUG, "Waiting on HCH: %x\n", usbsts);
     }
 
     // Set HCRST
     xhci->opregs->usbcmd |= XHCI_USBCMD_HCRESET;
 
     // Wait for HCRESET to clear
-    if (XHCI_TIMEOUT(!(xhci->opregs->usbcmd & XHCI_USBCMD_HCRESET), 1000)) {
-        LOG(ERR, "Controller reset failed: Timeout expired while waiting for completion\n");
-        return 1;
+    // if (XHCI_TIMEOUT(!(xhci->opregs->usbcmd & XHCI_USBCMD_HCRESET), 1000)) {
+        // LOG(ERR, "Controller reset failed: Timeout expired while waiting for completion\n");
+        // return 1;
+    // }
+
+    // TEMPORARY
+    while (1) {
+        uint32_t usbcmd = xhci->opregs->usbcmd;
+        if (!(usbcmd & XHCI_USBCMD_HCRESET)) break;
+
+        LOG(DEBUG, "Waiting on HCRESET: %x\n", usbcmd);
     }
 
     LOG(INFO, "Reset controller success\n");;
+    return 0;
+}
+
+/**
+ * @brief Acknowledge an IRQ released by a controller
+ * @param xhci The controller to acknowledge
+ * @param interrupter The interrupter to acknowledge
+ */
+void xhci_acknowledge(xhci_t *xhci, int interrupter) {
+    // Get the interrupter's IMAN
+    uint32_t iman = xhci->runtime->ir[interrupter].iman;
+
+    // Write the IP bit
+    iman |= XHCI_IMAN_INTERRUPT_PENDING;
+    xhci->runtime->ir[interrupter].iman = iman;
+
+    // Clear EINT bit by writing a one to it
+    xhci->opregs->usbsts |= XHCI_USBSTS_EINT;
+}
+
+/**
+ * @brief xHCI IRQ handler
+ * @param context The xHCI controller
+ */
+int xhci_irqHandler(void *context) {
+    xhci_t *xhci = (xhci_t*)context;
+    if (xhci) {
+        LOG(DEBUG, "xHCI IRQ\n");
+        xhci_acknowledge(xhci, 0);
+    }
+
+ 
+    return 0;
+}
+
+/**
+ * @brief Start xHCI controller
+ * @param xhci The controller to start
+ */
+int xhci_startController(xhci_t *xhci) {
+    // To start the controller, we need to set R/S, IE, and HOSTSYS_EE
+    xhci->opregs->usbcmd |= XHCI_USBCMD_RUN_STOP | XHCI_USBCMD_INTERRUPTER_ENABLE | XHCI_USBCMD_HOSTSYS_ERROR_ENABLE;
+    
+    // Wait
+    while (1) {
+        uint32_t usbsts = xhci->opregs->usbsts;
+        if (!(usbsts & XHCI_USBSTS_HCH)) break;
+
+        LOG(DEBUG, "Waiting for HCH:0x%x\n", usbsts);
+    }
+
+
+    // If CNR is still set (Controller Not Ready) then we failed
+    if (xhci->opregs->usbsts & XHCI_USBSTS_CNR) {
+        LOG(ERR, "CNR still set: Start failed\n");
+        return 1;
+    }
+
     return 0;
 }
 
@@ -88,9 +172,10 @@ int xhci_initController(uint32_t device) {
     LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", size, address, bar->type);
     xhci->mmio_addr = mem_mapMMIO(address, size);
 
-    // Get some capability information
+    // Get some registers
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
     xhci->opregs = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->capregs->caplength);
+    xhci->runtime = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->capregs->rtsoff);
 
     LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
 
@@ -141,7 +226,6 @@ int xhci_initController(uint32_t device) {
     xhci->opregs->dcbaap = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->dcbaa);
     LOG(DEBUG, "DCBAA: %016llX (entry 0/scratchpad array: %016llX)\n", xhci->opregs->dcbaap, xhci->dcbaa_virt[0]);
 
-
     // Enable the command ring
     if (xhci_initializeCommandRing(xhci)) {
         LOG(ERR, "Error while initializing command ring\n");
@@ -154,5 +238,29 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
-    return 1;
+    // Enable IRQs
+    xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
+    
+    // Clear pending
+    xhci_acknowledge(xhci, 0);
+
+    // Register IRQ handler
+    uintptr_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(address), PCI_FUNCTION(address));
+    if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
+        LOG(ERR, "Error while registering IRQ%d\n", irq);
+        return 1;
+    }
+
+    // Start the controller
+    if (xhci_startController(xhci)) {
+        LOG(ERR, "Error while starting controller\n");
+        
+        // TODO: Free scratchpad
+        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
+        kfree(xhci->dcbaa_virt);
+        mem_unmapMMIO(xhci->mmio_addr, size);
+        kfree(xhci);
+        return 1;
+    }
+    return 0;
 }

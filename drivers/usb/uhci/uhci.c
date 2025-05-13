@@ -547,7 +547,7 @@ int uhci_deinit() {
 
 /* Metadata */
 struct driver_metadata driver_metadata = {
-    .name = "UHCI driver",
+    .name = "UHCI Driver",
     .author = "Samuel Stuart",
     .init = uhci_init,
     .deinit = uhci_deinit
