@@ -22,12 +22,16 @@
 
 /**** TYPES ****/
 
+
+typedef uintptr_t xhci_dcbaa_t;
+
 typedef struct xhci {
     uint32_t pci_addr;          // PCI address in case any new calls need to be made
     uintptr_t mmio_addr;        // MMIO address
     xhci_cap_regs_t *capregs;   // Capability registers
     xhci_op_regs_t *opregs;     // Operational registers
-    
+    xhci_dcbaa_t *dcbaa;        // DCBAA (physical)
+    xhci_dcbaa_t *dcbaa_virt;   // DCBAA (virtual - this is an array of the virtual addresses stored in the DCBAA)
 } xhci_t;
 
 /**** FUNCTIONS ****/

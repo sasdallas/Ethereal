@@ -101,5 +101,47 @@ int xhci_initController(uint32_t device) {
         return 1;
     } 
 
+    // Enable device notifications
+    xhci->opregs->dnctrl = 0xFFFF;
+
+    // Program the max number of slots
+    uint32_t config = xhci->opregs->config;
+    config &= ~0xFF;
+    config |= XHCI_MAX_DEVICE_SLOTS(xhci->capregs);
+    xhci->opregs->config = config;
+
+    // Now, let's setup the DCBAA (Device Context Base Address Array)
+    size_t dcbaa_size = sizeof(xhci_dcbaa_t) * (XHCI_MAX_DEVICE_SLOTS(xhci->capregs)-1);
+    xhci->dcbaa = (xhci_dcbaa_t*)mem_allocateDMA(dcbaa_size);
+    xhci->dcbaa_virt = kzalloc(dcbaa_size);
+
+    // Zero DMA
+    memset(xhci->dcbaa, 0, sizeof(xhci_dcbaa_t) * (XHCI_MAX_DEVICE_SLOTS(xhci->capregs)-1));
+
+    // Setup scratchpad buffers
+    if (XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs)) {
+        // xHCI spec says we need to allocate a scratchpad array as the 0th entry in the DCBAA.
+        // Allocate memory for the scratchpad array
+        // !!!: Waste of memory.. this probably uses a whole page. We can maybe fit this in with the DCBAA?
+        uintptr_t *scratchpad = (uintptr_t*)mem_allocateDMA(XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs) * sizeof(uintptr_t*));
+        memset(scratchpad, 0, XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs) * sizeof(uintptr_t*));
+
+        // Allocate scratchpad pages
+        for (size_t i = 0; i < XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs); i++) {
+            uintptr_t page = mem_allocateDMA(PAGE_SIZE);
+            scratchpad[i] = mem_getPhysicalAddress(NULL, page);
+        }
+
+        // Configure it in the DCBAA
+        xhci->dcbaa[0] = mem_getPhysicalAddress(NULL, (uintptr_t)scratchpad);
+        xhci->dcbaa_virt[0] = (xhci_dcbaa_t)scratchpad;
+    }
+
+    // Program it in
+    xhci->opregs->dcbaap = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->dcbaa);
+    LOG(DEBUG, "DCBAA: %016llX (entry 0/scratchpad array: %016llX)\n", xhci->opregs->dcbaap, xhci->dcbaa_virt[0]);
+
+
+    
     return 1;
 }
