@@ -17,9 +17,13 @@
 #include <kernel/debug.h>
 #include <string.h>
 
+/* Update ERDP to new dequeue value */
+#define ERDP_UPDATE(xhci) (EVENTRING(xhci)->regs->erdp = (uint64_t)(EVENTRING(xhci)->trb_list_phys + (EVENTRING(xhci)->dequeue * sizeof(xhci_trb_t))))
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:RING] "); \
                             dprintf(NOHEADER, __VA_ARGS__);
+
 
 /**
  * @brief Initialize the xHCI command ring for a specific controller
@@ -31,6 +35,8 @@ int xhci_initializeCommandRing(xhci_t *xhci) {
     CMDRING(xhci) = kzalloc(sizeof(xhci_cmd_ring_t));
     CMDRING(xhci)->lock = spinlock_create("xhci command ring lock");
     CMDRING(xhci)->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    CMDRING(xhci)->cycle = XHCI_CRCR_RING_CYCLE_STATE;
+
     memset(CMDRING(xhci)->trb_list, 0, XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
 
     // Setup a link TRB
@@ -44,5 +50,37 @@ int xhci_initializeCommandRing(xhci_t *xhci) {
     // Configure in the CRCR
     xhci->opregs->crcr = mem_getPhysicalAddress(NULL, (uintptr_t)CMDRING(xhci)->trb_list);
     LOG(DEBUG, "Command ring enabled (%016llX)\n", xhci->opregs->crcr);
+    return 0;
+}
+
+
+/**
+ * @brief Initialize the xHCI event ring for a specific interrupter on a specific controller
+ * @param xhci The controller to initialize an event ring for
+ */
+int xhci_initializeEventRing(struct xhci *xhci) {
+    // We want to add the event ring to interrupter #0
+    xhci_int_regs_t *regs = &xhci->runtime->ir[0];
+    
+    // Allocate the event ring
+    EVENTRING(xhci) = kzalloc(sizeof(xhci_event_ring_t));
+    EVENTRING(xhci)->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    EVENTRING(xhci)->erst = (xhci_erst_entry_t*)mem_allocateDMA(sizeof(xhci_erst_entry_t)); // For now we are only gonna use one entry, since that's required
+    EVENTRING(xhci)->cycle = XHCI_CRCR_RING_CYCLE_STATE;
+    EVENTRING(xhci)->regs = regs;
+    EVENTRING(xhci)->trb_list_phys = mem_getPhysicalAddress(NULL, (uintptr_t)EVENTRING(xhci)->trb_list);
+
+    // Create the first entry in the ERST
+    EVENTRING(xhci)->erst[0].address = EVENTRING(xhci)->trb_list_phys;
+    EVENTRING(xhci)->erst[0].size = XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t);
+    EVENTRING(xhci)->erst[0].reserved = 0;
+
+    // Configure the ERSTSZ register
+    regs->erstsz = 1; // NOTE: Only one entry for now
+
+    // Set the ERDP and ERSTBA
+    ERDP_UPDATE(xhci);
+    regs->erstba = EVENTRING(xhci)->trb_list_phys;
+    LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", regs->erstba);
     return 0;
 }

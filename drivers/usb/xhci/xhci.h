@@ -39,6 +39,7 @@ typedef struct xhci {
     xhci_dcbaa_t *dcbaa;            // DCBAA (physical)
     xhci_dcbaa_t *dcbaa_virt;       // DCBAA (virtual - this is an array of the virtual addresses stored in the DCBAA)
     xhci_cmd_ring_t *cmd_ring;      // Command ring
+    xhci_event_ring_t *event_ring;  // Primary event ring
 } xhci_t;
 
 /**** FUNCTIONS ****/

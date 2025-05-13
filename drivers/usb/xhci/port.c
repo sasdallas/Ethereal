@@ -53,6 +53,22 @@ int xhci_portReset(xhci_t *xhci, int port) {
     return 0;
 }
 
+/**
+ * @brief Get port speed to string (debug)
+ */ 
+static char *xhci_portSpeedToString(uint8_t speed) {
+    static char* speed_string[7] = {
+        "Invalid",
+        "Full Speed (12 MB/s - USB2.0)",
+        "Low Speed (1.5 Mb/s - USB 2.0)",
+        "High Speed (480 Mb/s - USB 2.0)",
+        "Super Speed (5 Gb/s - USB3.0)",
+        "Super Speed Plus (10 Gb/s - USB 3.1)",
+        "Undefined"
+    };
+
+    return speed_string[speed];
+}
 
 /**
  * @brief Try to initialize an xHCI port
@@ -67,7 +83,12 @@ int xhci_portInitialize(xhci_t *xhci, int port) {
         return 1;
     }
 
-    LOG(DEBUG, "Port %d reset successfully\n", port);
-    
+    xhci_port_registers_t *regs = XHCI_PORT_REGISTERS(xhci->opregs, port);
+    LOG(INFO, "Port %d reset successfully - initializing\n", port);
+    LOG(INFO, "Speed of this port: %s\n", xhci_portSpeedToString(regs->portsc & XHCI_PORTSC_SPD >> XHCI_PORTSC_SPD_SHIFT));
+    LOG(INFO, "Removable device: %s\n", (regs->portsc & XHCI_PORTSC_DR ? "YES" : "NO"));
+
+    // Enable the device 
+
     return 0;
 }

@@ -16,7 +16,9 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <stddef.h>
 #include "xhci_trb.h"
+#include "xhci_regs.h"
 #include <kernel/misc/spinlock.h>
 
 /**** TYPES ****/
@@ -24,11 +26,30 @@
 typedef struct xhci_cmd_ring {
     spinlock_t *lock;               // Lock
     xhci_trb_t *trb_list;           // TRB list
+    uint32_t enqueue;               // Enqueue pointer
+    uint8_t cycle;                  // Cycle
 } xhci_cmd_ring_t;
+
+// Event Ring Segment Table entry
+typedef struct xhci_erst_entry {
+    uint64_t address;               // Base
+    uint32_t size;                  // Size
+    uint32_t reserved;              // Reserved
+} __attribute__((packed)) xhci_erst_entry_t;    
+
+typedef struct xhci_event_ring {
+    xhci_int_regs_t *regs;          // Interrupter regs
+    xhci_trb_t *trb_list;           // TRB list
+    uintptr_t trb_list_phys;        // Physical TRB list address (cached)
+    xhci_erst_entry_t *erst;        // Event ring segment table
+    uint32_t dequeue;               // Dequeue pointer
+    uint8_t cycle;                  // Cycle bit
+} xhci_event_ring_t;
 
 /**** MACROS ****/
 
 #define CMDRING(xhci) (xhci->cmd_ring)
+#define EVENTRING(xhci) (xhci->event_ring)
 #define LINK_TRB(trb) ((xhci_link_trb_t*)(trb))
 
 /**** FUNCTIONS ****/
@@ -55,7 +76,19 @@ int xhci_deinitializeCommandRing(struct xhci *xhci);
  * @param trb The TRB to insert into the command ring
  * @returns 0 on success
  */
-int xhci_insertTRB(struct xhci *xhci, xhci_trb_t *trb);
+int xhci_enqueueTRB(struct xhci *xhci, xhci_trb_t *trb);
 
+/**
+ * @brief Initialize the xHCI event ring for a specific interrupter on a specific controller
+ * @param xhci The controller to initialize an event ring for
+ */
+int xhci_initializeEventRing(struct xhci *xhci);
+
+/**
+ * @brief Pop a TRB from the event ring
+ * @param xhci The controller to pop the TRB from
+ * @returns TRB on success, NULL on failure
+ */
+xhci_trb_t *xhci_dequeueTRB(struct xhci *xhci);
 
 #endif

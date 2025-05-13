@@ -236,6 +236,18 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
+    // Enable the event ring
+    if (xhci_initializeEventRing(xhci)) {
+        LOG(ERR, "Error while initializing command ring\n");
+        
+        // TODO: Free scratcpad and cmd/event ring
+        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
+        kfree(xhci->dcbaa_virt);
+        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        kfree(xhci);
+        return 1;
+    }
+
     // Enable IRQs
     xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
     
@@ -255,7 +267,7 @@ int xhci_initController(uint32_t device) {
     if (xhci_startController(xhci)) {
         LOG(ERR, "Error while starting controller\n");
         
-        // TODO: Free scratchpad
+        // TODO: Free scratcpad and cmd/event ring
         mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
         kfree(xhci->dcbaa_virt);
         mem_unmapMMIO(xhci->mmio_addr, bar->size);
