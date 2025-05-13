@@ -49,5 +49,12 @@ typedef struct xhci {
  */
 int xhci_initController(uint32_t device);
 
+/**
+ * @brief Try to initialize an xHCI port
+ * @param xhci The xHCI device to use
+ * @param port The port number to attempt to initialize
+ * @returns 0 on success
+ */
+int xhci_portInitialize(xhci_t *xhci, int port);
 
 #endif

@@ -1327,4 +1327,35 @@ fields of a PSI Dword.
 #define XHCI_DOORBELL_TARGET_COMMAND_RING       0
 #define XHCI_DOORBELL_TARGET_CONTROL_EP_RING    1
 
+// Get port registers
+struct xhci_port_registers;
+#define XHCI_PORT_REGISTERS(opregs, portnumber) ((struct xhci_port_registers*)((uintptr_t)opregs + (0x400 + (0x10 * portnumber))))
+
+// PORTSC values
+#define XHCI_PORTSC_CCS                         0x1
+#define XHCI_PORTSC_PED                         0x2
+#define XHCI_PORTSC_OCA                         0x8
+#define XHCI_PORTSC_PR                          0x10
+#define XHCI_PORTSC_PLS                         0x1E0
+#define XHCI_PORTSC_PLS_SHIFT                   5
+#define XHCI_PORTSC_PP                          0x200
+#define XHCI_PORTSC_SPD                         0x3C00
+#define XHCI_PORTSC_SPD_SHIFT                   10
+#define XHCI_PORTSC_PIC                         0xC000
+#define XHCI_PORTSC_PIC_SHIFT                   14
+#define XHCI_PORTSC_LWS                         0x10000
+#define XHCI_PORTSC_CSC                         0x20000
+#define XHCI_PORTSC_PEC                         0x40000
+#define XHCI_PORTSC_WRC                         0x80000
+#define XHCI_PORTSC_OCC                         0x100000
+#define XHCI_PORTSC_PRC                         0x200000
+#define XHCI_PORTSC_PLC                         0x400000
+#define XHCI_PORTSC_CEC                         0x800000
+#define XHCI_PORTSC_CAS                         0x1000000
+#define XHCI_PORTSC_WCE                         0x2000000
+#define XHCI_PORTSC_WDE                         0x4000000
+#define XHCI_PORTSC_WOE                         0x8000000
+#define XHCI_PORTSC_DR                          0x40000000
+#define XHCI_PORTSC_WPR                         0x80000000
+
 #endif // XHCI_COMMON_H

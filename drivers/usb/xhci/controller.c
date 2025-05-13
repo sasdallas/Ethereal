@@ -127,7 +127,7 @@ int xhci_startController(xhci_t *xhci) {
         uint32_t usbsts = xhci->opregs->usbsts;
         if (!(usbsts & XHCI_USBSTS_HCH)) break;
 
-        LOG(DEBUG, "Waiting for HCH:0x%x\n", usbsts);
+        LOG(DEBUG, "Waiting on HCH: %x\n", usbsts);
     }
 
 
@@ -166,11 +166,9 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
-    // !!!: Definitely a bug in the PCI system... These have bad bits set.
-    uintptr_t address = (uint32_t)bar->address;
-    size_t size = (uint32_t)bar->size;
-    LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", size, address, bar->type);
-    xhci->mmio_addr = mem_mapMMIO(address, size);
+    // Map it in
+    LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
+    xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
 
     // Get some registers
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
@@ -181,7 +179,7 @@ int xhci_initController(uint32_t device) {
 
     // Reset the controller
     if (xhci_resetController(xhci)) {
-        mem_unmapMMIO(xhci->mmio_addr, size);
+        mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
         return 1;
     } 
@@ -233,7 +231,7 @@ int xhci_initController(uint32_t device) {
         // TODO: Free scratcpad
         mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
         kfree(xhci->dcbaa_virt);
-        mem_unmapMMIO(xhci->mmio_addr, size);
+        mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
         return 1;
     }
@@ -245,7 +243,9 @@ int xhci_initController(uint32_t device) {
     xhci_acknowledge(xhci, 0);
 
     // Register IRQ handler
-    uintptr_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(address), PCI_FUNCTION(address));
+    // TODO: MSI(-X) needs to be worked out and/or I/O APIC. This is a bad hack.
+    uintptr_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+    hal_unregisterInterruptHandler(irq);
     if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
         LOG(ERR, "Error while registering IRQ%d\n", irq);
         return 1;
@@ -258,9 +258,21 @@ int xhci_initController(uint32_t device) {
         // TODO: Free scratchpad
         mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
         kfree(xhci->dcbaa_virt);
-        mem_unmapMMIO(xhci->mmio_addr, size);
+        mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
         return 1;
     }
+
+    // Start probing
+    LOG(INFO, "xHCI controller started successfully\n");
+    for (uint8_t i = 0; i < 8; i++) {
+        xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, i);
+
+        if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
+            LOG(DEBUG, "xHCI USB device detected on port %d\n", i);
+            xhci_portInitialize(xhci, i);
+        }
+    }
+     
     return 0;
 }
