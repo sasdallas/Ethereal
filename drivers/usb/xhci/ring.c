@@ -48,8 +48,40 @@ int xhci_initializeCommandRing(xhci_t *xhci) {
     link_trb->control.c = XHCI_CRCR_RING_CYCLE_STATE;
 
     // Configure in the CRCR
-    xhci->opregs->crcr = mem_getPhysicalAddress(NULL, (uintptr_t)CMDRING(xhci)->trb_list);
+    xhci->opregs->crcr = mem_getPhysicalAddress(NULL, (uintptr_t)CMDRING(xhci)->trb_list) | CMDRING(xhci)->cycle;
     LOG(DEBUG, "Command ring enabled (%016llX)\n", xhci->opregs->crcr);
+    return 0;
+}
+
+/**
+ * @brief Insert a new TRB into the command ring
+ * @param xhci The controller to insert the TRB into
+ * @param trb The TRB to insert into the command ring
+ * @returns 0 on success
+ */
+int xhci_enqueueTRB(struct xhci *xhci, xhci_trb_t *trb) {
+    spinlock_acquire(CMDRING(xhci)->lock);
+
+    // Set the TRB cycle bit
+    trb->control.c = CMDRING(xhci)->cycle;
+
+    // Now queue it
+    CMDRING(xhci)->trb_list[CMDRING(xhci)->enqueue] = *trb;
+
+    // Increment enqueue
+    CMDRING(xhci)->enqueue++;
+    if (CMDRING(xhci)->enqueue >= XHCI_COMMAND_RING_TRB_COUNT-1) {
+        // We need to wrap it around and update the link TRB
+        xhci_link_trb_t *link_trb = LINK_TRB(&CMDRING(xhci)->trb_list[XHCI_COMMAND_RING_TRB_COUNT-1]);
+        link_trb->control.type = XHCI_TRB_TYPE_LINK;
+        link_trb->control.tc = 1;
+        link_trb->control.c = CMDRING(xhci)->cycle;
+
+        CMDRING(xhci)->enqueue = 0;
+        CMDRING(xhci)->cycle ^= 1;
+    }
+
+    spinlock_release(CMDRING(xhci)->lock);
     return 0;
 }
 
@@ -80,7 +112,7 @@ int xhci_initializeEventRing(struct xhci *xhci) {
 
     // Set the ERDP and ERSTBA
     ERDP_UPDATE(xhci);
-    regs->erstba = EVENTRING(xhci)->trb_list_phys;
+    regs->erstba = mem_getPhysicalAddress(NULL, (uintptr_t)EVENTRING(xhci)->erst);
     LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", regs->erstba);
     return 0;
 }

@@ -96,7 +96,7 @@ void xhci_acknowledge(xhci_t *xhci, int interrupter) {
     xhci->runtime->ir[interrupter].iman = iman;
 
     // Clear EINT bit by writing a one to it
-    xhci->opregs->usbsts |= XHCI_USBSTS_EINT;
+    xhci->opregs->usbsts = XHCI_USBSTS_EINT;
 }
 
 /**
@@ -104,11 +104,7 @@ void xhci_acknowledge(xhci_t *xhci, int interrupter) {
  * @param context The xHCI controller
  */
 int xhci_irqHandler(void *context) {
-    xhci_t *xhci = (xhci_t*)context;
-    if (xhci) {
-        LOG(DEBUG, "xHCI IRQ\n");
-        xhci_acknowledge(xhci, 0);
-    }
+    LOG(DEBUG, "IRQ\n");
 
  
     return 0;
@@ -120,8 +116,11 @@ int xhci_irqHandler(void *context) {
  */
 int xhci_startController(xhci_t *xhci) {
     // To start the controller, we need to set R/S, IE, and HOSTSYS_EE
-    xhci->opregs->usbcmd |= XHCI_USBCMD_RUN_STOP | XHCI_USBCMD_INTERRUPTER_ENABLE | XHCI_USBCMD_HOSTSYS_ERROR_ENABLE;
-    
+    xhci->opregs->usbcmd |= XHCI_USBCMD_RUN_STOP;
+    xhci->opregs->usbcmd |= XHCI_USBCMD_INTERRUPTER_ENABLE;
+    xhci->opregs->usbcmd |= XHCI_USBCMD_HOSTSYS_ERROR_ENABLE;
+
+
     // Wait
     while (1) {
         uint32_t usbsts = xhci->opregs->usbsts;
@@ -166,9 +165,16 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
+    // Enable IRQs in PCI command
+    uint16_t xhci_pci_command = pci_readConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, 2);
+    xhci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
+    xhci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
+    pci_writeConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, (uint32_t)xhci_pci_command & 0xFFFF);
+
+
     // Map it in
     LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
-    xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
+    xhci->mmio_addr = mem_mapMMIO((uint32_t)bar->address, (uint32_t)bar->size);
 
     // Get some registers
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
@@ -176,6 +182,8 @@ int xhci_initController(uint32_t device) {
     xhci->runtime = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->capregs->rtsoff);
 
     LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
+
+    uint32_t max_ports = XHCI_MAX_PORTS(xhci->capregs);
 
     // Reset the controller
     if (xhci_resetController(xhci)) {
@@ -236,6 +244,10 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
+
+    // Enable IRQs
+    xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
+
     // Enable the event ring
     if (xhci_initializeEventRing(xhci)) {
         LOG(ERR, "Error while initializing command ring\n");
@@ -248,9 +260,6 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
-    // Enable IRQs
-    xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
-    
     // Clear pending
     xhci_acknowledge(xhci, 0);
 
@@ -277,7 +286,7 @@ int xhci_initController(uint32_t device) {
 
     // Start probing
     LOG(INFO, "xHCI controller started successfully\n");
-    for (uint8_t i = 0; i < 8; i++) {
+    for (uint8_t i = 0; i < max_ports; i++) {
         xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, i);
 
         if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
@@ -285,6 +294,31 @@ int xhci_initController(uint32_t device) {
             xhci_portInitialize(xhci, i);
         }
     }
-     
+
+
+    xhci_trb_t enable_slot_trb = XHCI_CONSTRUCT_CMD_TRB(XHCI_TRB_TYPE_ENABLE_SLOT_CMD);
+    xhci_sendCommand(xhci, &enable_slot_trb);
+    while (xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c == xhci->event_ring->cycle) {
+        LOG(ERR, "Waiting for %d (dq: %d) != %d\n", xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c, xhci->event_ring->dequeue, xhci->event_ring->cycle);
+    };
+    return 0;
+}
+
+/**
+ * @brief Send a command TRB to a controller
+ * @param xhci The controller to send the command TRB to
+ * @param trb The TRB to send to the controller
+ * @returns 0 on success
+ */
+int xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
+    // Enqueue the TRB
+    if (xhci_enqueueTRB(xhci, trb)) {
+        LOG(ERR, "Failed to enqueue TRB %p (type=0x%x)\n", trb, trb->control.type);
+        return 1;
+    }
+
+    // Ring the doorbell    
+    XHCI_RING_DOORBELL(xhci->capregs, 0, XHCI_DOORBELL_TARGET_COMMAND_RING);
+
     return 0;
 }

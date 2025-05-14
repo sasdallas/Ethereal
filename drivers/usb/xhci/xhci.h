@@ -58,4 +58,12 @@ int xhci_initController(uint32_t device);
  */
 int xhci_portInitialize(xhci_t *xhci, int port);
 
+/**
+ * @brief Send a command TRB to a controller
+ * @param xhci The controller to send the command TRB to
+ * @param trb The TRB to send to the controller
+ * @returns 0 on success
+ */
+int xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb);
+
 #endif

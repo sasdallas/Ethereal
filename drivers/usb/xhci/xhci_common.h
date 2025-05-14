@@ -1240,7 +1240,7 @@ Controller during status update if the associated error condition is detected.
 #define XHCI_TRB_COMPLETION_CODE_MAX_EXIT_LATENCY_ERROR 29
 
 // Helper macro to easily construct TRB command objects
-#define XHCI_CONSTRUCT_CMD_TRB(type) xhci_trb_t { .parameter = 0, .status = 0, .control = type << XHCI_TRB_TYPE_SHIFT }
+#define XHCI_CONSTRUCT_CMD_TRB(t) (xhci_trb_t){ .specific = 0, .status = 0, .control.type = t }
 
 #define XHCI_LINK_TRB_TC_BIT (1 << 1)
 
@@ -1357,5 +1357,9 @@ struct xhci_port_registers;
 #define XHCI_PORTSC_WOE                         0x8000000
 #define XHCI_PORTSC_DR                          0x40000000
 #define XHCI_PORTSC_WPR                         0x80000000
+
+// Doorbell
+#define XHCI_DOORBELL(capregs, i) &(((uint32_t*)((uintptr_t)capregs + capregs->dboff))[i])
+#define XHCI_RING_DOORBELL(capregs, i, value) *XHCI_DOORBELL(capregs, i) = value;
 
 #endif // XHCI_COMMON_H
