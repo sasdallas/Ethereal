@@ -88,7 +88,15 @@ int xhci_portInitialize(xhci_t *xhci, int port) {
     LOG(INFO, "Speed of this port: %s\n", xhci_portSpeedToString(regs->portsc & XHCI_PORTSC_SPD >> XHCI_PORTSC_SPD_SHIFT));
     LOG(INFO, "Removable device: %s\n", (regs->portsc & XHCI_PORTSC_DR ? "YES" : "NO"));
 
-    // Enable the device 
+    // Enable the device slot
+    xhci_trb_t enable_devslot_trb = XHCI_CONSTRUCT_CMD_TRB(XHCI_TRB_TYPE_ENABLE_SLOT_CMD);
+    xhci_command_completion_trb_t *slot_trb = xhci_sendCommand(xhci, &enable_devslot_trb);
+    if (!slot_trb) {
+        LOG(ERR, "Could not enable device slot\n");
+        return 1;
+    }
+
+    LOG(DEBUG, "Slot %d enabled for port %d\n", slot_trb->slot_id, port);
 
     return 0;
 }

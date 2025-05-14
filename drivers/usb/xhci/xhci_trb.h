@@ -108,6 +108,23 @@ typedef struct xhci_link_trb {
     };
 } __attribute__((packed)) xhci_link_trb_t;
 
+typedef struct xhci_command_completion_request_block {
+    uint64_t command_trb_pointer;
+    struct {
+        uint32_t rsvd0           : 24;
+        uint32_t completion_code : 8;
+    };
+    struct {
+        uint32_t cycle_bit   : 1;
+        uint32_t rsvd1       : 9;
+        uint32_t trb_type    : 6;
+        uint32_t vfid        : 8;
+        uint32_t slot_id     : 8;
+    };
+} xhci_command_completion_trb_t;
+
+
+
 
 
 #endif

@@ -52,6 +52,12 @@ typedef struct xhci_event_ring {
 #define EVENTRING(xhci) (xhci->event_ring)
 #define LINK_TRB(trb) ((xhci_link_trb_t*)(trb))
 
+#define XHCI_EVENT_RING_DEQUEUE(xhci) (EVENTRING(xhci)->trb_list[EVENTRING(xhci)->dequeue])
+#define XHCI_EVENT_RING_AVAILABLE(xhci) (XHCI_EVENT_RING_DEQUEUE(xhci).control.c == EVENTRING(xhci)->cycle)
+
+// !!!: I don't know about this.. -1 on dequeue? qemu breaks otherwise
+#define ERDP_UPDATE(xhci) (EVENTRING(xhci)->regs->erdp = (uint64_t)(EVENTRING(xhci)->trb_list_phys + ((EVENTRING(xhci)->dequeue-1) * sizeof(xhci_trb_t))))
+
 /**** FUNCTIONS ****/
 
 struct xhci;

@@ -17,9 +17,6 @@
 #include <kernel/debug.h>
 #include <string.h>
 
-/* Update ERDP to new dequeue value */
-#define ERDP_UPDATE(xhci) (EVENTRING(xhci)->regs->erdp = (uint64_t)(EVENTRING(xhci)->trb_list_phys + (EVENTRING(xhci)->dequeue * sizeof(xhci_trb_t))))
-
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:RING] "); \
                             dprintf(NOHEADER, __VA_ARGS__);
@@ -111,8 +108,28 @@ int xhci_initializeEventRing(struct xhci *xhci) {
     regs->erstsz = 1; // NOTE: Only one entry for now
 
     // Set the ERDP and ERSTBA
-    ERDP_UPDATE(xhci);
+    regs->erdp = EVENTRING(xhci)->trb_list_phys;
     regs->erstba = mem_getPhysicalAddress(NULL, (uintptr_t)EVENTRING(xhci)->erst);
     LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", regs->erstba);
     return 0;
+}
+
+/**
+ * @brief Pop a TRB from the event ring
+ * @param xhci The controller to pop the TRB from
+ * @returns TRB on success, NULL on failure
+ */
+xhci_trb_t *xhci_dequeueTRB(struct xhci *xhci) {
+    if (!XHCI_EVENT_RING_AVAILABLE(xhci)) return NULL;
+
+    xhci_trb_t *trb = &XHCI_EVENT_RING_DEQUEUE(xhci);
+
+    // Wrap dequeue around
+    EVENTRING(xhci)->dequeue++;
+    if (EVENTRING(xhci)->dequeue >= XHCI_EVENT_RING_TRB_COUNT) {
+        EVENTRING(xhci)->dequeue = 0;
+        EVENTRING(xhci)->cycle ^= 1;
+    }
+
+    return trb;
 }

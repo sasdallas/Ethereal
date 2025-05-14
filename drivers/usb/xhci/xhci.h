@@ -20,6 +20,10 @@
 #include "xhci_regs.h"
 #include "xhci_util.h"
 #include "xhci_ring.h"
+#include "xhci_device.h"
+#include <structs/list.h>
+#include <kernel/misc/spinlock.h>
+#include <kernel/misc/pool.h>
 
 /**** TYPES ****/
 
@@ -34,6 +38,16 @@ typedef struct xhci {
     xhci_cap_regs_t *capregs;       // Capability registers
     xhci_op_regs_t *opregs;         // Operational registers
     xhci_runtime_regs_t *runtime;   // Runtime registers
+    xhci_cap_regs_t capregs_save;   // Saved capability registers
+
+    // POOLS
+    pool_t *ctx_pool;               // Device context pool
+
+    // COMMAND QUEUE SYSTEM
+    list_t *event_queue;            // Other event queue
+    list_t *command_queue;          // Command completion TRB queue
+    int command_irq_handled;        // IRQ handled, new events available
+    spinlock_t cmd_lock;            // Command lock
 
     // OTHER STRUCTURES
     xhci_dcbaa_t *dcbaa;            // DCBAA (physical)
@@ -64,6 +78,6 @@ int xhci_portInitialize(xhci_t *xhci, int port);
  * @param trb The TRB to send to the controller
  * @returns 0 on success
  */
-int xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb);
+xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb);
 
 #endif

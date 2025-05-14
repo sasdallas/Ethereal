@@ -12,11 +12,13 @@
  */
 
 #include "xhci.h"
+#include <kernel/arch/arch.h>
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/debug.h>
 #include <string.h>
+#include <kernel/misc/args.h>
 
 #ifdef __ARCH_I386__
 #include <kernel/arch/i386/hal.h>
@@ -100,11 +102,51 @@ void xhci_acknowledge(xhci_t *xhci, int interrupter) {
 }
 
 /**
+ * @brief Poll the event ring for completion events
+ * @param xhci The XHCI to poll
+ */
+static void xhci_pollEventRing(xhci_t *xhci) {
+    // Start reading
+    while (xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c == xhci->event_ring->cycle) {
+        // !!!: probably wasteful and stupid
+        xhci_trb_t *trb = xhci_dequeueTRB(xhci);
+        if (!trb) {
+            LOG(ERR, "Could not get TRB\n");
+            return;
+        };
+
+        LOG(DEBUG, "Dequeued TRB: type=%d\n", trb->control.type);
+        if (trb->control.type == XHCI_TRB_TYPE_CMD_COMPLETION_EVENT) {
+            // Add to command completion queue
+            list_append(xhci->command_queue, (void*)trb);
+        } else {
+            list_append(xhci->event_queue, (void*)trb);
+        }
+    }
+
+    // Update ERDP and clear event handler busy
+    ERDP_UPDATE(xhci);
+    EVENTRING(xhci)->regs->erdp |= XHCI_ERDP_EHB;
+}
+
+/**
  * @brief xHCI IRQ handler
  * @param context The xHCI controller
  */
 int xhci_irqHandler(void *context) {
-    LOG(DEBUG, "IRQ\n");
+    xhci_t *xhci = (xhci_t*)context;
+
+    if (xhci) {
+        LOG(DEBUG, "Detected IRQ: %p\n", xhci);
+
+        // Poll event ring for unfinished IRQs
+        xhci_pollEventRing(xhci);
+
+        // Acknowledge
+        xhci_acknowledge(xhci, 0);
+
+        xhci->command_irq_handled = 1;
+    }
 
  
     return 0;
@@ -120,7 +162,6 @@ int xhci_startController(xhci_t *xhci) {
     xhci->opregs->usbcmd |= XHCI_USBCMD_INTERRUPTER_ENABLE;
     xhci->opregs->usbcmd |= XHCI_USBCMD_HOSTSYS_ERROR_ENABLE;
 
-
     // Wait
     while (1) {
         uint32_t usbsts = xhci->opregs->usbsts;
@@ -128,7 +169,6 @@ int xhci_startController(xhci_t *xhci) {
 
         LOG(DEBUG, "Waiting on HCH: %x\n", usbsts);
     }
-
 
     // If CNR is still set (Controller Not Ready) then we failed
     if (xhci->opregs->usbsts & XHCI_USBSTS_CNR) {
@@ -174,16 +214,22 @@ int xhci_initController(uint32_t device) {
 
     // Map it in
     LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
-    xhci->mmio_addr = mem_mapMMIO((uint32_t)bar->address, (uint32_t)bar->size);
+    
+    // !!!!: BUG BUG BUG IN THE PCI SYSTEM!!!!!!!!!!!!!
+    if (!kargs_has("--xhci-fix-pci")) {
+        xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
+    } else {
+        xhci->mmio_addr = mem_mapMMIO((uint32_t)bar->address, (uint32_t)bar->size);
+    }
 
     // Get some registers
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
     xhci->opregs = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->capregs->caplength);
     xhci->runtime = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->capregs->rtsoff);
 
-    LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
+    memcpy(&xhci->capregs_save, xhci->capregs, sizeof(xhci_cap_regs_t));
 
-    uint32_t max_ports = XHCI_MAX_PORTS(xhci->capregs);
+    LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
 
     // Reset the controller
     if (xhci_resetController(xhci)) {
@@ -244,6 +290,9 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
+    // Create the event lists
+    xhci->event_queue = list_create("xhci event queue");
+    xhci->command_queue = list_create("xhci command queue");
 
     // Enable IRQs
     xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
@@ -284,9 +333,12 @@ int xhci_initController(uint32_t device) {
         return 1;
     }
 
+    // Create pool
+    xhci->ctx_pool = pool_create("xhci devctx pool", XHCI_DEVICE_CONTEXT_SIZE(xhci), PAGE_SIZE, 0, POOL_DMA);
+
     // Start probing
     LOG(INFO, "xHCI controller started successfully\n");
-    for (uint8_t i = 0; i < max_ports; i++) {
+    for (uint8_t i = 0; i < 8; i++) {
         xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, i);
 
         if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
@@ -295,12 +347,6 @@ int xhci_initController(uint32_t device) {
         }
     }
 
-
-    xhci_trb_t enable_slot_trb = XHCI_CONSTRUCT_CMD_TRB(XHCI_TRB_TYPE_ENABLE_SLOT_CMD);
-    xhci_sendCommand(xhci, &enable_slot_trb);
-    while (xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c == xhci->event_ring->cycle) {
-        LOG(ERR, "Waiting for %d (dq: %d) != %d\n", xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c, xhci->event_ring->dequeue, xhci->event_ring->cycle);
-    };
     return 0;
 }
 
@@ -310,15 +356,41 @@ int xhci_initController(uint32_t device) {
  * @param trb The TRB to send to the controller
  * @returns 0 on success
  */
-int xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
+xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
+    // !!!: LOCK!
+    spinlock_acquire(&xhci->cmd_lock);
+
+    // Reset command IRQ
+    xhci->command_irq_handled = 0;
+    
     // Enqueue the TRB
     if (xhci_enqueueTRB(xhci, trb)) {
         LOG(ERR, "Failed to enqueue TRB %p (type=0x%x)\n", trb, trb->control.type);
-        return 1;
+        spinlock_release(&xhci->cmd_lock);
+        return NULL;
     }
 
     // Ring the doorbell    
     XHCI_RING_DOORBELL(xhci->capregs, 0, XHCI_DOORBELL_TARGET_COMMAND_RING);
 
-    return 0;
+    // Wait until we can pop from the queue
+    while (1) {
+        if (xhci->command_irq_handled) break;
+        LOG(DEBUG, "Waiting for xHCI to handle command IRQ\n");
+    }
+    xhci->command_irq_handled = 0;
+
+    // Pop the TRB from the queue
+    node_t *node = list_popleft(xhci->event_queue);
+    if (!node) {
+        LOG(ERR, "Command IRQ handled but no TRB was found in the queue\n");
+        spinlock_release(&xhci->cmd_lock);
+        return NULL;
+    }
+
+    xhci_command_completion_trb_t *ctrb = (xhci_command_completion_trb_t*)node->value;
+    kfree(node);
+
+    spinlock_release(&xhci->cmd_lock);
+    return ctrb;
 }
