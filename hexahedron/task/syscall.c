@@ -521,6 +521,7 @@ long sys_chdir(const char *path) {
 
     // Check that the path is accessible
     char *new_path = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)path);
+    char *nn = strdup(new_path); // TEMPORARY
 
     fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
     if (tmpnode) { 
@@ -528,13 +529,14 @@ long sys_chdir(const char *path) {
         // TODO: Validate permissions?
 
         kfree(current_cpu->current_process->wd_path);
-        current_cpu->current_process->wd_path = new_path;
+        current_cpu->current_process->wd_path = nn;
 
         // Close node
         fs_close(tmpnode);
         return 0;
     }
 
+    kfree(nn);
     return -ENOENT;
 }
 
