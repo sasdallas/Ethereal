@@ -103,6 +103,15 @@ USB_STATUS usb_getDescriptor(USBDevice_t *dev, uintptr_t request_type, uintptr_t
  */
 USB_STATUS usb_getStringDevice(USBDevice_t *device, int idx, uint16_t lang, char *buffer, size_t length);
 
-
+/**
+ * @brief Configure the endpoint of a USB device
+ * 
+ * You are expected to do this when you want to use a specific endoint
+ * 
+ * @param device The device to configure the endoint for
+ * @param endp The endpoint to configure
+ * @returns USB_SUCCESS on success
+ */
+USB_STATUS usb_configureEndpoint(USBDevice_t *device, USBEndpoint_t *endp);
 
 #endif

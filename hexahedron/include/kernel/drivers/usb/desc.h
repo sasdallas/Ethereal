@@ -48,13 +48,13 @@
 #define USB_ENDP_FEEDBACK_IMPL      0x30        // Feedback implicit endpoint
 
 // Endpoint transfer types
-#define USB_ENDP_TRANSFER_CONTROL   0x00        // Control endpoint
+#define USB_ENDP_TRANSFER_CONTROL   0x00        // !!!: DO NOT USE AS THIS IS AN INVALID BITMASK
 #define USB_ENDP_TRANSFER_ISOCH     0x01        // Isochronous endpoint
 #define USB_ENDP_TRANSFER_BULK      0x02        // Bulk endpoint
 #define USB_ENDP_TRANSFER_INT       0x03        // Interrupt endpoint
 
 // Endpoint directions
-#define USB_ENDP_DIRECTION_OUT      0x00        // OUT endpoint
+#define USB_ENDP_DIRECTION_OUT      0x00        // !!!: DO NOT USE AS THIS IS AN INVALID BITMASK
 #define USB_ENDP_DIRECTION_IN       0x80        // IN endpoint
 
 // TODO: Endpoint syncronization types

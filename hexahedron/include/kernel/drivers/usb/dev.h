@@ -127,6 +127,14 @@ typedef int (*hc_address_t)(struct USBController *controller, struct USBDevice *
 typedef int (*hc_endpoint_t)(struct USBController *controller, struct USBDevice *dev, struct USBEndpoint *endp);
 
 /**
+ * @brief Evaluate the device context
+ * @param controller The controller
+ * @param dev The device
+ * @returns USB status code
+ */
+typedef int (*hc_evaluate_t)(struct USBController *controller, struct USBDevice *dev);
+
+/**
  * @brief Shutdown and free the memory associated with a device
  * @param controller The controller
  * @param dev The device
@@ -164,6 +172,7 @@ typedef struct USBDevice {
     hc_shutdown_t       shutdown;           // Shutdown the device
     hc_address_t        setaddr;            // Address the device (OPTIONAL)
     hc_endpoint_t       confendp;           // Configure endpoint (OPTIONAL)
+    hc_evaluate_t       evaluate;           // Evaluate context (OPTIONAL)
     hc_control_t        control;            // Control transfer request
     hc_interrupt_t      interrupt;          // Interrupt transfer request
 

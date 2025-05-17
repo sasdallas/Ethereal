@@ -301,14 +301,19 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
                 list_append(interface->endpoint_list, (void*)endp);
 
                 LOG(DEBUG, "\tEndpoint available with bEndpointAddress 0x%x bmAttributes 0x%x wMaxPacketSize %d\n", endp->desc.bEndpointAddress, endp->desc.bmAttributes, endp->desc.wMaxPacketSize);
+                
+                // Configure the endpoint if necessary
+                usb_configureEndpoint(dev, endp);
+            
+                // Next
                 buffer += endp->desc.bLength;
             }
         } else if (buffer[1] == USB_DESC_ENDP) {
             LOG(ERR, "Additional endpoint found while parsing interface\n");
             buffer += buffer[0];
         } else {
-            LOG(ERR, "Unrecognized descriptor type while parsing configuration: 0x%x\n", buffer[1]);
-            break;
+            LOG(WARN, "Unrecognized descriptor type while parsing configuration: 0x%x - assuming class specific descriptor\n", buffer[1]);
+            buffer += buffer[0];    // Pray to god we hit bLength
         }
     } 
 
@@ -337,6 +342,15 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         // The request did not succeed
         LOG(ERR, "USB_REQ_GET_DESC did not succeed\n");
         return USB_FAILURE;
+    }
+
+    // xHCI specific
+    if (dev->mps != dev->device_desc.bMaxPacketSize0 && dev->evaluate) {
+        // Evaluate the endpoint context (and update the internal Input Context mps)
+        if (dev->evaluate(dev->c, dev) != USB_SUCCESS) {
+            LOG(ERR, "Device initialization failed - Evaluate command did not succeed\n");
+            return 1;
+        }
     }
 
     // Set the maximum packet size
@@ -443,7 +457,7 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
 
     char *conf_str = usb_getStringIndex(dev, dev->config->desc.iConfiguration, dev->chosen_language);
     LOG(INFO, "Selected configuration '%s'\n", conf_str);
-    if (conf_str) kfree(conf_str);
+    if (conf_str) kfree(conf_str); 
 
     // Now send the device the request to set its configuration
     if (usb_requestDevice(dev, USB_RT_H2D | USB_RT_STANDARD | USB_RT_DEV,

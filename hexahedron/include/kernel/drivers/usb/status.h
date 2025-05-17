@@ -23,7 +23,7 @@
  * 
  * This is an enum so you know which devices return a different status code.
  */
-typedef enum {
+typedef enum USB_STATUS {
     USB_SUCCESS = 0,
     USB_FAILURE = 1,
 } USB_STATUS;
