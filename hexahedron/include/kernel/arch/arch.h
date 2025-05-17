@@ -28,13 +28,19 @@
 /**** TYPES ****/
 
 #if defined(__ARCH_I386__)
+#include <kernel/arch/i386/cpu.h>
+#include <kernel/arch/i386/registers.h>
 #include <kernel/arch/i386/context.h>
 #include <kernel/arch/i386/registers.h>
+#include <kernel/arch/i386/hal.h>
 #elif defined(__ARCH_X86_64__)
+#include <kernel/arch/x86_64/cpu.h>
+#include <kernel/arch/x86_64/registers.h>
 #include <kernel/arch/x86_64/context.h>
 #include <kernel/arch/x86_64/registers.h>
+#include <kernel/arch/x86_64/hal.h>
 #else
-#error "Please define your context"
+#error "Please define your includes here"
 #endif
 
 

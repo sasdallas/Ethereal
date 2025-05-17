@@ -25,6 +25,14 @@
 #define HAL_STAGE_1     1   // Stage 1 of HAL initialization
 #define HAL_STAGE_2     2   // Stage 2 of HAL initialization
 
+/* Important IRQ bases for the system */
+#define HAL_IRQ_BASE        0x20    // Our interrupts start at 0x20
+#define HAL_IRQ_MSI_BASE    0x30    // MSI interrupts start at 0x50
+
+/* IRQ counts */
+#define HAL_IRQ_MSI_COUNT   16      // Can be expanded
+
+
 /**** FUNCTIONS ****/
  
 /**

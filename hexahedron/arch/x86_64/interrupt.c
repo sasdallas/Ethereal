@@ -524,6 +524,7 @@ void hal_initializeInterrupts() {
     hal_registerInterruptVector(30, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halSecurityException);
     hal_registerInterruptVector(31, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halReserved2Exception);
 
+    // IRQ vectors
     hal_registerInterruptVector(32, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ0);
     hal_registerInterruptVector(33, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ1);
     hal_registerInterruptVector(34, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ2);
@@ -540,6 +541,25 @@ void hal_initializeInterrupts() {
     hal_registerInterruptVector(45, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ13);
     hal_registerInterruptVector(46, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ14);
     hal_registerInterruptVector(47, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ15);
+
+    // MSI vectors
+    hal_registerInterruptVector(48, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI0);
+    hal_registerInterruptVector(49, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI1);
+    hal_registerInterruptVector(50, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI2);
+    hal_registerInterruptVector(51, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI3);
+    hal_registerInterruptVector(52, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI4);
+    hal_registerInterruptVector(53, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI5);
+    hal_registerInterruptVector(54, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI6);
+    hal_registerInterruptVector(55, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI7);
+    hal_registerInterruptVector(56, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI8);
+    hal_registerInterruptVector(57, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI9);
+    hal_registerInterruptVector(58, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI10);
+    hal_registerInterruptVector(59, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI11);
+    hal_registerInterruptVector(60, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI12);
+    hal_registerInterruptVector(61, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI13);
+    hal_registerInterruptVector(62, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI14);
+    hal_registerInterruptVector(63, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI15);
+
 
     hal_registerInterruptVector(123, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halLocalAPICTimerInterrupt);
     hal_registerInterruptVector(124, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halTLBShootdownInterrupt);

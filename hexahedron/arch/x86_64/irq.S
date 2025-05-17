@@ -205,6 +205,24 @@ IRQ             halIRQ13,   45
 IRQ             halIRQ14,   46
 IRQ             halIRQ15,   47
 
+IRQ             halMSI0,    48
+IRQ             halMSI1,    49
+IRQ             halMSI2,    50
+IRQ             halMSI3,    51
+IRQ             halMSI4,    52
+IRQ             halMSI5,    53
+IRQ             halMSI6,    54
+IRQ             halMSI7,    55
+IRQ             halMSI8,    56
+IRQ             halMSI9,    57
+IRQ             halMSI10,   58
+IRQ             halMSI11,   59
+IRQ             halMSI12,   60
+IRQ             halMSI13,   61
+IRQ             halMSI14,   62
+IRQ             halMSI15,   63
+
+
 /* ISR 123 */
 .global halLocalAPICTimerInterrupt
 halLocalAPICTimerInterrupt:
