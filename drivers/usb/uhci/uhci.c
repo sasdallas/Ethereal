@@ -253,7 +253,7 @@ int uhci_probe(USBController_t *controller) {
             LOG(DEBUG, "Found a UHCI device connected to port %i\n", port);
 
             // Now, we need to initialize the device connected to the port
-            USBDevice_t *dev = usb_createDevice(controller, port, (status & UHCI_PORT_LSDA) ? USB_LOW_SPEED : USB_FULL_SPEED, uhci_control, uhci_interrupt);
+            USBDevice_t *dev = usb_createDevice(controller, port, (status & UHCI_PORT_LSDA) ? USB_LOW_SPEED : USB_FULL_SPEED, NULL, uhci_control, uhci_interrupt);
             dev->mps = (dev->speed == USB_LOW_SPEED) ? 8 : 64;
  
             if (usb_initializeDevice(dev)) {

@@ -84,7 +84,7 @@ USB_STATUS usbhub_probe(USBHub_t *hub) {
         if (port_status & HUB_PORT_STATUS_ENABLE) {
             // Yes, create a device and initialize it
             uint32_t port_speed = (port_status & HUB_PORT_STATUS_LOW_SPEED) ? USB_LOW_SPEED : ((port_status & HUB_PORT_STATUS_HIGH_SPEED) ? USB_HIGH_SPEED : USB_FULL_SPEED);
-            USBDevice_t *dev = usb_createDevice(hub->intf->dev->c, port, port_speed, hub->intf->dev->control, hub->intf->dev->interrupt);
+            USBDevice_t *dev = usb_createDevice(hub->intf->dev->c, port, port_speed, hub->intf->dev->shutdown, hub->intf->dev->control, hub->intf->dev->interrupt);
             dev->mps = 8; // TODO: Bochs says to make this equal the mps corresponding to the speed of the device
             if (!dev) {
                 LOG(ERR, "Failed to create device for port %d\n", port+1);

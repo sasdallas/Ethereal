@@ -31,14 +31,16 @@
  * @param port The device port
  * @param speed The device speed
  * 
+ * @param shutdown The HC device shutdown method
  * @param control The HC control request method
  * @param interrupt The HC interrupt request method
  */
-USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_control_t control, hc_interrupt_t interrupt) {
+USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_shutdown_t shutdown, hc_control_t control, hc_interrupt_t interrupt) {
     USBDevice_t *dev = kmalloc(sizeof(USBDevice_t));
     memset(dev, 0, sizeof(USBDevice_t));
 
     dev->c = controller;
+    dev->shutdown = shutdown;
     dev->control = control;
     dev->interrupt = interrupt;
     dev->port = port;
@@ -330,7 +332,7 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     // Get first few bytes of the device descriptor
     // TODO: Bochs requests that this have a size equal the mps of a device - implement this
     if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
-                    USB_REQ_GET_DESC, (USB_DESC_DEVICE << 8) | 0, 0, dev->mps, &dev->device_desc) != USB_TRANSFER_SUCCESS) 
+                    USB_REQ_GET_DESC, (USB_DESC_DEVICE << 8) | 0, 0, 8, &dev->device_desc) != USB_TRANSFER_SUCCESS) 
     {
         // The request did not succeed
         LOG(ERR, "USB_REQ_GET_DESC did not succeed\n");
@@ -340,23 +342,31 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     // Set the maximum packet size
     dev->mps = dev->device_desc.bMaxPacketSize0;
 
-    // Get an address for it 
-    uint32_t address = dev->c->last_address;
-    dev->c->last_address++;
+    if (!dev->setaddr) {
+        // Get an address for it 
+        uint32_t address = dev->c->last_address;
+        dev->c->last_address++;
 
-    // Request it to set that address
-    if (usb_requestDevice(dev, USB_RT_H2D | USB_RT_STANDARD | USB_RT_DEV,
-                    USB_REQ_SET_ADDR, address, 0, 0, NULL) != USB_TRANSFER_SUCCESS)
-    {
-        // The request did not succeed
-        LOG(ERR, "Device initialization failed - USB_REQ_SET_ADDR 0x%x did not succeed\n", address);
-        return USB_FAILURE;
+        // Request it to set that address
+        if (usb_requestDevice(dev, USB_RT_H2D | USB_RT_STANDARD | USB_RT_DEV,
+                        USB_REQ_SET_ADDR, address, 0, 0, NULL) != USB_TRANSFER_SUCCESS)
+        {
+            // The request did not succeed
+            LOG(ERR, "Device initialization failed - USB_REQ_SET_ADDR 0x%x did not succeed\n", address);
+            return USB_FAILURE;
+        }
+
+        // Allow the device a 20ms recovery time
+        clock_sleep(20);
+
+        dev->address = address;
+    } else {
+        if (dev->setaddr(dev->c, dev)) {
+            // The request did not succeed
+            LOG(ERR, "Device initialization failed - could not set device address\n");
+            return USB_FAILURE;
+        }
     }
-
-    // Allow the device a 20ms recovery time
-    clock_sleep(20);
-
-    dev->address = address;
 
     // Now we can read the whole descriptor
     if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,

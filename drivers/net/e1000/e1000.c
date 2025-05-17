@@ -275,6 +275,7 @@ static void e1000_receiverThread(void *data) {
     int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
 
     for (;;) {
+        arch_pause();
         if (head == nic->rx_current) {
             // Same as before.. Try reading it one more time
             head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
@@ -316,6 +317,7 @@ static void e1000_receiverThread(void *data) {
                 // Clear STATUS
                 uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
                 LOG(DEBUG, "status = %08x\n", status);
+                arch_pause();
             }
         }
 
@@ -416,10 +418,8 @@ void e1000_init(uint32_t device, uint16_t type) {
 
     // Map the MMIO space in
     // Convert if needed
-    uintptr_t address = (uint32_t)bar->address; // !!!: GLITCH IN PCI??? THIS HAS BAD BITS SET IN VMWARE
-    size_t size = (size_t)(uint32_t)bar->size;
-    LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", size, address, bar->type);
-    nic->mmio = mem_mapMMIO(address, size);
+    LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
+    nic->mmio = mem_mapMMIO(bar->address, bar->size);
     kfree(bar);
 
     // Detect an EEPROM
@@ -493,7 +493,7 @@ _cleanup:
     }
 
     // Unmap MMIO
-    mem_unmapMMIO(nic->mmio, size);
+    mem_unmapMMIO(nic->mmio, bar->size);
     spinlock_destroy(nic->lock);
     kfree(nic);
 }

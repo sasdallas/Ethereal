@@ -101,10 +101,11 @@ USB_STATUS usb_deinitializeDevice(USBDevice_t *dev);
  * @param port The device port
  * @param speed The device speed
  * 
+ * @param shutdown The HC device shutdown method
  * @param control The HC control request method
  * @param interrupt The HC interrupt request method
  */
-USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_control_t control, hc_interrupt_t interrupt);
+USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_shutdown_t shutdown, hc_control_t control, hc_interrupt_t interrupt);
 
 /**
  * @brief Destroy a USB device
