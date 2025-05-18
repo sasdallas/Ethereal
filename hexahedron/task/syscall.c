@@ -524,10 +524,15 @@ long sys_chdir(const char *path) {
     char *nn = strdup(new_path); // TEMPORARY
 
     fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
-    if (tmpnode) { 
+    if (tmpnode) {
+        if (tmpnode->flags != VFS_DIRECTORY) {
+            kfree(nn);
+            fs_close(tmpnode);
+            return -ENOTDIR;
+        }
+        
         // Path exists
         // TODO: Validate permissions?
-
         kfree(current_cpu->current_process->wd_path);
         current_cpu->current_process->wd_path = nn;
 
