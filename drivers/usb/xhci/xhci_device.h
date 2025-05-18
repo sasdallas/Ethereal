@@ -588,9 +588,37 @@ typedef struct xhci_input_control_context64 {
     uint32_t padding[8];
 } __attribute__((packed)) xhci_input_control64_t;
 
+// !!!: how is this even worse than what's above
+typedef struct xhci_input_context32 {
+    xhci_input_control32_t control;
+    xhci_device_context32_t device;
+} __attribute__((packed)) xhci_input_context32_t;
+
+typedef struct xhci_input_context64 {
+    xhci_input_control64_t control;
+    xhci_device_context64_t device;
+} __attribute__((packed)) xhci_input_context64_t;
+
+
+// So, if you haven't realized xHCI uses multiple types depending on whether the 64-bit addressing is used
+// This is a problem in C: padding isn't interpreted properly by these structures
+// Therefore our getter macros instead cast to this type, which has pointers to the correct input and device contexts
+// This is hacky, but so is this driver (and yet it still works, mostly)
+
+typedef struct xhci_input_context {
+    xhci_input_control32_t *control;
+    xhci_device_context32_t *device;
+} xhci_input_context_t;
 
 /**** MACROS ****/
 
+// IMPORTANT: Do not use the values of the XHCI_CREATE_ macros.
 #define XHCI_CREATE_DEVICE_CONTEXT(xhci) ((xhci_device_context32_t*)pool_allocateChunk(xhci->ctx_pool))
-#define XHCI_DEVICE_CONTEXT_SIZE(xhci) ((XHCI_CSZ((&xhci->capregs_save)) ? sizeof(xhci_device_context64_t) : sizeof(xhci_device_context32_t)))
+#define XHCI_DEVICE_CONTEXT_SIZE(xhci) ((xhci->bit64 ? sizeof(xhci_device_context64_t) : sizeof(xhci_device_context32_t)))
+#define XHCI_CREATE_INPUT_CONTEXT(xhci) ((xhci_input_context32_t*)pool_allocateChunk(xhci->input_ctx_pool))
+#define XHCI_INPUT_CONTEXT_SIZE(xhci) ((xhci->bit64 ? sizeof(xhci_input_context64_t) : sizeof(xhci_input_context32_t)))
+
+// Use this!
+#define XHCI_INPUT_CONTEXT(dev) (dev->xhci->bit64 ? ((xhci_input_context_t*)&(xhci_input_context_t){ .control = (xhci_input_control32_t*)&(((xhci_input_context64_t*)dev->input_ctx)->control), .device = (xhci_device_context32_t*)&(((xhci_input_context64_t*)dev->input_ctx)->device)}) : (&(xhci_input_context_t){ .control = &(((xhci_input_context32_t*)dev->input_ctx)->control), .device = &(((xhci_input_context32_t*)dev->input_ctx)->device)}))
+
 #endif

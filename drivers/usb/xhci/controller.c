@@ -13,6 +13,7 @@
 
 #include "xhci.h"
 #include <kernel/arch/arch.h>
+#include <kernel/drivers/clock.h>
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/drivers/pci.h>
@@ -94,7 +95,7 @@ void xhci_acknowledge(xhci_t *xhci, int interrupter) {
     uint32_t iman = xhci->runtime->ir[interrupter].iman;
 
     // Write the IP bit
-    iman |= XHCI_IMAN_INTERRUPT_PENDING;
+    // iman |= XHCI_IMAN_INTERRUPT_PENDING | XHCI_IMAN_INTERRUPT_ENABLE;
     xhci->runtime->ir[interrupter].iman = iman;
 
     // Clear EINT bit by writing a one to it
@@ -102,12 +103,23 @@ void xhci_acknowledge(xhci_t *xhci, int interrupter) {
 }
 
 /**
+ * @brief Determine whether a port is USB3 or not
+ * @param xhci The xHCI to use
+ * @param port Zero-based port number to check
+ * @returns 0 on USB2, 1 on USB3
+ */
+int xhci_portUSB3(xhci_t *xhci, int port) {
+    // TODO: This requires parsing the extended capabilities, which is broken right now
+    return 0;
+}
+
+/**
  * @brief Poll the event ring for completion events
  * @param xhci The XHCI to poll
  */
-static void xhci_pollEventRing(xhci_t *xhci) {
+void xhci_pollEventRing(xhci_t *xhci) {
     // Start reading
-    while (xhci->event_ring->trb_list[xhci->event_ring->dequeue].control.c == xhci->event_ring->cycle) {
+    while (XHCI_EVENT_RING_AVAILABLE(xhci)) {
         // !!!: probably wasteful and stupid
         xhci_trb_t *trb = xhci_dequeueTRB(xhci);
         if (!trb) {
@@ -115,18 +127,33 @@ static void xhci_pollEventRing(xhci_t *xhci) {
             return;
         };
 
-        LOG(DEBUG, "Dequeued TRB: type=%d\n", trb->control.type);
+        LOG(DEBUG, "Dequeued TRB: type=%d parameter=%p\n", trb->control.type, trb->specific);
+        // Check to see if the TRB is a oprt status change event
+        if (trb->control.type == XHCI_TRB_TYPE_PORT_STATUS_CHANGE_EVENT) {
+            // We need to handle this one
+            xhci_port_status_change_trb_t *port_trb = (xhci_port_status_change_trb_t*)trb;
+            uint8_t port_num = port_trb->port_id - 1;
+            LOG(INFO, "Port status change detected for port %d\n", port_num);
+
+            // xhci_portInitialize(xhci, port_num);
+            list_append(xhci->port_queue, (void*)port_trb);
+        }
+        
         if (trb->control.type == XHCI_TRB_TYPE_CMD_COMPLETION_EVENT) {
             // Add to command completion queue
+            xhci_command_completion_trb_t *cc = (xhci_command_completion_trb_t*)trb;
+            LOG(INFO, "An xHCI command was completed with completion code %d\n", cc->completion_code);
             list_append(xhci->command_queue, (void*)trb);
+        } else if (trb->control.type == XHCI_TRB_TYPE_TRANSFER_EVENT) {
+            list_append(xhci->transfer_queue, (void*)trb);
         } else {
             list_append(xhci->event_queue, (void*)trb);
         }
     }
 
     // Update ERDP and clear event handler busy
-    ERDP_UPDATE(xhci);
-    EVENTRING(xhci)->regs->erdp |= XHCI_ERDP_EHB;
+    // ERDP_UPDATE(xhci);
+    // EVENTRING(xhci)->regs->erdp = XHCI_ERDP_EHB;
 }
 
 /**
@@ -135,20 +162,22 @@ static void xhci_pollEventRing(xhci_t *xhci) {
  */
 int xhci_irqHandler(void *context) {
     xhci_t *xhci = (xhci_t*)context;
-
     if (xhci) {
-        LOG(DEBUG, "Detected IRQ: %p\n", xhci);
-
-        // Poll event ring for unfinished IRQs
-        xhci_pollEventRing(xhci);
-
         // Acknowledge
         xhci_acknowledge(xhci, 0);
+        xhci->opregs->usbsts = XHCI_USBSTS_EINT;
 
-        xhci->command_irq_handled = 1;
+        LOG(DEBUG, "IRQ detected (event queue dq=%d, usbsts=%08x)\n", xhci->event_ring->dequeue, xhci->opregs->usbsts);
+
+        // Poll event ring for port status change event IRQs
+        // !!!: Because some real hardware doesn't support IRQs that well with xHCI (and we dont have MSI),
+        // !!!: I use event queue polling sometimes.
+        // !!!: If the events do get dequeued here, the waiters should have fallback code - but we need to pick a side.
+        // !!!: (also should probably wake a thread up here rather than poll during the IRQ and stall the CPU)
+        xhci_pollEventRing(xhci);
+        ERDP_UPDATE(xhci);
     }
 
- 
     return 0;
 }
 
@@ -177,6 +206,80 @@ int xhci_startController(xhci_t *xhci) {
     }
 
     return 0;
+}
+
+/**
+ * @brief Take ownership of the xHCI controller
+ * @param xhci The xHCI to take ownership on
+ * @param cap The cap that said it was for LEGSUP
+ */
+static int xhci_takeOwnership(xhci_t *xhci, volatile xhci_extended_capability_t *cap) {
+    uint32_t *usblegsup = (uint32_t*)cap;
+    uint32_t *usblegsts = (uint32_t*)cap + 1;
+
+    // Source: StelluxOS (https://github.com/FlareCoding/StelluxOS/blob/master/kernel/src/drivers/usb/xhci/xhci.cpp#L728)
+    // <3 to FlareCoding
+
+    // Disable all SMIs
+    *usblegsts &= ~(XHCI_LEGACY_SMI_ENABLE_BITS);
+    clock_sleep(10);
+
+    // Set the OS owned semaphore in USBLEGSUP
+    LOG(DEBUG, "Requesting ownership of xHCI controller\n");
+    *usblegsup |= XHCI_LEGACY_OS_OWNED_SEMAPHORE;
+    clock_sleep(10);
+
+    // Wait for BIOS to clear BIOS owned semaphore
+    int attempts = 0;
+    while ((*usblegsup & XHCI_LEGACY_BIOS_OWNED_SEMAPHORE) && attempts++ < 4000) {
+        clock_sleep(1);
+    }
+
+    // Did they release?
+    if (*usblegsup & XHCI_LEGACY_BIOS_OWNED_SEMAPHORE) {
+        LOG(ERR, "BIOS did not release the xHCI semaphore\n");
+        LOG(ERR, "Force taking xHCI controller - this may result in bugs and glitches.\n");
+        *usblegsup &= ~(XHCI_LEGACY_BIOS_OWNED_SEMAPHORE);
+        clock_sleep(10);
+    } else {
+        LOG(INFO, "BIOS successfully handed over control\n");
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Parse extended capabilities
+ * @param xhci The xHCI to parse extended capabilities on
+ */
+int xhci_parseExtendedCapabilities(xhci_t *xhci) {
+    uint32_t base = XHCI_XECP(xhci->capregs);
+    volatile xhci_extended_capability_t *cap = (volatile xhci_extended_capability_t*)(uintptr_t)base;
+
+    while (cap) {
+        LOG(DEBUG, "cap=%p id=%x next=%x\n", cap, cap->id, cap->next);
+        cap = (volatile xhci_extended_capability_t*)(volatile uintptr_t*)XHCI_NEXT_EXT_CAP_PTR((uintptr_t)base, cap->next);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Thread
+ */
+void xhci_thread(void *context) {
+    xhci_t *xhci = (xhci_t*)context;
+    for (;;) {
+        if (xhci->port_queue->length) {
+            node_t *n = list_popleft(xhci->port_queue);
+            while (n) {
+                xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)n->value;
+                kfree(n);
+                xhci_portInitialize(xhci, trb->port_id-1);
+                n = list_popleft(xhci->port_queue);
+            }
+        }
+    }
 }
 
 /**
@@ -209,8 +312,23 @@ int xhci_initController(uint32_t device) {
     uint16_t xhci_pci_command = pci_readConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, 2);
     xhci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
     xhci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, (uint32_t)xhci_pci_command & 0xFFFF);
+    pci_writeConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, xhci_pci_command, 2);
 
+    // Try to enable MSI
+    uint8_t irq = pci_enableMSI(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+    if (irq != 0xFF) {
+        if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
+            LOG(ERR, "Error while registering IRQ%d\n", irq);
+            return 1;
+        }
+    } else {
+        LOG(WARN, "This xHCI controller does not support MSI - fallback to pin interrupt\n");
+        irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+        if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
+            LOG(ERR, "Error while registering IRQ%d\n", irq);
+            return 1;
+        }
+    }
 
     // Map it in
     LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
@@ -226,6 +344,15 @@ int xhci_initController(uint32_t device) {
     xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
     xhci->opregs = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->capregs->caplength);
     xhci->runtime = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->capregs->rtsoff);
+    LOG(DEBUG, "xHCI mapped MMIO to %p: capregs=%p opregs=%p runtime=%p\n", xhci->mmio_addr, xhci->capregs, xhci->opregs, xhci->runtime);
+
+    // xhci_parseExtendedCapabilities(xhci);
+
+    if (kargs_has("--xhci-fix-pci")) {
+        xhci->bit64 = 0;
+    } else {
+        xhci->bit64 = XHCI_CSZ(xhci->capregs);
+    }
 
     memcpy(&xhci->capregs_save, xhci->capregs, sizeof(xhci_cap_regs_t));
 
@@ -237,6 +364,7 @@ int xhci_initController(uint32_t device) {
         kfree(xhci);
         return 1;
     } 
+
 
     // Enable device notifications
     xhci->opregs->dnctrl = 0xFFFF;
@@ -293,6 +421,8 @@ int xhci_initController(uint32_t device) {
     // Create the event lists
     xhci->event_queue = list_create("xhci event queue");
     xhci->command_queue = list_create("xhci command queue");
+    xhci->transfer_queue = list_create("xhci transfer queue");
+    xhci->port_queue = list_create("xhci port queue");
 
     // Enable IRQs
     xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
@@ -312,14 +442,9 @@ int xhci_initController(uint32_t device) {
     // Clear pending
     xhci_acknowledge(xhci, 0);
 
-    // Register IRQ handler
-    // TODO: MSI(-X) needs to be worked out and/or I/O APIC. This is a bad hack.
-    uintptr_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
-    hal_unregisterInterruptHandler(irq);
-    if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
-        LOG(ERR, "Error while registering IRQ%d\n", irq);
-        return 1;
-    }
+    // Take over control (Panther Point)
+    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0xD0, 0xFFFFFFFF, 4);
+    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0xD8, 0xFFFFFFFF, 4);
 
     // Start the controller
     if (xhci_startController(xhci)) {
@@ -334,7 +459,12 @@ int xhci_initController(uint32_t device) {
     }
 
     // Create pool
-    xhci->ctx_pool = pool_create("xhci devctx pool", XHCI_DEVICE_CONTEXT_SIZE(xhci), PAGE_SIZE, 0, POOL_DMA);
+    // TODO: Make pool size consistent with xHC
+    xhci->ctx_pool = pool_create("xhci devctx pool", 64, PAGE_SIZE, 0, POOL_DMA);
+    xhci->input_ctx_pool = pool_create("xhci inputctx pool", 64, PAGE_SIZE, 0, POOL_DMA);
+
+    // Build the USB controller
+    xhci->controller = usb_createController((void*)xhci, NULL);
 
     // Start probing
     LOG(INFO, "xHCI controller started successfully\n");
@@ -343,9 +473,14 @@ int xhci_initController(uint32_t device) {
 
         if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
             LOG(DEBUG, "xHCI USB device detected on port %d\n", i);
-            xhci_portInitialize(xhci, i);
+            xhci_portReset(xhci, i);
         }
     }
+
+    // Spawn
+    // TODO: This is temporary, and slow
+    process_t *xhciproc = process_createKernel("xhci poller", PROCESS_KERNEL, PRIORITY_LOW, xhci_thread, (void*)xhci);
+    scheduler_insertThread(xhciproc->main_thread);
 
     return 0;
 }
@@ -358,11 +493,9 @@ int xhci_initController(uint32_t device) {
  */
 xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     // !!!: LOCK!
+    // LOG(DEBUG, "Command send: type=%d\n", trb->control.type);
     spinlock_acquire(&xhci->cmd_lock);
 
-    // Reset command IRQ
-    xhci->command_irq_handled = 0;
-    
     // Enqueue the TRB
     if (xhci_enqueueTRB(xhci, trb)) {
         LOG(ERR, "Failed to enqueue TRB %p (type=0x%x)\n", trb, trb->control.type);
@@ -374,14 +507,13 @@ xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     XHCI_RING_DOORBELL(xhci->capregs, 0, XHCI_DOORBELL_TARGET_COMMAND_RING);
 
     // Wait until we can pop from the queue
-    while (1) {
-        if (xhci->command_irq_handled) break;
-        LOG(DEBUG, "Waiting for xHCI to handle command IRQ\n");
+    // TODO: this sucks
+    while (!xhci->command_queue->length) {
+        LOG(DEBUG, "Waiting for xHCI to handle command IRQ: usbsts=0x%08x\n", xhci->opregs->usbsts);
     }
-    xhci->command_irq_handled = 0;
 
     // Pop the TRB from the queue
-    node_t *node = list_popleft(xhci->event_queue);
+    node_t *node = list_popleft(xhci->command_queue);
     if (!node) {
         LOG(ERR, "Command IRQ handled but no TRB was found in the queue\n");
         spinlock_release(&xhci->cmd_lock);

@@ -113,4 +113,11 @@ typedef struct xhci_port_registers {
     uint32_t reserved;          // Reserved
 } __attribute__((packed)) xhci_port_registers_t;
 
+typedef struct xhci_extended_capability {
+    uint8_t id;
+    uint8_t next;
+    uint16_t specific;
+} __attribute__((packed)) xhci_extended_capability_t;
+
+
 #endif // XHCI_REGS_H

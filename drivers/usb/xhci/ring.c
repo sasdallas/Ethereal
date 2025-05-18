@@ -2,6 +2,8 @@
  * @file drivers/usb/xhci/ring.c
  * @brief xHCI ring handler
  * 
+ * Command and event rings are abstracted in the xHCI structure
+ * Transfer rings are created structures that the caller keeps track of
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
@@ -99,6 +101,9 @@ int xhci_initializeEventRing(struct xhci *xhci) {
     EVENTRING(xhci)->regs = regs;
     EVENTRING(xhci)->trb_list_phys = mem_getPhysicalAddress(NULL, (uintptr_t)EVENTRING(xhci)->trb_list);
 
+    memset(EVENTRING(xhci)->trb_list, 0, XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    memset(EVENTRING(xhci)->erst, 0, PAGE_SIZE);
+
     // Create the first entry in the ERST
     EVENTRING(xhci)->erst[0].address = EVENTRING(xhci)->trb_list_phys;
     EVENTRING(xhci)->erst[0].size = XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t);
@@ -132,4 +137,66 @@ xhci_trb_t *xhci_dequeueTRB(struct xhci *xhci) {
     }
 
     return trb;
+}
+
+/**
+ * @brief Create a new xHCI transfer ring
+ * @returns A new xHCI transfer ring
+ */
+xhci_transfer_ring_t *xhci_createTransferRing() {
+    xhci_transfer_ring_t *ring = kzalloc(sizeof(xhci_transfer_ring_t));
+    ring->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    ring->cycle = 1;
+    ring->lock = spinlock_create("xhci transfer ring lock");
+    ring->enqueue = 0;
+
+    memset(ring->trb_list, 0, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    
+    // Setup link TRB
+    // This will form a big chain around the command ring
+    xhci_link_trb_t *link_trb = LINK_TRB(&ring->trb_list[XHCI_TRANSFER_RING_TRB_COUNT-1]);
+    link_trb->ring_segment = mem_getPhysicalAddress(NULL, (uintptr_t)ring->trb_list);
+    link_trb->control.type = XHCI_TRB_TYPE_LINK;
+    link_trb->control.tc = 1;
+    link_trb->control.c = ring->cycle;
+
+    return ring;
+}
+
+/**
+ * @brief Insert a TRB into an xHCI transfer ring
+ * @param ring The ring to insert the TRB into
+ * @param trb The TRB to insert into the ring
+ * @returns 0 on success
+ */
+int xhci_enqueueTransferTRB(xhci_transfer_ring_t *ring, xhci_trb_t *trb) {
+    LOG(DEBUG, "Enqueue TRB %p to ring %p (current cycle bit: %d, enqueue: %d)\n", trb, ring, ring->cycle, ring->enqueue);
+    spinlock_acquire(ring->lock);
+    
+    // Fix enqueue
+    if (ring->enqueue >= XHCI_TRANSFER_RING_TRB_COUNT-1) {
+        // Syncronize link TRB and invert cycle
+        xhci_link_trb_t *link_trb = LINK_TRB(&ring->trb_list[XHCI_TRANSFER_RING_TRB_COUNT-1]);
+        link_trb->control.type = XHCI_TRB_TYPE_LINK;
+        link_trb->control.tc = 1;
+        link_trb->control.c = ring->cycle;
+    
+        // Wrap
+        ring->enqueue = 0;
+        ring->cycle ^= 1;
+    }
+
+    LOG(DEBUG, "\tTRB will be enqueued to %p\n", mem_getPhysicalAddress(NULL, (uintptr_t)&ring->trb_list[ring->enqueue]));
+
+    // Setup cycle bit
+    trb->control.c = ring->cycle;
+
+    // Enqueue
+    ring->trb_list[ring->enqueue] = *trb;
+
+    // Update enqueue
+    ring->enqueue++;
+
+    spinlock_release(ring->lock);
+    return 0;
 }

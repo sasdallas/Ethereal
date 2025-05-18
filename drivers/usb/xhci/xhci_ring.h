@@ -1,6 +1,6 @@
 /**
  * @file drivers/usb/xhci/xhci_ring.h
- * @brief Command and event ring
+ * @brief Command, event, and transfer rings
  * 
  * 
  * @copyright
@@ -46,17 +46,25 @@ typedef struct xhci_event_ring {
     uint8_t cycle;                  // Cycle bit
 } xhci_event_ring_t;
 
+typedef struct xhci_transfer_ring {
+    spinlock_t *lock;               // Lock
+    xhci_trb_t *trb_list;           // TRB list
+    uint32_t enqueue;               // Enqueue pointer
+    uint32_t dequeue;               // Dequeue pointer
+    uint8_t cycle;                  // Cycle
+} xhci_transfer_ring_t;
+
 /**** MACROS ****/
 
 #define CMDRING(xhci) (xhci->cmd_ring)
 #define EVENTRING(xhci) (xhci->event_ring)
 #define LINK_TRB(trb) ((xhci_link_trb_t*)(trb))
 
-#define XHCI_EVENT_RING_DEQUEUE(xhci) (EVENTRING(xhci)->trb_list[EVENTRING(xhci)->dequeue])
-#define XHCI_EVENT_RING_AVAILABLE(xhci) (XHCI_EVENT_RING_DEQUEUE(xhci).control.c == EVENTRING(xhci)->cycle)
 
-// !!!: I don't know about this.. -1 on dequeue? qemu breaks otherwise
-#define ERDP_UPDATE(xhci) (EVENTRING(xhci)->regs->erdp = (uint64_t)(EVENTRING(xhci)->trb_list_phys + ((EVENTRING(xhci)->dequeue-1) * sizeof(xhci_trb_t))))
+#define XHCI_RING_DEQUEUE(ring) (ring->trb_list[ring->dequeue])
+#define XHCI_EVENT_RING_DEQUEUE(xhci) (XHCI_RING_DEQUEUE(EVENTRING(xhci)))
+#define XHCI_EVENT_RING_AVAILABLE(xhci) (XHCI_EVENT_RING_DEQUEUE(xhci).control.c == EVENTRING(xhci)->cycle)
+#define ERDP_UPDATE(xhci) (EVENTRING(xhci)->regs->erdp = (uint64_t)(EVENTRING(xhci)->trb_list_phys + ((EVENTRING(xhci)->dequeue) * sizeof(xhci_trb_t))) | (1 << 3))
 
 /**** FUNCTIONS ****/
 
@@ -96,5 +104,19 @@ int xhci_initializeEventRing(struct xhci *xhci);
  * @returns TRB on success, NULL on failure
  */
 xhci_trb_t *xhci_dequeueTRB(struct xhci *xhci);
+
+/**
+ * @brief Create a new xHCI transfer ring
+ * @returns A new xHCI transfer ring
+ */
+xhci_transfer_ring_t *xhci_createTransferRing();
+
+/**
+ * @brief Insert a TRB into an xHCI transfer ring
+ * @param ring The ring to insert the TRB into
+ * @param trb The TRB to insert into the ring
+ * @returns 0 on success
+ */
+int xhci_enqueueTransferTRB(xhci_transfer_ring_t *ring, xhci_trb_t *trb);
 
 #endif

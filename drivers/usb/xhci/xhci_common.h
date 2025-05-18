@@ -1309,6 +1309,10 @@ Refer to section 4.5.3 for more information on Slot State.
 #define XHCI_ENDPOINT_TYPE_BULK_IN          6
 #define XHCI_ENDPOINT_TYPE_INTERRUPT_IN     7
 
+#define XHCI_ENDPOINT_DEFAULT_ERROR_COUNT   3
+
+#define XHCI_CMD_TRB_FAILURE(trb) (!trb || trb->completion_code != XHCI_TRB_COMPLETION_CODE_SUCCESS)
+
 /*
 // xHci Spec Section 7.2.1 Protocol Speed ID (PSI) (page 524)
 
@@ -1358,8 +1362,17 @@ struct xhci_port_registers;
 #define XHCI_PORTSC_DR                          0x40000000
 #define XHCI_PORTSC_WPR                         0x80000000
 
+// PORTSC macros
+// These are here for volatility
+#define XHCI_PORTSC_READ(port) *(uint32_t*)((uintptr_t)xhci->opregs + (0x400 + (0x10 * port)))
+#define XHCI_PORTSC_WRITE(portsc, port) { *(uint32_t*)((uintptr_t)xhci->opregs + (0x400 + (0x10 * port))) = portsc; }
+
+
 // Doorbell
 #define XHCI_DOORBELL(capregs, i) &(((uint32_t*)((uintptr_t)capregs + capregs->dboff))[i])
 #define XHCI_RING_DOORBELL(capregs, i, value) *XHCI_DOORBELL(capregs, i) = value;
+
+// Endpoint
+#define XHCI_ENDPOINT_NUMBER_FROM_DESC(desc) (((desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + (desc.bEndpointAddress & USB_ENDP_DIRECTION_IN ? 1 : 0))
 
 #endif // XHCI_COMMON_H
