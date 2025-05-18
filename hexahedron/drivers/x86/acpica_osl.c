@@ -415,7 +415,7 @@ ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID *PciId, UINT32 Register, UINT
 ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *PciId, UINT32 Register, UINT64 Value, UINT32 Width) {
     // LOG(DEBUG, "AcpiOsWritePciConfiguration Bus %04x Slot %04x Func %04x Offset %04x Register 0x%x Width 0x%x Value 0x%llX\n", PciId->Bus, PciId->Device, PciId->Function, PciId->Segment, Register, Width, Value);
 
-    if (pci_writeConfigOffset(PciId->Bus, PciId->Device, PciId->Function, PciId->Segment + Register, (UINT32)(Value & 0xFFFFFFFF))) {
+    if (pci_writeConfigOffset(PciId->Bus, PciId->Device, PciId->Function, PciId->Segment + Register, (UINT32)(Value & 0xFFFFFFFF), Width)) {
         return AE_ERROR;
     }
 

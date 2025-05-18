@@ -14,14 +14,14 @@
 
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/mem/mem.h>
 #include <kernel/debug.h>
+#include <kernel/arch/arch.h>
+#include <assert.h>
 
-
-#if defined(__ARCH_I386__)
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#endif
+/* MSI map array */
+/* TODO: This will be rewritten */
+uint8_t msi_array[HAL_IRQ_MSI_COUNT / 8] = { 0 };
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "PCI", __VA_ARGS__)
@@ -42,7 +42,7 @@
  */
 uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, int size) {
     if (size != 1 && size != 2 && size != 4) return PCI_NONE;
-    
+
     // Generate the address
     uint32_t address = PCI_ADDR(bus, slot, func, offset);
 
@@ -70,18 +70,40 @@ uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t o
  * @param func The function of the PCI device to write (if the device supports multiple functions)
  * @param offset The offset to write to
  * @param value The value to write
+ * @param size How big of a value to write
  * 
  * @returns 0 on success
  */
-int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
+int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value, int size) {
     // Generate the address
     uint32_t address = PCI_ADDR(bus, slot, func, offset);
-    
+
+    uint32_t value_fixed = value;
+    if (size == 1) {
+        value_fixed = pci_readConfigOffset(bus, slot, func, offset & ~0x3, 4);
+        
+        uint32_t b_offset = (offset & 3) * 8;
+        value_fixed &= ~(0xFF << b_offset);
+        value_fixed |= (uint32_t)value << b_offset;
+
+        // Redo address
+        address = PCI_ADDR(bus, slot, func, (offset & ~3));
+    } else if (size == 2) {
+        value_fixed = pci_readConfigOffset(bus, slot, func, offset & ~0x3, 4);
+        
+        uint32_t b_offset = (offset & 3) * 8;
+        value_fixed &= ~(0xFFFF << b_offset);
+        value_fixed |= (uint32_t)value << b_offset;
+
+        // Redo address
+        address = PCI_ADDR(bus, slot, func, (offset & ~3));
+    }
+
     // Write it to PCI_CONFIG_ADDRESS
     outportl(PCI_CONFIG_ADDRESS, address);
 
     // Write value
-    outportl(PCI_CONFIG_DATA, value);
+    outportl(PCI_CONFIG_DATA, value_fixed);
 
     // Done
     return 0;
@@ -122,15 +144,15 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     
     // Now go ahead and disable I/O and memory access in the command register (we'll restore it at the end)
     uint32_t restore_command = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 4);
-    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE));
+    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE), 2);
 
     // Read in the BAR
     uint32_t bar_address = pci_readConfigOffset(bus, slot, func, offset, 4);
 
     // Read in the BAR size by writing all 1s (seeing which bits we can set)
-    pci_writeConfigOffset(bus, slot, func, offset, 0xFFFFFFFF);
+    pci_writeConfigOffset(bus, slot, func, offset, 0xFFFFFFFF, 4);
     uint32_t bar_size = pci_readConfigOffset(bus, slot, func, offset, 4);
-    pci_writeConfigOffset(bus, slot, func, offset, bar_address);
+    pci_writeConfigOffset(bus, slot, func, offset, bar_address, 4);
 
     // Now we just need to parse it. Allocate memory for the response  
     pci_bar_t *bar_out = kmalloc(sizeof(pci_bar_t));
@@ -148,9 +170,9 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
         uint32_t bar_address_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
         
         // And the rest of the size
-        pci_writeConfigOffset(bus, slot, func, offset + 4, 0xFFFFFFFF);
+        pci_writeConfigOffset(bus, slot, func, offset + 4, 0xFFFFFFFF, 4);
         uint32_t bar_size_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
-        pci_writeConfigOffset(bus, slot, func, offset + 4, bar_address_high);
+        pci_writeConfigOffset(bus, slot, func, offset + 4, bar_address_high, 4);
 
         // Now put the values in
         bar_out->address = (bar_address & 0xFFFFFFF0) | ((uint64_t)(bar_address_high & 0xFFFFFFFF) << 32);
@@ -165,7 +187,7 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     } else if (bar_address & PCI_BAR_MEMORY16) {
         // This is a 16-bit memory space BAR (unsupported)
         LOG(ERR, "Unimplemented support for 16-bit BARs!!!\n");
-        pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command);
+        pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command, 2);
         kfree(bar_out);
         return NULL;
     } else {
@@ -177,7 +199,7 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     }
 
     // Restore BAR
-    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command);
+    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command, 2);
     
     // Done!
     return bar_out;
@@ -346,6 +368,9 @@ uint16_t pci_readDeviceID(uint8_t bus, uint8_t slot, uint8_t func) {
     return pci_readConfigOffset(bus, slot, func, PCI_DEVID_OFFSET, 2);
 }
 
+
+/* NOTE: The below will be rewritten once the Hexahedron IRQ handler rewrite is finished */
+
 /**
  * @brief Get the interrupt registered to a PCI device
  * 
@@ -358,4 +383,96 @@ uint16_t pci_readDeviceID(uint8_t bus, uint8_t slot, uint8_t func) {
 uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
     // TODO: Make sure header type is 1?
     return pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
+}
+
+/**
+ * @brief Get MSI interrupts
+ * @param bus The bus of the PCI device
+ * @param slot The slot of the PCI device
+ * @param func The function of the PCI device
+ * @returns 0xFF or the interrupt ID
+ */
+uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
+    // Find the MSI capability
+    uint16_t status = pci_readConfigOffset(bus, slot, func, PCI_STATUS_OFFSET, 2);
+    if (!(status & PCI_STATUS_CAPABILITIES_LIST)) {
+        return 0xFF;
+    }
+
+    // Get a pointer to the capability list
+    uint8_t cap_list_off = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_CAPABILITIES_OFFSET, 1);
+
+    // Start parsing
+    while (cap_list_off) {
+        uint16_t cap = pci_readConfigOffset(bus, slot, func, cap_list_off, 2);
+        if ((cap & 0xFF) == 0x05) {
+            LOG(DEBUG, "MSI offset found at %x\n", cap_list_off);
+            break;
+        }
+
+        if ((cap & 0xFF) == 0x11) {
+            // MSI-X
+            LOG(DEBUG, "MSI-X offset found at %x (no support)\n", cap_list_off);
+        }
+
+        cap_list_off = (cap >> 8) & 0xFC;
+    }
+
+    // Did we find it?
+    if (!cap_list_off) {
+        LOG(ERR, "Cannot enable MSI for a device that does not support it\n");
+        return 0xFF;
+    }
+
+    // Find an available interrupt
+    uint8_t interrupt = 0xFF;
+    for (int i = 0; i < HAL_IRQ_MSI_COUNT/8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (!(msi_array[i] & (1 << j))) {
+                interrupt = (i*8) + j;
+                msi_array[i] |= (1 << j);
+                break;
+            }
+        }
+    }
+
+    if (interrupt == 0xFF) {
+        LOG(ERR, "Kernel is out of MSI vectors. This is a bug.\n");
+        return 0xFF;
+    }
+
+    interrupt = HAL_IRQ_MSI_BASE + interrupt;
+
+    LOG(DEBUG, "MSI: Get interrupt %x\n", interrupt);
+
+    // First disable legacy pin interrupts for the device
+    uint16_t pci_command = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
+    pci_command |= PCI_COMMAND_INTERRUPT_DISABLE;
+    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, pci_command, 2);
+
+
+    // Start parsing the MSI information
+    // TODO: Put this into a header file
+    
+    // First enable MSI and only use one interrupt
+    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, cap_list_off + 0x02, 2);
+    ctrl &= ~(0x07 << 4);
+    ctrl |= 1;
+    pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x02, ctrl, 2);
+
+    // Configure message address and data
+    if (ctrl & (1 << 7)) {
+        // 64-bit address supported
+        uint64_t addr = 0xFEE00000;
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, (addr >> 32), 4);
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x0C, (interrupt) & 0xFF, 1);
+    } else {
+        // Only 32-bit
+        uint32_t addr = 0xFEE00000;
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, interrupt & 0xFF, 1);
+    }
+    
+    return interrupt - 32;
 }

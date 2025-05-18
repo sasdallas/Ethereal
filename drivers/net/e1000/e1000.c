@@ -392,7 +392,7 @@ void e1000_init(uint32_t device, uint16_t type) {
     cmd |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
 
     cmd &= ~(PCI_COMMAND_INTERRUPT_DISABLE);
-    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, cmd);
+    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, cmd, 2);
 
     // Allocate an E1000 structure
     e1000_t *nic = kmalloc(sizeof(e1000_t));

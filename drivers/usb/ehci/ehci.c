@@ -626,7 +626,7 @@ int driver_init(int argc, char **argv) {
     uint16_t ehci_pci_command = pci_readConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), PCI_COMMAND_OFFSET, 2);
     ehci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
     ehci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), PCI_COMMAND_OFFSET, (uint32_t)ehci_pci_command & 0xFFFF);
+    pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), PCI_COMMAND_OFFSET, ehci_pci_command, 2);
 
     // Map into memory space
     uintptr_t mmio_mapped = mem_mapMMIO(bar->address, bar->size);
@@ -710,7 +710,7 @@ int driver_init(int argc, char **argv) {
         if (legsup != PCI_NONE && legsup & USBLEGSUP_HC_BIOS) {
             LOG(INFO, "Legacy support indicates BIOS still owns EHCI controller - taking\n");
 
-            pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), eecp + USBLEGSUP, legsup | USBLEGSUP_HC_OS);
+            pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), eecp + USBLEGSUP, legsup | USBLEGSUP_HC_OS, 4);
             
             // !!! please kill me
             int timeout = 2000;

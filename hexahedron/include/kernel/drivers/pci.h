@@ -169,10 +169,11 @@ uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t o
  * @param func The function of the PCI device to write (if the device supports multiple functions)
  * @param offset The offset to write to
  * @param value The value to write
+ * @param size How big of a value to write
  * 
  * @returns 0 on success
  */
-int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value);
+int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value, int size);
 
 /**
  * @brief Auto-determine a BAR type and read it using the configuration space
@@ -297,5 +298,14 @@ int pci_scan(pci_callback_t callback, void *data, int type);
  * @returns PCI_NONE or the interrupt ID
  */
 uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func);
+
+/**
+ * @brief Get MSI interrupts
+ * @param bus The bus of the PCI device
+ * @param slot The slot of the PCI device
+ * @param func The function of the PCI device
+ * @returns 0xFF or the interrupt ID
+ */
+uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func);
 
 #endif
