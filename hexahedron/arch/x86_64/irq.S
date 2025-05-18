@@ -157,6 +157,20 @@ halCommonIRQHandler:
         jmp halCommonIRQHandler
 .endm
 
+.macro LAPIC_IRQ name index
+    .global \name
+    &name:
+        // Try to acknowledge EOI in APIC
+        pushq %rcx
+        mov (lapic_base)(%rip), %rcx    // RIP-relative addressing
+        add $0xB0, %rcx                 // lapic_base + 0xB0 = EOI register
+        movl $0, (%rcx)
+        popq %rcx
+
+        pushq $0
+        pushq $\index
+        jmp halCommonIRQHandler
+.endm
 
 
 /* Handler definitions */
@@ -205,22 +219,22 @@ IRQ             halIRQ13,   45
 IRQ             halIRQ14,   46
 IRQ             halIRQ15,   47
 
-IRQ             halMSI0,    48
-IRQ             halMSI1,    49
-IRQ             halMSI2,    50
-IRQ             halMSI3,    51
-IRQ             halMSI4,    52
-IRQ             halMSI5,    53
-IRQ             halMSI6,    54
-IRQ             halMSI7,    55
-IRQ             halMSI8,    56
-IRQ             halMSI9,    57
-IRQ             halMSI10,   58
-IRQ             halMSI11,   59
-IRQ             halMSI12,   60
-IRQ             halMSI13,   61
-IRQ             halMSI14,   62
-IRQ             halMSI15,   63
+LAPIC_IRQ       halMSI0,    48
+LAPIC_IRQ       halMSI1,    49
+LAPIC_IRQ       halMSI2,    50
+LAPIC_IRQ       halMSI3,    51
+LAPIC_IRQ       halMSI4,    52
+LAPIC_IRQ       halMSI5,    53
+LAPIC_IRQ       halMSI6,    54
+LAPIC_IRQ       halMSI7,    55
+LAPIC_IRQ       halMSI8,    56
+LAPIC_IRQ       halMSI9,    57
+LAPIC_IRQ       halMSI10,   58
+LAPIC_IRQ       halMSI11,   59
+LAPIC_IRQ       halMSI12,   60
+LAPIC_IRQ       halMSI13,   61
+LAPIC_IRQ       halMSI14,   62
+LAPIC_IRQ       halMSI15,   63
 
 
 /* ISR 123 */
