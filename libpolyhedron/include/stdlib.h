@@ -43,12 +43,17 @@ __define_div_structure(lldiv_t, long long);
 
 /**** FUNCTIONS ****/
 
+static inline int min(int x, int y) {
+    return (x < y ? x : y);
+}
+
+static inline int max(int x, int y) {
+    return (x > y ? x : y);
+}
+
 __attribute__((__noreturn__)) void abort(void);
 void exit(int status);
-
 int abs(int x);
-int min(int a, int b);
-int max(int a, int b);
 int atoi(const char*);
 double atof(const char *nptr);
 long atol(const char *nptr);
