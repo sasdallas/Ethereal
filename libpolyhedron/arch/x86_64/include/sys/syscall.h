@@ -52,6 +52,14 @@ _Begin_C_Header
 #define SYS_MUNMAP          36
 #define SYS_MSYNC           37
 #define SYS_DUP2            38
+#define SYS_SIGNAL          39
+#define SYS_SIGACTION       40
+#define SYS_SIGPENDING      41
+#define SYS_SIGPROCMASK     42
+#define SYS_SIGSUSPEND      43
+#define SYS_SIGWAIT         44
+#define SYS_KILL            45
+
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

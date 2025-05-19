@@ -13,6 +13,7 @@
 /**** LIBPOLYHEDRON INTERFACE ****/
 
 #include <stddef.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 /** This function is supposed to lock the memory data structures. It
@@ -44,7 +45,9 @@ int liballoc_unlock() {
  * \return A pointer to the allocated memory.
  */
 void* liballoc_alloc(size_t sz) {
-    return sbrk((sz * 4096)); // TODO: Don't hardcode page size
+	char *p = mmap(NULL, sz * 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	if (p == MAP_FAILED) return NULL;
+	return p;
 }
 
 /** This frees previously allocated memory. The void* parameter passed
@@ -56,7 +59,7 @@ void* liballoc_alloc(size_t sz) {
  * \return 0 if the memory was successfully freed.
  */
 int liballoc_free(void *addr, size_t sz) {
-    return 0; // TODO
+    return munmap(addr, sz * 4096);
 }
 
 

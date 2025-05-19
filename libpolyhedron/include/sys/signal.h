@@ -25,10 +25,11 @@ _Begin_C_Header;
 /**** DEFINITIONS ****/
 
 /* Signal handling types */
-#define SIG_DFL             0
-#define SIG_ERR             1
-#define SIG_HOLD            2
-#define SIG_IGN             3
+#define SIG_DFL             (sa_handler)0
+#define SIG_IGN             (sa_handler)1
+
+/* Signal handler return */
+#define SIG_ERR             (sa_handler)-1
 
 /* sigev_notify values */
 #define SIGEV_NONE          0
@@ -65,10 +66,21 @@ _Begin_C_Header;
 #define SIGXCPU             26  // (A) CPU time limit exceeded
 #define SIGXFSZ             27  // (A) File size limit exceeded
 
+#define NUMSIGNALS          28
+
+/* sigaction flags */
+#define SA_NOCLDSTOP        0x1     // Do not generate SIGCHLD when children stop
+#define SA_ONSTACK          0x2     // Causes signal delivery to occur on another stack
+#define SA_RESETHAND        0x4     // Causes signal dispositions to be set to SIG_DFL on entry to handlers
+#define SA_RESTART          0x8     // Causes certain functions to become restartable
+#define SA_SIGINFO          0x10    // Causes extra information to be passed to signal handlers at the time of receipt of a signal
+
+
+
 /**** TYPES ****/
 
 typedef volatile int sig_atomic_t;
-typedef int sigset_t;
+typedef unsigned long sigset_t;
 
 union sigval {
     int     sival_int;
@@ -88,7 +100,7 @@ typedef struct {
 } siginfo_t;
 
 
-typedef typeof(void (int))  *sighandler_t;
+typedef void (*sighandler_t)(int);
 
 // Signal-catching functions
 typedef void (*sa_handler)(int);

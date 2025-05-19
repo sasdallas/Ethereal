@@ -33,20 +33,20 @@ int execvpe(const char *file, const char *argv[], char *envp[]) {
     // Start looping through path
     char *p = (char*)path;
     
-    char exec_path[strlen(file) + 512 + 1]; // PATH_MAX?
+    char exec_path[strlen(file) + 128 + 1]; // PATH_MAX?
     while (*p) {
         // Get the next occurance of a :
         char *p_next = strchrnul(p, ':');
         if (*p_next == 0) break;
 
-        if (strlen(p) > 512) continue; // Next iteration
+        if (strlen(p) > 128) continue; // Next iteration
 
         // Construct a basic path
         // !!!: bad?
         size_t p_len = p_next - p;
         strncpy(exec_path, p, p_len);
         exec_path[p_len] = '/';
-        strncpy(exec_path + p_len +  1, file, 512); 
+        strncpy(exec_path + p_len +  1, file, 128); 
 
         // Try to execute
         execve(exec_path, argv, envp);

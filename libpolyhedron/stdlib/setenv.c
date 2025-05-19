@@ -56,13 +56,12 @@ int putenv(char *string) {
     if (!equal_ptr) return -EINVAL;
 
     // Get name
-    char *name = string;
     *equal_ptr = 0;
 
     // Now we have a name and a value. Let's search environ
     char **envp = environ;
     while (*envp) {
-        if (strstr(*envp, name) && (*envp)[strlen(name)] == '=') {
+        if (strstr(*envp, tmp_string) && (*envp)[strlen(tmp_string)] == '=') {
             *envp = string; // !!!: Is this good?
             return 0;
         }

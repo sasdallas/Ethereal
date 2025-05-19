@@ -29,6 +29,7 @@ _Begin_C_Header
 #include <sys/times.h>
 #include <sys/utsname.h>
 #include <dirent.h>
+#include <signal.h>
 
 /**** MACROS ****/
 
@@ -70,6 +71,14 @@ DECLARE_SYSCALL1(times, struct tms*);
 DECLARE_SYSCALL1(mmap, void*); // not really a void* (wink)
 DECLARE_SYSCALL2(munmap, void*, size_t);
 DECLARE_SYSCALL2(dup2, int, int);
+DECLARE_SYSCALL2(signal, int, sa_handler);
+DECLARE_SYSCALL3(sigaction, int, struct sigaction*, struct sigaction*);
+DECLARE_SYSCALL1(sigpending, sigset_t*);
+DECLARE_SYSCALL3(sigprocmask, int, sigset_t*, sigset_t*);
+DECLARE_SYSCALL1(sigsuspend, sigset_t*);
+DECLARE_SYSCALL2(sigwait, sigset_t*, int*);
+DECLARE_SYSCALL2(kill, pid_t, int);
+
 
 #endif
 

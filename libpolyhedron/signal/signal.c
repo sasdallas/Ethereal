@@ -14,11 +14,17 @@
 #include <signal.h>
 #include <errno.h>
 #include <sys/signal.h>
-#include <stdio.h>
+#include <sys/syscall.h>
+#include <sys/syscall_defs.h>
 
+DEFINE_SYSCALL2(signal, SYS_SIGNAL, int, sighandler_t);
 
 sighandler_t signal(int signum, sighandler_t handler) {
-    printf("signal: %d %p\n", signum, handler);
-    errno = EINVAL;
-    return (sighandler_t)SIG_ERR;
+    long ret = __syscall_signal(signum, handler);
+    if (ret < 0) {
+        errno = -ret;
+        return SIG_ERR;
+    }
+
+    return (sighandler_t)ret;
 }
