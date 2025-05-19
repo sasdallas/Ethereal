@@ -58,6 +58,7 @@ off_t lseek(int fd, off_t offset, int whence);
 int usleep(useconds_t usec);
 unsigned int sleep(unsigned int seconds);
 int execvpe(const char *file, const char *argv[], char *envp[]);
+int execvp(const char *file, const char *argv[]);
 int execve(const char *pathname, const char *argv[], char *envp[]);
 int execv(const char *path, const char *argv[]);
 int execl(const char *pathname, const char *arg, ...);
@@ -71,6 +72,7 @@ int fchdir(int fd);
 pid_t getpid();
 clock_t times(struct tms *buf);
 int dup2(int oldfd, int newfd);
+int dup(int fd);
 
 /* STUBS */
 int mkdir(const char *pathname, mode_t mode);
