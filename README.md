@@ -54,6 +54,7 @@ Running `make all` will build an ISO in `build-output/ethereal.iso`
 ## External components
 Certain external components are available in `external`. Here is a list of them and their versions:
 - ACPICA UNIX* (Intel License): Version 20240927 [available here](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/download.html)
+- libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
 
 ## Licensing
 
