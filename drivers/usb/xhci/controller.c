@@ -208,61 +208,6 @@ int xhci_startController(xhci_t *xhci) {
     return 0;
 }
 
-/**
- * @brief Take ownership of the xHCI controller
- * @param xhci The xHCI to take ownership on
- * @param cap The cap that said it was for LEGSUP
- */
-static int xhci_takeOwnership(xhci_t *xhci, volatile xhci_extended_capability_t *cap) {
-    uint32_t *usblegsup = (uint32_t*)cap;
-    uint32_t *usblegsts = (uint32_t*)cap + 1;
-
-    // Source: StelluxOS (https://github.com/FlareCoding/StelluxOS/blob/master/kernel/src/drivers/usb/xhci/xhci.cpp#L728)
-    // <3 to FlareCoding
-
-    // Disable all SMIs
-    *usblegsts &= ~(XHCI_LEGACY_SMI_ENABLE_BITS);
-    clock_sleep(10);
-
-    // Set the OS owned semaphore in USBLEGSUP
-    LOG(DEBUG, "Requesting ownership of xHCI controller\n");
-    *usblegsup |= XHCI_LEGACY_OS_OWNED_SEMAPHORE;
-    clock_sleep(10);
-
-    // Wait for BIOS to clear BIOS owned semaphore
-    int attempts = 0;
-    while ((*usblegsup & XHCI_LEGACY_BIOS_OWNED_SEMAPHORE) && attempts++ < 4000) {
-        clock_sleep(1);
-    }
-
-    // Did they release?
-    if (*usblegsup & XHCI_LEGACY_BIOS_OWNED_SEMAPHORE) {
-        LOG(ERR, "BIOS did not release the xHCI semaphore\n");
-        LOG(ERR, "Force taking xHCI controller - this may result in bugs and glitches.\n");
-        *usblegsup &= ~(XHCI_LEGACY_BIOS_OWNED_SEMAPHORE);
-        clock_sleep(10);
-    } else {
-        LOG(INFO, "BIOS successfully handed over control\n");
-    }
-
-    return 0;
-}
-
-/**
- * @brief Parse extended capabilities
- * @param xhci The xHCI to parse extended capabilities on
- */
-int xhci_parseExtendedCapabilities(xhci_t *xhci) {
-    uint32_t base = XHCI_XECP(xhci->capregs);
-    volatile xhci_extended_capability_t *cap = (volatile xhci_extended_capability_t*)(uintptr_t)base;
-
-    while (cap) {
-        LOG(DEBUG, "cap=%p id=%x next=%x\n", cap, cap->id, cap->next);
-        cap = (volatile xhci_extended_capability_t*)(volatile uintptr_t*)XHCI_NEXT_EXT_CAP_PTR((uintptr_t)base, cap->next);
-    }
-
-    return 0;
-}
 
 /**
  * @brief Thread
