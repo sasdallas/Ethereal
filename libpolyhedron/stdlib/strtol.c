@@ -27,7 +27,14 @@ static int isvalid(int base, int ch) {
 // except for a few areas.
 long int strtol(const char *str, char **endptr, int base) {
     // First step, if the base is invalid skip past it
-    if (base < 0 || base == 1 || base > 36) return LONG_MAX; // TODO: Set errno?
+    if (base < 0 || base == 1 || base > 36) {
+    
+    #ifndef __LIBK
+        errno = EINVAL;
+    #endif
+    
+        return LONG_MAX;
+    }
 
     // Discard whitespace characters
     char *ptr = (char*)str;
