@@ -22,6 +22,9 @@ SECTIONS
         *(.text)
         __text_end = .;
 
+        __userspace_start = .;
+        *(.userspace)
+        __userspace_end = .;
     }
 
     /* Read-only data */
