@@ -45,12 +45,10 @@ char *strpbrk(const char *, const char *);
 
 char *strtok_r(char *, const char *, char **);
 char *strtok(char *, const char *);
-
 char *strstr(const char *, const char *);
+char *strdup(const char*);
 
-char* strdup(const char*);
-
-
+char *strsignal(int);
 
 #endif
 
