@@ -815,12 +815,18 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
 fs_node_t *kopen(const char *path, unsigned int flags) {
     if (!path) return NULL;
     
+    // !!!: TEMPORARY
+    char *p = strdup(path);
+
     // First get the mountpoint of path.
-    char *path_offset = (char*)path;
-    fs_node_t *node = vfs_getMountpoint(path, &path_offset);
+    char *path_offset = (char*)p;
+    fs_node_t *node = vfs_getMountpoint(p, &path_offset);
 
-    if (!node) return NULL; // No mountpoint
-
+    if (!node) {
+        kfree(p);
+        return NULL; // No mountpoint
+    }
+    
     if (!(*path_offset)) {
         // Usually this means the user got what they want, the mountpoint, so I guess just open that and call it a da.
         goto _finish_node;
@@ -845,6 +851,7 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
 
     if (node == NULL) {
         // Not found
+        kfree(p);
         return NULL;
     }
 
@@ -853,6 +860,7 @@ _finish_node: ;
     fs_node_t *retnode = kmalloc(sizeof(fs_node_t));
     memcpy(retnode, node, sizeof(fs_node_t));
     fs_open(retnode, flags);
+    kfree(p);
     return retnode;
 }
 
