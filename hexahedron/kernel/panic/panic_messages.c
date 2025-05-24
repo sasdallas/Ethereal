@@ -32,7 +32,8 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
     "DRIVER_LOADER_ERROR",
     "DRIVER_LOAD_FAILED",
     "TASK_SCHEDULER_ERROR",
-    "CRITICAL_PROCESS_DIED"
+    "CRITICAL_PROCESS_DIED",
+    "UNKNOWN_CORRUPTION_DETECTED"
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
@@ -50,5 +51,6 @@ char *kernel_panic_messages[KERNEL_STOP_CODES] = {
     "The driver loader encountered a malformatted/invalid driver entry.\n",
     "A critical driver failed to load correctly.\n",
     "The task scheduler encountered an error.\n",
-    "A process critical to the system has died and could not be respawned.\n"
+    "A process critical to the system has died and could not be respawned.\n",
+    "A kernel data structure was corrupted in a way that makes continuing impossible.\n"
 };

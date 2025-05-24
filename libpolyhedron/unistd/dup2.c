@@ -18,3 +18,7 @@ DEFINE_SYSCALL2(dup2, SYS_DUP2, int, int);
 int dup2(int oldfd, int newfd) {
     __sets_errno(__syscall_dup2(oldfd, newfd));
 }
+
+int dup(int fd) {
+    __sets_errno(__syscall_dup2(fd, -1)); // Sneaky
+}
