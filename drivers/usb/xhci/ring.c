@@ -106,7 +106,7 @@ int xhci_initializeEventRing(struct xhci *xhci) {
 
     // Create the first entry in the ERST
     EVENTRING(xhci)->erst[0].address = EVENTRING(xhci)->trb_list_phys;
-    EVENTRING(xhci)->erst[0].size = XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t);
+    EVENTRING(xhci)->erst[0].size = XHCI_EVENT_RING_TRB_COUNT;
     EVENTRING(xhci)->erst[0].reserved = 0;
 
     // Configure the ERSTSZ register
