@@ -33,11 +33,11 @@ arch_signal_trampoline:
     pushq %r15
 
     // On the stack we have:
-    // 1. The userspace return address
+    // 1. The signal handler
     // 2. The signal number
-    // 3. The signal handler
-    movq 136(%rsp), %rax // Signal handler
-    movq 128(%rsp), %rdi // Signal number
+    // 3. The userspace return address
+    movq 120(%rsp), %rdi // Signal handler
+    movq 128(%rsp), %rax // Signal number
 
     // Align the stack
     movq %rsp, %rbp
@@ -63,5 +63,8 @@ arch_signal_trampoline:
     popq %rcx
     popq %rbx
     popq %rax
+
+    // Update RSP
+    addq $16, %rsp
 
     ret $128

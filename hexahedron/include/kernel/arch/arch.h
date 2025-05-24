@@ -143,9 +143,9 @@ extern void arch_restore_context();
  * This exists as a signal trampoline for jumping to the usermode handler and returning from it.
  * 
  * On the stack, the following should be popped in this order:
- * 1. Return address 
+ * 1. Signal handler
  * 2. Signal number
- * 3. Signal handler
+ * 3. Userspace return address
  * 
  * @warning This executes in usermode.
  */

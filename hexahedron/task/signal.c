@@ -155,15 +155,15 @@ extern uintptr_t __userspace_start, __userspace_end;
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
-        
+
         // Copy in the userspace section
         memcpy((void*)proc->userspace->base, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
     }
 
     // Push onto the stack the variables
+    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, handler);
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, signum);
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));
 
     // Set IP to point to the rebased signal handler
     uintptr_t signal_trampoline_offset = (uintptr_t)arch_signal_trampoline - (uintptr_t)&__userspace_start;
