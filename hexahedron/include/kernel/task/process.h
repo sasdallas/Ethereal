@@ -25,6 +25,7 @@
 #include <kernel/task/sleep.h>
 #include <kernel/task/fd.h>
 #include <kernel/task/mem.h>
+#include <kernel/task/signal.h>
 
 #include <kernel/mem/vas.h>
 
@@ -40,7 +41,7 @@
 #define PROCESS_MAX_PIDS            32768                                       // Maximum amount of PIDs. The kernel uses a bitmap to keep track of these
 #define PROCESS_PID_BITMAP_SIZE     PROCESS_MAX_PIDS / (sizeof(uint32_t) * 8)   // Bitmap size
 
-#define PROCESS_KSTACK_SIZE         8192    // Kernel stack size
+#define PROCESS_KSTACK_SIZE         PAGE_SIZE*4    // Kernel stack size
 
 /**** TYPES ****/
 
@@ -55,39 +56,47 @@ typedef void (*kthread_t)(void *data);
  */
 typedef struct process {
     // GENERAL INFORMATION
-    struct process *parent;     // Parent process
-    pid_t pid;                  // Process ID
-    char *name;                 // Name of the process
-    uid_t uid;                  // User ID of the process
-    gid_t gid;                  // Group ID of the process
-    int exit_status;            // Exit statuscode
+    struct process *parent;             // Parent process
+    pid_t pid;                          // Process ID
+    char *name;                         // Name of the process
+    uid_t uid;                          // User ID of the process
+    gid_t gid;                          // Group ID of the process
+    int exit_status;                    // Exit statuscode
 
     // SCHEDULER INFORMATION
-    unsigned int flags;         // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
-    unsigned int priority;      // Scheduler priority, see scheduler.h
+    unsigned int flags;                 // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
+    unsigned int priority;              // Scheduler priority, see scheduler.h
     
     // QUEUE INFORMATION
-    tree_node_t *node;          // Node in the process tree
-    list_t *waitpid_queue;      // Wait queue for the process
+    tree_node_t *node;                  // Node in the process tree
+    list_t *waitpid_queue;              // Wait queue for the process
 
     // THREADS
-    thread_t *main_thread;      // Main thread in the process  - whatever the ELF entrypoint was
-    list_t  *thread_list;       // List of threads for the process
+    thread_t *main_thread;              // Main thread in the process  - whatever the ELF entrypoint was
+    list_t  *thread_list;               // List of threads for the process
 
     // FILE INFORMATION
-    char *wd_path;              // Working directory path
-    fd_table_t *fd_table;       // File descriptor table
+    char *wd_path;                      // Working directory path
+    fd_table_t *fd_table;               // File descriptor table
 
     // MEMORY REGIONS
-    uintptr_t heap;             // Heap of the process. Positioned after the ELF binary
-    uintptr_t heap_base;        // Base location of the heap
-    vas_t *vas;                 // Process virtual address space
-    list_t *mmap;               // mmap() mappings
+    uintptr_t heap;                     // Heap of the process. Positioned after the ELF binary
+    uintptr_t heap_base;                // Base location of the heap
+    vas_t *vas;                         // Process virtual address space
+    list_t *mmap;                       // mmap() mappings
+
+    // SIGNALS
+    spinlock_t siglock;                 // Signal lock
+    proc_signal_t signals[NUMSIGNALS];  // Signal list
+    sigset_t pending_signals;           // Pending signals
+    sigset_t blocked_signals;           // Blocked signals
+    vas_allocation_t *userspace;        // Userspace allocation (only for sigtramp right now)
 
     // OTHER
-    uintptr_t kstack;           // Kernel stack (see PROCESS_KSTACK_SIZE)
-    page_t *dir;                // Page directory
-    struct _registers *regs;    // Dirty hack. See process_fork
+    uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)
+    page_t *dir;                        // Page directory
+    struct _registers *regs;            // Dirty hack. See process_fork
+    arch_context_t sigctx;              // Signal handler context
 } process_t;
 
 /**** FUNCTIONS ****/
@@ -188,5 +197,12 @@ pid_t process_fork();
  * @brief waitpid equivalent
  */
 long process_waitpid(pid_t pid, int *wstatus, int options);
+
+/**
+ * @brief Get a process from a PID
+ * @param pid The pid to check for
+ * @returns The process if found, otherwise NULL
+ */
+process_t *process_getFromPID(pid_t pid);
 
 #endif

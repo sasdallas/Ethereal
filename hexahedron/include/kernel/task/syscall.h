@@ -108,5 +108,7 @@ long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
 long sys_msync(void *addr, size_t len, int flags);
 long sys_dup2(int oldfd, int newfd);
+long sys_signal(int signum, sa_handler handler);
+long sys_kill(pid_t pid, int sig);
 
 #endif

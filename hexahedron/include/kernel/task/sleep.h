@@ -58,6 +58,19 @@ typedef struct thread_sleep {
     unsigned long subseconds;               // Subseconds on which to wakeup
 } thread_sleep_t;
 
+/**** MACROS ****/
+
+/* Put the entire process to sleep, including all of its threads */
+#define SLEEP_ENTIRE_PROCESS(proc, sleep_run) { \
+    struct thread *t = proc->main_thread; \
+    sleep_run; \
+    if (proc->thread_list) { \
+        foreach(thread_node, proc->thread_list) { \
+            t = (struct thread*)thread_node->value;\
+            if (t) sleep_run; \
+        } \
+    } \
+} \
 
 /**** FUNCTIONS ****/
 

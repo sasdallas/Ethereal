@@ -138,9 +138,24 @@ extern void arch_enter_kthread();
 extern void arch_restore_context();
 
 /**
+ * @brief The global signal trampoline
+ * 
+ * This exists as a signal trampoline for jumping to the usermode handler and returning from it.
+ * 
+ * On the stack, the following should be popped in this order:
+ * 1. Return address 
+ * 2. Signal number
+ * 3. Signal handler
+ * 
+ * @warning This executes in usermode.
+ */
+extern void arch_signal_trampoline();
+
+/**
  * @brief Say hi!
  * @param is_debug Print to dprintf or printf
  */
 void arch_say_hello(int is_debug);
+
 
 #endif

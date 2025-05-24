@@ -59,4 +59,8 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context);
 #define SP(context) (context.esp)
 #define BP(context) (context.ebp)
 
+#define REGS_IP(regs) (regs->eip)
+#define REGS_SP(regs) (regs->esp)
+#define REGS_BP(regs) (regs->ebp)
+
 #endif

@@ -56,7 +56,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_MUNMAP]        = (syscall_func_t)(uintptr_t)sys_munmap,
     [SYS_MSYNC]         = (syscall_func_t)(uintptr_t)0xCAFECAFE,
     [SYS_MPROTECT]      = (syscall_func_t)(uintptr_t)0xCAFECAFE,
-    [SYS_DUP2]          = (syscall_func_t)(uintptr_t)sys_dup2
+    [SYS_DUP2]          = (syscall_func_t)(uintptr_t)sys_dup2,
+    [SYS_SIGNAL]        = (syscall_func_t)(uintptr_t)sys_signal,
+    [SYS_KILL]          = (syscall_func_t)(uintptr_t)sys_kill
 };
 
 
@@ -202,7 +204,7 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
         video_updateScreen();
         return count;
     }
-
+    
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
     }
@@ -611,7 +613,59 @@ long sys_dup2(int oldfd, int newfd) {
         return -EBADF;
     }   
 
+    if (newfd == -1) {
+        // We assign!
+        fd_t *fd = fd_add(current_cpu->current_process, FD(current_cpu->current_process, oldfd)->node);
+        fd->mode = FD(current_cpu->current_process, oldfd)->mode;
+        fd->offset = FD(current_cpu->current_process, oldfd)->offset;
+        return fd->fd_number;
+    }
+
     int err = fd_duplicate(current_cpu->current_process, oldfd, newfd);
     if (err != 0) return err;
     return newfd;
+}
+
+long sys_signal(int signum, sa_handler handler) {
+    // Validate range
+    if (signum < 0 || signum >= NUMSIGNALS) return -EINVAL;
+    if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL; // Trying to set signals that cannot be handled
+
+    // Is the handler special?
+    sa_handler old_handler = PROCESS_SIGNAL(current_cpu->current_process, signum).handler;
+    if (handler == SIG_IGN) {
+        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_IGNORE;
+    } else if (handler == SIG_DFL) {
+        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_DEFAULT;
+    } else {
+        // Yes, the kernel will "fail" to catch this if handler is an invalid argument
+        // ..but this executes in usermode so it's really us who are laughing
+        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = handler;
+    }
+
+    PROCESS_SIGNAL(current_cpu->current_process, signum).flags = SA_RESTART;
+    return (long)old_handler;
+}
+
+long sys_kill(pid_t pid, int sig) {
+    // Check signal
+    if (sig < 0 || sig >= NUMSIGNALS) return -EINVAL;
+
+    if (pid > 0 || pid < -1) {
+        if (pid < -1) pid *= -1;
+        process_t *proc = process_getFromPID(pid);
+        if (!proc) return -ESRCH;
+
+        return signal_send(proc, sig);
+    } else if (!pid) {
+        LOG(ERR, "Unimplemented: Send to every process group\n");
+        return -ENOTSUP;
+    } else if (pid == -1) {
+        // TODO
+        LOG(ERR, "Unimplemented: Send to every process possible\n");
+        return -ENOTSUP;
+    }
+
+    // Unreachable
+    return -EINVAL;
 }

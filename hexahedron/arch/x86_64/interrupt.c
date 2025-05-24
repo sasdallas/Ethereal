@@ -342,6 +342,8 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
 
         syscall_handle(&syscall);
         regs->rax = syscall.return_value;
+
+        signal_handle(current_cpu->current_thread, regs);
         return;
     }
 
@@ -362,6 +364,10 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
             kernel_panic(IRQ_HANDLER_FAILED, "hal");
             __builtin_unreachable();
         }
+    }
+    
+    if (current_cpu->current_thread) {
+        signal_handle(current_cpu->current_thread, regs);
     }
     
     hal_endInterrupt(int_number);

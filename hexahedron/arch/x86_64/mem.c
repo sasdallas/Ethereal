@@ -832,6 +832,7 @@ extern uintptr_t __kernel_start, __kernel_end;
     // Calculate how many pages the kernel needs
     size_t kernel_pages = (MEM_ALIGN_PAGE(kernel_addr - (uintptr_t)&__kernel_start) / PAGE_SIZE);
     size_t kernel_pts = (kernel_pages >= 512) ? (kernel_pages / 512) + ((kernel_pages%512) ? 1 : 0) : 1;
+    kernel_pts++; // !!!: Accounts for what is probably bad rounding on my part..
 
     // Sanity check to make sure Hexahedron isn't bloated
     if ((kernel_pts / 512) / 512 > 1) {

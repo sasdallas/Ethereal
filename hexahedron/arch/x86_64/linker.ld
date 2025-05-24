@@ -38,6 +38,10 @@ SECTIONS
         __ap_start = .;
         *(.ap_bootstrap)
         __ap_end = .;
+
+        __userspace_start = .;
+        *(.userspace)
+        __userspace_end = .;
     }
 
 

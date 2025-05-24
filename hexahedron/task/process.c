@@ -241,6 +241,25 @@ void process_freePID(pid_t pid) {
 }
 
 /**
+ * @brief Get a process from a PID
+ * @param pid The pid to check for
+ * @returns The process if found, otherwise NULL
+ */
+process_t *process_getFromPID(pid_t pid) {
+    // TODO: Gotta be a better way to do this..
+    if (current_cpu->current_process->pid == pid) return current_cpu->current_process;
+
+    foreach(proc_node, process_list) {
+        process_t *proc = (process_t*)proc_node->value;
+        if (proc) {
+            if (proc->pid == pid) return proc;
+        }
+    }
+
+    return NULL;
+}
+
+/**
  * @brief Internal method to create a new process
  * @param parent The parent of the process
  * @param name The name of the process (will be strdup'd)
