@@ -146,8 +146,6 @@ void rtl8139_thread(void *context) {
  * @brief RTL8139 IRQ handler
  */
 int rtl8139_handler(void *context) {
-    LOG(DEBUG, "RTL8139 IRQ\n");
-
     rtl8139_t *nic = (rtl8139_t*)context;
     if (nic) {
         // Update status
