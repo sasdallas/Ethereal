@@ -161,7 +161,7 @@ int driver_deinit() {
 }
 
 struct driver_metadata driver_metadata = {
-    .name = "Bochs Graphics Adapter Driver",
+    .name = "Bochs BGA Driver",
     .author = "Samuel Stuart",
     .init = driver_init,
     .deinit = driver_deinit

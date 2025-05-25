@@ -43,13 +43,33 @@
 #define E1000_READ16(reg) (*((uint16_t*)(nic->mmio + reg)))
 #define E1000_READ32(reg) (*((uint32_t*)(nic->mmio + reg)))
 
-/* Command method (just calls to MMIO) */
-#define E1000_SENDCMD(reg, value) E1000_WRITE32(reg, value)
-#define E1000_RECVCMD(reg) E1000_READ32(reg)
+/* Command method (legacy code used direct macros so this helps to avoid optimization casualties) */
+#define E1000_SENDCMD(reg, value) e1000_sendCommand(nic, reg, value)
+#define E1000_RECVCMD(reg) e1000_receiveCommand(nic, reg)
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:E1000", __VA_ARGS__)
 
+
+/**
+ * @brief Send a command to the nic
+ * @param nic The nic to send to
+ * @param reg The register to send the command to
+ * @param value The value to write
+ */
+static void e1000_sendCommand(e1000_t *nic, uint16_t reg, uint32_t value) {
+    E1000_WRITE32(reg, value);
+}
+
+/**
+ * @brief Receive a command from the nic
+ * @param nic The nic to get from
+ * @param reg The register to read from
+ */
+static uint32_t e1000_receiveCommand(e1000_t *nic, uint16_t reg) {
+    uint32_t value = E1000_READ32(reg);
+    return value;
+}
 
 /**
  * @brief EEPROM detection
@@ -180,6 +200,7 @@ void e1000_txinit(e1000_t *nic) {
     // Enable
     tctl |= E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_RTLC;
     E1000_SENDCMD(E1000_REG_TCTRL, tctl);
+    E1000_SENDCMD(0x410, 0x60200a);
 }
 
 /**
@@ -215,6 +236,7 @@ void e1000_rxinit(e1000_t *nic) {
     E1000_SENDCMD(E1000_REG_RCTRL,
         E1000_RCTL_EN |
         E1000_RCTL_SBP |
+        E1000_RCTL_UPE |
         E1000_RCTL_MPE |
         E1000_RCTL_BAM |
         (3 << 16) |
@@ -230,12 +252,17 @@ void e1000_reset(e1000_t *nic) {
     // Disable IRQs first
 	E1000_SENDCMD(E1000_REG_IMC, 0xFFFFFFFF);
 	E1000_SENDCMD(E1000_REG_ICR, 0xFFFFFFFF);
-	E1000_RECVCMD(E1000_REG_STATUS);
+	uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
+    (void)status; // Discard
+
+    clock_sleep(100);
 
     // Turn off Rx and Tx
     E1000_SENDCMD(E1000_REG_RCTRL, 0);
     E1000_SENDCMD(E1000_REG_TCTRL, E1000_TCTL_PSP);
-	E1000_RECVCMD(E1000_REG_STATUS);
+	status = E1000_RECVCMD(E1000_REG_STATUS);
+    (void)status; // Discard
+
 
     clock_sleep(1000);
 
@@ -248,7 +275,9 @@ void e1000_reset(e1000_t *nic) {
     // Disable IRQs again
 	E1000_SENDCMD(E1000_REG_IMC, 0xFFFFFFFF);
 	E1000_SENDCMD(E1000_REG_ICR, 0xFFFFFFFF);
-	E1000_RECVCMD(E1000_REG_STATUS);
+	status = E1000_RECVCMD(E1000_REG_STATUS);
+    (void)status; // Discard
+
 }
 
 /**
@@ -346,6 +375,8 @@ static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *
     nic->tx_descs[nic->tx_current].length = size;
     nic->tx_descs[nic->tx_current].cmd = E1000_CMD_EOP | E1000_CMD_IFCS | E1000_CMD_RS | E1000_CMD_RPS;
     nic->tx_descs[nic->tx_current].status = 0;
+    nic->tx_descs[nic->tx_current].css = 0;
+    nic->tx_descs[nic->tx_current].special = 0;
 
     // Increment index
     nic->tx_current++;
@@ -354,7 +385,8 @@ static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *
     E1000_SENDCMD(E1000_REG_TXDESCTAIL, nic->tx_current);
 
     // Clear status
-    E1000_RECVCMD(E1000_REG_STATUS);
+    uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
+    (void)status;
 
     // Release
     spinlock_release(nic->lock);
@@ -375,7 +407,7 @@ int e1000_irq(void *context) {
     if (icr) {
         uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
         LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
-        E1000_SENDCMD(E1000_REG_ICR, status);
+        E1000_SENDCMD(E1000_REG_ICR, icr);
     }
 
     return 0;
@@ -390,7 +422,6 @@ void e1000_init(uint32_t device, uint16_t type) {
     // First, we should enable PCI I/O space and MMIO space access
     uint16_t cmd = pci_readConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, 2);
     cmd |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
-
     cmd &= ~(PCI_COMMAND_INTERRUPT_DISABLE);
     pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, cmd, 2);
 
@@ -445,18 +476,42 @@ void e1000_init(uint32_t device, uint16_t type) {
     }
 
     // Register the interrupt handler
+    hal_unregisterInterruptHandler(irq);
     if (hal_registerInterruptHandlerContext(irq, e1000_irq, (void*)nic)) {
         LOG(ERR, "Error registering IRQ%d for E1000\n", irq);
-        goto _cleanup;
+        
+        // Try to enable MSI
+        uint8_t vector = pci_enableMSI(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+        if (vector == 0xFF) {
+            LOG(ERR, "MSI configuration failed\n");
+            goto _cleanup;
+        } else {
+            hal_registerInterruptHandlerContext(vector, e1000_irq, (void*)nic);
+        }
     }
 
     // Reset the E1000 controller
     e1000_reset(nic);
     LOG(DEBUG, "Reset the NIC successfully\n");
 
+    // Configure flow control (ToaruOS)
+    E1000_SENDCMD(0x28, 0x2c8001);
+    E1000_SENDCMD(0x2c, 0x100);
+    E1000_SENDCMD(0x30, 0x8808);
+    E1000_SENDCMD(0x170, 0xFFFF);
+
     // Link up
     e1000_setLinkUp(nic);
     LOG(DEBUG, "Link up on NIC (status %d)\n", nic->link);
+
+    // Clear the statistical counters
+    for (int i = 0; i < 128; i++) E1000_SENDCMD(0x5200 + i * 4, 0);
+    
+
+    for (int i = 0; i < 64; i++) {
+        uint32_t value = e1000_receiveCommand(nic, 0x4000 + i * 4);
+        (void)value; // Discard
+    }
 
     // Okay, let's setup our descriptors
     e1000_rxinit(nic);
@@ -464,12 +519,13 @@ void e1000_init(uint32_t device, uint16_t type) {
 
     LOG(DEBUG, "TX/RX descriptors initialized successfully\n");
     LOG(DEBUG, "\tRX descriptors: %p/%p\n", nic->rx_descs, mem_getPhysicalAddress(NULL, (uintptr_t)nic->rx_descs));
-    LOG(DEBUG, "\tTX decsriptors: %p/%p\n", nic->tx_descs, mem_getPhysicalAddress(NULL, (uintptr_t)nic->tx_descs));
+    LOG(DEBUG, "\tTX descriptors: %p/%p\n", nic->tx_descs, mem_getPhysicalAddress(NULL, (uintptr_t)nic->tx_descs));
 
     // RDTR/ITR
     E1000_SENDCMD(E1000_REG_RDTR, 0);
     E1000_SENDCMD(E1000_REG_ITR, 500);
-    E1000_RECVCMD(E1000_REG_STATUS);
+    uint32_t status = e1000_receiveCommand(nic, E1000_REG_STATUS);
+    (void)status;
 
     // Enable IRQs
     E1000_SENDCMD(E1000_REG_IMASK, E1000_ICR_LSC | E1000_ICR_RXO | E1000_ICR_RXT0 | E1000_ICR_TXQE | E1000_ICR_TXDW | E1000_ICR_ACK | E1000_ICR_RXDMT0 | E1000_ICR_SRPD);
