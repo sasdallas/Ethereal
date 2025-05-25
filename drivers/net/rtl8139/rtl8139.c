@@ -125,6 +125,7 @@ void rtl8139_thread(void *context) {
         // We've been woken up!
         // There must be packets around!
         // TODO: I really don't feel like writing all of those #defines again
+        LOG(DEBUG, "Read packet (rx_current=0x%x)\n", nic->rx_current);
         uint16_t *packet = (uint16_t*)(nic->rx_buffer + nic->rx_current);
         uint16_t packet_len = packet[1];
         ethernet_handle((ethernet_packet_t*)(packet+2), nic->nic, packet_len);
@@ -132,7 +133,7 @@ void rtl8139_thread(void *context) {
         // Update rx_current
         nic->rx_current += (packet_len + 4 + 3) & ~3;
         if (nic->rx_current >= 8192) {
-            nic->rx_current = 0;
+            nic->rx_current -= 8192;
         }
 
         // Update on device
