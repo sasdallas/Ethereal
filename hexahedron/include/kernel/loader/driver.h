@@ -123,4 +123,9 @@ loaded_driver_t *driver_findByName(char *name);
  */
 loaded_driver_t *driver_findByAddress(uintptr_t addr);
 
+/**
+ * @brief Mount the drivers /kernel node
+ */
+void driverfs_init();
+
 #endif

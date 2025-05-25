@@ -26,13 +26,13 @@ int main(int argc, char *argv[]) {
     // Check if a format is provided
     if (argc > 1) {
         if (strftime(buffer, sizeof(buffer), argv[1], local_tm_info) == 0) {
-            fprintf(stderr, "Error: Format string too long or invalid\n");
+            printf("date: strftime: %s\n", strerror(errno));
             return EXIT_FAILURE;
         }
     } else {
         // Default format
         if (strftime(buffer, sizeof(buffer), "%a %b %d %H:%M:%S %Z %Y", local_tm_info) == 0) {
-            fprintf(stderr, "Error: Failed to format date\n");
+            printf("date: strftime: %s\n", strerror(errno));
             return EXIT_FAILURE;
         }
     }

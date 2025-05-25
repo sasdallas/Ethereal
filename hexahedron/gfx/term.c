@@ -200,7 +200,8 @@ int terminal_putchar(int c) {
         
         case '\t':
             // Tab
-            for (int i = 0; i < 4; i++) terminal_putchar(' ');
+            terminal_x++;
+            while (terminal_x % 4) terminal_x++;
             break;
         
         case '\r':
