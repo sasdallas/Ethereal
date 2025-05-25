@@ -40,3 +40,8 @@ int export(int argc, char *argv[]) {
     putenv(argv[1]);
     return 0;
 }
+
+int exit_cmd(int argc, char *argv[]) {
+    exit(0);
+    __builtin_unreachable();
+}

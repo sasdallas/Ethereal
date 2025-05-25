@@ -42,19 +42,34 @@ extern list_t *process_list;
  * @brief /kernel/processes/<pid>/XXX read
  */
 ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
+    process_t *proc = (process_t*)node->dev;
+
+    // Copy to buffer
     char tmp_buffer[512];
     node->length = snprintf((char*)tmp_buffer, 512,
-            "ProcessName:%s\n",
-                ((process_t*)node->dev)->name);
+            "ProcessName:%s\n"
+            "ProcessPid:%d\n"
+            "SbrkHeapBase:%p-%p\n"
+            "Uid:%d\n"
+            "Gid:%d\n"
+            "KernelStack:%p\n"
+            "Parent:%s\n",
+                proc->name,
+                proc->pid,
+                proc->heap_base, proc->heap,
+                proc->uid, proc->gid,
+                proc->kstack,
+                (proc->parent ? proc->parent->name : "N/A"));
 
+
+    // Calculate off and size
     if (!size) return 0;
-
     if (off > (off_t)node->length) return 0;
     if (off + size > node->length) size = (off_t)node->length - off; 
 
+    // Copy and return
     if (buffer) strncpy((char*)buffer, tmp_buffer, min(node->length, size));
     return size;
-
 }
 
 /**
@@ -266,7 +281,7 @@ static fs_node_t *kernelfs_genericFinddir(fs_node_t *node, char *path) {
 /**
  * @brief Generic read method for the KernelFS
  */
-static ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
+ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
     if (!entry->finished) {
         if (entry->get_data(entry, entry->data)) {

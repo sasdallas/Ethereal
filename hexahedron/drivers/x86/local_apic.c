@@ -23,18 +23,7 @@
 #include <kernel/drivers/clock.h>
 
 #include <kernel/drivers/x86/pit.h>
-
-#if defined(__ARCH_I386__)
-#include <kernel/arch/i386/cpu.h>
-#include <kernel/arch/i386/registers.h>
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/cpu.h>
-#include <kernel/arch/x86_64/registers.h>
-#include <kernel/arch/x86_64/hal.h>
-#else
-#error "Unsupported"
-#endif
+#include <kernel/arch/arch.h>
 
 /* APIC base */
 uintptr_t lapic_base = 0x0;

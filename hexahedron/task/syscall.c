@@ -14,6 +14,7 @@
 #include <kernel/task/syscall.h>
 #include <kernel/task/process.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/misc/args.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -198,7 +199,7 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
     // stdout?
-    if (fd == STDOUT_FILE_DESCRIPTOR) {
+    if (fd == STDOUT_FILE_DESCRIPTOR && !kargs_has("--headless")) {
         char *buf = (char*)buffer;
         for (size_t i = 0; i < count; i++) terminal_putchar(buf[i]);
         video_updateScreen();

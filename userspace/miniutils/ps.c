@@ -28,7 +28,10 @@ char *get_process_name(char *proc_dir_name) {
     buffer[strlen(buffer)-1] = 0;
     fclose(f);
 
-    char *procname = strrchr(buffer, ':');
+    char *procname = strchr(buffer, ':');
+    char *nl = strchr(procname, '\n');
+    *nl = 0;
+
     if (!*(procname)) return "(error getting name)";
     procname++;
     return procname;
@@ -42,7 +45,7 @@ int main(int argc, char *argv[]) {
 
     struct dirent *ent = readdir(dirp);
     while (ent) {
-        if (isdigit(ent->d_name[0])) {
+        if (isdigit(ent->d_name[0]) || (ent->d_name[0] == '-' && isdigit(ent->d_name[1]))) {
             // Get process name
             printf("%s  \t\t\t%s\n", ent->d_name, get_process_name(ent->d_name));
         }

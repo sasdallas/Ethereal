@@ -627,10 +627,7 @@ void mem_allocatePage(page_t *page, uintptr_t flags) {
     page->bits.cache_disable    = (flags & MEM_PAGE_NOT_CACHEABLE) ? 1 : 0;
 
     if (flags & MEM_PAGE_WRITE_COMBINE) {
-        // Index into #6 entry of PAT
         page->bits.size = 1;
-        page->bits.cache_disable = 1;
-        page->bits.writethrough = 0;
     }
 }
 
@@ -981,15 +978,14 @@ extern uintptr_t __kernel_start, __kernel_end;
 
     // Setup the PAT
     // TODO: Write a better interface for the PAT
-    uint32_t pat_lo, pat_hi;
-    cpu_getMSR(IA32_PAT_MSR, &pat_lo, &pat_hi);
+    asm volatile(
+    	"movl $0x277, %%ecx;"
+    	"rdmsr;"
+    	"movw $0x0401, %%dx;"
+    	"wrmsr;"
+    	::: "eax", "ecx", "edx", "memory"
+    );
 
-    // Setup entry #7 (WC) 
-    pat_hi |= 0x1000000; 
-    pat_hi &= ~(0x6000000);
-
-    // Write back the MSR
-    cpu_setMSR(IA32_PAT_MSR, pat_lo, pat_hi);
 
     // Initialize regions
     mem_regionsInitialize();

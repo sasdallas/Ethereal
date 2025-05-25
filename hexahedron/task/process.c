@@ -437,7 +437,7 @@ void process_destroy(process_t *proc) {
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);
-    mem_destroyVAS(proc->dir);
+    if (proc->dir) mem_destroyVAS(proc->dir);
     mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
@@ -845,7 +845,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         } else {
             // Sleep until we get woken up
             sleep_untilNever(current_cpu->current_thread);
-            process_yield(0);
+            if (sleep_enter()) return -EINTR;
         }
     }
 }

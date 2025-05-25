@@ -28,6 +28,7 @@
 #define SLEEP_FLAG_WAKEUP           1       // Whatever the case, wake it up NOW!
 #define SLEEP_FLAG_TIME             2       // Thread is sleeping on time.
 #define SLEEP_FLAG_COND             3       // Sleeping on condition
+#define SLEEP_FLAG_INTERRUPTED      4       // The sleep was interrupted by a signal
 
 /**** TYPES ****/
 
@@ -126,5 +127,11 @@ int sleep_untilUnlocked(struct thread *thread, spinlock_t *lock);
  * @returns 0 on success
  */
 int sleep_wakeup(struct thread *thread);
+
+/**
+ * @brief Enter sleeping state now
+ * @returns 1 if the process was interrupted and you need to return EINTR
+ */
+int sleep_enter();
 
 #endif

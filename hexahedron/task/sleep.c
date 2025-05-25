@@ -47,6 +47,19 @@ static void sleep_callback(uint64_t ticks) {
             continue;
         }
 
+        // Check if the thread has any pending signals
+        if (sleep->thread->parent->pending_signals) {
+            // Yes, get out!
+            sleep->sleep_state = SLEEP_FLAG_INTERRUPTED;
+
+            // Ready to wake up
+            list_delete(sleep_queue, node);
+            __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
+            scheduler_insertThread(sleep->thread);
+            kfree(node);
+            continue;
+        }
+
         int wakeup = 0;
 
         if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {
@@ -216,5 +229,24 @@ int sleep_wakeup(struct thread *thread) {
     
     thread_sleep_t *sleep = thread->sleep;
     sleep->sleep_state = SLEEP_FLAG_WAKEUP;
+    return 0;
+}
+
+/**
+ * @brief Enter sleeping state now
+ * @returns 1 if the process was interrupted and you need to return EINTR
+ */
+int sleep_enter() {
+    process_yield(0);
+
+    // In cases where we were interrupted, the sleep state isn't freed and gets set to SLEEP_FLAG_
+    if (current_cpu->current_thread->sleep) {
+        if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_INTERRUPTED) {
+            LOG(INFO, "Pulled out of sleep state\n");
+            kfree(current_cpu->current_thread->sleep);
+            return 1;
+        }
+    }
+
     return 0;
 }

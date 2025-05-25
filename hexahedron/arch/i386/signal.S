@@ -16,39 +16,7 @@
 
 .global arch_signal_trampoline
 arch_signal_trampoline:
-    pushl %eax
-    pushl %ebx
-    pushl %ecx
-    pushl %edx
-    pushl %edi
-    pushl %esi
-    pushl %ebp
-
-    // On the stack we have:
-    // 1. The signal handler
-    // 2. The signal number
-    // 3. The userspace return address
-    movl 64(%esp), %rdi // Signal handler
-    movl 72(%esp), %rax // Signal number
-
-    // Align the stack
-    movl %rsp, %rbp
-    and $0xFFFFFFFFFFFFFFF0, %rsp
-
-    // Leap of faith!
-    call *%rax
-
-    // We're back, restore.
-    movl %rbp, %rsp
-    popl %ebp
-    popl %esi
-    popl %edi
-    popl %edx
-    popl %ecx
-    popl %ebx
-    popl %eax
-
-    // Update ESP
-    addl $16, %esp
-
-    ret $128
+    // lol stub
+    movl $0xDEADBEEF, %eax
+    movl $0x11111111, (%eax)
+    ret

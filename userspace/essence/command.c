@@ -26,6 +26,7 @@ command_t command_list[] = {
     ESSENCE_REGISTER_COMMAND("cd", 1, NULL, cd),
     ESSENCE_REGISTER_COMMAND("env", 1, NULL, env),
     ESSENCE_REGISTER_COMMAND("export", 1, NULL, export),
+    ESSENCE_REGISTER_COMMAND("exit", 1, NULL, exit_cmd),
 };
 
 /* Last exit status */
