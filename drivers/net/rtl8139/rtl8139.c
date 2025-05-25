@@ -124,8 +124,6 @@ void rtl8139_thread(void *context) {
 
         // We've been woken up!
         // There must be packets around!
-        LOG(DEBUG, "Woken up, reading packet\n");
-        
         // TODO: I really don't feel like writing all of those #defines again
         uint16_t *packet = (uint16_t*)(nic->rx_buffer + nic->rx_current);
         uint16_t packet_len = packet[1];
@@ -157,8 +155,6 @@ int rtl8139_handler(void *context) {
 
         if (status & RTL8139_ISR_TOK) {
             // Transmit ok
-            LOG(INFO, "Transmit succeeded (TOK)\n");
-            
             // Free the memory
             mem_freeDMA(nic->tx_buffer, nic->tx_buffer_size);
 
@@ -167,7 +163,6 @@ int rtl8139_handler(void *context) {
         }
 
         if (status & RTL8139_ISR_ROK) {
-            LOG(INFO, "Received packet (ROK)\n");
             // this is real
             sleep_wakeup(nic->receive_proc->main_thread);
         }
@@ -299,7 +294,7 @@ int rtl8139_init(uint32_t device) {
     RTL8139_WRITE8(RTL8139_REG_CR, RTL8139_CMD_RE | RTL8139_CMD_TE);
 
     // Create NIC
-    nic->nic = nic_create("rtl8139", mac, NIC_TYPE_ETHERNET, (void*)nic);
+    nic->nic = nic_create("RTL8139", mac, NIC_TYPE_ETHERNET, (void*)nic);
     nic->nic->write = rtl8139_writePacket;
 
     // Register it
