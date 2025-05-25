@@ -484,11 +484,18 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
  */
 static int pci_kernelFSScan(uint8_t bus, uint8_t slot, uint8_t func, uint16_t vendor_id, uint16_t device_id, void *data) {
     kernelfs_entry_t *entry = (kernelfs_entry_t*)data;
-    if (!entry->buffer) {
-        kernelfs_writeData(entry, "%04x:%04x\n", vendor_id, device_id);
-    } else {
-        kernelfs_appendData(entry, "%04x:%04x\n", vendor_id, device_id);
-    }
+
+    kernelfs_appendData(entry,   "%02x:%02x.%d (%04x, %04x:%04x)\n"
+        " IRQ: %d Pin: %d\n"
+        " BAR0: 0x%08x BAR1: 0x%08x BAR2: 0x%08x BAR3: 0x%08x BAR4: 0x%08x BAR5: 0x%08x\n", 
+            bus, slot, func, pci_readType(bus, slot, func), vendor_id, device_id,
+            pci_getInterrupt(bus, slot, func), pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR0_OFFSET, 4),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR1_OFFSET, 4),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR2_OFFSET, 4),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR3_OFFSET, 4),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR4_OFFSET, 4),
+            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR5_OFFSET, 4));
 
     return 0;
 }

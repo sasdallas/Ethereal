@@ -317,10 +317,7 @@ void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
  * @brief Generic close method
  */
 static void kernelfs_genericClose(fs_node_t *node) {
-    kernelfs_entry_t *entry = (kernelfs_entry_t*)(node->dev);
-    if (entry->buffer) {
-        kfree(entry->buffer);
-    } 
+    // Don't free, let others reuse   
 }
 
 /**
