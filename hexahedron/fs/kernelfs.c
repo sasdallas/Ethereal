@@ -348,13 +348,35 @@ static int kernelfs_cbWrite(void *user, char ch) {
  * @param fmt The format string to use 
  */
 int kernelfs_writeData(kernelfs_entry_t *entry, char *fmt, ...) {
-
     if (!entry->buffer) {
         entry->buffer = kmalloc(KERNELFS_DEFAULT_BUFFER_LENGTH);
         memset(entry->buffer, 0, KERNELFS_DEFAULT_BUFFER_LENGTH);
         entry->bufsz = KERNELFS_DEFAULT_BUFFER_LENGTH;
     }
     entry->buflen = 0;
+
+    va_list ap;
+    va_start(ap, fmt);
+    int ret = xvasprintf(kernelfs_cbWrite, (void*)entry, fmt, ap);
+    va_end(ap);
+
+    // Setup node length
+    entry->node->length = entry->buflen; 
+    return ret;
+}
+
+/**
+ * @brief Append data method for the KernelFS
+ * @param entry The KernelFS entry to append data to
+ * @param fmt The format string to use 
+ */
+int kernelfs_appendData(kernelfs_entry_t *entry, char *fmt, ...) {
+    if (!entry->buffer) {
+        entry->buffer = kmalloc(KERNELFS_DEFAULT_BUFFER_LENGTH);
+        memset(entry->buffer, 0, KERNELFS_DEFAULT_BUFFER_LENGTH);
+        entry->bufsz = KERNELFS_DEFAULT_BUFFER_LENGTH;
+        entry->buflen = 0;
+    }
 
     va_list ap;
     va_start(ap, fmt);

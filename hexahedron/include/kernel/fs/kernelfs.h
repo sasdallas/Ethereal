@@ -91,6 +91,13 @@ void kernelfs_init();
 int kernelfs_writeData(kernelfs_entry_t *entry, char *fmt, ...);
 
 /**
+ * @brief Append data method for the KernelFS
+ * @param entry The KernelFS entry to append data to
+ * @param fmt The format string to use 
+ */
+int kernelfs_appendData(kernelfs_entry_t *entry, char *fmt, ...);
+
+/**
  * @brief Create a new directory entry for the KernelFS
  * @param parent The parental filesystem structure or NULL to mount under root
  * @param name The name of the directory entry (node->name)

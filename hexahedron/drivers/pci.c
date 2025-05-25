@@ -14,10 +14,12 @@
 
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/fs/kernelfs.h>
 #include <kernel/mem/mem.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
 #include <assert.h>
+#include <string.h>
 
 /* MSI map array */
 /* TODO: This will be rewritten */
@@ -475,4 +477,34 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     }
     
     return interrupt - 32;
+}
+
+/**
+ * @brief PCI KernelFS scan method
+ */
+static int pci_kernelFSScan(uint8_t bus, uint8_t slot, uint8_t func, uint16_t vendor_id, uint16_t device_id, void *data) {
+    kernelfs_entry_t *entry = (kernelfs_entry_t*)data;
+    if (!entry->buffer) {
+        kernelfs_writeData(entry, "%04x:%04x\n", vendor_id, device_id);
+    } else {
+        kernelfs_appendData(entry, "%04x:%04x\n", vendor_id, device_id);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief PCI KernelFS 
+ */
+static int pci_fillKernelFS(struct kernelfs_entry *entry, void *data) {
+    pci_scan(pci_kernelFSScan, (void*)entry, -1);
+    return 0;
+}
+
+/**
+ * @brief Mount PCI KernelFS node
+ */
+void pci_mount() {
+    kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "pci", 1);
+    kernelfs_createEntry(dir, "devices", pci_fillKernelFS, NULL);
 }

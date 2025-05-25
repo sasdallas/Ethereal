@@ -308,4 +308,9 @@ uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func);
  */
 uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func);
 
+/**
+ * @brief Mount PCI KernelFS node
+ */
+void pci_mount();
+
 #endif

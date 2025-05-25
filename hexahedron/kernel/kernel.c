@@ -43,6 +43,7 @@
 // Drivers
 #include <kernel/drivers/video.h>
 #include <kernel/drivers/font.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/drivers/net/loopback.h>
 #include <kernel/drivers/net/arp.h>
 #include <kernel/drivers/net/ipv4.h>
@@ -184,6 +185,8 @@ void kmain() {
     pty_init();
     kernelfs_init();
     tmpfs_init();
+    driverfs_init();
+    pci_mount();
 
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "rootfs", "/");
@@ -269,18 +272,26 @@ void kmain() {
     const char *path = "/device/initrd/bin/init";
 
     fs_node_t *file;
+    char *argv[] = { "init", NULL, NULL };
+    int argc = 1;
+
     if (kargs_has("exec")) {
-        file = kopen(kargs_get("exec"), O_RDONLY);
+        char *name = kargs_get("exec");
+        file = kopen(name, O_RDONLY);
+        argv[0] = name;
     } else {
         LOG(INFO, "Running %s as init process\n", path);
         file = kopen(path, O_RDONLY);
     }
 
+    if (kargs_has("initarg")) {
+        argv[1] = strdup(kargs_get("initarg"));
+        argc++;
+    }
+
     if (file) {
-        char *argv[] = { "init", "headless", NULL };
-        if (!kargs_has("--headless")) argv[1] = "test\0";
         char *envp[] = { "TEST_ENV=test1", "FOO=bar", NULL };
-        process_execute(file, 2, argv, envp);
+        process_execute(file, argc, argv, envp);
     } else {
         LOG(WARN, "Init process not found, destroying init and switching\n");
         current_cpu->current_process = NULL;
