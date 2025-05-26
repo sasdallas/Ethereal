@@ -250,3 +250,62 @@ int sleep_enter() {
 
     return 0;
 }
+
+/**
+ * @brief Create a new sleep queue
+ * @param name Optional name of the sleep queue
+ * @returns Sleep queue object
+ */
+sleep_queue_t *sleep_createQueue(char *name) {
+    sleep_queue_t *queue = kzalloc(sizeof(sleep_queue_t));
+    queue->queue.name = name;
+    
+    // Everything else should be initialized
+    return queue;
+}
+
+/**
+ * @brief Put yourself in a sleep queue
+ * @param queue The queue to sleep in
+ * @returns Whenever you get woken up. 0 means that you were woken up normally, 1 means you got interrupted
+ */
+int sleep_inQueue(sleep_queue_t *queue) {
+    if (!queue) return 1;
+
+    spinlock_acquire(&queue->lock);
+    list_append(&queue->queue, (void*)current_cpu->current_thread);
+    sleep_untilNever(current_cpu->current_thread);
+    spinlock_release(&queue->lock);
+
+    return sleep_enter(); // !!!: Validate that in the time from putting ourselves in this queue to sleeping we can't be woken up, and if so we can be woken up properly.
+}
+
+/**
+ * @brief Wakeup threads in a sleep queue
+ * @param queue The queue to start waking up
+ * @param amount The amount of threads to wakeup. 0 wakes them all up
+ * @returns Amount of threads awoken
+ */
+int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
+    if (!queue) return 0;
+
+    spinlock_acquire(&queue->lock);
+
+    int awoken = 0;
+
+    node_t *node = list_popleft(&queue->queue);
+    while (node) {
+        thread_t *thr = (thread_t*)node->value;
+        if (thr) sleep_wakeup(thr);
+        
+        // Increase
+        awoken++;
+        if (awoken >= amounts) break;
+        
+        // Next
+        node = list_popleft(&queue->queue);
+    }
+
+    spinlock_release(&queue->lock);
+    return awoken;
+}

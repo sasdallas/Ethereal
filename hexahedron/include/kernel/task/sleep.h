@@ -59,6 +59,17 @@ typedef struct thread_sleep {
     unsigned long subseconds;               // Subseconds on which to wakeup
 } thread_sleep_t;
 
+/**
+ * @brief Sleep queue structure
+ * 
+ * @note This is just a list object with a lock lmao 
+ */
+typedef struct sleep_queue {
+    list_t queue;
+    spinlock_t lock;
+} sleep_queue_t;
+
+
 /**** MACROS ****/
 
 /* Put the entire process to sleep, including all of its threads */
@@ -133,5 +144,27 @@ int sleep_wakeup(struct thread *thread);
  * @returns 1 if the process was interrupted and you need to return EINTR
  */
 int sleep_enter();
+
+/**
+ * @brief Create a new sleep queue
+ * @param name Optional name of the sleep queue
+ * @returns Sleep queue object
+ */
+sleep_queue_t *sleep_createQueue(char *name);
+
+/**
+ * @brief Put yourself in a sleep queue
+ * @param queue The queue to sleep in
+ * @returns Whenever you get woken up. 0 means that you were woken up normally, 1 means you got interrupted
+ */
+int sleep_inQueue(sleep_queue_t *queue);
+
+/**
+ * @brief Wakeup threads in a sleep queue
+ * @param queue The queue to start waking up
+ * @param amount The amount of threads to wakeup. 0 wakes them all up
+ * @returns Amount of threads awoken
+ */
+int sleep_wakeupQueue(sleep_queue_t *queue, int amounts);
 
 #endif
