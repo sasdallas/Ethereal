@@ -24,6 +24,7 @@ _Begin_C_Header
 
 /**** DEFINITIONS ****/
 
+/* Types of sockets */
 #define SOCK_DGRAM          0       // Datagram socket
 #define SOCK_RAW            1       // Raw protocol interface
 #define SOCK_SEQPACKET      2       // Sequenced-packet stream
@@ -31,6 +32,7 @@ _Begin_C_Header
 
 #define SOL_SOCKET          1
 
+/* Socket options */
 #define SO_ACCEPTCONN       0
 #define SO_BROADCAST        1
 #define SO_DEBUG            2
@@ -47,16 +49,25 @@ _Begin_C_Header
 #define SO_SNDLOWAT         13
 #define SO_SNDTIMEO         14
 #define SO_TYPE             15
+#define SO_BINDTODEVICE     16
 
+/* Socket address families */
 #define AF_INET             1       // IPv4
 #define AF_INET6            2       // IPv6
 #define AF_UNIX             3       // UNIX
 #define AF_UNSPEC           4       // Unspecified
 #define AF_RAW              5       // Raw
 
+/* Shutdown types */
 #define SHUT_RD             1
 #define SHUT_RDWR           2
 #define SHUT_WR             3
+
+/* IP protocols */
+#define IPPROTO_IP          0
+#define IPPROTO_ICMP        1
+#define IPPROTO_TCP         6
+#define IPPROTO_UDP         17
 
 /**** TYPES ****/
 typedef size_t socklen_t;

@@ -68,6 +68,8 @@ typedef struct sys_mmap_context {
 /* Pointer validation (range) */
 #define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)(ptr + size); i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
 
+/* Prototypes to avoid flooding header files */
+struct msghdr;
 
 /**** FUNCTIONS ****/
 
@@ -110,5 +112,8 @@ long sys_msync(void *addr, size_t len, int flags);
 long sys_dup2(int oldfd, int newfd);
 long sys_signal(int signum, sa_handler handler);
 long sys_kill(pid_t pid, int sig);
+long sys_socket(int domain, int type, int protocol);
+ssize_t sys_sendmsg(int socket, struct msghdr *message, int flags);
+ssize_t sys_recvmsg(int socket, struct msghdr *message, int flags);
 
 #endif

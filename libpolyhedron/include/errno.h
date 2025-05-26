@@ -101,6 +101,8 @@
 #define ERESTARTSYS 512     /* Restart system call*/
 
 #ifndef __LIBK
+#define __sets_errno(fn) {long _ret = fn; if ((int)_ret < 0) { errno = -_ret; _ret = -1; } return _ret; }
+
 extern int errno;
 
 char *strerror(int errnum);

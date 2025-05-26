@@ -59,6 +59,19 @@ _Begin_C_Header
 #define SYS_SIGSUSPEND      43
 #define SYS_SIGWAIT         44
 #define SYS_KILL            45
+#define SYS_SOCKET          46
+#define SYS_BIND            47
+#define SYS_ACCEPT          48
+#define SYS_LISTEN          49
+#define SYS_CONNECT         50
+#define SYS_GETSOCKOPT      51
+#define SYS_SETSOCKOPT      52
+#define SYS_SENDMSG         53
+#define SYS_RECVMSG         54
+#define SYS_SHUTDOWN        55
+#define SYS_GETSOCKNAME     56
+#define SYS_GETPEERNAME     57
+#define SYS_SOCKETPAIR      58
 
 
 /* Syscall macros */

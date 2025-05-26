@@ -40,8 +40,6 @@ _Begin_C_Header
 #define DECLARE_SYSCALL4(name, p1_type, p2_type, p3_type, p4_type) long __syscall_##name(p1_type p1, p2_type p2, p3_type p3, p4_type p4)
 #define DECLARE_SYSCALL5(name, p1_type, p2_type, p3_type, p4_type, p5_type) long __syscall_##name(p1_type p1, p2_type p2, p3_type p3, p4_type p4, p5_type p5)
 
-#define __sets_errno(fn) {long _ret = fn; if ((int)_ret < 0) { errno = -_ret; _ret = -1; } return _ret; }
-
 /**** FUNCTIONS ****/
 
 DECLARE_SYSCALL1(exit, int);
