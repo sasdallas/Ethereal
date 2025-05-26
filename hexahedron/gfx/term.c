@@ -96,7 +96,7 @@ void terminal_scroll() {
 
     gfx_drawLogo(COLOR_BLACK); // Black out logo
 
-    memmove(vmem, vmem + sizeof(uint32_t) * driver->screenWidth * font_getHeight(), (driver->screenHeight - font_getHeight()) * driver->screenWidth * 4);
+    memcpy(vmem, vmem + sizeof(uint32_t) * driver->screenWidth * font_getHeight(), (driver->screenHeight - font_getHeight()) * driver->screenWidth * 4);
     memset(vmem + sizeof(uint32_t) * (driver->screenHeight - font_getHeight()) * driver->screenWidth, 0, driver->screenWidth * font_getHeight() * 4);
 
     gfx_drawLogo(COLOR_WHITE);  // Redraw logo
