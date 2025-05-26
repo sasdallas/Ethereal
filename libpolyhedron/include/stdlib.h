@@ -29,6 +29,7 @@ _Begin_C_Header
 #define EXIT_FAILURE    1
 
 #define RAND_MAX        32767
+#define PATH_MAX        512     // !!!: This should be in limits.h
 
 /**** TYPES ****/
 

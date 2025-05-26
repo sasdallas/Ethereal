@@ -23,10 +23,10 @@ _Begin_C_Header
 
 /**** TYPES ****/
 
-typedef struct iovec {
+struct iovec {
     void    *iov_base;      // Base address of a memory region for I/O
     size_t  iov_len;        // Size of memory pointed to by iov_base
-}
+};
 
 #endif
 

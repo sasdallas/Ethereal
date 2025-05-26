@@ -19,9 +19,8 @@ _Begin_C_Header
 #define _SYS_SOCKET_H
 
 /**** INCLUDES ****/
-#include <stdint.h>
 #include <stddef.h>
-#include <sys/uio.h>
+#include <sys/types.h> 
 
 /**** DEFINITIONS ****/
 
@@ -53,6 +52,7 @@ _Begin_C_Header
 #define AF_INET6            2       // IPv6
 #define AF_UNIX             3       // UNIX
 #define AF_UNSPEC           4       // Unspecified
+#define AF_RAW              5       // Raw
 
 #define SHUT_RD             1
 #define SHUT_RDWR           2
@@ -77,8 +77,27 @@ typedef struct msghdr {
     int             msg_flags;          // Flags on received message
 };
 
+/**** FUNCTIONS ****/
 
+int socket(int domain, int type, int protocol);
+int socketpair(int domain, int type, int protocol, int socket_vector[2]);
+int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int connect(int socket, const struct sockaddr *addr, socklen_t addrlen);
+int accept(int socket, struct sockaddr *address, socklen_t *addrlen);
+int listen(int socket, int backlog);
+ssize_t send(int socket, const void *buffer, size_t length, int flags);
+ssize_t sendto(int socket, const void *message, size_t length, int flags, const struct sockaddr *dest_addr, socklen_t dest_len);
+ssize_t sendmsg(int socket, const struct msghdr *message, int flags);
+ssize_t recv(int socket, void *buffer, size_t length, int flags);
+ssize_t recvfrom(int socket, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_len);
+ssize_t recvmsg(int socket, struct msghdr *message, int flags);
 
+int getpeername(int socket, struct sockaddr *address, socklen_t *address_len);
+int getsockname(int socket, struct sockaddr *address, socklen_t *address_len);
+int getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len);
+int setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+
+int shutdown(int sockfd, int how);
 
 #endif
 
