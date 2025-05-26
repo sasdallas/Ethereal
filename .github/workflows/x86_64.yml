@@ -15,3 +15,13 @@ jobs:
         with:
           name: iso
           path: build-output/hexahedron.iso
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel
+          path: build-output/sysroot/boot/hexahedron-kernel.elf
+      - name: Upload initrd
+        uses: actions/upload-artifact@v4
+        with:
+          name: initrd
+          path: build-output/sysroot/boot/initrd.tar.img
