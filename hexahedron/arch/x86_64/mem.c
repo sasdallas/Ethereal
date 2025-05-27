@@ -979,12 +979,19 @@ extern uintptr_t __kernel_start, __kernel_end;
     // Setup the PAT
     // TODO: Write a better interface for the PAT
     asm volatile(
-    	"movl $0x277, %%ecx;"
-    	"rdmsr;"
-    	"movw $0x0401, %%dx;"
-    	"wrmsr;"
+    	"movl $0x277, %%ecx\n"
+    	"rdmsr\n"
+    	"movw $0x0401, %%dx\n"
+    	"wrmsr\n"
     	::: "eax", "ecx", "edx", "memory"
     );
+
+    // Enable WP
+    asm volatile (
+        "movq %%cr0, %%rax\n"
+        "orq $0x10000, %%rax\n"
+        "movq %%rax, %%cr0" ::: "rax");
+
 
 
     // Initialize regions

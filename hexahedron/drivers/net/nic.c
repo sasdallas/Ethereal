@@ -116,9 +116,28 @@ _name_done: ;
         return 1;
     }
 
+    // Append
+    list_append(nic_list, (void*)nic);
+
     LOG(INFO, "Mounted a new NIC \"%s\" to \"%s\"\n", nic->name, fullpath);
     return 0;
 
 }
 
+/**
+ * @brief Find a NIC device by their node name
+ * @param name The name to search for
+ * @returns The NIC device on success or NULL on failure
+ */
+nic_t *nic_find(char *name) {
+    foreach(nic_node, nic_list) {
+        nic_t *nic = (nic_t*)nic_node->value;
+        if (nic) {
+            if (!strcmp(nic->parent_node->name, name)) {
+                return nic;
+            }
+        }
+    }
 
+    return NULL;
+}

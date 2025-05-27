@@ -19,6 +19,7 @@
 
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/nic.h>
+#include <kernel/drivers/net/socket.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
@@ -72,6 +73,14 @@ void ethernet_handle(ethernet_packet_t *packet, fs_node_t *nic_node, size_t size
     if (!size) {
         LOG_NIC(ERR, nic_node, "ETH: Invalid size of packet (%d)!", size);
         return;
+    }
+
+    // First give it to the sockets
+    if (NIC(nic_node)->raw_sockets) {
+        foreach(socket_node, NIC(nic_node)->raw_sockets) {
+            sock_t *sock = (sock_t*)socket_node->value;
+            socket_received(sock, packet, size);
+        }
     }
 
     // Is this packet destined for us? Is it a broad packet?

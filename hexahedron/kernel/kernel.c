@@ -48,6 +48,7 @@
 #include <kernel/drivers/net/arp.h>
 #include <kernel/drivers/net/ipv4.h>
 #include <kernel/drivers/net/icmp.h>
+#include <kernel/drivers/net/socket.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -186,7 +187,8 @@ void kmain() {
     kernelfs_init();
     tmpfs_init();
     driverfs_init();
-    pci_mount();
+    socket_init();
+    pci_mount(); // !!!: Can crash for some reason
 
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "rootfs", "/");
@@ -262,6 +264,7 @@ void kmain() {
         LOG(WARN, "Not loading any drivers, found argument \"--no-load-drivers\".\n");
         printf(COLOR_CODE_YELLOW    "Refusing to load drivers because of kernel argument \"--no-load-drivers\" - careful!\n" COLOR_CODE_RESET);
     }
+
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
 

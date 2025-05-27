@@ -23,6 +23,7 @@
 #include <sys/times.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
 
 /**** DEFINITIONS ****/
 
@@ -60,13 +61,21 @@ typedef struct sys_mmap_context {
     off_t off;
 } sys_mmap_context_t;
 
+typedef struct sys_setopt_context {
+    int socket;
+    int level;
+    int option_name;
+    const void *option_value;
+    socklen_t option_len;
+} sys_setopt_context_t;
+
 /**** MACROS ****/
 
 /* Pointer validation */
 #define SYSCALL_VALIDATE_PTR(ptr) if (!mem_validate((void*)ptr, PTR_USER | PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
 
 /* Pointer validation (range) */
-#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t i = (uintptr_t)ptr; i < (uintptr_t)(ptr + size); i += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(i); }
+#define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t p = (uintptr_t)(ptr); p < (uintptr_t)((ptr) + (size)); p += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(p); }
 
 /* Prototypes to avoid flooding header files */
 struct msghdr;
@@ -79,6 +88,14 @@ struct msghdr;
  * @returns Nothing, but updates @c syscall->return_value
  */
 void syscall_handle(syscall_t *syscall);
+
+/**
+ * @brief Pointer validation failed
+ * @param ptr The pointer that failed to validate
+ * @returns Only if resolved.
+ */
+void syscall_pointerValidateFailed(void *ptr);
+
 
 /* System calls */
 void sys_exit(int status);
@@ -115,5 +132,6 @@ long sys_kill(pid_t pid, int sig);
 long sys_socket(int domain, int type, int protocol);
 ssize_t sys_sendmsg(int socket, struct msghdr *message, int flags);
 ssize_t sys_recvmsg(int socket, struct msghdr *message, int flags);
+long sys_setsockopt(sys_setopt_context_t *context);
 
 #endif

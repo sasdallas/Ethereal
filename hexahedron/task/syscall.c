@@ -13,6 +13,7 @@
 
 #include <kernel/task/syscall.h>
 #include <kernel/task/process.h>
+#include <kernel/drivers/net/socket.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/misc/args.h>
 #include <kernel/mem/alloc.h>
@@ -59,7 +60,11 @@ static syscall_func_t syscall_table[] = {
     [SYS_MPROTECT]      = (syscall_func_t)(uintptr_t)0xCAFECAFE,
     [SYS_DUP2]          = (syscall_func_t)(uintptr_t)sys_dup2,
     [SYS_SIGNAL]        = (syscall_func_t)(uintptr_t)sys_signal,
-    [SYS_KILL]          = (syscall_func_t)(uintptr_t)sys_kill
+    [SYS_KILL]          = (syscall_func_t)(uintptr_t)sys_kill,
+    [SYS_SOCKET]        = (syscall_func_t)(uintptr_t)sys_socket,
+    [SYS_SENDMSG]       = (syscall_func_t)(uintptr_t)sys_sendmsg,
+    [SYS_RECVMSG]       = (syscall_func_t)(uintptr_t)sys_recvmsg,
+    [SYS_SETSOCKOPT]    = (syscall_func_t)(uintptr_t)sys_setsockopt,
 };
 
 
@@ -627,6 +632,8 @@ long sys_dup2(int oldfd, int newfd) {
     return newfd;
 }
 
+/* SIGNALS */
+
 long sys_signal(int signum, sa_handler handler) {
     // Validate range
     if (signum < 0 || signum >= NUMSIGNALS) return -EINVAL;
@@ -669,4 +676,24 @@ long sys_kill(pid_t pid, int sig) {
 
     // Unreachable
     return -EINVAL;
+}
+
+/* SOCKETS */
+
+long sys_socket(int domain, int type, int protocol) {
+    return socket_create(current_cpu->current_process, domain, type, protocol);
+}
+
+long sys_sendmsg(int socket, struct msghdr *message, int flags) {
+    return socket_sendmsg(socket, message, flags);
+}
+
+long sys_recvmsg(int socket, struct msghdr *message, int flags) {
+    return socket_recvmsg(socket, message, flags);
+}
+
+long sys_setsockopt(sys_setopt_context_t *context) {
+    // !!!: I don't know why context is required..
+    SYSCALL_VALIDATE_PTR(context);
+    return socket_setsockopt(context->socket, context->level, context->option_name, context->option_value, context->option_len);
 }

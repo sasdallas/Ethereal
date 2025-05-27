@@ -23,7 +23,6 @@
 #define IO_VIDEO_GET_INFO           0x3000  // Get video mode information
 #define IO_VIDEO_SET_INFO           0x3001  // Set video mode information
 #define IO_VIDEO_GET_FRAMEBUFFER    0x3002  // Get framebuffer call
-#define IO_VIDEO_SET_FRAMEBUFFER    0x3003  // Set framebuffer call (maps into a user-specified pointer)
 #define IO_VIDEO_FLUSH_FRAMEBUFFER  0x3004  // Flush the framebuffer, as the kernel implements double buffering
 
 /**** TYPES ****/
