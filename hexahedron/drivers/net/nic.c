@@ -13,12 +13,17 @@
  */
 
 #include <kernel/drivers/net/nic.h>
+#include <kernel/fs/kernelfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
+#include <arpa/inet.h>
 
 /* NIC list */
 list_t *nic_list = NULL;
+
+/* NIC directory for KernelFS */
+kernelfs_dir_t *nic_dir = NULL;
 
 /* Indexes */
 static int net_ethernet_index = 0;
@@ -71,6 +76,59 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver) {
 }
 
 /**
+ * @brief Read data method for the NIC KernelFS node
+ * @param entry KernelFS entry
+ * @param data NIC
+ */
+static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
+    nic_t *nic = (nic_t*)data;
+
+
+    struct in_addr in = { 0 };
+
+    in.s_addr = nic->ipv4_address;
+    char *ipv4_addr = strdup(inet_ntoa(in));
+
+    in.s_addr = nic->ipv4_subnet;
+    char *ipv4_gateway = strdup(inet_ntoa(in));
+
+    in.s_addr = nic->ipv4_gateway;
+    char *ipv4_subnet = strdup(inet_ntoa(in));
+
+    kernelfs_writeData(entry,
+                                "Name:%s\n"
+                                "Type:%s\n"
+                                "MAC:" MAC_FMT "\n"
+                                "Ipv4Address:%s\n"
+                                "Ipv4Subnet:%s\n"
+                                "Ipv4Gateway:%s\n"
+                                "RxCount:%d\n"
+                                "RxDropped:%d\n"
+                                "RxBytes:%d\n"
+                                "TxCount:%d\n"
+                                "TxDropped:%d\n"
+                                "TxBytes:%d\n",
+                                    nic->name,
+                                    nic->type == NIC_TYPE_ETHERNET ? "EthernetCard" : "WifiCard",
+                                    MAC(nic->mac),
+                                    ipv4_addr,
+                                    ipv4_subnet,
+                                    ipv4_gateway,
+                                    nic->stats.rx_packets,
+                                    nic->stats.rx_dropped,
+                                    nic->stats.rx_bytes,
+                                    nic->stats.tx_packets,
+                                    nic->stats.tx_dropped,
+                                    nic->stats.tx_bytes
+                                );
+
+    kfree(ipv4_addr);
+    kfree(ipv4_subnet);
+    kfree(ipv4_gateway);
+    return 0;
+}
+
+/**
  * @brief Register a new NIC to the filesystem
  * @param nic The node of the NIC to register
  * @param interface_name Optional interface name (e.g. "lo") to mount to instead of using the NIC type
@@ -79,6 +137,10 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver) {
 int nic_register(fs_node_t *nic_device, char *interface_name) {
     if (!nic_device || !nic_device->dev) return 1;
     if (!nic_list) nic_list = list_create("nic list");
+
+    if (!nic_dir) {
+        nic_dir = kernelfs_createDirectory(NULL, "net", 1);
+    }
 
     // Get the NIC
     nic_t *nic = (nic_t*)nic_device->dev;
@@ -118,6 +180,8 @@ _name_done: ;
 
     // Append
     list_append(nic_list, (void*)nic);
+
+    kernelfs_createEntry(nic_dir, interface_name, nic_kernelfsRead, (void*)nic);
 
     LOG(INFO, "Mounted a new NIC \"%s\" to \"%s\"\n", nic->name, fullpath);
     return 0;

@@ -32,6 +32,21 @@
 /**** TYPES ****/
 
 /**
+ * @brief Statistics for a NIC
+ * 
+ * Update these as your driver progresses.
+ */
+typedef struct nic_stats {
+    uint32_t rx_packets;                // Total received packets
+    uint32_t rx_dropped;                // Total received dropped packets
+    uint32_t rx_bytes;                  // Total received bytes
+
+    uint32_t tx_packets;                // Total transmitted packets
+    uint32_t tx_dropped;                // Total transmitted dropped packets
+    uint32_t tx_bytes;                  // Total transmitted bytes
+} nic_stats_t;
+
+/**
  * @brief NIC structure
  * 
  * Put this structure into your @c dev field on your node.
@@ -39,10 +54,13 @@
 typedef struct nic {
     char name[128];                     // Name of the NIC
     int type;                           // Type of the NIC
+    nic_stats_t stats;                  // Statistics for the NIC
 
     uint8_t mac[6];                     // MAC address of the NIC
     fs_node_t *parent_node;             // Parent node of the NIC
     void *driver;                       // Driver-defined field
+
+    list_t *raw_sockets;                // Raw sockets for the NIC
 
     // TODO: Move this to another structure, perhaps
     uint32_t ipv4_address;              // IPv4 address
@@ -74,5 +92,12 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver);
  * @returns 0 on success
  */
 int nic_register(fs_node_t *nic_device, char *interface_name);
+
+/**
+ * @brief Find a NIC device by their node name
+ * @param name The name to search for
+ * @returns The NIC device on success or NULL on failure
+ */
+nic_t *nic_find(char *name);
 
 #endif
