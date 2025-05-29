@@ -37,7 +37,9 @@ struct in_addr {
  * @brief Socket address
  */
 struct sockaddr_in {
-    short       sin_family;
+    unsigned int    sin_family;
+    in_port_t       sin_port;
+    struct in_addr  sin_addr;
 };
 
 #endif

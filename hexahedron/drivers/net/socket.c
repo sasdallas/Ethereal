@@ -25,6 +25,12 @@
 /* Handler map */
 hashmap_t *socket_map = NULL;
 
+/* Socket list */
+list_t *socket_list = NULL;
+
+/* Last socket ID */
+int last_socket_id = 0;
+
 /* Validate socket option */
 #define SOCKET_VALIDATE_OPT(optvalue, optlen) SYSCALL_VALIDATE_PTR_SIZE(optvalue, optlen)
 
@@ -101,7 +107,8 @@ static sock_t *socket_raw_create(int type, int protocol) {
  * @brief Initialize the socket system
  */
 void socket_init() {
-    socket_map = hashmap_create_int("socket map", 20);
+    socket_map = hashmap_create_int("socket map", 4);
+    socket_list = list_create("socket list");
     socket_register(AF_RAW, socket_raw_create);
     LOG(INFO, "Sockets initialized\n");
 }
@@ -127,12 +134,16 @@ static int socket_validateMsg(struct msghdr *message) {
     if (message->msg_control) SYSCALL_VALIDATE_PTR_SIZE(message->msg_control, message->msg_controllen);
     if (message->msg_name) SYSCALL_VALIDATE_PTR_SIZE(message->msg_name, message->msg_namelen);
 
+    LOG(DEBUG, "CTRL: %p %d\n", message->msg_control, message->msg_controllen);
+    LOG(DEBUG, "NAME: %p %d\n", message->msg_name, message->msg_namelen);
+
     if (message->msg_iovlen) {
         SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov, message->msg_iovlen * sizeof(struct iovec));
 
         // For each iov
         for (int i = 0; i < message->msg_iovlen; i++) {
             SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
+            LOG(DEBUG, "IOV: %p %d\n", message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
         }
     }
 
@@ -316,6 +327,9 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     sock->type = type;
     sock->protocol = protocol;
 
+    sock->id = last_socket_id++;
+    list_append(socket_list, (void*)sock);
+
     // Add as file descriptor
     fd_t *fd = fd_add(proc, node);
     return fd->fd_number;
@@ -387,4 +401,22 @@ sock_recv_packet_t *socket_get(sock_t *sock) {
 
     spinlock_release(sock->recv_lock);
     return pkt;
+}
+
+/**
+ * @brief Get a socket by its ID
+ * @param id The ID to look for
+ * @returns The socket or NULL
+ * @warning This can be kinda slow since it searches the full socket list
+ */
+sock_t *socket_fromID(int id) {
+    // !!!: Slow
+    foreach(sock_node, socket_list) {
+        sock_t *sock = (sock_t*)sock_node->value;
+        if (sock) {
+            if (sock->id == id) return sock;
+        }
+    }
+    
+    return NULL;
 }

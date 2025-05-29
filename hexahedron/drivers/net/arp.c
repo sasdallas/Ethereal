@@ -19,6 +19,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/fs/kernelfs.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -27,6 +28,9 @@
 
 /* ARP table - consists of arp_table_entry_t structures */
 hashmap_t *arp_map = NULL;
+
+/* ARP list */
+list_t *arp_entries = NULL;
 
 /* ARP table lock */
 spinlock_t arp_lock = { 0 };
@@ -37,6 +41,24 @@ spinlock_t arp_lock = { 0 };
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s] ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
 
+
+/**
+ * @brief ARP KernelFS read method
+ */
+int arp_readKernelFS(kernelfs_entry_t *kentry, void *data) {
+    kernelfs_writeData(kentry, "EntryCount:%d\n", arp_entries->length);
+    foreach(arp_node, arp_entries) {
+        arp_table_entry_t *entry = (arp_table_entry_t*)arp_node->value;
+        if (entry) {
+            struct in_addr a = { .s_addr = entry->address };
+            char *addr = inet_ntoa(a);
+            kernelfs_appendData(kentry, "Entry:%s  (" MAC_FMT ") HwType:%d\n",
+                                                addr, MAC(entry->hwmac), entry->hwtype);
+        }
+    }
+
+    return 0;
+}
 
 /**
  * @brief Get an entry from the cache table
@@ -73,6 +95,7 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
 
     spinlock_acquire(&arp_lock);
     hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)entry);
+    list_append(arp_entries, (void*)entry);
     spinlock_release(&arp_lock);
 
     return 0;
@@ -265,5 +288,7 @@ int arp_handle_packet(void *frame, fs_node_t *nic_node, size_t size) {
  */
 void arp_init() {
     arp_map = hashmap_create_int("arp route map", 20);
+    arp_entries = list_create("arp entries");
     ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle_packet);
+    kernelfs_createEntry(kernelfs_net_dir, "arp", arp_readKernelFS, NULL);
 }

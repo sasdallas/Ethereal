@@ -13,11 +13,13 @@
 
 #include <kernel/drivers/net/icmp.h>
 #include <kernel/drivers/net/ethernet.h>
+#include <kernel/drivers/net/socket.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:ICMP", __VA_ARGS__)
@@ -98,7 +100,7 @@ int icmp_handle(fs_node_t *nic_node, void *frame, size_t size) {
     LOG_NIC(DEBUG, nic_node, "Receive packet type=%02x code=%02x\n", packet->type, packet->code);
 
     if (packet->type == ICMP_ECHO_REQUEST && packet->code == 0) {
-        // They are pinging us, respond - try to not waste memoryE
+        // They are pinging us, respond - try to not waste memory
         printf("Ping request from %s - icmp_seq=%d ttl=%d\n", inet_ntoa((struct in_addr){.s_addr = ip_packet->src_addr}), ntohs(((packet->varies >> 16) & 0xFFFF)), ip_packet->ttl);
 
         ipv4_packet_t *resp = kmalloc(ntohs(ip_packet->length));
@@ -129,6 +131,66 @@ int icmp_handle(fs_node_t *nic_node, void *frame, size_t size) {
     }
 
     return 0;
+}
+
+/**
+ * @brief ICMP sendmsg
+ */
+ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
+    if (!msg->msg_iovlen) return 0;
+
+    // Get the message sender
+    if (msg->msg_namelen < sizeof(struct sockaddr_in)) return 0;
+    struct sockaddr_in *sockaddr = (struct sockaddr_in*)msg->msg_name;
+
+    // Route to a NIC
+    nic_t *nic = nic_route(sockaddr->sin_addr.s_addr);
+    if (!nic) return -ENETUNREACH; // ??? right code to return?
+
+
+
+    ssize_t sent_bytes = 0;
+    for (int i = 0; i < msg->msg_iovlen; i++) {
+        // Check it
+        if (msg->msg_iov[i].iov_len < sizeof(icmp_packet_t)) return -EINVAL;
+
+        // Construct a packet to use
+        ipv4_packet_t *pkt = kzalloc(sizeof(ipv4_packet_t) + msg->msg_iov[i].iov_len);
+        pkt->dest_addr = sockaddr->sin_addr.s_addr;
+        pkt->src_addr = nic->ipv4_address;
+        pkt->versionihl = 0x45;
+        pkt->ttl = IPV4_DEFAULT_TTL;
+        pkt->protocol = IPV4_PROTOCOL_TCP;
+        pkt->offset = htons(0x4000);
+        pkt->length = htons(sizeof(ipv4_packet_t) + msg->msg_iov[i].iov_len);
+        pkt->checksum = 0;
+        pkt->checksum = htons(ipv4_checksum(pkt));
+        
+
+        // Copy in payload data
+        memcpy(pkt->payload, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
+
+        // Setup the identifier bits in the ICMP header and the checksum
+        icmp_packet_t *icmp_pkt = (icmp_packet_t*)pkt->payload;
+        icmp_pkt->varies |= 0xFFFF0000;
+        icmp_pkt->checksum = 0;
+        icmp_pkt->checksum = htons(icmp_checksum((void*)icmp_pkt, msg->msg_iov[i].iov_len));
+        
+        ipv4_sendPacket(nic->parent_node, pkt);
+        sent_bytes += msg->msg_iov[i].iov_len;
+        kfree(pkt);
+    }
+
+    return sent_bytes;
+}
+
+/**
+ * @brief ICMP socket handler
+ */
+sock_t *icmp_socket() {
+    sock_t *sock = kzalloc(sizeof(sock_t));
+    sock->sendmsg = icmp_sendmsg;
+    return sock;
 }
 
 /**

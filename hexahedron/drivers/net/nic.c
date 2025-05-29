@@ -22,8 +22,8 @@
 /* NIC list */
 list_t *nic_list = NULL;
 
-/* NIC directory for KernelFS */
-kernelfs_dir_t *nic_dir = NULL;
+/* Network directory for KernelFS */
+kernelfs_dir_t *kernelfs_net_dir = NULL;
 
 /* Indexes */
 static int net_ethernet_index = 0;
@@ -136,11 +136,6 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
  */
 int nic_register(fs_node_t *nic_device, char *interface_name) {
     if (!nic_device || !nic_device->dev) return 1;
-    if (!nic_list) nic_list = list_create("nic list");
-
-    if (!nic_dir) {
-        nic_dir = kernelfs_createDirectory(NULL, "net", 1);
-    }
 
     // Get the NIC
     nic_t *nic = (nic_t*)nic_device->dev;
@@ -181,7 +176,7 @@ _name_done: ;
     // Append
     list_append(nic_list, (void*)nic);
 
-    kernelfs_createEntry(nic_dir, interface_name, nic_kernelfsRead, (void*)nic);
+    kernelfs_createEntry(kernelfs_net_dir, interface_name, nic_kernelfsRead, (void*)nic);
 
     LOG(INFO, "Mounted a new NIC \"%s\" to \"%s\"\n", nic->name, fullpath);
     return 0;
@@ -204,4 +199,31 @@ nic_t *nic_find(char *name) {
     }
 
     return NULL;
+}
+
+/**
+ * @brief Find NIC device with a valid route to this address
+ * @param addr The address to search for
+ * @returns The NIC device on success or NULL on failure
+ */
+nic_t *nic_route(in_addr_t addr) {
+    // TODO: This properly
+    foreach(nic_node, nic_list) {
+        nic_t *nic = (nic_t*)nic_node->value;
+        if (nic) {
+            if (nic->ipv4_address == addr) return nic; // Trying to find a route to this NIC
+        }
+    }
+
+    // Return the SECOND node in the list
+    if (!nic_list->head->next) return NULL;
+    return (nic_t*)nic_list->head->next->value;
+}
+
+/**
+ * @brief Initialize NIC system
+ */
+void nic_init() {
+    nic_list = list_create("nic list");
+    kernelfs_net_dir = kernelfs_createDirectory(NULL, "net", 1);
 }

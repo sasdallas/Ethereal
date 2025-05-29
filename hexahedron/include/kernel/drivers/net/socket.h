@@ -46,6 +46,7 @@ typedef ssize_t (*sock_recvmsg_t)(struct sock *sock, struct msghdr *message, int
 typedef struct sock {
     fs_node_t *node;                    // Node object
     int flags;                          // Flags
+    int id;                             // Identifier of the socket (auto-assigned and can be resolved with socket_fromID)
 
     int domain;                         // Domain of the socket
     int type;                           // Type of the socket
@@ -161,5 +162,13 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags);
  * @param option_len The length of the option
  */
 int socket_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+
+/**
+ * @brief Get a socket by its ID
+ * @param id The ID to look for
+ * @returns The socket or NULL
+ * @warning This can be kinda slow since it searches the full socket list
+ */
+sock_t *socket_fromID(int id);
 
 #endif

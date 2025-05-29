@@ -187,6 +187,7 @@ void kmain() {
     kernelfs_init();
     tmpfs_init();
     driverfs_init();
+    nic_init(); // This initializes the network directory
     socket_init();
     pci_mount(); // !!!: Can crash for some reason
 

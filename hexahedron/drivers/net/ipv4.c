@@ -14,6 +14,7 @@
 #include <kernel/drivers/net/ipv4.h>
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/arp.h>
+#include <kernel/drivers/net/socket.h>
 #include <kernel/mem/alloc.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
@@ -28,12 +29,17 @@ hashmap_t *ipv4_handler_hashmap = NULL;
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s]  IPV4: ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
 
+/* Socket prototypes */
+sock_t *ipv4_socket(int type, int protocol);
+extern sock_t *icmp_socket();
+
 /**
  * @brief Initialize the IPv4 system
  */
 void ipv4_init() {
     ipv4_handler_hashmap = hashmap_create_int("ipv4 handler map", 6);
     ethernet_registerHandler(IPV4_PACKET_TYPE, ipv4_handle);
+    socket_register(AF_INET, ipv4_socket);
 }
 
 /**
@@ -193,4 +199,18 @@ int ipv4_handle(void *frame, fs_node_t *nic_node, size_t size) {
     }
 
     return 0;
+}
+
+/**
+ * @brief IPv4 create socket method
+ */
+sock_t *ipv4_socket(int type, int protocol) {
+    // !!!: Temporary? Do we want to modularize TCP, UDP, and/or ICMP?
+    switch (type) {
+        case SOCK_DGRAM:
+            if (protocol == IPPROTO_ICMP) return icmp_socket();
+            return NULL;
+        default:
+            return NULL;
+    };
 }

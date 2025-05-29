@@ -17,8 +17,10 @@
 /**** INCLUDES ****/
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/fs/kernelfs.h>
 #include <stdint.h>
 #include <string.h>
+#include <netinet/in.h>
 
 /**** DEFINITIONS ****/
 
@@ -71,6 +73,10 @@ typedef struct nic {
 /**** MACROS ****/
 #define NIC(node) ((nic_t*)node->dev)
 
+/**** VARIABLES ****/
+
+extern kernelfs_dir_t *kernelfs_net_dir;
+
 /**** FUNCTIONS ****/
 
 /**
@@ -99,5 +105,17 @@ int nic_register(fs_node_t *nic_device, char *interface_name);
  * @returns The NIC device on success or NULL on failure
  */
 nic_t *nic_find(char *name);
+
+/**
+ * @brief Find NIC device by their IPv4 address
+ * @param addr The address to search for
+ * @returns The NIC device on success or NULL on failure
+ */
+nic_t *nic_route(in_addr_t addr);
+
+/**
+ * @brief Initialize NIC system
+ */
+void nic_init();
 
 #endif
