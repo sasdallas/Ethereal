@@ -39,6 +39,11 @@ char *essence_getInput() {
     while (1) {
         CSR_SHOW();
         c = getchar();
+        if (!c) {
+            putchar('\b');
+            PUTCHAR_FLUSH(c);
+            continue;
+        }
 
         switch (c) {
             case '\b':
