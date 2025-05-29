@@ -259,9 +259,14 @@ int arp_handle_packet(void *frame, fs_node_t *nic_node, size_t size) {
             char *tpa = inet_ntoa((struct in_addr){.s_addr = packet->tpa});
             LOG(NOHEADER, "for IP %s\n", tpa);
 
-            // Cache them
-            arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic_node);
+            // Do we need to cache them?
+            arp_table_entry_t *exist = arp_get_entry((in_addr_t)packet->spa);
+            if (!exist || memcmp(packet->sha, exist->hwmac, 6)) {
+                // Cache them
+                arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic_node);
+            }
 
+            
             // Ok, are they looking for us?
             if (nic->ipv4_address && packet->tpa == nic->ipv4_address) {
                 // Yes, they are. Construct a response packet and send it back
