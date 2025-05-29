@@ -57,6 +57,7 @@ typedef struct nic {
     char name[128];                     // Name of the NIC
     int type;                           // Type of the NIC
     nic_stats_t stats;                  // Statistics for the NIC
+    size_t mtu;                         // MTU for the NIC
 
     uint8_t mac[6];                     // MAC address of the NIC
     fs_node_t *parent_node;             // Parent node of the NIC

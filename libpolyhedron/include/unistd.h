@@ -28,6 +28,7 @@ _Begin_C_Header
 #include <sys/times.h>
 #include <errno.h>
 #include <time.h>
+#include <getopt.h>
 
 /**** VARIABLES ****/
 

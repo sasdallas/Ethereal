@@ -130,6 +130,10 @@ void rtl8139_thread(void *context) {
         uint16_t packet_len = packet[1];
         ethernet_handle((ethernet_packet_t*)(packet+2), nic->nic, packet_len);
 
+        // Update counts
+        NIC(nic->nic)->stats.rx_packets++;
+        NIC(nic->nic)->stats.rx_bytes += packet_len;
+
         // Update rx_current
         nic->rx_current += (packet_len + 4 + 3) & ~3;
         if (nic->rx_current >= 8192) {
@@ -161,9 +165,19 @@ int rtl8139_handler(void *context) {
             spinlock_release(&nic->lock);
         }
 
+        if (status & RTL8139_ISR_TER) {
+            // Error
+            NIC(nic->nic)->stats.tx_dropped++;
+        }
+
         if (status & RTL8139_ISR_ROK) {
             // this is real
             sleep_wakeup(nic->receive_proc->main_thread);
+        }
+
+        if (status & RTL8139_ISR_RER) {
+            // Error
+            NIC(nic->nic)->stats.rx_dropped++;
         }
     }
 
@@ -200,7 +214,10 @@ ssize_t rtl8139_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
 
     nic->tx_current++;
     if (nic->tx_current > 3) nic->tx_current = 0;
-
+    
+    // Update counts
+    NIC(nic->nic)->stats.tx_packets++;
+    NIC(nic->nic)->stats.tx_bytes += size;
 
     // NOTE: Don't release the lock. The IRQ handler will
     return size;
@@ -295,6 +312,7 @@ int rtl8139_init(uint32_t device) {
     // Create NIC
     nic->nic = nic_create("RTL8139", mac, NIC_TYPE_ETHERNET, (void*)nic);
     nic->nic->write = rtl8139_writePacket;
+    NIC(nic->nic)->mtu = 1500;
 
     // Register it
     char name[128];

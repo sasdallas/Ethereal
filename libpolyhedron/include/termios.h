@@ -75,8 +75,8 @@ _Begin_C_Header
 /* CRDLY */
 #define CR0         0x0000  // Carriage-return delay type 0
 #define CR1         0x0100  // Carriage-return delay type 1
-#define CR1         0x0200  // Carriage-return delay type 2
-#define CR1         0x0300  // Carriage-return delay type 3
+#define CR2         0x0200  // Carriage-return delay type 2
+#define CR3         0x0300  // Carriage-return delay type 3
 
 /* TABDLY */
 #define TAB0        0x0000  // Horizontal-tab delay type 0

@@ -13,6 +13,9 @@
  */
 
 #include <kernel/drivers/net/nic.h>
+#include <kernel/drivers/nicdev.h>
+#include <kernel/mem/mem.h>
+#include <kernel/task/syscall.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
@@ -31,6 +34,41 @@ static int net_wireless_index = 0;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:NIC", __VA_ARGS__)
+
+/**
+ * @brief NIC info ioctl
+ * @param node The filesystem node
+ * @param request The request to use
+ * @param param The parameter to use
+ * 
+ * Only accepts @c IO_NIC ioctls
+ */
+int nic_ioctl(fs_node_t *node, unsigned long request, void *param) {
+    nic_info_t *info;
+    switch (request) {
+        case IO_NIC_GET_INFO:
+            SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
+            info = (nic_info_t*)param;
+            strcpy(node->name, info->nic_name);
+            info->nic_ipv4_addr = NIC(node)->ipv4_address;
+            info->nic_ipv4_gateway = NIC(node)->ipv4_gateway;
+            info->nic_ipv4_subnet = NIC(node)->ipv4_subnet;
+            info->nic_mtu = NIC(node)->mtu;
+            memcpy(info->nic_mac, NIC(node)->mac, 6);
+            return 0;
+
+        case IO_NIC_SET_INFO:
+            SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
+            info = (nic_info_t*)param;
+            NIC(node)->ipv4_address = info->nic_ipv4_addr;
+            NIC(node)->ipv4_subnet = info->nic_ipv4_subnet;
+            NIC(node)->ipv4_gateway = info->nic_ipv4_gateway;
+            NIC(node)->mtu = info->nic_mtu;
+            return 0;
+    }
+
+    return -EINVAL;
+}
 
 /**
  * @brief Create a new NIC structure
@@ -69,6 +107,7 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver) {
     node->ctime = now();
     node->flags = VFS_BLOCKDEVICE;
     node->mask = 0666;
+    node->ioctl = nic_ioctl;
 
     nic->parent_node = node;
     
@@ -99,6 +138,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
                                 "Name:%s\n"
                                 "Type:%s\n"
                                 "MAC:" MAC_FMT "\n"
+                                "MTU:%d\n"
                                 "Ipv4Address:%s\n"
                                 "Ipv4Subnet:%s\n"
                                 "Ipv4Gateway:%s\n"
@@ -111,6 +151,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
                                     nic->name,
                                     nic->type == NIC_TYPE_ETHERNET ? "EthernetCard" : "WifiCard",
                                     MAC(nic->mac),
+                                    nic->mtu,
                                     ipv4_addr,
                                     ipv4_subnet,
                                     ipv4_gateway,
@@ -127,6 +168,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
     kfree(ipv4_gateway);
     return 0;
 }
+
 
 /**
  * @brief Register a new NIC to the filesystem

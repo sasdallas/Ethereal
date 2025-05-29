@@ -530,6 +530,9 @@ void e1000_init(uint32_t device, uint16_t type) {
     // Enable IRQs
     E1000_SENDCMD(E1000_REG_IMASK, E1000_ICR_LSC | E1000_ICR_RXO | E1000_ICR_RXT0 | E1000_ICR_TXQE | E1000_ICR_TXDW | E1000_ICR_ACK | E1000_ICR_RXDMT0 | E1000_ICR_SRPD);
 
+    // Set MTU
+    NIC(nic->nic)->mtu = 1500;
+
     // Mount the NIC!
     char name[128];
     snprintf(name, 128, "enp%ds%d", PCI_BUS(device), PCI_SLOT(device));

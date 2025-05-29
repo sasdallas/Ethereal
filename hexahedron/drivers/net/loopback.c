@@ -20,6 +20,10 @@
  */
 ssize_t loopback_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
     // Loop right back atcha
+    NIC(node)->stats.rx_bytes += size;
+    NIC(node)->stats.rx_packets++;
+    NIC(node)->stats.tx_bytes += size;
+    NIC(node)->stats.tx_packets++;
     ethernet_handle((ethernet_packet_t*)buffer, node, size);
     return size;
 }
@@ -33,6 +37,7 @@ void loopback_install() {
 
     NIC(nic_node)->ipv4_address = inet_addr("127.0.0.1");
     NIC(nic_node)->ipv4_subnet =  inet_addr("255.0.0.0");
+    NIC(nic_node)->mtu = 1500;
 
     nic_node->write = loopback_write;
     nic_register(nic_node, "lo");
