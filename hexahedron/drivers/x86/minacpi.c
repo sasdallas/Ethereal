@@ -64,6 +64,13 @@ static int minacpi_validateRSDP(acpi_rsdp_t *rsdp) {
  */
 int minacpi_parseRSDP() {
     // First we need to determine the revision of the RSDP.
+
+
+    char oemid[7];
+    memcpy(oemid, ((acpi_rsdp_t*)rsdp_ptr)->oemid, 6);
+    oemid[6] = 0;
+    LOG(DEBUG, "RSDP %p: OEMID %s VERSION %d RSDT %08x\n", rsdp_ptr, oemid, ((acpi_rsdp_t*)rsdp_ptr)->revision, ((acpi_rsdp_t*)rsdp_ptr)->rsdt_address);
+
     if (((acpi_rsdp_t*)rsdp_ptr)->revision) {
         // ACPI 2.0+ - assume XSDP
 
@@ -130,9 +137,13 @@ smp_info_t *minacpi_parseMADT() {
         // Use XSDT, ACPI version 2.0+
         // Calculate the amount of entries first
         int entries = (xsdt->header.length - sizeof(xsdt->header)) / 8;
+        LOG(INFO, "%d tables detected (table start: %p)\n", entries, xsdt->tables);
+
+        // !!!: Probably a bug in the XSDT structure
+        uint64_t *e = (uint64_t*)((uintptr_t)xsdt + 36);
 
         for (int i = 0; i < entries; i++) {
-            acpi_table_header_t *header = (acpi_table_header_t*)mem_remapPhys(xsdt->tables[i], PAGE_SIZE);
+            acpi_table_header_t *header = (acpi_table_header_t*)mem_remapPhys(e[i], PAGE_SIZE);
             if (!strncmp(header->signature, "APIC", 4)) {
                 // Found the MADT
                 LOG(DEBUG, "MADT found successfully at %p\n", xsdt->tables[i]);
