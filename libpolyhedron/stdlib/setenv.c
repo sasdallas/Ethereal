@@ -18,6 +18,7 @@
 #include <errno.h>
 
 extern int envc;
+extern char **environ;
 
 int setenv(const char *name, const char *value, int overwrite) {
 #ifndef __LIBK

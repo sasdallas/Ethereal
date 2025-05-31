@@ -157,5 +157,9 @@ extern void arch_signal_trampoline();
  */
 void arch_say_hello(int is_debug);
 
+/**
+ * @brief Mount KernelFS nodes
+ */
+void arch_mount_kernelfs();
 
 #endif

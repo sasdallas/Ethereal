@@ -73,3 +73,9 @@ void arch_initialize_context(struct thread *thread, uintptr_t entry, uintptr_t s
     thread->context.esp = stack;
     thread->context.ebp = stack;
 }
+
+/**
+ * @brief Mount KernelFS nodes
+ */
+void arch_mount_kernelfs() {
+}

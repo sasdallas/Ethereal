@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <string.h>
 
+extern char **environ;
+
 char *getenv(const char *name) {
     char **envp = environ;
     size_t namelen = strlen(name);
