@@ -128,6 +128,8 @@ int icmp_handle(fs_node_t *nic_node, void *frame, size_t size) {
         // Reply to our ping request (DEBUG)
         // We should notify the socket that wanted this
         ping_packet = packet;
+
+        printf("ICMP reply receieved\n");
     }
 
     return 0;
@@ -160,7 +162,7 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         pkt->src_addr = nic->ipv4_address;
         pkt->versionihl = 0x45;
         pkt->ttl = IPV4_DEFAULT_TTL;
-        pkt->protocol = IPV4_PROTOCOL_TCP;
+        pkt->protocol = IPV4_PROTOCOL_ICMP;
         pkt->offset = htons(0x4000);
         pkt->length = htons(sizeof(ipv4_packet_t) + msg->msg_iov[i].iov_len);
         pkt->checksum = 0;
@@ -172,7 +174,7 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         // Setup the identifier bits in the ICMP header and the checksum
         icmp_packet_t *icmp_pkt = (icmp_packet_t*)pkt->payload;
-        icmp_pkt->varies |= 0xFFFF0000;
+        icmp_pkt->varies |= sock->id;
         icmp_pkt->checksum = 0;
         icmp_pkt->checksum = htons(icmp_checksum((void*)icmp_pkt, msg->msg_iov[i].iov_len));
         
