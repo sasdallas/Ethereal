@@ -125,11 +125,14 @@ int icmp_handle(fs_node_t *nic_node, void *frame, size_t size) {
         ipv4_sendPacket(nic_node, resp);
         kfree(resp);
     } else if (packet->type == ICMP_ECHO_REPLY && packet->code == 0) {
-        // Reply to our ping request (DEBUG)
         // We should notify the socket that wanted this
-        ping_packet = packet;
+        LOG(DEBUG, "ICMP packet for socket %d\n", ntohs(packet->varies & 0xFFFF));
+    
+        // Resolve the socket
+        sock_t *sock = socket_fromID(ntohs(packet->varies & 0xFFFF));
+        if (!sock) return 0;
 
-        printf("ICMP reply receieved\n");
+        socket_received(sock, frame, size); // Drop entire IPv4 packet
     }
 
     return 0;
@@ -174,7 +177,7 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         // Setup the identifier bits in the ICMP header and the checksum
         icmp_packet_t *icmp_pkt = (icmp_packet_t*)pkt->payload;
-        icmp_pkt->varies |= sock->id;
+        icmp_pkt->varies |= htons(sock->id);
         icmp_pkt->checksum = 0;
         icmp_pkt->checksum = htons(icmp_checksum((void*)icmp_pkt, msg->msg_iov[i].iov_len));
         
@@ -187,11 +190,59 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 }
 
 /**
+ * @brief ICMP recvmsg handler
+ */
+ssize_t icmp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+    // For each iovec
+    ssize_t total_received = 0;
+
+    ipv4_packet_t *data = NULL;
+
+    for (int i = 0; i < msg->msg_iovlen; i++) {
+        sock_recv_packet_t *pkt = socket_get(sock);
+        if (!pkt) return -EINTR;
+
+        data = (void*)pkt->data;
+        void *icmp_data = (void*)data->payload;
+
+        size_t actual_size = pkt->size - sizeof(ipv4_packet_t);
+
+        // TODO: Handle size mismatch better?
+        if (actual_size > msg->msg_iov[i].iov_len) {
+            // TODO: Set MSG_TRUNC
+            LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
+            memcpy(msg->msg_iov[i].iov_base, icmp_data, msg->msg_iov[i].iov_len);
+            total_received += msg->msg_iov[i].iov_len;
+            continue;
+        }
+
+        // Copy it and free the packet
+        memcpy(msg->msg_iov[i].iov_base, icmp_data, actual_size);
+        total_received += actual_size;
+        kfree(pkt);
+    }
+
+    // Need to setup msgname?
+    if (msg->msg_namelen == sizeof(struct sockaddr_in)) {
+        if (msg->msg_name && data) {
+            // !!!: Multiple IOVs, diff sources, what?
+            struct sockaddr_in *in = (struct sockaddr_in*)msg->msg_name;
+            in->sin_port = 0;
+            in->sin_family = AF_INET;
+            in->sin_addr.s_addr = data->src_addr;
+        }
+    }
+
+    return total_received;
+}
+
+/**
  * @brief ICMP socket handler
  */
 sock_t *icmp_socket() {
     sock_t *sock = kzalloc(sizeof(sock_t));
     sock->sendmsg = icmp_sendmsg;
+    sock->recvmsg = icmp_recvmsg;
     return sock;
 }
 

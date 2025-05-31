@@ -244,6 +244,7 @@ int fs_alert(fs_node_t *node, int events) {
                 }
 
                 // Hacky deletion
+                kfree(waiter);
                 node_t *next = n->next;
                 list_delete(node->waiting_nodes, (node_t*)n);
                 n = next;
@@ -266,12 +267,15 @@ int fs_alert(fs_node_t *node, int events) {
  * 
  * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
-int fs_wait(fs_node_t *node) {
+int fs_wait(fs_node_t *node, int events) {
     if (!node) return -EINVAL;
     if (!node->waiting_nodes) node->waiting_nodes = list_create("waiting nodes");
 
     spinlock_acquire(&node->waiter_lock);
-    list_append(node->waiting_nodes, (void*)current_cpu->current_thread);
+    vfs_waiter_t *waiter = kzalloc(sizeof(vfs_waiter_t));
+    waiter->thread = current_cpu->current_thread;
+    waiter->events = events;
+    list_append(node->waiting_nodes, (void*)waiter);
     spinlock_release(&node->waiter_lock);
 
     return 0;

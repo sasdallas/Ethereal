@@ -85,6 +85,7 @@ static ssize_t socket_raw_recvmsg(sock_t *sock, struct msghdr *message, int flag
         // Copy it and free the packet
         memcpy(message->msg_iov[i].iov_base, pkt->data, pkt->size);
         total_received += pkt->size;
+        kfree(pkt);
     }
 
     return total_received;
@@ -387,12 +388,12 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     // Push it into the list
     list_append(sock->recv_queue, (void*)pkt);
 
+    // Alert
+    fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
+    
     // Wakeup a thread from the queue
     LOG(DEBUG, "Waking up a single thread from queue - packet received\n");
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
-
-    // Alert
-    fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
 
     spinlock_release(sock->recv_lock);
 

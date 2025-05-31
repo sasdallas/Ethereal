@@ -278,7 +278,7 @@ int fs_alert(fs_node_t *node, int events);
  * 
  * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
-int fs_wait(fs_node_t *node);
+int fs_wait(fs_node_t *node, int events);
 
 /**
  * @brief creat() equivalent for VFS

@@ -80,6 +80,7 @@ static void sleep_callback(uint64_t ticks) {
 
         if (wakeup) {
             // Ready to wake up
+            sleep->sleep_state = wakeup;
             list_delete(sleep_queue, node);
             __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
             scheduler_insertThread(sleep->thread);

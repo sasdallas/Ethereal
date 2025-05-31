@@ -29,6 +29,9 @@
 /* ARP table - consists of arp_table_entry_t structures */
 hashmap_t *arp_map = NULL;
 
+/* ARP waiters */
+hashmap_t *arp_waiters = NULL;
+
 /* ARP list */
 list_t *arp_entries = NULL;
 
@@ -97,6 +100,12 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
     hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)entry);
     list_append(arp_entries, (void*)entry);
     spinlock_release(&arp_lock);
+
+    // Is someone waiting?
+    if (hashmap_has(arp_waiters, (void*)(uintptr_t)address)) {
+        thread_t *thr = hashmap_get(arp_waiters, (void*)(uintptr_t)address);
+        sleep_wakeup(thr);
+    }
 
     return 0;
 }
@@ -171,30 +180,18 @@ int arp_request(fs_node_t *node, in_addr_t address) {
  * @returns 0 on success. Timeout, by default, is 20s
  */
 int arp_search(fs_node_t *nic, in_addr_t address) {
+    // Block
+    hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)current_cpu->current_thread);
+    sleep_untilTime(current_cpu->current_thread, 1, 0);
+
+    // Request
     if (arp_request(nic, address)) return 1;
 
-    // TODO: Process blocking
-    // if (current_cpu->current_process) kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "arp", "*** Cannot block yet\n");
+    int w = sleep_enter();
+    if (w == WAKEUP_ANOTHER_THREAD) return 0;
 
-    // Sleep
-    clock_sleep(500);
-    if (arp_get_entry(address) == NULL) {
-        // Keep sleeping
-        int timeout = 19500;
-        while (timeout) {
-            clock_sleep(500);
-            timeout -= 500;
-            if (arp_get_entry(address)) return 0;
-        }
-
-        if (timeout <= 0) {
-            LOG_NIC(WARN, nic, " ARP: Timed out, address not found\n");
-            return 1; // Error :(
-        }
-    }
-
-    // Success! Got the entry :)
-    return 0;
+    // Failed :(
+    return 1;
 }
 
 /**
@@ -293,6 +290,7 @@ int arp_handle_packet(void *frame, fs_node_t *nic_node, size_t size) {
  */
 void arp_init() {
     arp_map = hashmap_create_int("arp route map", 20);
+    arp_waiters = hashmap_create_int("arp waiter map", 20);
     arp_entries = list_create("arp entries");
     ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle_packet);
     kernelfs_createEntry(kernelfs_net_dir, "arp", arp_readKernelFS, NULL);
