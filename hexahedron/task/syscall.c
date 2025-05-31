@@ -601,21 +601,23 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
             return 1;
         } 
-
-        // Is there a timeout? Should we put ourselves in the queue?
-        if (timeout || timeout == -1) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node);
     }
 
     // We didn't get anything. Did they want us to wait?
     if (!timeout) return 0;
-
-    // Yes, so wait
+    
+    // Yes, so prepare ourselves to wait
     if (timeout) {
         sleep_untilTime(current_cpu->current_thread, 0, timeout);
     } else {
         sleep_untilNever(current_cpu->current_thread);
     }
 
+    // There is a timeout, so put ourselves in the queue for each fd
+    for (size_t i = 0; i < nfds; i++) {
+        if (!(fds[i].revents & POLLNVAL)) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node);
+    }
+    
     // Enter sleep state
     int wakeup = sleep_enter();
 
