@@ -460,7 +460,10 @@ void process_destroy(process_t *proc) {
 void process_reaper(void *ctx) {
     for (;;) {
         sleep_untilNever(current_cpu->current_thread);
-        process_yield(0);
+        if (sleep_enter() == WAKEUP_SIGNAL) {
+            LOG(WARN, "You can't kill the grim reaper.\n");
+            continue;
+        }
 
         // Anything available?
         if (!reap_queue->length) continue;
@@ -845,7 +848,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         } else {
             // Sleep until we get woken up
             sleep_untilNever(current_cpu->current_thread);
-            if (sleep_enter()) return -EINTR;
+            if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }
 }

@@ -292,6 +292,21 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
 }
 
 /**
+ * @brief Socket node ready method
+ * @param node The node to check 
+ * @param events The events we are looking for
+ */
+int socket_ready(fs_node_t *node, int events) {
+    if (node->flags != VFS_SOCKET) return 0;
+    int revents = VFS_EVENT_WRITE;
+
+    sock_t *sock = (sock_t*)node->dev;
+    if (sock->recv_queue->length) revents |= VFS_EVENT_READ;
+
+    return revents;
+}
+
+/**
  * @brief Create a new socket for a given process
  * @param proc The process to create the socket for
  * @param domain The domain to use while creating
@@ -316,13 +331,17 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     if (!sock->recv_queue) sock->recv_queue = list_create("receive queue");
 
     // Build a filesystem node
-    fs_node_t *node = kzalloc(sizeof(fs_node_t));
-    strcpy(node->name, "socket");
-    node->flags = VFS_SOCKET;
-    node->atime = node->ctime = node->mtime = now();
-    node->dev = (void*)sock;
-    sock->node = node;
+    if (!sock->node) {
+        fs_node_t *node = kzalloc(sizeof(fs_node_t));
+        strcpy(node->name, "socket");
+        node->flags = VFS_SOCKET;
+        node->atime = node->ctime = node->mtime = now();
+        node->dev = (void*)sock;
+        node->ready = socket_ready;
+        sock->node = node;
+    }
 
+    // Setup other parameters
     sock->domain = domain;
     sock->type = type;
     sock->protocol = protocol;
@@ -331,7 +350,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     list_append(socket_list, (void*)sock);
 
     // Add as file descriptor
-    fd_t *fd = fd_add(proc, node);
+    fd_t *fd = fd_add(proc, sock->node);
     return fd->fd_number;
 }
 
@@ -371,6 +390,9 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     // Wakeup a thread from the queue
     LOG(DEBUG, "Waking up a single thread from queue - packet received\n");
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
+
+    // Alert
+    fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
 
     spinlock_release(sock->recv_lock);
 

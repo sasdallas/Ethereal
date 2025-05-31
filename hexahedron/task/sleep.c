@@ -47,29 +47,20 @@ static void sleep_callback(uint64_t ticks) {
             continue;
         }
 
-        // Check if the thread has any pending signals
-        if (sleep->thread->parent->pending_signals) {
-            // Yes, get out!
-            sleep->sleep_state = SLEEP_FLAG_INTERRUPTED;
-
-            // Ready to wake up
-            list_delete(sleep_queue, node);
-            __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
-            scheduler_insertThread(sleep->thread);
-            kfree(node);
-            continue;
-        }
 
         int wakeup = 0;
 
-        if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {
+        if (sleep->thread->parent->pending_signals) {
+            // Yes, get out!
+            wakeup = WAKEUP_SIGNAL;
+        } else if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {
             continue; // Thread doesn't need to wakeup
         } else if (sleep->sleep_state == SLEEP_FLAG_TIME) {
             // We're sleeping on time.
             if ((sleep->seconds == seconds && sleep->subseconds <= subseconds) || (sleep->seconds < seconds)) {
                 // Wakeup now
                 LOG(DEBUG, "WAKEUP: Time passed, waking up thread %p\n", sleep->thread);
-                wakeup = 1;
+                wakeup = WAKEUP_TIME;
             }
         } else if (sleep->sleep_state == SLEEP_FLAG_COND) {
             if (!sleep->condition) {
@@ -79,24 +70,20 @@ static void sleep_callback(uint64_t ticks) {
 
             if (sleep->condition(sleep->thread, sleep->context)) {
                 LOG(DEBUG, "WAKEUP: Condition success, waking up thread %p\n", sleep->thread);
-                wakeup = 1;
+                wakeup = WAKEUP_COND;
             }
         } else if (sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
             // Immediately wakeup
             LOG(DEBUG, "WAKEUP: Immediately waking up thread %p\n", sleep->thread);
-            wakeup = 1;
+            wakeup = WAKEUP_ANOTHER_THREAD;
         }
 
         if (wakeup) {
             // Ready to wake up
             list_delete(sleep_queue, node);
-            
             __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
             scheduler_insertThread(sleep->thread);
-            sleep->thread->sleep = NULL;
-
             kfree(node);
-            kfree(sleep);
         }
     }
 
@@ -117,7 +104,7 @@ void sleep_init() {
  * @param thread The thread to sleep
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilNever(struct thread *thread) {
     if (!thread) return 1;
@@ -150,7 +137,7 @@ int sleep_untilNever(struct thread *thread) {
  * @param subseconds Subseconds to wait in the future
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long subseconds) {
     if (!thread) return 1;
@@ -189,7 +176,7 @@ int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long 
  * @param context Optional context passed to condition function
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, void *context) {
     if (!thread) return 1;
@@ -234,21 +221,14 @@ int sleep_wakeup(struct thread *thread) {
 
 /**
  * @brief Enter sleeping state now
- * @returns 1 if the process was interrupted and you need to return EINTR
+ * @returns A sleep wakeup reason
  */
 int sleep_enter() {
     process_yield(0);
 
-    // In cases where we were interrupted, the sleep state isn't freed and gets set to SLEEP_FLAG_
-    if (current_cpu->current_thread->sleep) {
-        if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_INTERRUPTED) {
-            LOG(INFO, "Pulled out of sleep state\n");
-            kfree(current_cpu->current_thread->sleep);
-            return 1;
-        }
-    }
-
-    return 0;
+    int state = current_cpu->current_thread->sleep->sleep_state;
+    kfree(current_cpu->current_thread->sleep);
+    return state;
 }
 
 /**

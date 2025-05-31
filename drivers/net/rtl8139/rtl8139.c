@@ -120,7 +120,7 @@ void rtl8139_thread(void *context) {
     for (;;) {
         // Put ourselves to sleep
         sleep_untilNever(current_cpu->current_thread);
-        process_yield(0);
+        sleep_enter();
 
         // We've been woken up!
         // There must be packets around!

@@ -28,7 +28,12 @@
 #define SLEEP_FLAG_WAKEUP           1       // Whatever the case, wake it up NOW!
 #define SLEEP_FLAG_TIME             2       // Thread is sleeping on time.
 #define SLEEP_FLAG_COND             3       // Sleeping on condition
-#define SLEEP_FLAG_INTERRUPTED      4       // The sleep was interrupted by a signal
+
+/* Reasons for waking up from sleep */
+#define WAKEUP_SIGNAL               1       // A signal woke you up and you need to return -EINTR
+#define WAKEUP_TIME                 2       // Timeout expired
+#define WAKEUP_COND                 3       // Condition woke you up
+#define WAKEUP_ANOTHER_THREAD       4       // Another thread woke up (also can be a queue)
 
 /**** TYPES ****/
 
@@ -48,7 +53,7 @@ typedef int (*sleep_condition_t)(struct thread *thread, void *context);
 typedef struct thread_sleep {
     struct thread *thread;                  // Thread which is sleeping
     node_t *node;                           // Assigned node in the sleeping queue
-    volatile int sleep_state;               // Sleeping flags
+    volatile int sleep_state;               // The current sleep state, and will also be set to wakeup reason
 
     // Conditional-sleeping threads
     sleep_condition_t condition;            // Condition on which to wakeup
@@ -96,7 +101,7 @@ void sleep_init();
  * @param thread The thread to sleep
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilNever(struct thread *thread);
 
@@ -107,7 +112,7 @@ int sleep_untilNever(struct thread *thread);
  * @param context Optional context passed to condition function
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, void *context);
 
@@ -118,7 +123,7 @@ int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, voi
  * @param subseconds Subseconds to wait in the future
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long subseconds);
 
@@ -128,7 +133,7 @@ int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long 
  * @param lock The lock to wait on
  * @returns 0 on success
  * 
- * @note If you're putting the current thread to sleep, yield immediately after without rescheduling.
+ * @note If you're putting the current thread to sleep, call @c sleep_enter right after
  */
 int sleep_untilUnlocked(struct thread *thread, spinlock_t *lock);
 
@@ -141,7 +146,7 @@ int sleep_wakeup(struct thread *thread);
 
 /**
  * @brief Enter sleeping state now
- * @returns 1 if the process was interrupted and you need to return EINTR
+ * @returns WAKEUP reason
  */
 int sleep_enter();
 

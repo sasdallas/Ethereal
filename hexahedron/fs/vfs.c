@@ -200,6 +200,84 @@ int fs_ioctl(fs_node_t *node, unsigned long request, char *argp) {
 }
 
 /**
+ * @brief Check if file is ready
+ * @param node The node to check
+ * @param event_type OR bitmask of events (VFS_EVENT_...) to check
+ * @returns OR bitmask of events the file is ready for
+ */
+int fs_ready(fs_node_t *node, int event_type) {
+    if (!node) return -EINVAL;
+
+    if (node->ready) {
+        return node->ready(node, event_type);
+    } else {
+        return event_type; // Assume the node is always ready
+    }
+}
+
+/**
+ * @brief Alert any processes in the queue that new events are ready
+ * @param node The node to alert on
+ * @param events The events to alert on
+ * @returns 0 on success
+ */
+int fs_alert(fs_node_t *node, int events) {
+    if (!events) return 0;
+    if (!node) return -EINVAL;
+    if (!node->waiting_nodes) return 0;
+
+    spinlock_acquire(&node->waiter_lock);
+    node_t *n = node->waiting_nodes->head;
+    while (n) {
+        vfs_waiter_t *waiter = (vfs_waiter_t*)n->value;
+        if (waiter) {
+            if (waiter->events & events) {
+                // Is the thread actually sleeping?
+                if (waiter->thread->sleep) {
+                    // Yes, wake it up.
+                    // If the thread ISN'T sleeping, that means it probably got what it wanted and isn't waiting anymore.
+                    // !!!: Yes, there is a race condition here.
+                    LOG(INFO, "Alerting thread %p that events 0x%x are available\n", waiter->thread, waiter->events);
+                    sleep_wakeup(waiter->thread);
+                } else {
+                    LOG(DEBUG, "Not waking up thread %p, assuming it has already completed its poll\n", waiter->thread);
+                }
+
+                // Hacky deletion
+                node_t *next = n->next;
+                list_delete(node->waiting_nodes, (node_t*)n);
+                n = next;
+                continue;
+            }
+        }
+
+        n = n->next;
+    }
+    spinlock_release(&node->waiter_lock);
+
+    return 0;
+}
+
+/**
+ * @brief Wait for a node to have events ready for a process
+ * @param node The node to wait for events on
+ * @param events The events that are being waited for
+ * @returns 0 on success
+ * 
+ * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
+ */
+int fs_wait(fs_node_t *node) {
+    if (!node) return -EINVAL;
+    if (!node->waiting_nodes) node->waiting_nodes = list_create("waiting nodes");
+
+    spinlock_acquire(&node->waiter_lock);
+    list_append(node->waiting_nodes, (void*)current_cpu->current_thread);
+    spinlock_release(&node->waiter_lock);
+
+    return 0;
+}
+
+/**
  * @brief mmap() a file. This is done either via the VFS' internal method or the file's
  * @param file The file to map
  * @param addr The address that was allocated for mmap()

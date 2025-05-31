@@ -20,6 +20,7 @@
 #include <bits/dirent.h>
 #include <sys/types.h>
 #include <structs/tree.h>
+#include <kernel/misc/spinlock.h>
 
 
 /**** DEFINITIONS ****/
@@ -34,6 +35,10 @@
 #define VFS_MOUNTPOINT      0x40
 #define VFS_SOCKET          0x80
 
+// Event types for ready()
+#define VFS_EVENT_READ      0x01
+#define VFS_EVENT_WRITE     0x02
+#define VFS_EVENT_ERROR     0x04
 
 /**** TYPES ****/
 
@@ -59,45 +64,51 @@ typedef int (*symlink_t)(struct fs_node*, char *, char *);
 typedef int (*mmap_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*msync_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*munmap_t)(struct fs_node*, void *, size_t, off_t);
+typedef int (*ready_t)(struct fs_node*, int event_type);
 
 // Inode structure
 typedef struct fs_node {
-    char name[256];         // Node name (max of 256)
-    mode_t mask;            // Permissions mask
-    uid_t uid;              // User ID
-    gid_t gid;              // Group ID
+    // General information
+    char name[256];             // Node name (max of 256)
+    mode_t mask;                // Permissions mask
+    uid_t uid;                  // User ID
+    gid_t gid;                  // Group ID
 
-    uint64_t flags;         // Node flags (e.g. VFS_SYMLINK)
-    uint64_t inode;         // Device-specific, provides a way for the filesystem to idenrtify files
-    uint64_t length;        // Size of file
-    uint64_t impl;          // Implementation-defined number
+    // Flags
+    uint64_t flags;             // Node flags (e.g. VFS_SYMLINK)
+    uint64_t inode;             // Device-specific, provides a way for the filesystem to idenrtify files
+    uint64_t length;            // Size of file
+    uint64_t impl;              // Implementation-defined number
 
     // Times
-    time_t atime;           // Access timestamp (last access time)
-    time_t mtime;           // Modified timestamp (last modification time)
-    time_t ctime;           // Change timestamp (last metadata change time)
+    time_t atime;               // Access timestamp (last access time)
+    time_t mtime;               // Modified timestamp (last modification time)
+    time_t ctime;               // Change timestamp (last metadata change time)
 
     // Functions
-    read_t read;            // Read function
-    write_t write;          // Write function
-    open_t open;            // Open function
-    close_t close;          // Close function
-    readdir_t readdir;      // Readdir function
-    finddir_t finddir;      // Finddir function
-    create_t create;        // Create function
-    mkdir_t mkdir;          // Mkdir function
-    unlink_t unlink;        // Unlink function
-    ioctl_t ioctl;          // I/O control function
-    readlink_t readlink;    // Readlink function
-    symlink_t symlink;      // Symlink function
-    mmap_t mmap;            // Mmap function
-    msync_t msync;          // Msync function
-    munmap_t munmap;        // Munmap function
+    read_t read;                // Read function
+    write_t write;              // Write function
+    open_t open;                // Open function
+    close_t close;              // Close function
+    readdir_t readdir;          // Readdir function
+    finddir_t finddir;          // Finddir function
+    create_t create;            // Create function
+    mkdir_t mkdir;              // Mkdir function
+    unlink_t unlink;            // Unlink function
+    ioctl_t ioctl;              // I/O control function
+    readlink_t readlink;        // Readlink function
+    symlink_t symlink;          // Symlink function
+    mmap_t mmap;                // Mmap function
+    msync_t msync;              // Msync function
+    munmap_t munmap;            // Munmap function
+    ready_t ready;              // Ready function
 
     // Other
-    struct fs_node *ptr;    // Used by mountpoints and symlinks
-    int64_t refcount;       // Reference count on the file
-    void *dev;              // Device structure
+    spinlock_t waiter_lock;     // The waiter lock
+    list_t *waiting_nodes;      // Waiting nodes
+    struct fs_node *ptr;        // Used by mountpoints and symlinks
+    int64_t refcount;           // Reference count on the file
+    void *dev;                  // Device structure
 } fs_node_t;
 
 // Hexahedron uses a mount callback system that works similar to interrupt handlers.
@@ -117,7 +128,7 @@ typedef struct vfs_filesystem {
 } vfs_filesystem_t;
 
 // We also use custom tree nodes for each VFS entry.
-// This is a remnant of legacy Ethereal Operating System that I liked - it allows us to know what filesystem type is assigned to what node.
+// This is a remnant of legacy reduceOS that I liked - it allows us to know what filesystem type is assigned to what node.
 // It also allows for a root node to not immediately be mounted.
 typedef struct vfs_tree_node {
     char *name;         // Yes, node->name exists but this is faster and allows us to have "mapped" nodes
@@ -126,6 +137,11 @@ typedef struct vfs_tree_node {
     fs_node_t *node;
 } vfs_tree_node_t;
 
+// Waiter structure for any processes waiting
+typedef struct vfs_waiter {
+    struct thread *thread;
+    int events;
+} vfs_waiter_t;
 
 /**** FUNCTIONS ****/
 
@@ -237,6 +253,32 @@ int fs_unlink(char *name);
  * @returns Error code
  */
 int fs_ioctl(fs_node_t *node, unsigned long request, char *argp);
+
+/**
+ * @brief Check if file is ready
+ * @param node The node to check
+ * @param event_type OR bitmask of events (VFS_EVENT_...) to check
+ * @returns OR bitmask of events the file is ready for
+ */
+int fs_ready(fs_node_t *node, int event_type);
+
+/**
+ * @brief Alert any processes in the queue that new events are ready
+ * @param node The node to alert on
+ * @param events The events to alert on
+ * @returns 0 on success
+ */
+int fs_alert(fs_node_t *node, int events);
+
+/**
+ * @brief Wait for a node to have events ready for a process
+ * @param node The node to wait for events on
+ * @param events The events that are being waited for
+ * @returns 0 on success
+ * 
+ * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
+ */
+int fs_wait(fs_node_t *node);
 
 /**
  * @brief creat() equivalent for VFS
