@@ -190,7 +190,6 @@ void kmain() {
     nic_init(); // This initializes the network directory
     socket_init();
     pci_mount(); // !!!: Can crash for some reason
-    video_mount();
     arch_mount_kernelfs();
 
     // TEMPORARY
