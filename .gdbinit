@@ -1,6 +1,6 @@
 file build-output/sysroot/boot/hexahedron-kernel.elf
 symbol-file build-output/sysroot/boot/hexahedron-kernel-symbols.sym
-target remote localhost:1234
+target remote 127.0.0.1:1234
 
 define process_info
     set $proc = processor_data[$arg0].current_process
@@ -31,4 +31,11 @@ define debug-elf
 
 	# Load the symbol file
 	add-symbol-file $arg0 $text_address
+end
+
+define debug-driver
+    set $driver = $arg0
+    set $addr = $arg1
+
+    add-symbol-file $arg0 $addr
 end

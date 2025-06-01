@@ -298,6 +298,9 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
  */
 int sleep_exit(thread_t *thr) {
     if (!thr || !thr->sleep) return 1;
+    spinlock_acquire(&sleep_queue_lock);
+    list_delete(sleep_queue, list_find(sleep_queue, thr->sleep));
     kfree(thr->sleep);
+    spinlock_release(&sleep_queue_lock);
     return 0;
 }
