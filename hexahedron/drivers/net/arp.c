@@ -187,6 +187,12 @@ int arp_search(fs_node_t *nic, in_addr_t address) {
     // Request
     if (arp_request(nic, address)) return 1;
 
+    if (arp_get_entry(address)) {
+        // We got the entry before we needed to sleep, exit.
+        sleep_exit(current_cpu->current_thread);
+        return 0;
+    }
+
     int w = sleep_enter();
     if (w == WAKEUP_ANOTHER_THREAD) return 0;
 

@@ -172,4 +172,11 @@ int sleep_inQueue(sleep_queue_t *queue);
  */
 int sleep_wakeupQueue(sleep_queue_t *queue, int amounts);
 
+/**
+ * @brief Change your mind and unprepare this thread for sleep
+ * @param thread The thread to unprepare from sleep
+ * @returns 0 on success
+ */
+int sleep_exit(struct thread *thr);
+
 #endif

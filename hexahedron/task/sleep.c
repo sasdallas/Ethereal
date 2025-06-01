@@ -290,3 +290,14 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     spinlock_release(&queue->lock);
     return awoken;
 }
+
+/**
+ * @brief Change your mind and unprepare this thread for sleep
+ * @param thread The thread to unprepare from sleep
+ * @returns 0 on success
+ */
+int sleep_exit(thread_t *thr) {
+    if (!thr || !thr->sleep) return 1;
+    kfree(thr->sleep);
+    return 0;
+}
