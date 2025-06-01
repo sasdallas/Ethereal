@@ -49,6 +49,7 @@
 #include <kernel/drivers/net/ipv4.h>
 #include <kernel/drivers/net/icmp.h>
 #include <kernel/drivers/net/socket.h>
+#include <kernel/drivers/net/udp.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -202,6 +203,7 @@ void kmain() {
     arp_init();
     ipv4_init();
     icmp_init();
+    udp_init();
 
     // Setup loopback interface
     loopback_install();

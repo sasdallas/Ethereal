@@ -27,9 +27,6 @@
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s]   ICMP: ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
 
-/* Ping packet */
-icmp_packet_t *ping_packet = NULL; // ONLY FOR DEBUGGING
-
 /**
  * @brief Initialize and register ICMP
  */
@@ -213,6 +210,7 @@ ssize_t icmp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
             memcpy(msg->msg_iov[i].iov_base, icmp_data, msg->msg_iov[i].iov_len);
             total_received += msg->msg_iov[i].iov_len;
+            kfree(pkt);
             continue;
         }
 
@@ -244,46 +242,4 @@ sock_t *icmp_socket() {
     sock->sendmsg = icmp_sendmsg;
     sock->recvmsg = icmp_recvmsg;
     return sock;
-}
-
-/**
- * @brief Ping!
- * @param nic_node The NIC to send the ping request on
- * @param addr The address to send the ping request to
- * @returns 0 on success
- */
-int icmp_ping(fs_node_t *nic_node, in_addr_t addr) {
-    // Start pinging
-    char payload[48];
-    for (int i = 0; i < 48; i++) {
-        payload[i] = i;
-    }
-
-
-    // Setup varies
-    uint16_t varies[2];
-    varies[0] = 0;
-
-    // Start pinging!
-    for (int i = 0; i < 10; i++) {
-        varies[1] = htons(i+1);
-
-        uint32_t varies_dword;
-        memcpy(&varies_dword, varies, sizeof(uint32_t)); // !!!: grosss..
-
-        // Send
-        int send_status = icmp_send(nic_node, addr, ICMP_ECHO_REQUEST, 0, varies_dword, (void*)payload, 48);
-        if (send_status) break;
-
-        // Time
-        uint64_t start = now();
-        while (ping_packet == NULL) asm ("pause");
-        uint64_t time = now() - start;
-
-        // Profit
-        printf("Response from %s: icmp_seq=%d ttl=64 time=%d ticks\n", inet_ntoa((struct in_addr){.s_addr = addr}), i, time);
-        ping_packet = NULL;
-    }
-
-    return 0;
 }
