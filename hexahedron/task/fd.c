@@ -27,6 +27,7 @@ int fd_destroyTable(struct process *process) {
     if (!process->fd_table) return 1;
 
     spinlock_acquire(&process->fd_table->lock);
+    
     // Does the process fd table still have any references?
     if (process->fd_table->references > 1) {
         // Yes. Decrement and NULL
@@ -38,7 +39,7 @@ int fd_destroyTable(struct process *process) {
 
     // No, we can free this now.
     // For each file descriptor we'll free the memory
-    for (size_t i = 0; i < process->fd_table->amount; i++) {
+    for (size_t i = 0; i < process->fd_table->total; i++) {
         fd_t *fd = process->fd_table->fds[i];
         if (fd) {
             fs_close(fd->node);

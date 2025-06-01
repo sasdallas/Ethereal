@@ -313,7 +313,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 
 
     // Create file descriptor table
-    if (parent) {
+    if (parent && 0) {
         // Reference parent table
         // TODO: Maybe use some sort of process flag that forces recreation of a new fd table?
         process->fd_table = parent->fd_table;

@@ -114,18 +114,24 @@ int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
     LOG_NIC(DEBUG, nic_node, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
 
     // Try to get destination MAC from ARP
-    arp_table_entry_t *entry = arp_get_entry(packet->dest_addr);
-    if (!entry) {
-        if (arp_search(nic_node, packet->dest_addr)) {
-            LOG_NIC(ERR, nic_node, "Send failed. Could not locate destination.\n");
-            return 1;
-        }
-
+    // Is this a local address?
+    arp_table_entry_t *entry = NULL;
+    if (!NIC(nic_node)->ipv4_subnet || (NIC(nic_node)->ipv4_subnet & packet->dest_addr) != (NIC(nic_node)->ipv4_address & NIC(nic_node)->ipv4_subnet)) {
+        entry = arp_get_entry(NIC(nic_node)->ipv4_gateway);
+    } else {
         entry = arp_get_entry(packet->dest_addr);
-        if (!entry) return 1;
+        if (!entry) {
+            if (arp_search(nic_node, packet->dest_addr)) {
+                LOG_NIC(ERR, nic_node, "Send failed. Could not locate destination.\n");
+                return 1;
+            }
+
+            entry = arp_get_entry(packet->dest_addr);
+            if (!entry) return 1;
+        }
     }
 
-    ethernet_send(nic_node, (void*)packet, IPV4_PACKET_TYPE, entry->hwmac, ntohs(packet->length));
+    ethernet_send(nic_node, (void*)packet, IPV4_PACKET_TYPE, entry ? entry->hwmac : ETHERNET_BROADCAST_MAC, ntohs(packet->length));
 
     return 0;
 }

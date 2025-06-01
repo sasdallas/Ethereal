@@ -57,9 +57,9 @@ int udp_handle(fs_node_t *nic, void *frame, size_t size) {
     
     LOG_NIC(DEBUG, nic, "Receive packet src_port=%d dest_port=%d length=%d\n", ntohs(packet->src_port), ntohs(packet->dest_port), ntohs(packet->length));
 
-    if (hashmap_has(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
+    if (hashmap_has(udp_port_map, (void*)(uintptr_t)packet->dest_port)) {
         // We have a handler!
-        sock_t *sock = (sock_t*)hashmap_get(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port));
+        sock_t *sock = (sock_t*)hashmap_get(udp_port_map, (void*)(uintptr_t)packet->dest_port);
         socket_received(sock, frame, size);
     }
 
@@ -81,14 +81,6 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         return -ENOTCONN;
     }
 
-    // Yes, did they specify a msg_name?
-    if (!msg->msg_name) {
-        LOG(ERR, "TODO: connected_addr\n");
-        return -EINVAL;
-    }
-
-    if (msg->msg_namelen != sizeof(struct sockaddr_in)) return -EINVAL;
-
     sock_recv_packet_t *pkt = NULL;
 
     ssize_t total_received = 0;
@@ -102,17 +94,17 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         ipv4_packet_t *data = (ipv4_packet_t*)pkt->data;
         udp_packet_t *udp_pkt = (udp_packet_t*)data->payload;
 
-        size_t actual_size = pkt->size - sizeof(ipv4_packet_t);
+        size_t actual_size = pkt->size - sizeof(ipv4_packet_t) - sizeof(udp_packet_t);
         if (actual_size > msg->msg_iov[i].iov_len) {
             // TODO: Set MSG_TRUNC
             LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
-            memcpy(msg->msg_iov[i].iov_base, udp_pkt, msg->msg_iov[i].iov_len);
+            memcpy(msg->msg_iov[i].iov_base, udp_pkt->data, msg->msg_iov[i].iov_len);
             total_received += msg->msg_iov[i].iov_len;
             continue;
         }
 
         // Copy it and free the packet
-        memcpy(msg->msg_iov[i].iov_base, udp_pkt, actual_size);
+        memcpy(msg->msg_iov[i].iov_base, udp_pkt->data, actual_size);
         total_received += actual_size;
     }
 

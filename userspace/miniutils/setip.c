@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     int subnet = 0;
     int print_info = 0;
 
-    while ((c = getopt(argc, argv, "gsc")) != -1) {
+    while ((c = getopt(argc, argv, "gsch")) != -1) {
         switch (c) {
             case 'g':
                 gateway = 1;
