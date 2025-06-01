@@ -39,6 +39,8 @@ struct sock;
 // Socket methods
 typedef ssize_t (*sock_sendmsg_t)(struct sock *sock, struct msghdr *message, int flags);
 typedef ssize_t (*sock_recvmsg_t)(struct sock *sock, struct msghdr *message, int flags);
+typedef int (*sock_bind_t)(struct sock *sock, const struct sockaddr *addr, socklen_t addrlen);
+typedef int (*sock_close_t)(struct sock *sock);
 
 /**
  * @brief Socket object
@@ -55,6 +57,8 @@ typedef struct sock {
     // METHODS
     sock_sendmsg_t sendmsg;             // sendmsg
     sock_recvmsg_t recvmsg;             // recvmsg
+    sock_bind_t bind;                   // bind
+    sock_close_t close;                 // close
 
     // RECEIVE
     spinlock_t *recv_lock;              // Receive lock
@@ -62,6 +66,8 @@ typedef struct sock {
     list_t *recv_queue;                 // Received packet queue
 
     // OTHER
+    struct sockaddr *connected_addr;    // Connected socket address
+    socklen_t connected_addr_len;       // Connected address length
     nic_t *bound_nic;                   // Bound NIC
     void *driver;                       // Socket driver specific object
 } sock_t;
@@ -162,6 +168,14 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags);
  * @param option_len The length of the option
  */
 int socket_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+
+/**
+ * @brief Socket bind method
+ * @param socket The socket file descriptor
+ * @param addr The address to bind to
+ * @param addrlen The address length
+ */
+int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
  * @brief Get a socket by its ID

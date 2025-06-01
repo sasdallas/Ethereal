@@ -66,6 +66,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_SENDMSG]       = (syscall_func_t)(uintptr_t)sys_sendmsg,
     [SYS_RECVMSG]       = (syscall_func_t)(uintptr_t)sys_recvmsg,
     [SYS_SETSOCKOPT]    = (syscall_func_t)(uintptr_t)sys_setsockopt,
+    [SYS_BIND]          = (syscall_func_t)(uintptr_t)sys_bind,
 };
 
 
@@ -86,6 +87,11 @@ void syscall_pointerValidateFailed(void *ptr) {
     if ((uintptr_t)ptr >= current_cpu->current_process->heap_base && (uintptr_t)ptr < current_cpu->current_process->heap) {
         // Yep, it's valid. Map a page
         mem_allocatePage(mem_getPage(NULL, (uintptr_t)ptr, MEM_CREATE), MEM_DEFAULT);
+        return;
+    }
+
+    // Can we resolve via VAS?
+    if (vas_fault(current_cpu->current_process->vas, (uintptr_t)(ptr) & ~0xFFF, PAGE_SIZE*2)) {
         return;
     }
 
@@ -233,6 +239,7 @@ int sys_close(int fd) {
     }
 
     LOG(DEBUG, "sys_close fd %d\n", fd);
+    fs_close(FD(current_cpu->current_process, fd)->node);
     fd_remove(current_cpu->current_process, fd);
     return 0;
 }
@@ -747,4 +754,8 @@ long sys_setsockopt(sys_setopt_context_t *context) {
     // !!!: I don't know why context is required..
     SYSCALL_VALIDATE_PTR(context);
     return socket_setsockopt(context->socket, context->level, context->option_name, context->option_value, context->option_len);
+}
+
+long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
+    return socket_bind(socket, addr, addrlen);
 }

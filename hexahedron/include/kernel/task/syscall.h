@@ -135,5 +135,6 @@ long sys_socket(int domain, int type, int protocol);
 ssize_t sys_sendmsg(int socket, struct msghdr *message, int flags);
 ssize_t sys_recvmsg(int socket, struct msghdr *message, int flags);
 long sys_setsockopt(sys_setopt_context_t *context);
+long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen);
 
 #endif

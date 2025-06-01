@@ -293,6 +293,46 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
 }
 
 /**
+ * @brief Socket bind method
+ * @param socket The socket file descriptor
+ * @param addr The address to bind to
+ * @param addrlen The address length
+ */
+int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    if (sock->bind) {
+        return sock->bind(sock, addr, addrlen);
+    }
+
+    return -EINVAL;
+}
+
+/**
+ * @brief Socket close method
+ */
+void socket_close(fs_node_t *node) {
+    sock_t *sock = (sock_t*)node->dev;
+
+    // First, call the socket's dedicated close method
+    if (sock->close) sock->close(sock);
+
+    // Now free memory
+    spinlock_acquire(sock->recv_lock);
+    if (sock->recv_lock) spinlock_destroy(sock->recv_lock);
+    if (sock->recv_queue) list_destroy(sock->recv_queue, true);
+    if (sock->recv_wait_queue) kfree(sock->recv_wait_queue);
+    kfree(sock);
+}
+
+/**
  * @brief Socket node ready method
  * @param node The node to check 
  * @param events The events we are looking for
@@ -339,6 +379,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
         node->atime = node->ctime = node->mtime = now();
         node->dev = (void*)sock;
         node->ready = socket_ready;
+        node->close = socket_close;
         sock->node = node;
     }
 
@@ -390,7 +431,7 @@ int socket_received(sock_t *sock, void *data, size_t size) {
 
     // Alert
     fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
-    
+
     // Wakeup a thread from the queue
     LOG(DEBUG, "Waking up a single thread from queue - packet received\n");
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
