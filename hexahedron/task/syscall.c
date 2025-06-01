@@ -239,7 +239,6 @@ int sys_close(int fd) {
     }
 
     LOG(DEBUG, "sys_close fd %d\n", fd);
-    fs_close(FD(current_cpu->current_process, fd)->node);
     fd_remove(current_cpu->current_process, fd);
     return 0;
 }

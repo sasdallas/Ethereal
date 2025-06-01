@@ -56,7 +56,6 @@ void fs_open(fs_node_t *node, unsigned int flags) {
     // TODO: Locking?
     node->refcount++;
     
-
     if (node->open) {
         return node->open(node, flags);
     }
@@ -72,11 +71,8 @@ void fs_close(fs_node_t *node) {
     // First, decrement the reference counter
     node->refcount--;
 
-    // Did we underflow?
-    if (node->refcount < 0) return; // ???
-
     // Anyone still using this node?
-    if (node->refcount == 0) {
+    if (node->refcount <= 0) {
         // Nope. It's free memory.
         if (node->close) node->close(node);
         kfree(node);

@@ -79,6 +79,7 @@ static ssize_t socket_raw_recvmsg(sock_t *sock, struct msghdr *message, int flag
             LOG(WARN, "Truncating packet from %d -> %d\n", pkt->size, message->msg_iov[i].iov_len);
             memcpy(message->msg_iov[i].iov_base, pkt->data, message->msg_iov[i].iov_len);
             total_received += message->msg_iov[i].iov_len;
+            kfree(pkt);
             continue;
         }
 
@@ -380,6 +381,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
         node->dev = (void*)sock;
         node->ready = socket_ready;
         node->close = socket_close;
+        node->refcount = 1;
         sock->node = node;
     }
 
