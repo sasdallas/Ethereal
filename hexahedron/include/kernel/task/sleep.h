@@ -160,7 +160,7 @@ sleep_queue_t *sleep_createQueue(char *name);
 /**
  * @brief Put yourself in a sleep queue
  * @param queue The queue to sleep in
- * @returns Whenever you get woken up. 0 means that you were woken up normally, 1 means you got interrupted
+ * @returns Status of being woken up
  */
 int sleep_inQueue(sleep_queue_t *queue);
 

@@ -408,7 +408,7 @@ int socket_waitForContent(sock_t *sock) {
 
     // Just sleep in the queue, we'll be woken up eventually
     int r = sleep_inQueue(sock->recv_wait_queue);
-    return r;
+    return r == WAKEUP_SIGNAL;
 }
 
 /**
@@ -459,6 +459,7 @@ sock_recv_packet_t *socket_get(sock_t *sock) {
 
     if (!n) {
         // !!!: wtf?
+        LOG(ERR, "Error popping from recv queue\n");
         spinlock_release(sock->recv_lock);
         return NULL;
     }
