@@ -15,6 +15,13 @@ PRINT_HEADER:
 	@echo
 
 
+install:
+	@echo "Ignored"
+
 install-headers:
 	-cp -rp initrd/* $(INITRD)/
 	-cp -rp sysroot/* $(SYSROOT)/
+
+clean:
+	-rm -rf $(INITRD)/
+	-rm -rf $(SYSROOT)/
