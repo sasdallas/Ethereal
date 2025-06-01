@@ -89,14 +89,17 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     if (msg->msg_namelen != sizeof(struct sockaddr_in)) return -EINVAL;
 
-    ipv4_packet_t *data = NULL;
+    sock_recv_packet_t *pkt = NULL;
 
     ssize_t total_received = 0;
     for (int i = 0; i < msg->msg_iovlen; i++) {
-        sock_recv_packet_t *pkt = socket_get(sock);
+        if (pkt) kfree(pkt);
+
+        // Get new packet
+        pkt = socket_get(sock);
         if (!pkt) return -EINTR;
 
-        data = (ipv4_packet_t*)pkt->data;
+        ipv4_packet_t *data = (ipv4_packet_t*)pkt->data;
         udp_packet_t *udp_pkt = (udp_packet_t*)data->payload;
 
         size_t actual_size = pkt->size - sizeof(ipv4_packet_t);
@@ -105,27 +108,28 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
             memcpy(msg->msg_iov[i].iov_base, udp_pkt, msg->msg_iov[i].iov_len);
             total_received += msg->msg_iov[i].iov_len;
-            kfree(pkt);
             continue;
         }
 
         // Copy it and free the packet
         memcpy(msg->msg_iov[i].iov_base, udp_pkt, actual_size);
         total_received += actual_size;
-        kfree(pkt);
     }
 
 
     // Need to setup msg_name?
     if (msg->msg_namelen == sizeof(struct sockaddr_in)) {
-        if (msg->msg_name && data) {
+        if (msg->msg_name && pkt) {
             // !!!: Multiple IOVs, diff sources, what?
             struct sockaddr_in *in = (struct sockaddr_in*)msg->msg_name;
-            in->sin_port = 0;
+            in->sin_port = ((udp_packet_t*)((ipv4_packet_t*)pkt->data)->payload)->src_port;
             in->sin_family = AF_INET;
-            in->sin_addr.s_addr = data->src_addr;
+            in->sin_addr.s_addr = ((ipv4_packet_t*)pkt->data)->src_addr;
         }
     }
+
+    // Free the last data
+    if (pkt) kfree(pkt);
 
     return total_received;
 }
