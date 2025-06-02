@@ -136,5 +136,9 @@ ssize_t sys_sendmsg(int socket, struct msghdr *message, int flags);
 ssize_t sys_recvmsg(int socket, struct msghdr *message, int flags);
 long sys_setsockopt(sys_setopt_context_t *context);
 long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen);
+long sys_connect(int socket, const struct sockaddr *addr, socklen_t addrlen);
+long sys_listen(int socket, int backlog);
+long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
+
 
 #endif

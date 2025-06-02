@@ -103,7 +103,7 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             continue;
         }
 
-        // Copy it and free the packet
+        // Copy it
         memcpy(msg->msg_iov[i].iov_base, udp_pkt->data, actual_size);
         total_received += actual_size;
     }

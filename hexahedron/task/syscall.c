@@ -67,6 +67,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_RECVMSG]       = (syscall_func_t)(uintptr_t)sys_recvmsg,
     [SYS_SETSOCKOPT]    = (syscall_func_t)(uintptr_t)sys_setsockopt,
     [SYS_BIND]          = (syscall_func_t)(uintptr_t)sys_bind,
+    [SYS_CONNECT]       = (syscall_func_t)(uintptr_t)sys_connect,
+    [SYS_LISTEN]        = (syscall_func_t)(uintptr_t)sys_listen,
+    [SYS_ACCEPT]        = (syscall_func_t)(uintptr_t)sys_accept,
 };
 
 
@@ -757,4 +760,16 @@ long sys_setsockopt(sys_setopt_context_t *context) {
 
 long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     return socket_bind(socket, addr, addrlen);
+}
+
+long sys_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
+    return socket_connect(socket, addr, addrlen);
+}
+
+long sys_listen(int socket, int backlog) {
+    return socket_listen(socket, backlog);
+}
+
+long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    return socket_accept(socket, addr, addrlen);
 }

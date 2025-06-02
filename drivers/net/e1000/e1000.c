@@ -363,7 +363,6 @@ static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *
     // Get E1000
     e1000_t *nic = (e1000_t*)(NIC(node)->driver);
     if (!nic) return 0;
-    LOG(DEBUG, "Sending packet of size %d (buffer: %p)...\n", size, buffer);
 
     // Lock the E1000, we're gonna mess with it
     spinlock_acquire(nic->lock);

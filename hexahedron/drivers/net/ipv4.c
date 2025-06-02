@@ -33,6 +33,7 @@ hashmap_t *ipv4_handler_hashmap = NULL;
 sock_t *ipv4_socket(int type, int protocol);
 extern sock_t *icmp_socket();
 extern sock_t *udp_socket();
+extern sock_t *tcp_socket();
 
 /**
  * @brief Initialize the IPv4 system
@@ -217,6 +218,9 @@ sock_t *ipv4_socket(int type, int protocol) {
         case SOCK_DGRAM:
             if (protocol == IPPROTO_ICMP) return icmp_socket();
             if (!protocol || protocol == IPPROTO_UDP) return udp_socket();
+            return NULL;
+        case SOCK_STREAM:
+            if (protocol == IPPROTO_TCP || !protocol) return tcp_socket();
             return NULL;
         default:
             return NULL;

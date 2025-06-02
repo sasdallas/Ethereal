@@ -136,16 +136,12 @@ static int socket_validateMsg(struct msghdr *message) {
     if (message->msg_control) SYSCALL_VALIDATE_PTR_SIZE(message->msg_control, message->msg_controllen);
     if (message->msg_name) SYSCALL_VALIDATE_PTR_SIZE(message->msg_name, message->msg_namelen);
 
-    LOG(DEBUG, "CTRL: %p %d\n", message->msg_control, message->msg_controllen);
-    LOG(DEBUG, "NAME: %p %d\n", message->msg_name, message->msg_namelen);
-
     if (message->msg_iovlen) {
         SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov, message->msg_iovlen * sizeof(struct iovec));
 
         // For each iov
         for (int i = 0; i < message->msg_iovlen; i++) {
             SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
-            LOG(DEBUG, "IOV: %p %d\n", message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
         }
     }
 
@@ -309,12 +305,88 @@ int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
 
     sock_t *sock = (sock_t*)socknode->dev;
 
+    SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
+
     if (sock->bind) {
         return sock->bind(sock, addr, addrlen);
     }
 
     return -EINVAL;
 }
+
+/**
+ * @brief Socket connect method
+ * @param socket The socket file descriptor
+ * @param addr The address connect to
+ * @param addrlen The address length
+ */
+int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
+
+    if (sock->connect) {
+        return sock->connect(sock, addr, addrlen);
+    }
+
+    return -EINVAL;
+}
+
+/**
+ * @brief Socket listen method
+ * @param socket The socket file descriptor
+ * @param backlog Backlog
+ */
+int socket_listen(int socket, int backlog) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    if (sock->listen) {
+        return sock->listen(sock, backlog);
+    }
+
+    return -EINVAL;
+}
+
+/**
+ * @brief Socket accept method
+ * @param socket The socket file descriptor
+ * @param addr The address to store the connection in
+ * @param addrlen The address length
+ */
+int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
+
+    // !!!: Pointer validation in cases of addrlen = 0?
+    if (sock->accept) {
+        return sock->accept(sock, addr, addrlen);
+    }
+
+    return -EINVAL;
+}
+
 
 /**
  * @brief Socket close method

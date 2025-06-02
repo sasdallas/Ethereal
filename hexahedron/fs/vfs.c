@@ -233,7 +233,7 @@ int fs_alert(fs_node_t *node, int events) {
                     // Yes, wake it up.
                     // If the thread ISN'T sleeping, that means it probably got what it wanted and isn't waiting anymore.
                     // !!!: Yes, there is a race condition here.
-                    LOG(INFO, "Alerting thread %p that events 0x%x are available\n", waiter->thread, waiter->events);
+                    // LOG(INFO, "Alerting thread %p that events 0x%x are available\n", waiter->thread, waiter->events);
                     sleep_wakeup(waiter->thread);
                 } else {
                     LOG(DEBUG, "Not waking up thread %p, assuming it has already completed its poll\n", waiter->thread);
