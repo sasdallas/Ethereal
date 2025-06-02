@@ -164,17 +164,20 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
     int ret = 0;
 
     // Check - are we out of order?
-    if (tcpsock->ack && !(TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) && tcpsock->ack != ntohl(pkt->seq)) {
-        // Out of order, their sequence number does not match our acknowledge number.
-        // Do a multi-ACK
-        retransmit = 1;
-        ret = 1; // This wasn't a successful transaction
-        LOG(ERR, "TCP retransmission for out-of-order packet\n");
-    } else {
-        // Not out of order, increase!
-        tcpsock->ack = (ntohl(pkt->seq) + size) & 0xFFFFFFFF;
-        if (TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) tcpsock->seq = 1; // Next sequence number
-    }
+    // if (tcpsock->ack && !(TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) && tcpsock->ack != ntohl(pkt->seq)) {
+    //     // Out of order, their sequence number does not match our acknowledge number.
+    //     // Do a multi-ACK
+    //     retransmit = 1;
+    //     ret = 1; // This wasn't a successful transaction
+    //     LOG(ERR, "TCP retransmission for out-of-order packet\n");
+    // } else {
+    //     // Not out of order, increase!
+    //     tcpsock->ack = (ntohl(pkt->seq) + size) & 0xFFFFFFFF;
+    //     if (TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) tcpsock->seq = 1; // Next sequence number
+    // }
+
+    tcpsock->ack = (ntohl(pkt->seq) + size) & 0xFFFFFFFF;
+    if (TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) tcpsock->seq = 1; // Next sequence number
 
     // Transmit packet
     ipv4_packet_t *resp_ip = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
@@ -332,6 +335,11 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                 } else if (TCP_HAS_FLAG(packet, ACK)) {
                     // We don't ACK an ACK
                     socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                } else {
+                    // ACK it, why not.
+                    if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
+                        socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                    }
                 }
             }
         }
