@@ -74,7 +74,7 @@ static void sleep_callback(uint64_t ticks) {
             }
         } else if (sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
             // Immediately wakeup
-            LOG(DEBUG, "WAKEUP: Immediately waking up thread %p\n", sleep->thread);
+            // LOG(DEBUG, "WAKEUP: Immediately waking up thread %p\n", sleep->thread);
             wakeup = WAKEUP_ANOTHER_THREAD;
         }
 
@@ -225,8 +225,12 @@ int sleep_wakeup(struct thread *thread) {
  * @returns A sleep wakeup reason
  */
 int sleep_enter() {
-    process_yield(0);
+    if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
+        kfree(current_cpu->current_thread->sleep);
+        return WAKEUP_ANOTHER_THREAD;
+    }
 
+    process_yield(0);
     int state = current_cpu->current_thread->sleep->sleep_state;
     kfree(current_cpu->current_thread->sleep);
     return state;

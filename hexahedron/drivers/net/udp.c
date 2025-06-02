@@ -57,9 +57,9 @@ int udp_handle(fs_node_t *nic, void *frame, size_t size) {
     
     LOG_NIC(DEBUG, nic, "Receive packet src_port=%d dest_port=%d length=%d\n", ntohs(packet->src_port), ntohs(packet->dest_port), ntohs(packet->length));
 
-    if (hashmap_has(udp_port_map, (void*)(uintptr_t)packet->dest_port)) {
+    if (hashmap_has(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
         // We have a handler!
-        sock_t *sock = (sock_t*)hashmap_get(udp_port_map, (void*)(uintptr_t)packet->dest_port);
+        sock_t *sock = (sock_t*)hashmap_get(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port));
         socket_received(sock, frame, size);
     }
 
@@ -136,12 +136,18 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
     
     // Did they specify a msg_name?
+    struct sockaddr_in *in;
     if (!msg->msg_name) {
-        LOG(ERR, "TODO: connected_addr");
-        return -EINVAL;
-    }
+        if (sock->connected_addr_len != sizeof(struct sockaddr_in)) {
+            LOG(ERR, "connected_addr_len != sizeof(struct sockaddr_in)\n");
+            return -EINVAL;
+        }
 
-    if (msg->msg_namelen != sizeof(struct sockaddr_in)) return -EINVAL;
+        in = (struct sockaddr_in*)sock->connected_addr;
+    } else {
+        if (msg->msg_namelen != sizeof(struct sockaddr_in)) return -EINVAL;
+        in = (struct sockaddr_in*)msg->msg_name;
+    }
 
     // Is this socket bound yet?
     udp_sock_t *udpsock = (udp_sock_t*)sock->driver;
@@ -155,7 +161,6 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     // Route this to a destination NIC
-    struct sockaddr_in *in = (struct sockaddr_in*)msg->msg_name;
     nic_t *nic = nic_route(in->sin_addr.s_addr);
     if (!nic) return -EHOSTUNREACH;
 
@@ -207,15 +212,15 @@ int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     struct sockaddr_in *addr = (struct sockaddr_in*)sockaddr;
     spinlock_acquire(&udp_port_lock);
 
-    if (hashmap_has(udp_port_map, (void*)(uintptr_t)addr->sin_port)) {
+    if (hashmap_has(udp_port_map, (void*)(uintptr_t)ntohs(addr->sin_port))) {
         spinlock_release(&udp_port_lock);
         return -EADDRINUSE;
     }
 
-    hashmap_set(udp_port_map, (void*)(uintptr_t)addr->sin_port, (void*)sock);
+    hashmap_set(udp_port_map, (void*)(uintptr_t)ntohs(addr->sin_port), (void*)sock);
     spinlock_release(&udp_port_lock);
 
-    udpsock->port = addr->sin_port;
+    udpsock->port = ntohs(addr->sin_port);
 
     // Route the NIC too
     return 0;

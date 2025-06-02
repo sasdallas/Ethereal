@@ -33,13 +33,13 @@
 #define TCP_CHANGE_STATE(s) { tcpsock->state = s; LOG(DEBUG, "Socket bound to port %d transition to state \"%s\"\n", tcpsock->port, tcp_stateToString(tcpsock->state)); }
 
 /* Print packet */
-#define TCP_PRINT_PKT(pkt, nic) LOG_NIC(DEBUG, nic->parent_node, "[%s%s%s%s%s] %d -> %d Seq=%d Ack=%d\n", \
+#define TCP_PRINT_PKT(pkt, nic, ippkt) LOG_NIC(DEBUG, nic->parent_node, "[%s%s%s%s%s] %d -> %d Seq=%d Ack=%d Len=%d Id=%x\n", \
                                     (ntohs(pkt->flags) & TCP_FLAG_ACK) ? "ACK " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_PSH) ? "PSH " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_RST) ? "RST " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_FIN) ? "FIN " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_SYN) ? "SYN" : "", \
-                                    ntohs(pkt->src_port), ntohs(pkt->dest_port), ntohl(pkt->seq), ntohl(pkt->ack));
+                                    ntohs(pkt->src_port), ntohs(pkt->dest_port), ntohl(pkt->seq), ntohl(pkt->ack), ntohs(ippkt->length), ntohs(ippkt->id));
 
 /* Has flag */
 #define TCP_HAS_FLAG(pkt, flag) (ntohs(pkt->flags) & TCP_FLAG_##flag)
@@ -162,7 +162,7 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
 
     int retransmit = 0;
     int ret = 0;
-    
+
     // Check - are we out of order?
     if (tcpsock->ack && !(TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) && tcpsock->ack != ntohl(pkt->seq)) {
         // Out of order, their sequence number does not match our acknowledge number.
@@ -207,7 +207,7 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
     resp->checksum = htons(tcp_checksum(&resp_cksum, resp, NULL, 0));
 
     // Transmit!
-    TCP_PRINT_PKT(resp, nic);
+    TCP_PRINT_PKT(resp, nic, resp_ip);
     ipv4_sendPacket(nic->parent_node, resp_ip);
 
     // Retransmit two more times?
@@ -218,74 +218,6 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
 
     kfree(resp_ip);
     return ret;
-}
-
-/**
- * @brief Handle a TCP packet
- * @param nic The NIC the packet came from
- * @param frame The frame inlcluding the IPv4 packet header
- * @param size The size of the packet
- */
-int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
-    ipv4_packet_t *ip_packet = (ipv4_packet_t*)frame;
-    tcp_packet_t *packet = (tcp_packet_t*)ip_packet->payload;
-
-    TCP_PRINT_PKT(packet, NIC(nic));
-
-    // Do we have a port willing to handle this?
-    if (hashmap_has(tcp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
-        // Yes, there is a handler
-        sock_t *sock = (sock_t*)hashmap_get(tcp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port));
-
-        // TODO: Validate checksum
-
-        // We do still need to acknowledge any packets which were sent. What state is this port in?
-        tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
-        if (tcpsock->state == TCP_STATE_SYN_SENT) {
-            // We are awaiting a SYN-ACK - if this is one then we can acknowledge it
-            if (TCP_HAS_FLAG(packet, SYN) && TCP_HAS_FLAG(packet, ACK)) {
-                // This is a SYN-ACK, acknowledge request
-                if (tcp_acknowledge(NIC(nic), sock, ip_packet, 1) == 0) {
-                    // Successful acknowledgement, change state and alert socket
-                    TCP_CHANGE_STATE(TCP_STATE_ESTABLISHED);
-                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                } else {
-                    // Acknowledge failure, I guess just retry?
-                    LOG(ERR, "Acknowledgement failure for SYN-ACK\n");
-                }
-            }
-
-            if (TCP_HAS_FLAG(packet, RST)) {
-                // We were awaiting a SYN-ACK but got a RST
-                TCP_CHANGE_STATE(TCP_STATE_DEFAULT);
-                socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-            }
-        } else {
-            // Get the packet length and header length
-            size_t total_packet_length = ntohs(ip_packet->length) - sizeof(ipv4_packet_t);
-            size_t tcp_header_length = ((ntohs(packet->flags) & TCP_HEADER_LENGTH_MASK) >> TCP_HEADER_LENGTH_SHIFT) * sizeof(uint32_t);
-            size_t payload_len = total_packet_length - tcp_header_length;
-
-            if (payload_len > 0) {
-                // We should ACK this
-                if (tcp_acknowledge(NIC(nic), sock, ip_packet, payload_len) == 0) {
-                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                }
-            } else {
-                // Only do something if this is a FIN packet
-                if (TCP_HAS_FLAG(packet, FIN)) {
-                    if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
-                        socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                    }
-                } else if (TCP_HAS_FLAG(packet, ACK)) {
-                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                }
-            }
-
-
-        }
-    }
-    return 0;
 }
 
 /**
@@ -329,10 +261,155 @@ int tcp_sendPacket(sock_t *sock, nic_t *nic, in_addr_t dest, tcp_packet_t *tcp_p
     pkt->checksum = htons(tcp_checksum(&tcp_cksum, pkt, pkt->payload, len));
 
     // Send it!
-    TCP_PRINT_PKT(pkt, nic);
+    TCP_PRINT_PKT(pkt, nic, ip_pkt);
     int r = ipv4_sendPacket(nic->parent_node, ip_pkt);
     kfree(ip_pkt);
     return r;
+}
+
+/**
+ * @brief Handle a TCP packet
+ * @param nic The NIC the packet came from
+ * @param frame The frame inlcluding the IPv4 packet header
+ * @param size The size of the packet
+ */
+int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
+    ipv4_packet_t *ip_packet = (ipv4_packet_t*)frame;
+    tcp_packet_t *packet = (tcp_packet_t*)ip_packet->payload;
+
+    TCP_PRINT_PKT(packet, NIC(nic), ip_packet);
+
+    // Do we have a port willing to handle this?
+    if (hashmap_has(tcp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
+        // Yes, there is a handler
+        sock_t *sock = (sock_t*)hashmap_get(tcp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port));
+
+        // TODO: Validate checksum
+
+        // We do still need to acknowledge any packets which were sent. What state is this port in?
+        tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
+        if (tcpsock->state == TCP_STATE_SYN_SENT) {
+            // We are awaiting a SYN-ACK - if this is one then we can acknowledge it
+            if (TCP_HAS_FLAG(packet, SYN) && TCP_HAS_FLAG(packet, ACK)) {
+                // This is a SYN-ACK, acknowledge request
+                if (tcp_acknowledge(NIC(nic), sock, ip_packet, 1) == 0) {
+                    // Successful acknowledgement, change state and alert socket
+                    TCP_CHANGE_STATE(TCP_STATE_ESTABLISHED);
+                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                } else {
+                    // Acknowledge failure, I guess just retry?
+                    LOG(ERR, "Acknowledgement failure for SYN-ACK\n");
+                }
+            }
+
+            if (TCP_HAS_FLAG(packet, RST)) {
+                // We were awaiting a SYN-ACK but got a RST
+                TCP_CHANGE_STATE(TCP_STATE_DEFAULT);
+                socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+            }
+        } else {
+            // Get the packet length and header length
+            size_t total_packet_length = ntohs(ip_packet->length) - sizeof(ipv4_packet_t);
+            size_t tcp_header_length = ((ntohs(packet->flags) & TCP_HEADER_LENGTH_MASK) >> TCP_HEADER_LENGTH_SHIFT) * sizeof(uint32_t);
+            size_t payload_len = total_packet_length - tcp_header_length;
+
+            if (payload_len > 0) {
+                // We should ACK this
+                // !!!: If this is ALSO an ACK, we need to push the packet twice so our TCP sender can see that it doesn't have to retransmit
+                if (TCP_HAS_FLAG(packet, ACK)) {
+                    socket_received(sock, (void*)packet, sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+                }
+
+                if (tcp_acknowledge(NIC(nic), sock, ip_packet, payload_len) == 0) {
+                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                }
+            } else {
+                // Final transaction?
+                if (TCP_HAS_FLAG(packet, FIN)) {
+                    if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
+                        socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                    }
+                } else if (TCP_HAS_FLAG(packet, ACK)) {
+                    // We don't ACK an ACK
+                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                }
+            }
+        }
+    } else {
+        // !!!: Also reply to any SYN-ACK requests to unknown ports with a RST, ACK
+        if (TCP_HAS_FLAG(packet, SYN) && TCP_HAS_FLAG(packet, ACK)) {
+            LOG_NIC(WARN, nic, "Connection to port %d denied - replying with RST ACK\n", ntohs(packet->dest_port));
+            ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+            ip_pkt->src_addr = NIC(nic)->ipv4_address;
+            ip_pkt->dest_addr = ip_packet->src_addr;
+            ip_pkt->protocol = IPV4_PROTOCOL_TCP;
+            ip_pkt->id = ip_packet->id;
+            ip_pkt->versionihl = 0x45;
+            ip_pkt->length = htons(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+            ip_pkt->ttl = IPV4_DEFAULT_TTL;
+            ip_pkt->checksum = htons(ipv4_checksum(ip_pkt));
+
+            tcp_packet_t *pkt = (tcp_packet_t*)ip_pkt->payload;
+            pkt->src_port = packet->dest_port;
+            pkt->dest_port = packet->src_port;
+            pkt->seq = htonl(1);
+            pkt->ack = htonl(1);
+            pkt->flags = htons(TCP_FLAG_RST | TCP_FLAG_ACK | 0x5000);
+            pkt->winsz = TCP_DEFAULT_WINSZ;
+
+            tcp_checksum_header_t tcp_cksum = {
+                .dest = ip_pkt->dest_addr,
+                .length = htons(sizeof(tcp_packet_t)),
+                .protocol = IPV4_PROTOCOL_TCP,
+                .reserved = 0,
+                .src = ip_pkt->src_addr
+            };
+
+            pkt->checksum = htons(tcp_checksum(&tcp_cksum, pkt, NULL, 0));
+
+            ipv4_sendPacket(nic, ip_pkt);
+            kfree(ip_pkt);
+        }
+
+        // !!!: Since our port sockets are stupid and are removed before the transactions are actually completed, 
+        // !!!: we also should ACK any FIN, ACKs
+        if (TCP_HAS_FLAG(packet, FIN) && TCP_HAS_FLAG(packet, ACK)) {
+            LOG_NIC(WARN, nic, "Closing connection to port %d (replying with ACK)\n", ntohs(packet->dest_port));
+            ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+            ip_pkt->src_addr = NIC(nic)->ipv4_address;
+            ip_pkt->dest_addr = ip_packet->src_addr;
+            ip_pkt->protocol = IPV4_PROTOCOL_TCP;
+            ip_pkt->id = ip_packet->id;
+            ip_pkt->versionihl = 0x45;
+            ip_pkt->length = htons(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+            ip_pkt->ttl = IPV4_DEFAULT_TTL;
+            ip_pkt->checksum = htons(ipv4_checksum(ip_pkt));
+
+            tcp_packet_t *pkt = (tcp_packet_t*)ip_pkt->payload;
+            pkt->src_port = packet->dest_port;
+            pkt->dest_port = packet->src_port;
+            pkt->seq = packet->ack; // ???
+            pkt->ack = packet->seq; // ???
+            pkt->flags = htons(TCP_FLAG_ACK | 0x5000);
+            pkt->winsz = TCP_DEFAULT_WINSZ;
+
+            tcp_checksum_header_t tcp_cksum = {
+                .dest = ip_pkt->dest_addr,
+                .length = htons(sizeof(tcp_packet_t)),
+                .protocol = IPV4_PROTOCOL_TCP,
+                .reserved = 0,
+                .src = ip_pkt->src_addr
+            };
+
+            pkt->checksum = htons(tcp_checksum(&tcp_cksum, pkt, NULL, 0));
+
+            ipv4_sendPacket(nic, ip_pkt);
+            kfree(ip_pkt);
+        }   
+    }
+ 
+
+    return 0;
 }
 
 /**
@@ -381,7 +458,11 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     ssize_t total_received = 0;
     for (int i = 0; i < msg->msg_iovlen; i++) {
-        // Read packet
+        // Read ACK packet
+        sock_recv_packet_t *ack_pkt = socket_get(sock);
+        if (!ack_pkt) return -EINTR;
+        kfree(ack_pkt);
+
         sock_recv_packet_t *pkt = socket_get(sock);
         if (!pkt) return -EINTR;
 
@@ -394,12 +475,14 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
             memcpy(msg->msg_iov[i].iov_base, tcp_pkt->payload, msg->msg_iov[i].iov_len);
             total_received += msg->msg_iov[i].iov_len;
+            kfree(pkt);
             continue;
         }
 
         // Copy it
         memcpy(msg->msg_iov[i].iov_base, tcp_pkt->payload, actual_size);
         total_received += actual_size;
+        kfree(pkt);
     }
 
     return total_received;
@@ -424,8 +507,12 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
     if (!tcpsock->port) {
         // We have no port?
-        LOG(ERR, "TODO: Get port\n");
-        return -ENOTSUP;
+        // Try to get a port
+        spinlock_acquire(&tcp_port_lock);
+        while (hashmap_has(tcp_port_map, (void*)(uintptr_t)tcp_port_last)) tcp_port_last++;
+        hashmap_set(tcp_port_map, (void*)(uintptr_t)tcp_port_last, (void*)sock);
+        tcpsock->port = tcp_port_last;
+        spinlock_release(&tcp_port_lock);
     }
 
     ssize_t total_sent_bytes = 0;
@@ -540,8 +627,11 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
 
     // Do we need to get a port?
     if (!tcpsock->port) {
-        LOG(ERR, "TODO: Get port\n");
-        return -ENOTSUP;
+        spinlock_acquire(&tcp_port_lock);
+        while (hashmap_has(tcp_port_map, (void*)(uintptr_t)tcp_port_last)) tcp_port_last++;
+        hashmap_set(tcp_port_map, (void*)(uintptr_t)tcp_port_last, (void*)sock);
+        tcpsock->port = tcp_port_last;
+        spinlock_release(&tcp_port_lock);
     }
 
     // Route to a NIC

@@ -30,10 +30,10 @@
 #define SLEEP_FLAG_COND             3       // Sleeping on condition
 
 /* Reasons for waking up from sleep */
-#define WAKEUP_SIGNAL               1       // A signal woke you up and you need to return -EINTR
-#define WAKEUP_TIME                 2       // Timeout expired
-#define WAKEUP_COND                 3       // Condition woke you up
-#define WAKEUP_ANOTHER_THREAD       4       // Another thread woke up (also can be a queue)
+#define WAKEUP_SIGNAL               4       // A signal woke you up and you need to return -EINTR
+#define WAKEUP_TIME                 5       // Timeout expired
+#define WAKEUP_COND                 6       // Condition woke you up
+#define WAKEUP_ANOTHER_THREAD       7       // Another thread woke up (also can be a queue)
 
 /**** TYPES ****/
 
