@@ -185,7 +185,7 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
     resp_ip->ttl = IPV4_DEFAULT_TTL;
     resp_ip->versionihl = 0x45;
     resp_ip->checksum = 0;
-    resp_ip->checksum = ipv4_checksum(resp_ip);
+    resp_ip->checksum = htons(ipv4_checksum(resp_ip));
 
     tcp_packet_t *resp = (tcp_packet_t*)resp_ip->payload;
     resp->src_port = htons(tcpsock->port);
