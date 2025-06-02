@@ -332,11 +332,6 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                 } else if (TCP_HAS_FLAG(packet, ACK)) {
                     // We don't ACK an ACK
                     socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                } else {
-                    // ACK it, why not.
-                    if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
-                        socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
-                    }
                 }
             }
         }

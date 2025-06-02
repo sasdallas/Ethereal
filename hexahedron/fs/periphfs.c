@@ -142,6 +142,14 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
 }
 
 /**
+ * @brief Generic stdin device ready
+ */
+static int stdin_ready(fs_node_t *node, int events) {
+    key_buffer_t *buf = (key_buffer_t*)node->dev;
+    return KEY_CONTENT_AVAILABLE(buf) ? VFS_EVENT_READ : 0;
+}
+
+/**
  * @brief Generic mouse device read
  */
 static ssize_t mouse_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
@@ -191,6 +199,7 @@ void periphfs_init() {
     stdin_node->flags = VFS_CHARDEVICE;
     stdin_node->dev = (void*)kbdbuf;
     stdin_node->read = stdin_read;
+    stdin_node->ready = stdin_ready;
     vfs_mount(stdin_node, "/device/stdin");
 
     // Create and mount mouse node 

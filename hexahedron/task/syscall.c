@@ -613,10 +613,10 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     }
 
     // We didn't get anything. Did they want us to wait?
-    if (!timeout) return 0;
+    if (timeout == 0) return 0;
     
     // Yes, so prepare ourselves to wait
-    if (timeout) {
+    if (timeout > 0) {
         sleep_untilTime(current_cpu->current_thread, 0, timeout*1000);
     } else {
         sleep_untilNever(current_cpu->current_thread);
@@ -634,6 +634,18 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     LOG(INFO, "Woken up from a poll due to reason %d\n", wakeup);
     if (wakeup == WAKEUP_SIGNAL) return -EINTR;
     if (wakeup == WAKEUP_TIME) return 0;
+
+    for (size_t i = 0; i < nfds; i++) {
+        // Does the file descriptor have available contents right now?
+        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+        if (ready & events) {
+            LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+            return 1;
+        } 
+    }
 
     return 1;   // At least one thread woke us up
 }
