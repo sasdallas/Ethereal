@@ -333,7 +333,7 @@ int main(int argc, char *argv[]) {
     DHCP_LOG("bound to port 68 completed successfully\n");
 
     // Randomly generate a transaction ID
-    srand(0);
+    srand(now());
     xid = rand();
     DHCP_LOG("transaction ID: 0x%x\n", xid);
 

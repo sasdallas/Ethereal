@@ -40,7 +40,11 @@ struct sock;
 typedef ssize_t (*sock_sendmsg_t)(struct sock *sock, struct msghdr *message, int flags);
 typedef ssize_t (*sock_recvmsg_t)(struct sock *sock, struct msghdr *message, int flags);
 typedef int (*sock_bind_t)(struct sock *sock, const struct sockaddr *addr, socklen_t addrlen);
+typedef int (*sock_connect_t)(struct sock *sock, const struct sockaddr *addr, socklen_t addrlen);
+typedef int (*sock_accept_t)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+typedef int (*sock_listen_t)(struct sock *sock, int backlog);
 typedef int (*sock_close_t)(struct sock *sock);
+
 
 /**
  * @brief Socket object
@@ -58,6 +62,9 @@ typedef struct sock {
     sock_sendmsg_t sendmsg;             // sendmsg
     sock_recvmsg_t recvmsg;             // recvmsg
     sock_bind_t bind;                   // bind
+    sock_connect_t connect;             // connect
+    sock_listen_t listen;               // listen
+    sock_accept_t accept;               // accept
     sock_close_t close;                 // close
 
     // RECEIVE
@@ -176,6 +183,29 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
  * @param addrlen The address length
  */
 int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen);
+
+/**
+ * @brief Socket connect method
+ * @param socket The socket file descriptor
+ * @param addr The address connect to
+ * @param addrlen The address length
+ */
+int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen);
+
+/**
+ * @brief Socket listen method
+ * @param socket The socket file descriptor
+ * @param backlog Backlog
+ */
+int socket_listen(int socket, int backlog);
+
+/**
+ * @brief Socket accept method
+ * @param socket The socket file descriptor
+ * @param addr The address to store the connection in
+ * @param addrlen The address length
+ */
+int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
 
 /**
  * @brief Get a socket by its ID
