@@ -37,12 +37,11 @@ fs_node_t *stdin_node = NULL;
 
 /**
  * @brief Get the last keyboard event (pop from the buffer)
+ * @param buf The buffer to get from
  * @param event Event pointer
  * @returns 0 on success, 1 on failure
  */
-static int periphfs_getKeyboardEvent(key_event_t *event) {
-    // Get buffer
-    key_buffer_t *buf = (key_buffer_t*)kbd_node->dev;
+static int periphfs_getKeyboardEvent(key_buffer_t *buf, key_event_t *event) {
 
     // Get the lock
     spinlock_acquire(&buf->lock);
@@ -104,7 +103,7 @@ static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t
     // TODO: This is really really bad..
     for (size_t i = 0; i < size; i += sizeof(key_event_t)) {
         if (!KEY_CONTENT_AVAILABLE(buf)) return i;
-        periphfs_getKeyboardEvent((key_event_t*)(buffer + i));
+        periphfs_getKeyboardEvent(buf, (key_event_t*)(buffer + i));
     }
 
     return size;
@@ -121,12 +120,10 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
     // Start reading key events
     key_event_t event;
     
-    for (size_t i = 0; i < size; i++) {
-        do {
-            // Wait for content
-            while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
-            periphfs_getKeyboardEvent(&event);
-        } while (event.event_type != EVENT_KEY_PRESS);
+    for (size_t i = 0; i < size; i++) { 
+        // Wait for content
+        while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
+        periphfs_getKeyboardEvent(buf, &event);
 
         if (event.scancode == '\n') {
             *buffer = event.scancode;
@@ -179,6 +176,7 @@ static ssize_t mouse_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
 void periphfs_init() {
     // Create keyboard circular buffer
     key_buffer_t *kbdbuf = kzalloc(sizeof(key_buffer_t));
+    key_buffer_t *stdbuf = kzalloc(sizeof(key_buffer_t));
 
     // Create mouse circular buffer
     mouse_buffer_t *mousebuf = kzalloc(sizeof(mouse_buffer_t));
@@ -197,7 +195,7 @@ void periphfs_init() {
     memset(stdin_node, 0, sizeof(fs_node_t));
     strcpy(stdin_node->name, "stdin");
     stdin_node->flags = VFS_CHARDEVICE;
-    stdin_node->dev = (void*)kbdbuf;
+    stdin_node->dev = (void*)stdbuf;
     stdin_node->read = stdin_read;
     stdin_node->ready = stdin_ready;
     vfs_mount(stdin_node, "/device/stdin");
@@ -237,6 +235,23 @@ int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode) {
 
     // Release
     spinlock_release(&buffer->lock);
+
+    // Also push on stdin node if push event
+    if (event_type == EVENT_KEY_PRESS) {
+        // Push!
+        buffer = (key_buffer_t*)stdin_node->dev;
+        spinlock_acquire(&buffer->lock);
+
+        // Reset tail if needed
+        buffer->tail++;
+        if (buffer->tail > KBD_QUEUE_EVENTS) buffer->tail = 0;
+
+        // Set event
+        buffer->event[buffer->tail] = event;
+
+        // Release
+        spinlock_release(&buffer->lock);
+    }
 
     LOG(DEBUG, "SEND key event type=%d\n", event_type);
     return 0;

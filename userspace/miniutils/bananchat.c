@@ -23,7 +23,7 @@
 #include <fcntl.h>
 
 #define DEFAULT_SERVER_IP "chat.bananymous.com"
-#define DEFAULT_SERVER_PORT 12345
+#define DEFAULT_SERVER_PORT 6969
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -78,13 +78,17 @@ int main(int argc, char *argv[]) {
     }
 
     // Enter main loop
-    printf("Listening for new messages (no, you can't type sorry)\n");
+    char buf[512];
+    size_t bufidx = 0;
     while (1) {
-        struct pollfd fds[1];
+        struct pollfd fds[2];
         fds[0].fd = sock;
         fds[0].events = POLLIN;
+        
+        fds[1].fd = STDIN_FILE_DESCRIPTOR;
+        fds[1].events = POLLIN;
 
-        int p = poll(fds, 1, 0);
+        int p = poll(fds, 2, 0);
         if (p < 0) {
             perror("poll");
             return 1;
@@ -106,6 +110,24 @@ int main(int argc, char *argv[]) {
             data[r] = 0;
             printf("%s", data);
             fflush(stdout);
+        }
+
+        if (p && fds[1].revents & POLLIN) {
+            char c = getchar();
+            putchar(c);
+            fflush(stdout);
+
+            if (c == '\n') {
+                buf[bufidx++] = 0;
+
+                if (send(sock, buf, strlen(buf), 0) < 0) {
+                    perror("send");
+                    return 1;
+                }
+                bufidx = 0;
+            } else if (c) {
+                buf[bufidx++] = c;
+            }
         }
     }
 }

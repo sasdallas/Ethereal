@@ -625,7 +625,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     // There is a timeout, so put ourselves in the queue for each fd
     for (size_t i = 0; i < nfds; i++) {
         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        if (!(fds[i].revents & POLLNVAL)) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node, events);
+        if (FD_VALIDATE(current_cpu->current_process, fds[i].fd)) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node, events);
     }
 
     // Enter sleep state
