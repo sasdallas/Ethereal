@@ -18,24 +18,67 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <poll.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <getopt.h>
 
 #define DEFAULT_SERVER_IP "chat.bananymous.com"
 #define DEFAULT_SERVER_PORT 6969
 
+void usage() {
+    printf("Usage: bananchat [-s SERVER_IP] [-p SERVER_PORT] <USERNAME>\n");
+    printf("Client for communicating with Bananymous' chat server\n");
+    exit(1);
+}
+
+void version() {
+    printf("bananchat (Ethereal miniutils) 1.0\n");
+    printf("Copyright (C) 2025 The Ethereal Development Team\n");
+    exit(1);
+}
+
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        printf("usage: bananchat <USERNAME>\n");
-        return 1;
+    char c;
+    char *server_ip = DEFAULT_SERVER_IP;
+    uint32_t server_port = DEFAULT_SERVER_PORT;
+
+    while ((c = getopt(argc, argv, "s:p:hv")) != -1) {
+        switch (c) {
+            case 's':
+                if (!optarg) {
+                    printf("bananchat: option \'-s\' requires an argument\n");
+                    return 1;
+                }
+
+                server_ip = optarg;
+                break;
+            case 'p':
+                if (!optarg) {
+                    printf("bananchat: option \'-p\' requires an argument\n");
+                    return 1;
+                }
+
+                server_port = strtol(optarg, NULL, 10);
+                break;
+            case 'v':
+                version();
+                break;
+            case 'h':
+            default:
+                usage();
+                break;
+        }
     }
 
-    printf("Establishing connection to %s:%d\n", DEFAULT_SERVER_IP, DEFAULT_SERVER_PORT);
+    if (argc - optind < 1) usage();
 
-    struct hostent *ent = gethostbyname(DEFAULT_SERVER_IP);
+    printf("Establishing connection to %s:%d\n", server_ip, server_port);
+
+    struct hostent *ent = gethostbyname(server_ip);
     if (!ent) {
-        printf("dns-resolve: %s: not found by DNS\n", DEFAULT_SERVER_IP);
+        printf("dns-resolve: %s: not found by DNS\n", server_ip);
         return 1;
     }
 
@@ -58,7 +101,7 @@ int main(int argc, char *argv[]) {
     } 
 
     struct sockaddr_in dest = {
-        .sin_port = htons(DEFAULT_SERVER_PORT),
+        .sin_port = htons(server_port),
         .sin_family = AF_INET,
     };
 
@@ -112,6 +155,7 @@ int main(int argc, char *argv[]) {
             fflush(stdout);
         }
 
+        // Anything from stdin?
         if (p && fds[1].revents & POLLIN) {
             char c = getchar();
             putchar(c);
