@@ -191,6 +191,7 @@ void kmain() {
     driverfs_init();
     nic_init(); // This initializes the network directory
     socket_init();
+    video_mount();
     pci_mount(); // !!!: Can crash for some reason
     arch_mount_kernelfs();
 
@@ -259,8 +260,8 @@ void kmain() {
     mem_allocatePage(pg, MEM_PAGE_NOT_PRESENT | MEM_PAGE_NOALLOC | MEM_PAGE_READONLY);
 
     // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
-    process_init();
     sleep_init();
+    process_init();
 
     // Load drivers
     if (!kargs_has("--no-load-drivers")) {

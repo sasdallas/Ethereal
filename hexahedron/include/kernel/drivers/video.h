@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 /**** TYPES ****/
 
@@ -34,39 +35,63 @@ struct _video_driver; // Prototype
 
 /**
  * @brief Update the screen and draw the given framebuffer
+ * @param driver The driver to update the screen of
  * @param buffer A linear framebuffer to update the screen with
  */
-typedef void (*updscreen_t)(struct _video_driver *driver, uint8_t *buffer);
+typedef void (*video_updscreen_t)(struct _video_driver *driver, uint8_t *buffer);
 
 /**
  * @brief Load the driver
+ * @param driver The driver object
  */
-typedef void (*load_t)(struct _video_driver *driver);
+typedef int (*video_load_t)(struct _video_driver *driver);
 
 /**
  * @brief Unload the driver
+ * @param driver The driver object
  */
-typedef void (*unload_t)(struct _video_driver *driver);
+typedef int (*video_unload_t)(struct _video_driver *driver);
 
+/**
+ * @brief Map the raw framebuffer into memory
+ * @param driver The driver object
+ * @param size How much of the framebuffer was requested to be mapped into memory
+ * @param off The offset to start mapping at
+ * @param addr The address to map at
+ * @returns Error code
+ */
+typedef int (*video_map_t)(struct _video_driver *driver, size_t size, off_t off, void *addr);
+
+/**
+ * @brief Unmap the raw framebuffer from memory
+ * @param driver The driver object
+ * @param size How much of the framebuffer was mapped in memory
+ * @param off The offset to start mapping at
+ * @param addr The address of the framebuffer memory
+ * @returns 0 on success
+ */
+typedef int (*video_unmap_t)(struct _video_driver *driver, size_t size, off_t off, void *addr);
 
 typedef struct _video_driver {
     // Driver information
     char            name[64];
     
     // Information/fields of the video driver
-    // Optional, you can fill these fields with anything - these are to help the video driver.
     uint32_t        screenWidth;            // Width
     uint32_t        screenHeight;           // Height
     uint32_t        screenPitch;            // Pitch
     uint32_t        screenBPP;              // BPP
-    uint8_t         *videoBuffer;           // Video buffer
+    uint8_t         *videoBuffer;           // Linear video buffer in virtual memory
+    uint8_t         *videoBufferPhys;       // (OPTIONAL) Physical address of video buffer 
     int             allowsGraphics;         // Whether it allows graphics (WARNING: This may be used. It is best to leave this correct!)
     void            *dev;                   // Specific to the driver
 
     // Functions
-    updscreen_t     update;
-    load_t          load;
-    unload_t        unload;
+    video_updscreen_t update;               // Update screen method
+    video_load_t load;                      // Load method
+    video_unload_t unload;                  // Unload method
+    video_map_t map;                        // Map method
+    video_unmap_t unmap;                    // Unmap method
 
     // Fonts and other information will be handled by the font driver
 } video_driver_t;

@@ -72,9 +72,53 @@ int bga_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, ui
 * @brief Update screen function
  */
 void bga_update(struct _video_driver *driver, uint8_t *buffer) {
-    memcpy(driver->videoBuffer, buffer, (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch));
+    memcpy(driver->videoBuffer, buffer, (driver->screenHeight * driver->screenPitch));
 }
 
+/**
+ * @brief Map into memory function
+ * @param driver The driver object
+ * @param size How much of the framebuffer was requested to be mapped into memory
+ * @param off The offset to start mapping at
+ * @param addr The address to map at
+ * @returns Error code
+ */
+int bga_map(struct _video_driver *driver, size_t size, off_t off, void *addr) {
+    size_t bufsz = (driver->screenHeight * driver->screenPitch);
+    if ((size_t)off > bufsz) return -EINVAL;
+    if (off + size > bufsz) size = bufsz-off;
+
+    // Start mapping
+    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
+        mem_mapAddress(NULL, (uintptr_t)driver->videoBufferPhys + i + off, (uintptr_t)addr + i, MEM_PAGE_WRITE_COMBINE);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Unmap the raw framebuffer from memory
+ * @param driver The driver object
+ * @param size How much of the framebuffer was mapped in memory
+ * @param off The offset to start mapping at
+ * @param addr The address of the framebuffer memory
+ * @returns 0 on success
+ */
+int bga_unmap(struct _video_driver *driver, size_t size, off_t off, void *addr) {
+    size_t bufsz = (driver->screenHeight * driver->screenPitch);
+    if (off + size > bufsz) size = bufsz-off;
+
+    for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+        if (pg) {
+            pg->bits.present = 0;
+            pg->bits.rw = 0;
+            pg->bits.usermode = 0;
+        }
+    }
+
+    return 0;
+}
 
 /**
  * @brief Driver initialization function
@@ -123,17 +167,18 @@ int driver_init(int argc, char **argv) {
     driver->screenWidth = VBE_DISPI_MAX_XRES;
     driver->screenHeight = VBE_DISPI_MAX_YRES;
     driver->screenPitch = driver->screenWidth * 4;
-    driver->videoBuffer = (uint8_t*)0xDEADBEEF;
+    driver->videoBufferPhys = (uint8_t*)fb_physical;
     
     // Register methods
     driver->update = bga_update;
-
+    driver->map = bga_map;
+    driver->unmap = bga_unmap;
 
     // Register it, this should unload anything using MEM_FRAMEBUFFER_REGION
     video_switchDriver(driver);
 
     // Map it in
-    size_t fbsize = (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch);
+    size_t fbsize = (driver->screenHeight * driver->screenPitch);
     uintptr_t region = mem_allocate(0, fbsize, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE | MEM_PAGE_NOALLOC);
     for (uintptr_t phys = fb_physical, virt = region;
         phys < fb_physical + fbsize;
@@ -142,7 +187,7 @@ int driver_init(int argc, char **argv) {
         mem_mapAddress(NULL, phys, virt, MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE); // !!!: usermode access?
     }
 
-    driver->videoBuffer = (uint8_t*)region;
+driver->videoBuffer = (uint8_t*)region;
 
     // Reinitialize terminal
     terminal_init(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);

@@ -37,6 +37,7 @@
 #include <kernel/task/process.h>
 #include <kernel/task/syscall.h>
 #include <kernel/gfx/video.h>
+#include <kernel/misc/args.h>
 
 /* List of available drivers */
 static list_t *video_driver_list = NULL;
@@ -46,6 +47,130 @@ static video_driver_t *current_driver = NULL;
 
 /* Video framebuffer. This will be passed to the driver */
 uint8_t *video_framebuffer = NULL;
+
+/* User fb (DEPRECATED) */
+uint8_t *user_fb = NULL;
+
+/* Video VFS node (TEMPORARY) */
+fs_node_t *video_node = NULL;
+
+/* Kill switch (this disables kernel writes to video memory and is temporary) */
+int video_ks = 0;
+
+/**
+ * @brief ioctl method for video node
+ */
+int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+    size_t bufsz = (current_driver->screenWidth * 4) + (current_driver->screenHeight * current_driver->screenPitch);
+    switch (request) {
+        case IO_VIDEO_GET_INFO:
+            // TODO: check range, possible bad behavior
+            if (mem_validate((void*)argp, PTR_USER | PTR_STRICT)) {
+                video_info_t info = {
+                    .screen_width = current_driver->screenWidth,
+                    .screen_height = current_driver->screenHeight,
+                    .screen_bpp = current_driver->screenBPP,
+                    .screen_pitch = current_driver->screenPitch
+                };
+
+                memcpy(argp, (void*)&info, sizeof(video_info_t));
+                return 0;
+            }
+
+            return -EINVAL;
+
+        case IO_VIDEO_SET_INFO:
+            dprintf(ERR, "IO_VIDEO_SET_INFO is unimplemented\n");
+            return -EINVAL;
+
+        // !!!: DEPRECATED!!!!!
+        case IO_VIDEO_GET_FRAMEBUFFER:
+            void **fbout = (void**)argp;
+            if (!mem_validate(argp, PTR_USER | PTR_STRICT)) {
+                dprintf(ERR, "Evil bad process provided a bad argp %p\n", argp);
+                process_exit(current_cpu->current_process, 1);
+            }
+
+            for (uintptr_t i = MEM_USERMODE_DEVICE_REGION; i < MEM_USERMODE_DEVICE_REGION + bufsz; i += PAGE_SIZE) {
+                page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
+                mem_allocatePage(pg, MEM_PAGE_WRITE_COMBINE);
+            }
+
+            user_fb = (uint8_t*)MEM_USERMODE_DEVICE_REGION;
+            *fbout = (void*)MEM_USERMODE_DEVICE_REGION;
+            return 0;
+
+        // !!! DEPRECATED!!!!!!
+        case IO_VIDEO_FLUSH_FRAMEBUFFER:
+            if (user_fb) {
+                size_t bufsz = (current_driver->screenWidth * 4) + (current_driver->screenHeight * current_driver->screenPitch);
+                memcpy(video_framebuffer, user_fb, bufsz);
+                video_updateScreen();
+                return 0;
+            }
+            return 0;
+
+        default:
+            return -EINVAL;
+    }
+}
+
+/**
+ * @brief mmap method for video driver
+ * This just calls into the actual driver's video map method.
+ */
+int video_mmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
+    if (current_driver->map) {
+        // Map it
+        int r = current_driver->map(current_driver, len, offset, addr);
+        if (r != 0) return r;
+
+        // Disable kernel video writes
+        video_ks = 1;
+        return 0;
+    } else {
+        return -ENOTSUP;
+    }
+}
+
+/**
+ * @brief munmap method for video driver
+ * This just calls into the actual driver's video unmap method.
+ */
+int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
+    size_t bufsz = (current_driver->screenHeight * current_driver->screenPitch);
+    len = (len > bufsz) ? bufsz : len;
+
+    for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + len; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+        if (pg) {
+            pg->bits.present = 0;
+            pg->bits.rw = 0;
+            pg->bits.usermode = 0;
+        }
+    }
+
+    // Enable kernel video writes
+    video_ks = 0;
+    return 0;
+}
+
+/**
+ * @brief Mount video node
+ */
+void video_mount() {
+    // Create /device/fb0
+    // TODO: scuffed
+    video_node = kmalloc(sizeof(fs_node_t));
+    memset(video_node, 0, sizeof(fs_node_t));
+    strcpy(video_node->name, "fb0");
+    video_node->ioctl = video_ioctl;
+    video_node->flags = VFS_BLOCKDEVICE;
+    video_node->mask = 0660;
+    video_node->mmap = video_mmap;
+    video_node->munmap = video_munmap;
+    vfs_mount(video_node, "/device/fb0");
+}
 
 /**
  * @brief Initialize and prepare the video system.
@@ -78,12 +203,16 @@ void video_switchDriver(video_driver_t *driver) {
     }
 
     // Allocate framebuffer
-    if (video_framebuffer) {
-        // Reallocate
-        video_framebuffer = krealloc(video_framebuffer, (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch));
+    if (kargs_has("--no-secondary-fb")) {
+        video_framebuffer = driver->videoBuffer;
     } else {
-        // Allocate
-        video_framebuffer = kmalloc((driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch));
+        if (video_framebuffer) {
+            // Reallocate
+            video_framebuffer = (uint8_t*)mem_allocate(0x0, MEM_ALIGN_PAGE((driver->screenHeight * driver->screenPitch)), MEM_ALLOC_HEAP, MEM_PAGE_WRITE_COMBINE);
+        } else {
+            // Allocate
+            video_framebuffer = (uint8_t*)mem_allocate(0x0, MEM_ALIGN_PAGE((driver->screenHeight * driver->screenPitch)), MEM_ALLOC_HEAP, MEM_PAGE_WRITE_COMBINE);
+        }
     }
 
     // Set driver
@@ -136,15 +265,13 @@ void video_plotPixel(int x, int y, color_t color) {
  * @param bg The background of the screen
  */
 void video_clearScreen(color_t bg) {
-    uint8_t *buffer = video_framebuffer;
+    uint32_t *buffer = (uint32_t*)video_framebuffer;
     for (uint32_t y = 0; y < current_driver->screenHeight; y++) {
         for (uint32_t x = 0; x < current_driver->screenWidth; x++) {
-            buffer[x*4] = RGB_B(bg);
-            buffer[x*4+1] = RGB_G(bg);
-            buffer[x*4+2] = RGB_R(bg);  
+            buffer[x] = bg.rgb;
         }
 
-        buffer += current_driver->screenPitch;
+        buffer += (current_driver->screenPitch/4);
     }
 
     // Update screen
@@ -155,6 +282,7 @@ void video_clearScreen(color_t bg) {
  * @brief Update the screen
  */
 void video_updateScreen() {
+    if (video_ks) return;
     if (current_driver != NULL && current_driver->update) {
         current_driver->update(current_driver, video_framebuffer);
     }
@@ -168,5 +296,7 @@ void video_updateScreen() {
  * just call @c video_updateScreen when finished
  */
 uint8_t *video_getFramebuffer() {
+    if (video_ks) return current_driver->videoBuffer;
+
     return video_framebuffer;
 }

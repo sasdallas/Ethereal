@@ -19,8 +19,12 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
 #include <kernel/mem/pmm.h>
+#include <kernel/mem/vas.h>
+#include <kernel/processor_data.h>
+#include <kernel/misc/args.h>
 #include <kernel/debug.h>
 #include <string.h>
+#include <errno.h>
 
 /* Log method */
 #define LOG(status, message, ...) dprintf_module(status, "GRUBVID", message, ## __VA_ARGS__)
@@ -35,13 +39,60 @@ void grubvid_updateScreen(struct _video_driver *driver, uint8_t *buffer) {
 /**
  * @brief Unload function
  */
-void grubvid_unload(video_driver_t *driver) {
+int grubvid_unload(video_driver_t *driver) {
     // Unmap
     for (uintptr_t i = (uintptr_t)driver->videoBuffer; i < (uintptr_t)driver->videoBuffer + (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch);
         i += PAGE_SIZE) 
     {
         mem_allocatePage(mem_getPage(NULL, i, MEM_DEFAULT), MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
     }
+
+    return 0;
+}
+
+/**
+ * @brief Map into memory function
+ * @param driver The driver object
+ * @param size How much of the framebuffer was requested to be mapped into memory
+ * @param off The offset to start mapping at
+ * @param addr The address to map at
+ * @returns Error code
+ */
+int grubvid_map(video_driver_t *driver, size_t size, off_t off, void *addr) {
+    size_t bufsz = (driver->screenHeight * driver->screenPitch);
+    if ((size_t)off > bufsz) return -EINVAL;
+    if (off + size > bufsz) size = bufsz-off;
+
+    // Start mapping
+    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
+        mem_mapAddress(NULL, (uintptr_t)driver->videoBufferPhys + i + off, (uintptr_t)addr + i, MEM_PAGE_WRITE_COMBINE);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Unmap the raw framebuffer from memory
+ * @param driver The driver object
+ * @param size How much of the framebuffer was mapped in memory
+ * @param off The offset to start mapping at
+ * @param addr The address of the framebuffer memory
+ * @returns 0 on success
+ */
+int grubvid_unmap(struct _video_driver *driver, size_t size, off_t off, void *addr) {
+    size_t bufsz = (driver->screenHeight * driver->screenPitch);
+    if (off + size > bufsz) size = bufsz-off;
+
+    for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+        if (pg) {
+            pg->bits.present = 0;
+            pg->bits.rw = 0;
+            pg->bits.usermode = 0;
+        }
+    }
+
+    return 0;
 }
 
 /**
@@ -62,10 +113,14 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
     driver->screenHeight = parameters->framebuffer->framebuffer_height;
     driver->screenPitch = parameters->framebuffer->framebuffer_pitch;
     driver->screenBPP = parameters->framebuffer->framebuffer_bpp;
+    driver->videoBufferPhys = (uint8_t*)parameters->framebuffer->framebuffer_addr;
     driver->allowsGraphics = 1;
 
+    driver->map = grubvid_map;
     driver->update = grubvid_updateScreen;
     driver->unload = grubvid_unload;
+
+    int wc = !kargs_has("--no-write-combine");
 
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
     size_t fbsize = (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch);
@@ -74,7 +129,7 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
             phys < parameters->framebuffer->framebuffer_addr + fbsize;
             phys += PAGE_SIZE, virt += PAGE_SIZE) 
     {
-        mem_mapAddress(NULL, phys, virt, MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE); // !!!: usermode access?
+        mem_mapAddress(NULL, phys, virt, MEM_PAGE_KERNEL | (wc ? MEM_PAGE_WRITE_COMBINE : 0)); // !!!: usermode access?
     }
 
     driver->videoBuffer = (uint8_t*)region;
