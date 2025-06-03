@@ -60,7 +60,7 @@ _Begin_C_Header
 #define SYS_SIGSUSPEND      43
 #define SYS_SIGWAIT         44
 #define SYS_KILL            45
-#define SYS_SOCKETPAIR      46
+#define SYS_SOCKET          46
 #define SYS_BIND            47
 #define SYS_ACCEPT          48
 #define SYS_LISTEN          49
