@@ -329,12 +329,57 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
             } else {
                 // Final transaction?
                 if (TCP_HAS_FLAG(packet, FIN)) {
-                    if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
+                    // Depending on the state, we might need to reply back to close the connection
+                    if (tcpsock->state == TCP_STATE_FIN_WAIT1) {
+                        // We were waiting for this, ACK back normally
+                        TCP_CHANGE_STATE(TCP_STATE_FIN_WAIT2);
+                        if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
+                            socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                        }
+                        TCP_CHANGE_STATE(TCP_STATE_CLOSED);
+                    } else {
+                        // We were probably not expecting this, send back a FIN-ACK
+                        TCP_CHANGE_STATE(TCP_STATE_CLOSE_WAIT);
+                        ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+                        ip_pkt->src_addr = NIC(nic)->ipv4_address;
+                        ip_pkt->dest_addr = ip_packet->src_addr;
+                        ip_pkt->protocol = IPV4_PROTOCOL_TCP;
+                        ip_pkt->id = ip_packet->id;
+                        ip_pkt->versionihl = 0x45;
+                        ip_pkt->length = htons(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
+                        ip_pkt->ttl = IPV4_DEFAULT_TTL;
+                        ip_pkt->checksum = htons(ipv4_checksum(ip_pkt));
+            
+                        tcp_packet_t *pkt = (tcp_packet_t*)ip_pkt->payload;
+                        pkt->src_port = packet->dest_port;
+                        pkt->dest_port = packet->src_port;
+                        pkt->seq = packet->ack; // ???
+                        pkt->ack = htonl(ntohl(packet->seq) + 1); // ???
+                        pkt->flags = htons(TCP_FLAG_FIN | TCP_FLAG_ACK | 0x5000);
+                        pkt->winsz = TCP_DEFAULT_WINSZ;
+            
+                        tcp_checksum_header_t tcp_cksum = {
+                            .dest = ip_pkt->dest_addr,
+                            .length = htons(sizeof(tcp_packet_t)),
+                            .protocol = IPV4_PROTOCOL_TCP,
+                            .reserved = 0,
+                            .src = ip_pkt->src_addr
+                        };
+            
+                        pkt->checksum = htons(tcp_checksum(&tcp_cksum, pkt, NULL, 0));
+            
+                        ipv4_sendPacket(nic, ip_pkt);
+                        kfree(ip_pkt);
+
+                        // Add to queue for any unexpecting sockets
                         socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+
                     }
                 } else if (TCP_HAS_FLAG(packet, ACK)) {
                     // We don't ACK an ACK
-                    socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                    if (tcpsock->state != TCP_STATE_CLOSE_WAIT) {
+                        socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
+                    }
                 }
             }
         }
@@ -355,8 +400,8 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
             tcp_packet_t *pkt = (tcp_packet_t*)ip_pkt->payload;
             pkt->src_port = packet->dest_port;
             pkt->dest_port = packet->src_port;
-            pkt->seq = htonl(1);
-            pkt->ack = htonl(1);
+            pkt->seq = packet->ack; // ???
+            pkt->ack = packet->seq; // ???
             pkt->flags = htons(TCP_FLAG_RST | TCP_FLAG_ACK | 0x5000);
             pkt->winsz = TCP_DEFAULT_WINSZ;
 
@@ -392,7 +437,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
             pkt->src_port = packet->dest_port;
             pkt->dest_port = packet->src_port;
             pkt->seq = packet->ack; // ???
-            pkt->ack = packet->seq; // ???
+            pkt->ack = packet->seq + htonl(1); 
             pkt->flags = htons(TCP_FLAG_ACK | 0x5000);
             pkt->winsz = TCP_DEFAULT_WINSZ;
 
@@ -463,14 +508,26 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     for (int i = 0; i < msg->msg_iovlen; i++) {
         // Read ACK packet
         sock_recv_packet_t *ack_pkt = socket_get(sock);
+        tcp_packet_t *ack_tcp_pkt = (tcp_packet_t*)ack_pkt->data;
+        if (TCP_HAS_FLAG(ack_tcp_pkt, FIN)) {
+            kfree(ack_pkt);
+            return -ECONNRESET;
+        }
         if (!ack_pkt) return -EINTR;
         kfree(ack_pkt);
 
+        // Read normal packet
         sock_recv_packet_t *pkt = socket_get(sock);
         if (!pkt) return -EINTR;
 
         // Get the data
         tcp_packet_t *tcp_pkt = (tcp_packet_t*)pkt->data;
+
+        if (TCP_HAS_FLAG(tcp_pkt, FIN)) {
+            // FIN transaction
+            kfree(pkt);
+            return -ECONNRESET;
+        }
 
         size_t actual_size = pkt->size - sizeof(tcp_packet_t);
         if (actual_size > msg->msg_iov[i].iov_len) {
@@ -748,6 +805,7 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
  */
 int tcp_close(sock_t *sock) {
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
+    if (tcpsock->state != TCP_STATE_ESTABLISHED) return 0; // Socket is already closing
     if (!sock->connected_addr || sock->connected_addr_len < sizeof(struct sockaddr_in)) goto _cleanup_socket;
 
     // We need to do a TCP socket close mechanism
@@ -767,8 +825,8 @@ int tcp_close(sock_t *sock) {
         .urgent = 0
     };
 
-    tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &fin_pkt, NULL, 0);
     TCP_CHANGE_STATE(TCP_STATE_FIN_WAIT1);
+    tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &fin_pkt, NULL, 0);
 
 _cleanup_socket:
     spinlock_acquire(&tcpsock->pending_lock);
