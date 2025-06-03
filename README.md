@@ -13,10 +13,11 @@ Currently, the project is developing its usermode stages.
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ygmgdlm3dowe1.png?width=1620&format=png&auto=webp&s=0473ac09024c17cefb294c8570671e415866b915)\
 *Ethereal booting in debug mode*
 
+![Ethereal but REALLY on IRC](https://github.com/user-attachments/assets/fedac2c5-db99-463f-88d9-44b1a239dcdd)\
+*Ethereal on Libera chat (#ethereal)*
 
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ahe88a85dowe1.png?width=682&format=png&auto=webp&s=b435a1e0d57a91b7d4e0479f9649960b74a22de7)\
 *Ethereal running DOOM*
-
 
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-hspq2m58dowe1.png?width=640&crop=smart&auto=webp&s=8764354d2764cb8bfaa77d1a79f710485880d780)\
 *Ethereal running uname*
