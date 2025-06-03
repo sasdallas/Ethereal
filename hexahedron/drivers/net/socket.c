@@ -421,6 +421,37 @@ int socket_ready(fs_node_t *node, int events) {
 }
 
 /**
+ * @brief Generic socket write method
+ * @param node The node to write to
+ * @param off The offset to write (ignored?)
+ * @param size The size to write
+ * @param buffer The buffer to write
+ */
+ssize_t socket_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
+    if (node->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    struct iovec iov = {
+        .iov_base = buffer,
+        .iov_len = size
+    };
+
+    struct msghdr msg = {
+        .msg_control = NULL,
+        .msg_controllen = 0,
+        .msg_flags = 0,
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_name = NULL,
+        .msg_namelen = 0
+    };
+
+    sock_t *sock = (sock_t*)node->dev;
+    if (sock->sendmsg) return sock->sendmsg(sock, &msg, 0);
+    return -EINVAL;
+}
+
+
+/**
  * @brief Create a new socket for a given process
  * @param proc The process to create the socket for
  * @param domain The domain to use while creating
@@ -453,6 +484,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
         node->dev = (void*)sock;
         node->ready = socket_ready;
         node->close = socket_close;
+        node->write = socket_write;
         node->refcount = 1;
         sock->node = node;
     }

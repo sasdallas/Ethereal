@@ -23,6 +23,9 @@
 #include <errno.h>
 #include <stdlib.h>
 
+/* CI/CD sucks */
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:TCP", __VA_ARGS__)
 
