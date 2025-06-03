@@ -335,11 +335,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
                     process->fd_table->fds[i]->offset = parent->fd_table->fds[i]->offset;
                     process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
                     
-                    process->fd_table->fds[i]->node = kmalloc(sizeof(fs_node_t));
-                    memcpy(process->fd_table->fds[i]->node, parent->fd_table->fds[i]->node, sizeof(fs_node_t));
-                    
-                    process->fd_table->fds[i]->node->refcount = 1;
-                    process->fd_table->fds[i]->node->waiting_nodes = NULL;
+                    process->fd_table->fds[i]->node = fs_copy(parent->fd_table->fds[i]->node);
                 } else {
                     process->fd_table->fds[i] = NULL;
                 }
@@ -442,6 +438,7 @@ void process_destroy(process_t *proc) {
 
         foreach(mmap_node, proc->mmap) {
             if (prev) {
+                LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
                 process_removeMapping(current_cpu->current_process, prev);
                 prev = NULL;
             }

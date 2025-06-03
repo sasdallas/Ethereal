@@ -66,6 +66,14 @@ typedef int (*msync_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*munmap_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*ready_t)(struct fs_node*, int event_type);
 
+// Map context for a file
+typedef struct vfs_mmap_context {
+    struct process *proc;
+    void *addr;
+    size_t size;
+    off_t off;
+} vfs_mmap_context_t;
+
 // Inode structure
 typedef struct fs_node {
     // General information
@@ -104,6 +112,7 @@ typedef struct fs_node {
     ready_t ready;              // Ready function
 
     // Other
+    list_t *mmap_contexts;      // mmap() context list
     spinlock_t waiter_lock;     // The waiter lock
     list_t *waiting_nodes;      // Waiting nodes
     struct fs_node *ptr;        // Used by mountpoints and symlinks
@@ -279,6 +288,20 @@ int fs_alert(fs_node_t *node, int events);
  * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
 int fs_wait(fs_node_t *node, int events);
+
+/**
+ * @brief Destroy a filesystem node immediately
+ * @param node The node to destroy
+ * @warning This does not check if the node has references, just use @c fs_close if you don't know what you're doing
+ */
+void fs_destroy(fs_node_t *node);
+
+/**
+ * @brief Create a copy of a filesystem node object
+ * @param node The node to copy
+ * @returns A new node object
+ */
+fs_node_t *fs_copy(fs_node_t *node);
 
 /**
  * @brief creat() equivalent for VFS

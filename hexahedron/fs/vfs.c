@@ -25,6 +25,7 @@
 #include <kernel/debug.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/processor_data.h>
+#include <kernel/misc/util.h>
 
 #include <structs/tree.h>
 #include <structs/hashmap.h>
@@ -75,7 +76,8 @@ void fs_close(fs_node_t *node) {
     if (node->refcount <= 0) {
         // Nope. It's free memory.
         if (node->close) node->close(node);
-        kfree(node);
+    
+        fs_destroy(node);
     }
 }
 
@@ -289,16 +291,32 @@ int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     if (!node) return -EINVAL;
 
     // Check if node wants to use its custom mmap
+    int r = 0;
     if (node->mmap) {
-        return node->mmap(node, addr, size, off);
+        r = node->mmap(node, addr, size, off);
+        goto _return;
     }
 
     // Load the file in at the address
     // TODO: False reading!!!! SAVE MEMORY!!
     ssize_t actual_size = fs_read(node, off, size, addr);
 
-    // File is loaded, we're done here.
-    return 0;
+    // File is loaded, we're done here.    
+_return:
+    if (!r) {
+        // Create mmap context
+        if (!node->mmap_contexts) node->mmap_contexts = list_create("fs mmap contexts");
+    
+        vfs_mmap_context_t *ctx = kmalloc(sizeof(vfs_mmap_context_t));
+        ctx->proc = current_cpu->current_process;
+        ctx->addr = addr;
+        ctx->size = size;
+        ctx->off = off;
+
+        list_append(node->mmap_contexts, (void*)ctx);
+    }
+
+    return r;
 }
 
 /**
@@ -346,6 +364,22 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
 int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     if (!node) return -EINVAL;
 
+    // Find the mmap context matching this node
+    node_t *ctx = NULL;
+    foreach(mmap_ctx_node, node->mmap_contexts) {
+        vfs_mmap_context_t *mmap_ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
+        if (mmap_ctx && mmap_ctx->addr == addr && mmap_ctx->size == size && mmap_ctx->off == off) {
+            ctx = mmap_ctx_node;
+            break;
+        }
+    }
+
+    if (!ctx) {
+        LOG(WARN, "Corrupt node? Could not find a valid mmap context for node \"%s\" in fs_munmap.\n", node->name);
+    } else {
+        list_delete(node->mmap_contexts, ctx);
+    }
+
     // Check if the node wants to use its custom munmap
     if (node->munmap) {
         return node->munmap(node, addr, size, off);
@@ -353,6 +387,64 @@ int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // Else, just do an msync on the file
     return fs_msync(node, addr, size, off);
+}
+
+/**
+ * @brief Destroy a filesystem node immediately
+ * @param node The node to destroy
+ * @warning This does not check if the node has references, just use @c fs_close if you don't know what you're doing
+ */
+void fs_destroy(fs_node_t *node) {
+    if (!node) return;
+
+    if (node->mmap_contexts) {
+        foreach(mmap_ctx_node, node->mmap_contexts) {
+            vfs_mmap_context_t *ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
+
+            // Is this part of a process?
+            if (ctx->proc) {    
+                foreach(map_node, ctx->proc->mmap) {
+                    process_mapping_t *map = (process_mapping_t*)(map_node->value);
+                    if (RANGE_IN_RANGE((uintptr_t)ctx->addr, (uintptr_t)ctx->addr+ctx->size, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
+                        // TODO: "Close enough" system? 
+                        if (process_removeMapping(ctx->proc, map)) {
+                            LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
+                        }
+                    }
+                }
+            } else {
+                if (fs_munmap(node, ctx->addr, ctx->size, ctx->off)) {
+                    LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
+                }
+            }
+
+            kfree(ctx);
+        }
+
+        list_destroy(node->mmap_contexts, false);
+    }
+
+    spinlock_acquire(&node->waiter_lock);
+
+    if (node->waiting_nodes) {
+        list_destroy(node->waiting_nodes, true);
+    }
+
+    kfree(node);
+}
+
+/**
+ * @brief Create a copy of a filesystem node object
+ * @param node The node to copy
+ * @returns A new node object
+ */
+fs_node_t *fs_copy(fs_node_t *node) {
+    fs_node_t *newnode = kmalloc(sizeof(fs_node_t));
+    memcpy(newnode, node, sizeof(fs_node_t));
+    newnode->refcount = 1;
+    newnode->waiting_nodes = NULL;
+    newnode->mmap_contexts = NULL; 
+    return newnode;
 }
 
 /**

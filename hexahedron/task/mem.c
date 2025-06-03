@@ -146,8 +146,11 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
     if (!map) return 0;
 
     // If there was a file descriptor, close it
-    if (!(map->flags & MAP_ANONYMOUS)) {
-        fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
+    if (!(map->flags & MAP_ANONYMOUS) && map->filedes) {
+        // Sometimes a proc will close a file descriptor before it exited
+        if (FD_VALIDATE(proc, map->filedes)) {
+            fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
+        }
     }
 
     // Free the memory in the VAS

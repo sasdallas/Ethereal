@@ -214,7 +214,7 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
     // stdout?
-    if (fd == STDOUT_FILE_DESCRIPTOR || fd == STDERR_FILE_DESCRIPTOR) {
+    if (fd == STDOUT_FILE_DESCRIPTOR) {
         char *buf = (char*)buffer;
         for (size_t i = 0; i < count; i++) terminal_putchar(buf[i]);
         video_updateScreen();
