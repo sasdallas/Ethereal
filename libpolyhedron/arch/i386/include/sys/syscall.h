@@ -72,6 +72,7 @@ _Begin_C_Header
 #define SYS_SHUTDOWN        55
 #define SYS_GETSOCKNAME     56
 #define SYS_GETPEERNAME     57
+#define SYS_SOCKETPAIR      58
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \
