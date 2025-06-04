@@ -199,6 +199,37 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
 }
 
 /**
+ * @brief Socket read method
+ * @param node The node to read
+ * @param off Offset
+ * @param size Size
+ * @param buffer Buffer
+ */
+ssize_t socket_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+    if (node->flags != VFS_SOCKET) return -ENOTSOCK;
+    sock_t *sock = (sock_t*)node->dev;
+    if (!sock->recvmsg) return -EINVAL;
+
+    // TODO: Offset?
+    struct iovec iov = {
+        .iov_base = buffer,
+        .iov_len = size
+    };
+
+    struct msghdr msg = {
+        .msg_control = NULL,
+        .msg_controllen = 0,
+        .msg_flags = 0,
+        .msg_name = NULL,
+        .msg_namelen = 0,
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+    };
+
+    return sock->recvmsg(sock, &msg, 0);
+}
+
+/**
  * @brief Setsockopt for the @c SOL_SOCKET type of sockets
  * @param sock The socket to set options for
  * @param option_name The option to set
@@ -484,6 +515,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
         node->dev = (void*)sock;
         node->ready = socket_ready;
         node->close = socket_close;
+        node->read = socket_read;
         node->write = socket_write;
         node->refcount = 1;
         sock->node = node;
@@ -539,7 +571,6 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
 
     // Wakeup a thread from the queue
-    LOG(DEBUG, "Waking up a single thread from queue - packet received\n");
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
 
     spinlock_release(sock->recv_lock);

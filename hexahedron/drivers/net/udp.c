@@ -112,7 +112,6 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     // Need to setup msg_name?
     if (msg->msg_namelen == sizeof(struct sockaddr_in)) {
         if (msg->msg_name && pkt) {
-            // !!!: Multiple IOVs, diff sources, what?
             struct sockaddr_in *in = (struct sockaddr_in*)msg->msg_name;
             in->sin_port = ((udp_packet_t*)((ipv4_packet_t*)pkt->data)->payload)->src_port;
             in->sin_family = AF_INET;
@@ -134,10 +133,11 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  */
 ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
-    
+
     // Did they specify a msg_name?
     struct sockaddr_in *in;
     if (!msg->msg_name) {
+        if (!sock->connected_addr) return -ENOTCONN;
         if (sock->connected_addr_len != sizeof(struct sockaddr_in)) {
             LOG(ERR, "connected_addr_len != sizeof(struct sockaddr_in)\n");
             return -EINVAL;
@@ -165,6 +165,8 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!nic) return -EHOSTUNREACH;
 
     ssize_t sent_bytes = 0;
+
+    // UDP preserves message boundaries. Each iovec should contain one packet.
     for (int i = 0; i < msg->msg_iovlen; i++) {
         // Construct an IPv4 packet
         ipv4_packet_t *pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);

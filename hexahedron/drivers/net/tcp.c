@@ -504,6 +504,13 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         return -EINVAL; // ??? right error
     }
 
+
+    if (msg->msg_iovlen > 1) {
+        LOG(ERR, "More than one iovec is not currently supported (KERNEL BUG)\n");
+        return -ENOTSUP;
+    }
+
+    // !!!: Incompliant. This should NOT BE LIKE IT IS RIGHT NOW.
     ssize_t total_received = 0;
     for (int i = 0; i < msg->msg_iovlen; i++) {
         // Read ACK packet
@@ -530,6 +537,9 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         size_t actual_size = pkt->size - sizeof(tcp_packet_t);
+        
+        // TODO: This isn't valid. We need to split the data across the iovecs,
+        // TODO: not put one packet in one iovec.
         if (actual_size > msg->msg_iov[i].iov_len) {
             // TODO: Set MSG_TRUNC and store this data to be reread
             LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);

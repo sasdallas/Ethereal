@@ -51,6 +51,7 @@
 #include <kernel/drivers/net/socket.h>
 #include <kernel/drivers/net/udp.h>
 #include <kernel/drivers/net/tcp.h>
+#include <kernel/drivers/net/unix.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -206,6 +207,7 @@ void kmain() {
     icmp_init();
     udp_init();
     tcp_init();
+    unix_init();
 
     // Setup loopback interface
     loopback_install();
