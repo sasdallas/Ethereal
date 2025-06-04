@@ -5,7 +5,7 @@
  * This hashmap uses the SDBM hashing algorithm on the keys.
  * SDBM is public domain - see http://www.cse.yorku.ca/~oz/hash.html
  * 
- * Most of this hashing code is sourced from the old Ethereal Operating System kernel. 
+ * Most of this hashing code is sourced from the old reduceOS kernel. 
  * It uses a list of entries, each of which is indexed based on the SDBM hash
  * of the key, and these entries can also contain their own lists of hash elements.
  * 
@@ -20,14 +20,14 @@
  */
 
 #include <structs/hashmap.h>
-#include <kernel/mem/alloc.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* TODO: More hashmap types */
 #define HASHMAP_COMPARE(a, b) ((hashmap->type == HASHMAP_INT) ? (a == b) : (!strncmp(a, b, 256)))
 #define HASHMAP_COPY(a) ((hashmap->type == HASHMAP_INT) ? a : strdup(a))
 #define HASHMAP_HASH(a) ((hashmap->type == HASHMAP_INT) ? (unsigned long)a : hashmap_hash(a))
-#define HASHMAP_FREE(a) ((hashmap->type == HASHMAP_INT) ? 0 : kfree(a))
+#define HASHMAP_FREE(a) ((hashmap->type == HASHMAP_INT) ? 0 : free(a))
 
 /**
  * @brief SDBM hashing function for storing entries
@@ -50,11 +50,11 @@ unsigned long hashmap_hash(char *key) {
  * @param size The amount of entries in the hashmap.
  */
 hashmap_t *hashmap_create(char *name, size_t size) {
-    hashmap_t *map = kmalloc(sizeof(hashmap_t));
+    hashmap_t *map = malloc(sizeof(hashmap_t));
     map->name = name;
     map->type = HASHMAP_PTR;
     map->size = size;
-    map->entries = kmalloc(sizeof(hashmap_node_t*) * size); // Every entry is allocated separately. We're instead allocating pointers.
+    map->entries = malloc(sizeof(hashmap_node_t*) * size); // Every entry is allocated separately. We're instead allocating pointers.
     memset(map->entries, 0, sizeof(hashmap_node_t*) * size);
 
     return map;
@@ -67,11 +67,11 @@ hashmap_t *hashmap_create(char *name, size_t size) {
  * @note An integer hashmap means that no keys in the hashmap will ever be touched in memory
  */
 hashmap_t *hashmap_create_int(char *name, size_t size) {
-    hashmap_t *map = kmalloc(sizeof(hashmap_t));
+    hashmap_t *map = malloc(sizeof(hashmap_t));
     map->name = name;
     map->type = HASHMAP_INT;
     map->size = size;
-    map->entries = kmalloc(sizeof(hashmap_node_t*) * size); // Every entry is allocated separately. We're instead allocating pointers.
+    map->entries = malloc(sizeof(hashmap_node_t*) * size); // Every entry is allocated separately. We're instead allocating pointers.
     memset(map->entries, 0, sizeof(hashmap_node_t*) * size);
 
     return map;
@@ -93,7 +93,7 @@ void hashmap_set(hashmap_t *hashmap, void *key, void *value) {
     // Check if it's NULL - if it is allocate.
     if (entry == NULL) {
         // Allocate a new node
-        hashmap_node_t *node = kmalloc(sizeof(hashmap_node_t));
+        hashmap_node_t *node = malloc(sizeof(hashmap_node_t));
         node->key = HASHMAP_COPY(key); // !!!: desperate refining
         node->value = value;
         node->next = NULL;
@@ -116,7 +116,7 @@ void hashmap_set(hashmap_t *hashmap, void *key, void *value) {
         } while (entry);
 
         // Done, we came to the last entry in the chain. Tack this one on.
-        hashmap_node_t *node = kmalloc(sizeof(hashmap_node_t));
+        hashmap_node_t *node = malloc(sizeof(hashmap_node_t));
         node->key = HASHMAP_COPY(key);
         node->value = value;
         node->next = NULL;
@@ -166,7 +166,7 @@ void *hashmap_remove(hashmap_t *hashmap, void *key) {
             hashmap->entries[hash] = entry->next;
             void *output = entry->value; // Return value
             HASHMAP_FREE(entry->key);
-            kfree(entry);
+            free(entry);
             return output;
         } else {
             // Now we have to iterate through each one, find the one before it and patch the chain.
@@ -179,7 +179,7 @@ void *hashmap_remove(hashmap_t *hashmap, void *key) {
                     // Free values
                     void *output = entry->value;
                     HASHMAP_FREE(entry->key);
-                    kfree(entry);
+                    free(entry);
                     return output;
                 } else {
                     last_node = entry;
@@ -264,10 +264,10 @@ void hashmap_free(hashmap_t *hashmap) {
 
             // Now free it.
             HASHMAP_FREE(temp->key);
-            kfree(temp);
+            free(temp);
         }
     }
 
     // Free the entry map
-    kfree(hashmap->entries);
+    free(hashmap->entries);
 }
