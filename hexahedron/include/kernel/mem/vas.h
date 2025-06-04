@@ -39,6 +39,11 @@
 
 #define VAS_PROT_DEFAULT    VAS_PROT_READ | VAS_PROT_WRITE | VAS_PROT_EXEC
 
+/* Types of allocations */
+#define VAS_ALLOC_NORMAL        1       // Normal allocation
+#define VAS_ALLOC_MMAP          2       // Memory mapping that should remain untouched
+#define VAS_ALLOC_MMAP_SHARE    3       // Shared allocation
+
 /**** TYPES ****/
 
 /**
@@ -51,6 +56,7 @@ typedef struct vas_allocation {
     uintptr_t base;                 // Base of allocation
     size_t size;                    // Size of allocation
     uint8_t prot;                   // Protection flags
+    uint8_t type;                   // Type of allocation
     struct vas_allocation *next;    // Next allocation in the chain
     struct vas_allocation *prev;    // Previous allocation in the chain
 } vas_allocation_t;

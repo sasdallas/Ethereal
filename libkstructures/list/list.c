@@ -12,6 +12,7 @@
  */
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
 
@@ -23,7 +24,7 @@
  * @param name Optional name for debugging
  */
 list_t *list_create(char *name) {
-    list_t *list = kmalloc(sizeof(list_t));
+    list_t *list = malloc(sizeof(list_t));
     list->name = name;
     list->head = NULL;
     list->tail = NULL;
@@ -43,13 +44,13 @@ void list_destroy(list_t *list, bool free_values) {
     node_t *node = list->head;
     while (node) {
         node_t *next = node->next;
-        if (free_values) kfree(node->value);
-        kfree(node);
+        if (free_values) free(node->value);
+        free(node);
         node = next;
     }
 
     // Free the list
-    kfree(list);
+    free(list);
 }
 
 
@@ -83,7 +84,7 @@ void list_append_node(list_t *list, node_t *node) {
  * @param item The item to append
  */
 void list_append(list_t *list, void *item) {
-    node_t *node = kmalloc(sizeof(node_t));
+    node_t *node = malloc(sizeof(node_t));
     node->value = item;
     list_append_node(list, node);
 }
@@ -125,7 +126,7 @@ void list_append_node_after(list_t *list, node_t *append_to, node_t *node) {
  * @param item The item to append
  */
 void list_append_after(list_t *list, node_t *append_to, void *item) {
-    node_t *node = kmalloc(sizeof(node_t));
+    node_t *node = malloc(sizeof(node_t));
     node->value = item;
     list_append_node_after(list, append_to, node);
 }
@@ -170,7 +171,7 @@ void list_append_node_before(list_t *list, node_t *append_before, node_t *node) 
  * @param item The item to append
  */
 void list_append_before(list_t *list, node_t *append_before, void *item) {
-    node_t *node = kmalloc(sizeof(node_t));
+    node_t *node = malloc(sizeof(node_t));
     node->value = item;
     list_append_node_before(list, append_before, node);
 }

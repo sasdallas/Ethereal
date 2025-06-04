@@ -113,8 +113,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // TODO: Protect allocation
-    // TODO: Mark it?
-
+    alloc->type = VAS_ALLOC_MMAP;
     map->addr = (void*)alloc->base;
 
     vas_dump(current_cpu->current_process->vas);

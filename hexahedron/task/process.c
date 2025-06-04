@@ -21,6 +21,7 @@
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 
 #include <structs/tree.h>
 #include <structs/list.h>
@@ -311,6 +312,25 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->dir = mem_clone(NULL);
     }
 
+    // Do we need to copy mappings?
+    if (parent) {
+        vas_allocation_t *alloc = parent->vas->head;
+        vas_allocation_t *alloc_past = NULL;
+
+        while (alloc) {
+            // Create and copy this allocation
+            vas_allocation_t *new_alloc = kmalloc(sizeof(vas_allocation_t));
+            memcpy(new_alloc, alloc, sizeof(vas_allocation_t));
+            if (!alloc->prev) process->vas->head = new_alloc;
+            new_alloc->prev = alloc_past;
+            if (alloc_past) alloc_past->next = new_alloc;
+            alloc_past = new_alloc;
+            alloc = alloc->next;
+        }
+
+        process->vas->allocations = parent->vas->allocations;
+        process->vas->dir = process->dir;
+    }
 
     // Create file descriptor table
     if (parent && 0) {
@@ -439,7 +459,7 @@ void process_destroy(process_t *proc) {
         foreach(mmap_node, proc->mmap) {
             if (prev) {
                 LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-                process_removeMapping(current_cpu->current_process, prev);
+                process_removeMapping(proc, prev);
                 prev = NULL;
             }
 
@@ -449,7 +469,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        // if (prev) process_removeMapping(current_cpu->current_process, prev);
+        if (prev) process_removeMapping(proc, prev);
         list_destroy(proc->mmap, false);
     }
 
@@ -731,6 +751,7 @@ void process_exit(process_t *process, int status_code) {
             sleep_wakeup(thr);
         }
 
+        // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
         process_switchNextThread(); // !!!: Hopefully that works and they free us..
     } 
 

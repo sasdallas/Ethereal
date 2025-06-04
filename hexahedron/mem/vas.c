@@ -285,6 +285,8 @@ int vas_free(vas_t *vas, vas_allocation_t *allocation) {
 
     // TODO: Free pages? CoW will handle this..
 
+    LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, allocation->type == VAS_ALLOC_NORMAL ? "NORMAL" : "MMAP  ", allocation->base, allocation->base + allocation->size);
+
     // Free and return
     kfree(allocation);
     vas->allocations--;
@@ -370,7 +372,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         if (pg) mem_allocatePage(pg, flags);
     }
 
-    LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), address+actual_map_size);
+    // LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), address+actual_map_size);
     return 1;
 }
 
