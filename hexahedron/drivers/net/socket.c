@@ -21,6 +21,7 @@
 #include <string.h>
 #include <structs/hashmap.h>
 #include <errno.h>
+#include <sys/ioctl.h>
 
 /* Handler map */
 hashmap_t *socket_map = NULL;
@@ -195,6 +196,24 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
         return sock->recvmsg(sock, message, flags);
     } else {
         return -EINVAL;
+    }
+}
+
+/**
+ * @brief Socket ioctl method
+ * @param node The node to do ioctl() on
+ * @param request The requested ioctl()
+ * @param argp The argument to ioctl
+ */
+int socket_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+    sock_t *sock = (sock_t*)node->dev;
+    switch (request) {
+        case FIONBIO:
+            SYSCALL_VALIDATE_PTR(argp);
+            sock->flags |= (*(int*)argp ? SOCKET_FLAG_NONBLOCKING : 0);
+            return 0;
+        default:
+            return -EINVAL;
     }
 }
 
@@ -517,6 +536,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
         node->close = socket_close;
         node->read = socket_read;
         node->write = socket_write;
+        node->ioctl = socket_ioctl;
         node->refcount = 1;
         sock->node = node;
     }

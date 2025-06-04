@@ -23,6 +23,10 @@ _Begin_C_Header;
 #include <sys/types.h>
 #include <unistd.h>
 
+/**** DEFINITIONS ****/
+
+#define FIONBIO         0x8001      // Set to nonblocking mode
+
 /**** FUNCTIONS ****/
 
 int ioctl(int fd, unsigned long request, ...);

@@ -31,6 +31,7 @@
 #define SOCKET_FLAG_KEEPALIVE           0x08
 #define SOCKET_FLAG_OOBINLINE           0x10
 #define SOCKET_FLAG_DONTROUTE           0x20
+#define SOCKET_FLAG_NONBLOCKING         0x40
 
 /**** TYPES ****/
 
@@ -97,7 +98,6 @@ typedef struct sock_recv_packet {
  * If you leave @c sock->recv_queue or @c sock->recv_lock as NULL, they will be allocated for you.
  */
 typedef sock_t* (*socket_create_t)(int type, int protocol);
-
 
 /**** FUNCTIONS ****/
 

@@ -198,7 +198,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         un = &temp;
     }
 
-    // For each iovec...
+    if (!sock->recv_queue->length && sock->flags & SOCKET_FLAG_NONBLOCKING) return -EWOULDBLOCK;
 
     ssize_t total_received = 0;
     if (sock->type == SOCK_DGRAM) {
@@ -498,6 +498,8 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
 
     while (1) {
         if (!usock->incoming_connections->length) {
+            if (sock->flags & SOCKET_FLAG_NONBLOCKING) return -EWOULDBLOCK;
+            
             // Wait for a connection event  
             sleep_untilNever(current_cpu->current_thread);
             usock->thr = current_cpu->current_thread;
