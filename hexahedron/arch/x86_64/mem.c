@@ -183,7 +183,7 @@ void mem_destroyVAS(page_t *vas) {
                                 if (pg->bits.usermode && pg->bits.present && pg->bits.address) {
                                     // Free this page (only if refcounts == 0)
                                     uintptr_t address = ((pml4e << (9 * 3 + 12)) | (pdpte << (9*2 + 12)) | (pde << (9 + 12)) | (pte << MEM_PAGE_SHIFT));
-                                    LOG(DEBUG, "Usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
+                                    // LOG(DEBUG, "Usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
 
                                     if (pg->bits.rw) {
                                         mem_freePage(pg);

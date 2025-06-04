@@ -187,7 +187,7 @@ int driver_init(int argc, char **argv) {
         mem_mapAddress(NULL, phys, virt, MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE); // !!!: usermode access?
     }
 
-driver->videoBuffer = (uint8_t*)region;
+    driver->videoBuffer = (uint8_t*)region;
 
     // Reinitialize terminal
     terminal_init(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);

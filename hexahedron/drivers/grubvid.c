@@ -113,7 +113,7 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
     driver->screenHeight = parameters->framebuffer->framebuffer_height;
     driver->screenPitch = parameters->framebuffer->framebuffer_pitch;
     driver->screenBPP = parameters->framebuffer->framebuffer_bpp;
-    driver->videoBufferPhys = (uint8_t*)parameters->framebuffer->framebuffer_addr;
+    driver->videoBufferPhys = (uint8_t*)(uintptr_t)parameters->framebuffer->framebuffer_addr;
     driver->allowsGraphics = 1;
 
     driver->map = grubvid_map;
