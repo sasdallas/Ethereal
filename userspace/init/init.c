@@ -42,8 +42,6 @@ int main(int argc, char *argv[]) {
 
     putenv("PATH=/device/initrd/bin/:"); // TEMP
 
-
-
     printf("Welcome to Ethereal\n");
     printf("Initializing shell...\n");
 
