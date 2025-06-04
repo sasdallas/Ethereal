@@ -1,0 +1,96 @@
+/**
+ * @file hexahedron/include/kernel/drivers/net/unix.h
+ * @brief UNIX socket
+ * 
+ * 
+ * @copyright
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * It is released under the terms of the BSD 3-clause license.
+ * Please see the LICENSE file in the main repository for more details.
+ * 
+ * Copyright (C) 2025 Samuel Stuart
+ */
+
+#ifndef DRIVERS_NET_UNIX_H
+#define DRIVERS_NET_UNIX_H
+
+/**** INCLUDES ****/
+#include <stdint.h>
+#include <sys/socket.h>
+#include <structs/list.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/drivers/net/socket.h>
+#include <sys/un.h>
+
+/**** DEFINITIONS ****/
+
+#define UNIX_TYPE_ORDERED   0
+#define UNIX_TYPE_BETTER    1   // UDP is better!
+
+/* Packet types for an ordered UNIX transfer */
+#define UNIX_PACKET_TYPE_DATA   0   // New data
+#define UNIX_PACKET_TYPE_ACK    1   // Acknowledgement of previous data
+#define UNIX_PACKET_TYPE_CLOSE  2   // Close connection
+#define UNIX_PACKET_TYPE_ACCEPT 3   // Accept connection and start sesion
+
+/**** TYPES ****/
+
+typedef struct unix_ordered_packet {
+    uint8_t type;                       // Type of the packet
+    uint32_t pkt_idx;                   // Index of packet
+    size_t size;                        // Size of the packet (including header)
+    uint8_t data[];                     // Data of the packet
+} unix_ordered_packet_t;
+
+typedef struct unix_unordered_packet {
+    struct sockaddr_un un;              // Address of incoming
+    size_t size;                        // Size of the packet (including header)
+    uint8_t data[];                     // Data of the packet
+} unix_unordered_packet_t;
+
+typedef struct unix_conn_request {
+    sock_t *sock;                       // Incoming connection request socket
+} unix_conn_request_t;
+
+typedef struct unix_sock {
+    sock_t *connected_socket;           // Connected socket
+    struct thread *thr;                 // Thread to wakeup on new packet
+    fs_node_t *bound;                   // Bound node
+    char sun_path[108];                 // Path to socket
+
+    uint32_t packet_index;              // (Ordered) Packet index
+    spinlock_t incoming_connect_lock;   // Incoming socket connections lock
+    list_t *incoming_connections;       // Incoming socket connections
+} unix_sock_t;
+
+/**** FUNCTIONS ****/
+
+/**
+ * @brief Initialize the UNIX socket system
+ */
+void unix_init();
+
+/**
+ * @brief Create a UNIX socket
+ * @param type The type
+ * @param protocol The protocol
+ */
+sock_t *unix_socket(int type, int protocol);
+
+/**
+ * @brief Send a packet to a connected UNIX socket
+ * @param sock The UNIX packet to send on
+ * @param packet The packet to send
+ * @param size Size of the packet
+ * @returns 0 on success (for ordered will block until ACK if needed)
+ */
+int unix_sendPacket(sock_t *sock, void *packet, size_t size);
+
+/**
+ * @brief Read a packet from a UNIX socket
+ * @param sock The UNIX socket to read from
+ * @returns Received packet
+ */
+sock_recv_packet_t *unix_getPacket(sock_t *sock);
+
+#endif
