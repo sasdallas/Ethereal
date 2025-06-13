@@ -18,6 +18,10 @@ ifeq ($(USE_ACPICA), 1)
 PROJECTS += acpica
 endif
 
+else ifeq ($(HOSTARCH), aarch64)
+# Required for aarch64
+PROJECTS := musl
+
 else
 PROJECTS :=
 endif
