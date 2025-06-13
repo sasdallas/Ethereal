@@ -28,17 +28,22 @@
 /**** TYPES ****/
 
 #if defined(__ARCH_I386__)
+#include <kernel/arch/i386/arch.h>
 #include <kernel/arch/i386/cpu.h>
 #include <kernel/arch/i386/registers.h>
 #include <kernel/arch/i386/context.h>
-#include <kernel/arch/i386/registers.h>
 #include <kernel/arch/i386/hal.h>
 #elif defined(__ARCH_X86_64__)
+#include <kernel/arch/x86_64/arch.h>
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/arch/x86_64/registers.h>
 #include <kernel/arch/x86_64/context.h>
-#include <kernel/arch/x86_64/registers.h>
 #include <kernel/arch/x86_64/hal.h>
+#elif defined(__ARCH_AARCH64__)
+#include <kernel/arch/aarch64/arch.h>
+#include <kernel/arch/aarch64/registers.h>
+#include <kernel/arch/aarch64/context.h>
+#include <kernel/arch/aarch64/hal.h>
 #else
 #error "Please define your includes here"
 #endif

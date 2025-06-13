@@ -24,6 +24,8 @@ list_t *breakpoints = NULL;
 /* Breakpoint instruction */
 #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
 #define BREAKPOINT_INSTRUCTION 0xCC // shorthand for INT3
+#elif defined(__ARCH_AARCH64__)
+#define BREAKPOINT_INSTRUCTION 0xAA // !!!: UNIMPL
 #endif
 
 /**

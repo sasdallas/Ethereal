@@ -145,8 +145,6 @@ int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
         page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
         if (pg) {
             pg->bits.present = 0;
-            pg->bits.rw = 0;
-            pg->bits.usermode = 0;
         }
     }
 

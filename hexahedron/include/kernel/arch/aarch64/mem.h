@@ -1,6 +1,6 @@
 /**
- * @file hexahedron/include/kernel/arch/x86_64/mem.h
- * @brief x86_64-specific memory systems
+ * @file hexahedron/include/kernel/arch/aarch64/mem.h
+ * @brief aarch64-specific memory systems
  * 
  * 
  * @copyright
@@ -11,8 +11,8 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#ifndef KERNEL_ARCH_X86_64_MEM_H
-#define KERNEL_ARCH_X86_64_MEM_H
+#ifndef KERNEL_ARCH_AARCH64_MEM_H
+#define KERNEL_ARCH_AARCH64_MEM_H
 
 /**** INCLUDES ****/
 #include <stdint.h>
@@ -24,23 +24,22 @@ typedef union page {
     // You can manually manipulate these flags
     struct {
         uint64_t present:1;         // Present in memory
-        uint64_t rw:1;              // R/W
-        uint64_t usermode:1;        // Usermode
-        uint64_t writethrough:1;    // Writethrough
-        uint64_t cache_disable:1;   // Uncacheable
-        uint64_t accessed:1;        // Accessed
-        uint64_t dirty:1;           // Dirty
-        uint64_t size:1;            // Page size - 4MiB or 4KiB
-                                    // IMPORTANT: This is also the PAT bit for PTEs
-        uint64_t global:1;          // Global
-        uint64_t available2:3;      // Free bits!
-        uint64_t address:28;        // The page data
-        uint64_t reserved:12;       // These should be set to 0
-        uint64_t cow:1;             // Copy on write, part of available and impl-specific
-        uint64_t available3:10;     // Free bits!
-        uint64_t nx:1;              // No execute bit
+        uint64_t table:1;           // Is a table
+        uint64_t indx:3;            // MAIR index
+        uint64_t ns:1;              // Security
+        uint64_t ap:1;              // Access permission
+        uint64_t sh:1;              // Shareable
+        uint64_t af:1;              // Access flag
+        uint64_t address:36;        // Address/frame
+        uint64_t reserved:4;        // Reserved
+        uint64_t contig:1;          // Contiguous
+        uint64_t pxn:1;             // Priviliged eXecute Never
+        uint64_t uxn:1;             // Unprivileged eXecute Never
+        uint64_t cow:1;             // Copy-on-write
+        uint64_t available:3;       // Available!
+        uint64_t reserved2:5;       // Reserved
     } bits;
-    
+
     // Or use the raw flags
     uint64_t data;
 } page_t;
@@ -48,13 +47,12 @@ typedef union page {
 /**** DEFINITIONS ****/
 
 #define PAGE_SIZE       0x1000      // 4 KiB
-#define PAGE_SIZE_LARGE 0x200000    // 2 MiB
 
 // Page shifting
 #define MEM_PAGE_SHIFT  12
 
 
-// IMPORTANT: THIS IS THE HEXAHEDRON MEMORY MAP CONFIGURED FOR X86_64
+// IMPORTANT: THIS IS THE HEXAHEDRON MEMORY MAP CONFIGURED FOR AARCH64
 // 0x0000000000000000 - 0x0000700000000000: Userspace region
 // 0x0000600000000000 - 0x0000700000000000: Usermode stack. Only a small amount of this is mapped to start with
 // 0x0000700000000000 - 0x0000800000000000: DMA region
@@ -88,22 +86,22 @@ typedef union page {
 #define MEM_ALIGN_PAGE(addr) ((addr + PAGE_SIZE) & ~0xFFF) // Align an address to the nearest page
 #define MEM_ALIGN_PAGE_DESTRUCTIVE(addr) (addr & ~0xFFF) // Align an address to the nearest page, discarding any bits
 
-#define MEM_PML4_INDEX(x) ((x >> (MEM_PAGE_SHIFT + 27)) & 0x1FF)
-#define MEM_PDPT_INDEX(x) ((x >> (MEM_PAGE_SHIFT + 18)) & 0x1FF)
-#define MEM_PAGEDIR_INDEX(x) ((x >> (MEM_PAGE_SHIFT + 9)) & 0x1FF)
-#define MEM_PAGETBL_INDEX(x) ((x >> MEM_PAGE_SHIFT) & 0x1FF)
-
 #define MEM_SET_FRAME(page, frame) (page->bits.address = ((uintptr_t)frame >> MEM_PAGE_SHIFT))      // Set the frame of a page. Used because of our weird union thing.
 #define MEM_GET_FRAME(page) (page->bits.address << MEM_PAGE_SHIFT)                                  // Get the frame of a page. Used because of our weird union thing.
 
 #define MEM_IS_CANONICAL(addr) (((addr & 0xFFFF000000000000) == 0xFFFF000000000000) || !(addr & 0xFFFF000000000000))    // Ugly macro to verify if an address is canonical
 
+/* AP flags */
+// https://developer.arm.com/documentation/102376/0100/Permissions-attributes
+#define MEM_AP_USER_FLAG    0x1
+#define MEM_AP_RO_FLAG      0x2
+
 /* ACCESSIBLE MACROS */
 #define PAGE_IS_PRESENT(pg) (pg && pg->bits.present)
-#define PAGE_IS_WRITABLE(pg) (pg && pg->bits.rw)
-#define PAGE_IS_USERMODE(pg) (pg && pg->bits.usermode)
+#define PAGE_IS_WRITABLE(pg) (pg && !(pg->bits.ap & MEM_AP_RO_FLAG))
+#define PAGE_IS_USERMODE(pg) (pg && pg->bits.ap & MEM_AP_USER_FLAG)
 #define PAGE_IS_COW(pg) (pg && pg->bits.cow)
-#define PAGE_IS_DIRTY(pg) (pg && pg->bits.dirty)
+#define PAGE_IS_DIRTY(pg) (1)
 
 #define PAGE_PRESENT(pg) (pg->bits.present)
 #define PAGE_COW(pg) (pg->bits.cow)

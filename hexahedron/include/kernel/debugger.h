@@ -55,7 +55,11 @@ typedef struct _breakpoint {
 
 /**** MACROS ****/
 
+#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
 #define BREAKPOINT() if (debugger_isConnected()) asm volatile ("int $0x03")
+#else
+#define BREAKPOINT() asm ("")
+#endif
 
 /**** FUNCTIONS ****/
 

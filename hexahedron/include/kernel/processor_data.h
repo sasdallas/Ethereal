@@ -83,6 +83,10 @@ extern int processor_count;
 
 static processor_t __seg_gs * const current_cpu = 0;
 
+#elif defined(__ARCH_AARCH64__)
+
+register processor_t * current_cpu asm("x18"); 
+
 #else
 #error "Please define a method of getting processor data"
 #endif

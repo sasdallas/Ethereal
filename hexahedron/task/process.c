@@ -817,6 +817,8 @@ pid_t process_fork() {
     r.eax = 0;
 #elif defined(__ARCH_X86_64__)
     r.rax = 0;
+#elif defined(__ARCH_AARCH64__)
+    r.x0 = 0;
 #else
     #error "Please handle this hacky garbage."
 #endif

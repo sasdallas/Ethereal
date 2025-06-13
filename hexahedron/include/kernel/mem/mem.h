@@ -24,6 +24,8 @@
 #include <kernel/arch/i386/mem.h> // Arch-specific definitions, like directory, entries, etc)
 #elif defined(__ARCH_X86_64__)
 #include <kernel/arch/x86_64/mem.h>
+#elif defined(__ARCH_AARCH64__)
+#include <kernel/arch/aarch64/mem.h>
 #else
 #error "Unsupported architecture for memory management"
 #endif
