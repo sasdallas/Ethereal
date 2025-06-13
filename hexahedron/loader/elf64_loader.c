@@ -12,7 +12,7 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#if defined(__ARCH_X86_64__) || defined(__INTELLISENSE__)
+#if defined(__ARCH_X86_64__) || defined(__INTELLISENSE__) || defined(__ARCH_AARCH64__)
 
 #include <kernel/loader/elf_loader.h>
 #include <kernel/loader/elf.h>
@@ -204,6 +204,8 @@ static uintptr_t elf_relocateSymbol(Elf64_Ehdr *ehdr, Elf64_Rel *rel, Elf64_Shdr
             // Symbol + Offset - Section Offset
             *((uint32_t*)reference) = RELOCATE_X86_64_PC32(symval, *reference, (uintptr_t)reference);
             break;
+    #elif defined(__ARCH_AARCH64__)
+        /* TODO */
     #else
         #error "Please define your ELF relocation types"
     #endif
@@ -264,6 +266,9 @@ static uintptr_t elf_relocateSymbolAddend(Elf64_Ehdr *ehdr, Elf64_Rela *rel, Elf
             // Symbol + Offset - Section Offset
             *((uint32_t*)reference) = RELOCATE_X86_64_PC32(symval, (int)rel->r_addend, (uintptr_t)reference);
             break;
+
+#elif defined(__ARCH_AARCH64__)
+        /* TODO */
 #else
         #error "Please define your ELF relocation types"
 #endif
