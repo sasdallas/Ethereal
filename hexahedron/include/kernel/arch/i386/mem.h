@@ -95,6 +95,9 @@ typedef union page {
 // 0xC0000000 - 0xF0000000: Physical memory mapping region. Basically one big pool.
 // 0xFFC00000 - 0xFFFFF000: Recursive paging location
 
+#define MEM_USERSPACE_REGION_START      (uintptr_t)0x00000000
+#define MEM_USERSPACE_REGION_END        (uintptr_t)0x70000000
+
 #define MEM_DMA_REGION                  (uintptr_t)0x70000000
 #define MEM_USERMODE_STACK_REGION       (uintptr_t)0x80000000
 #define MEM_MMIO_REGION                 (uintptr_t)0x90000000

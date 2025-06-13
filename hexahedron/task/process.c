@@ -278,7 +278,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->priority = priority;
     process->gid = process->uid = 0;
     process->pid = process_allocatePID();
-    process->vas = vas_create("process vas", PROCESS_MMAP_MINIMUM, MEM_DMA_REGION, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
+    process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -620,7 +620,7 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
     mem_destroyVAS(last_dir);
 
     // Create a new VAS
-    current_cpu->current_process->vas = vas_create("process vas", PROCESS_MMAP_MINIMUM, MEM_DMA_REGION, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
+    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
 
     // Switch to directory
     mem_switchDirectory(current_cpu->current_process->dir);
