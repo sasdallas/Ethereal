@@ -278,9 +278,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->priority = priority;
     process->gid = process->uid = 0;
     process->pid = process_allocatePID();
-    process->vas = vas_create("process vas", 0x0, MEM_DMA_REGION, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
-
-    vas_reserve(process->vas, 0x0, PROCESS_MMAP_MINIMUM);
+    process->vas = vas_create("process vas", PROCESS_MMAP_MINIMUM, MEM_DMA_REGION, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -329,8 +327,9 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         }
 
         process->vas->allocations = parent->vas->allocations;
-        process->vas->dir = process->dir;
     }
+
+    process->vas->dir = process->dir;
 
     // Create file descriptor table
     if (parent && 0) {
@@ -459,7 +458,7 @@ void process_destroy(process_t *proc) {
         foreach(mmap_node, proc->mmap) {
             if (prev) {
                 LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-                process_removeMapping(proc, prev);
+                process_removeMapping(current_cpu->current_process, prev);
                 prev = NULL;
             }
 
@@ -469,7 +468,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        if (prev) process_removeMapping(proc, prev);
+        // if (prev) process_removeMapping(proc, prev);
         list_destroy(proc->mmap, false);
     }
 
