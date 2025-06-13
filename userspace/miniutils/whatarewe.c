@@ -98,14 +98,13 @@ enum cpuid_requests {
     CPUID_INTELADDRSIZE = 0x80000008,
 };
 
-
-#define __cpuid(code, a, b, c, d) asm volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(code))
-
 char *cpu_getBrandString() {
     char brand[48];
-
     snprintf(brand, 10, "Unknown");
 
+	// Get using CPUID
+#if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
+	#define __cpuid(code, a, b, c, d) asm volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(code))
     uint32_t eax, unused;
     __cpuid(CPUID_INTELEXTENDED, eax, unused, unused, unused);
     if (eax >= CPUID_INTELBRANDSTRINGEND) {
@@ -116,8 +115,8 @@ char *cpu_getBrandString() {
 		__cpuid(0x80000004, brand_data[8], brand_data[9], brand_data[10], brand_data[11]);
         memcpy(brand, brand_data, 48);
     }
+#endif
 
-    // !!!: this is ugly
     return strdup(brand);
 }
 

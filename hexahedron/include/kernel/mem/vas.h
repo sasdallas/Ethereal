@@ -149,4 +149,13 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size);
  */
 int vas_destroy(vas_t *vas);
 
+/**
+ * @brief Clone a VAS to a new VAS
+ * @param parent The parent VAS to clone from
+ * @returns A new VAS from the parent VAS
+ * 
+ * This doesn't clone page directories yet
+ */
+vas_t *vas_clone(vas_t *parent);
+
 #endif

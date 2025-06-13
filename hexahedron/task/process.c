@@ -147,12 +147,18 @@ void process_yield(uint8_t reschedule) {
 
     // Thread no longer has any time to execute. Save FPU registers
     // TODO: DESPERATELY move this to context structure.
+#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
     asm volatile ("fxsave (%0)" :: "r"(current_cpu->current_thread->fp_regs));
+#endif
 
     // Equivalent to a setjmp, use arch_save_context() to save our context
     if (arch_save_context(&current_cpu->current_thread->context) == 1) {
         // We are back, and were chosen to be executed. Return
+
+    #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
         asm volatile ("fxrstor (%0)" :: "r"(current_cpu->current_thread->fp_regs));
+    #endif
+
         return;
     }
     
@@ -278,7 +284,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->priority = priority;
     process->gid = process->uid = 0;
     process->pid = process_allocatePID();
-    process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
+    if (!parent) process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -312,21 +318,23 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 
     // Do we need to copy mappings?
     if (parent) {
-        vas_allocation_t *alloc = parent->vas->head;
-        vas_allocation_t *alloc_past = NULL;
+        // vas_allocation_t *alloc = parent->vas->head;
+        // vas_allocation_t *alloc_past = NULL;
 
-        while (alloc) {
-            // Create and copy this allocation
-            vas_allocation_t *new_alloc = kmalloc(sizeof(vas_allocation_t));
-            memcpy(new_alloc, alloc, sizeof(vas_allocation_t));
-            if (!alloc->prev) process->vas->head = new_alloc;
-            new_alloc->prev = alloc_past;
-            if (alloc_past) alloc_past->next = new_alloc;
-            alloc_past = new_alloc;
-            alloc = alloc->next;
-        }
+        // while (alloc) {
+        //     // Create and copy this allocation
+        //     vas_allocation_t *new_alloc = kmalloc(sizeof(vas_allocation_t));
+        //     memcpy(new_alloc, alloc, sizeof(vas_allocation_t));
+        //     if (!alloc->prev) process->vas->head = new_alloc;
+        //     new_alloc->prev = alloc_past;
+        //     if (alloc_past) alloc_past->next = new_alloc;
+        //     alloc_past = new_alloc;
+        //     alloc = alloc->next;
+        // }
 
-        process->vas->allocations = parent->vas->allocations;
+        // process->vas->allocations = parent->vas->allocations;
+    extern vas_t *vas_clone(vas_t *parent);
+        process->vas = vas_clone(parent->vas);
     }
 
     process->vas->dir = process->dir;

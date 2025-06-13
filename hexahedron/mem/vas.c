@@ -407,3 +407,60 @@ void vas_dump(vas_t *vas) {
 
     LOG(DEBUG, "[VAS DUMP]\t(end of allocations)\n");
 }
+
+/**
+ * @brief Clone a VAS to a new VAS
+ * @param parent The parent VAS to clone from
+ * @returns A new VAS from the parent VAS
+ * 
+ * This doesn't clone page directories yet
+ */
+vas_t *vas_clone(vas_t *parent) {
+    if (!parent) return NULL;
+
+    // Make a new VAS
+    vas_t *vas = kzalloc(sizeof(vas_t));
+    vas->name = parent->name;
+    vas->base = parent->base;
+    vas->allocations = parent->allocations;
+    vas->lock = spinlock_create("vas lock");
+    vas->size = parent->size;
+    vas->flags = parent->flags;
+
+    // Copy each allocation
+    vas_allocation_t *parent_alloc = parent->head;
+
+    // Setup the head
+    if (parent_alloc) {
+        vas_allocation_t *alloc = kzalloc(sizeof(vas_allocation_t));
+        vas->head = alloc;
+        vas->tail = alloc;
+
+        alloc->base = parent_alloc->base;
+        alloc->prev = NULL;
+        alloc->prot = parent_alloc->prot;
+        alloc->size = parent_alloc->size;
+        alloc->type = parent_alloc->type;
+        
+        parent_alloc = parent_alloc->next;
+        while (parent_alloc) {
+            vas_allocation_t *next = kzalloc(sizeof(vas_allocation_t));
+            next->base = parent_alloc->base;
+            next->prev = alloc;
+            next->prot = parent_alloc->prot;
+            next->size = parent_alloc->size;
+            next->type = parent_alloc->type;
+            vas->tail = next;
+            next->next = NULL;
+
+            alloc->next = next;
+            alloc = next;
+            parent_alloc = parent_alloc->next;
+        }
+    } else {
+        vas->head = NULL;
+        vas->tail = NULL;
+    }
+
+    return vas;
+}

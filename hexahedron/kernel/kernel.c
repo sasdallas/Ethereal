@@ -199,6 +199,7 @@ void kmain() {
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "rootfs", "/");
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm");
     vfs_dump();
 
     // Networking

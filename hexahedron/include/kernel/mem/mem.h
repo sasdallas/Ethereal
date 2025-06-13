@@ -20,9 +20,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#if defined(__ARCH_I386__) || defined(__INTELLISENSE__)
+#if defined(__ARCH_I386__)
 #include <kernel/arch/i386/mem.h> // Arch-specific definitions, like directory, entries, etc)
-#elif defined(__ARCH_X86_64__) || defined(__INTELLISENSE__)
+#elif defined(__ARCH_X86_64__)
 #include <kernel/arch/x86_64/mem.h>
 #else
 #error "Unsupported architecture for memory management"
