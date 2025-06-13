@@ -472,6 +472,9 @@ void process_destroy(process_t *proc) {
         list_destroy(proc->mmap, false);
     }
 
+    // Drop main thread in process (?)
+    thread_destroy(proc->main_thread);
+
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);
@@ -485,7 +488,7 @@ void process_destroy(process_t *proc) {
     }
 
     kfree(proc->wd_path);
-    kfree(proc->name);
+    // kfree(proc->name);
     kfree(proc);
 }
 
@@ -736,6 +739,15 @@ void process_exit(process_t *process, int status_code) {
     // TODO: Ugly
     current_cpu->current_process->exit_status = status_code;
 
+
+    // Deparent the children
+    if (process->node && process->node->children) {
+        foreach (cnode, process->node->children) {
+            tree_node_t *tnode = (tree_node_t*)cnode->value;
+            process_t *child = (process_t*)tnode->value;
+            child->parent = NULL;
+        }
+    }
 
     // Instead of freeing all the memory now, we add ourselves to the reap queue
     // The reap queue is either destroyed by:
