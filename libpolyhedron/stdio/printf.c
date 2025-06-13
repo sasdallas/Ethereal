@@ -140,7 +140,7 @@ static size_t print_hex(unsigned long long value, unsigned int width, int (*call
 
 /* xvasprintf is Ethereal code and not ToaruOS. Above functions are ToaruOS */ 
 size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args) {
-	if (!fmt || !callback || !args) return 0;
+	if (!fmt || !callback) return 0;
 	size_t written = 0;
 
 	// Start looping through the format string
