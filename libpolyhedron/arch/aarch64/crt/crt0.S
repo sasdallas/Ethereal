@@ -16,12 +16,16 @@
 .extern __libc_main
 
 _start:
-    pop {x1, x2, x3}
+    ldr x1, [sp], #8
+    ldr x2, [sp], #8
+    ldr x3, [sp], #8
 
     // The kernel is stupid and doesn't usually align our stack
     // So align the stack to 16-byte boundary (SSE instructions and whatnot need this)
-    bic sp, sp, #0xF
-    
+    mov x9, sp
+    and x9, x9, #0xFFFFFFFFFFFFFFF0
+    mov sp, x9
+
     // Get main
-    adr x0, =main
+    ldr x0, =main
     bl __libc_main
