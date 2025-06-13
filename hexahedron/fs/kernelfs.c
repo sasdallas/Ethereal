@@ -22,6 +22,8 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/task/process.h>
+#include <kernel/mem/mem.h>
+#include <kernel/mem/pmm.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
 #include <string.h>
@@ -459,6 +461,31 @@ kernelfs_entry_t *kernelfs_createEntry(kernelfs_dir_t *dir, char *name, kernelfs
 }
 
 /**
+ * @brief Read kernel memory information
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_memoryRead(kernelfs_entry_t *entry, void *data) {
+    uintptr_t total_blocks = pmm_getMaximumBlocks();
+    uintptr_t used_blocks = pmm_getUsedBlocks();
+    uintptr_t free_blocks = pmm_getFreeBlocks();
+    uintptr_t heap_usage = mem_getKernelHeap() - MEM_HEAP_REGION;
+
+    kernelfs_writeData(entry,
+            "TotalPhysBlocks:%d\n"
+            "TotalPhysMemory:%zu kB\n"
+            "UsedPhysMemory:%zu kB\n"
+            "FreePhysMemory:%zu kB\n"
+            "KernelUsage:%zu kB\n",
+                total_blocks,
+                total_blocks * PMM_BLOCK_SIZE / 1024,
+                used_blocks * PMM_BLOCK_SIZE / 1024,
+                free_blocks * PMM_BLOCK_SIZE / 1024,
+                heap_usage / 1024);
+    return 0;
+}
+
+/**
  * @brief Initialize the kernel filesystem
  */
 void kernelfs_init() {
@@ -470,4 +497,7 @@ void kernelfs_init() {
     kernelfs_dir_t *proc = kernelfs_createDirectory(NULL, "processes", 0);
     proc->node->readdir = kernelfs_processesReaddir;
     proc->node->finddir = kernelfs_processesFinddir;
+
+    // Create memory
+    kernelfs_createEntry(NULL, "memory", kernelfs_memoryRead, NULL);
 }
