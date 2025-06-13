@@ -18,6 +18,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <time.h>
 
 /**** MACROS ****/
 
@@ -27,5 +28,11 @@
 #define RANGE_IN_RANGE(a1, b1, a2, b2)  (((a1) >= (a2) && (((b1)) <= b2)))          // Returns whether range a1-b1 is contained in range a2-b2 (inclusive)
 #define RANGE_IN_RANGE_EXCLUSIVE(a1,b1,a2,b2) (RANGE_IN_RANGE(a1, b1, a2+1, b2-1))  // Returns whether range a1-b1 is contained in range a2-b2 (exclusive)
 
+/* Timing macros */
+#define PROFILE_START() struct timeval t; \
+                        gettimeofday(&t, NULL);
 
+#define PROFILE_END()   { struct timeval t_now; \
+                        gettimeofday(&t_now, NULL); \
+                        dprintf(DEBUG, "%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
 #endif
