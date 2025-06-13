@@ -93,9 +93,22 @@ void arch_say_hello(int is_debug) {
 }
 
 /**
- * @brief Main architecture function
+ * @brief Log putchar method
  */
-void arch_main(uintptr_t dtb_base, uintptr_t phys_base, uintptr_t rpi_tag) {
+int arch_putchar_early(void *user, char ch) {
+    if (ch == '\n') arch_putchar_early(user, '\r');
+    *((volatile uint8_t*)0xffffff8009000000) = ch;
+    return 0;
+}
+
+/**
+ * @brief Main architecture function
+ * @param dtb The location of the DTB in the kernel
+ * @param phys_base The physical base of the kernel
+ */
+void arch_main(uintptr_t dtb, uintptr_t phys_base) {
+    debug_setOutput(arch_putchar_early);
+    arch_say_hello(1);
     for (;;);
 }
 

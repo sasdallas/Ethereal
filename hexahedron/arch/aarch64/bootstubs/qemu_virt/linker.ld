@@ -13,4 +13,6 @@ SECTIONS {
     . = ALIGN(8);
     . += 0x1000;
     __stack_top = .;       
+
+    __kernel_tmp_load_address = .;
 }

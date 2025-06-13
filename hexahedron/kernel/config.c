@@ -82,6 +82,8 @@ const char *__kernel_build_configuration = "UNKNOWN";
 const char *__kernel_architecture = "i386";
 #elif defined(__ARCH_X86_64__)
 const char *__kernel_architecture = "x86_64";
+#elif defined(__ARCH_AARCH64__)
+const char *__kernel_architecture = "aarch64";
 #else
 const char *__kernel_architecture = "unknownarch";
 #endif
