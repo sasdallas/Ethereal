@@ -78,11 +78,6 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
  */
 void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page);
 
-/**
- * @brief Mark/unmark valid spots in memory
- * @todo Work in tandem with mem.h to allow for a maximum amount of blocks to be used
- */
-void arch_mark_memory(generic_parameters_t *parameters, uintptr_t highest_address);
 
 /**
  * @brief Perform a stack trace using ksym
