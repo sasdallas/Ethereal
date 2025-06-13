@@ -282,4 +282,19 @@ void mem_free(uintptr_t start, size_t size, uintptr_t flags);
  */
 int mem_validate(void *ptr, unsigned int flags);
 
+/**
+ * @brief Get amount of memory in use by DMA
+ */
+uintptr_t mem_getDMAUsage();
+
+/**
+ * @brief Get amount of memory in use by MMIO
+ */
+uintptr_t mem_getMMIOUsage();
+
+/**
+ * @brief Get amount of memory in use by drivers
+ */
+uintptr_t mem_getDriverUsage();
+
 #endif

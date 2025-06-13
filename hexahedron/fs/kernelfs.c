@@ -469,19 +469,29 @@ int kernelfs_memoryRead(kernelfs_entry_t *entry, void *data) {
     uintptr_t total_blocks = pmm_getMaximumBlocks();
     uintptr_t used_blocks = pmm_getUsedBlocks();
     uintptr_t free_blocks = pmm_getFreeBlocks();
-    uintptr_t heap_usage = mem_getKernelHeap() - MEM_HEAP_REGION;
+    uintptr_t heap_usage = mem_getKernelHeap() - MEM_HEAP_REGION; // !!!: The memory system is weird.
+
+    uintptr_t dma_usage = mem_getDMAUsage();
+    uintptr_t mmio_usage = mem_getMMIOUsage();
+    uintptr_t driver_usage = mem_getDriverUsage();
 
     kernelfs_writeData(entry,
             "TotalPhysBlocks:%d\n"
             "TotalPhysMemory:%zu kB\n"
             "UsedPhysMemory:%zu kB\n"
             "FreePhysMemory:%zu kB\n"
-            "KernelUsage:%zu kB\n",
+            "KHeapPosUsage:%zu kB\n"
+            "DMAUsage:%zu kB\n"
+            "MMIOUsage:%zu kB\n"
+            "DriverUsage:%zu kB\n",
                 total_blocks,
                 total_blocks * PMM_BLOCK_SIZE / 1024,
                 used_blocks * PMM_BLOCK_SIZE / 1024,
                 free_blocks * PMM_BLOCK_SIZE / 1024,
-                heap_usage / 1024);
+                heap_usage / 1024,
+                dma_usage / 1024,
+                mmio_usage / 1024,
+                driver_usage / 1024);
     return 0;
 }
 

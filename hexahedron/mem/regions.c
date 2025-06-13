@@ -198,3 +198,24 @@ void mem_unmapDriver(uintptr_t base, size_t size) {
 
     pool_freeChunks(driver_pool, base, size / PAGE_SIZE);
 }
+
+/**
+ * @brief Get amount of memory in use by DMA
+ */
+uintptr_t mem_getDMAUsage() {
+    return dma_pool->used;
+}
+
+/**
+ * @brief Get amount of memory in use by MMIO
+ */
+uintptr_t mem_getMMIOUsage() {
+    return mmio_pool->used;
+}
+
+/**
+ * @brief Get amount of memory in use by drivers
+ */
+uintptr_t mem_getDriverUsage() {
+    return driver_pool->used;
+}

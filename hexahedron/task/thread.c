@@ -99,7 +99,6 @@ int thread_destroy(thread_t *thr) {
     //     page_t *pg = mem_getPage(thr->dir, i, MEM_DEFAULT);
     //     if (pg) {
     //         // Bomb it
-    //         memset((void*)mem_remapPhys(MEM_GET_FRAME(pg), 0), 0x61616161, PAGE_SIZE);
     //         mem_freePage(pg);
     //     }
     // }
