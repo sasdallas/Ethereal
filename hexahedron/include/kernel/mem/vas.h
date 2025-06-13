@@ -43,6 +43,7 @@
 #define VAS_ALLOC_NORMAL        1       // Normal allocation
 #define VAS_ALLOC_MMAP          2       // Memory mapping that should remain untouched
 #define VAS_ALLOC_MMAP_SHARE    3       // Shared allocation
+#define VAS_ALLOC_THREAD_STACK  4       // Thread stack
 
 /**** TYPES ****/
 
