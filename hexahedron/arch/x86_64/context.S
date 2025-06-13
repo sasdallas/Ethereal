@@ -94,14 +94,6 @@ arch_load_context:
         - GSBASE: 56
         - RIP: 64
     */
-
-    /* Wait for kernel GS */
-    mov %gs:0x10, %rax
-    cmp %gs:0x0, %rax
-    je 1f
-    lock andl $0xFFFFFFF7, 0x14(%rax)
-1:
-
     movq 0(%rdi), %rsp
     movq 8(%rdi), %rbp
     movq 16(%rdi), %rbx
@@ -131,7 +123,12 @@ arch_enter_kthread:
     /* Pop data into RDI */
     popq %rdi
 
+    // The kernel is stupid and doesn't usually align our stack
+    // So align the stack to 16-byte boundary (SSE instructions and whatnot need this)
+    and $0xFFFFFFFFFFFFFFF0, %rsp
+
     /* Jump */
+    xor %rbp, %rbp
     jmpq *%rsi
 
 /* Restore context from stack */

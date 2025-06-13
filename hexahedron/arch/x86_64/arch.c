@@ -74,7 +74,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        printf("%i system processors - %i KB of RAM\n", smp_getCPUCount(), parameters->mem_size);
+        printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), parameters->mem_size);
 
         // NOTE: This should only be called once, so why not just modify some parameters?
         parameters->cpu_count = smp_getCPUCount();
@@ -195,6 +195,8 @@ static uintptr_t memory_size = 0x0;                                         // S
  */
 uintptr_t arch_allocate_structure(size_t bytes) {
     dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
+    
+    if (bytes > PAGE_SIZE) return mem_sbrk(MEM_ALIGN_PAGE(bytes));
     return (uintptr_t)kmalloc(bytes);
 }
 

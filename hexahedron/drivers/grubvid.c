@@ -87,8 +87,6 @@ int grubvid_unmap(struct _video_driver *driver, size_t size, off_t off, void *ad
         page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
         if (pg) {
             pg->bits.present = 0;
-            pg->bits.rw = 0;
-            pg->bits.usermode = 0;
         }
     }
 

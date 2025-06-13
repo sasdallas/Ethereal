@@ -19,6 +19,7 @@
 #include <kernel/generic_mboot.h>
 #include <kernel/arch/arch.h>
 #include <kernel/arch/aarch64/registers.h>
+#include <kernel/arch/aarch64/smp.h>
 
 /**** DEFINITIONS ****/
 

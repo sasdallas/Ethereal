@@ -59,10 +59,12 @@ $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf: $(C_OBJECTS)
 
 	$(PYTHON) $(BUILDSCRIPTS_ROOT)/create_bochs_symfile.py $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel-symmap.map $(DESTDIR)$(BOOT_OUTPUT)/bochs.map 
 
+
+ifneq ($(HOSTARCH), aarch64)
 	@printf "\n-- Checking multiboot compatibility (make sure you have the GRUB package)...\n"
 	grub-file --is-x86-multiboot $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
 	grub-file --is-x86-multiboot2 $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
-
+endif
 
 # Create build directories
 CREATE_BUILD_DIRECTORIES:
@@ -89,9 +91,20 @@ install-headers:
 	@-mkdir -pv $(DESTDIR)$(INCLUDE_DIRECTORY)
 	cp -rp include/kernel/ $(DESTDIR)$(INCLUDE_DIRECTORY)
 
+ifeq ($(HOSTARCH), aarch64)
 
+bootstub:
+	make -C arch/aarch64/bootstubs install
+
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES DELETE_OBJECTS $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf bootstub
+else
 install: PRINT_HEADER CREATE_BUILD_DIRECTORIES DELETE_OBJECTS $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
+endif
 
 clean:
 	@-rm -r $(OUT_OBJ)
 	@-rm -r $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
+
+ifeq ($(HOSTARCH), aarch64)
+	make -C arch/aarch64/bootstubs clean
+endif

@@ -45,6 +45,8 @@ uint8_t msi_array[HAL_IRQ_MSI_COUNT / 8] = { 0 };
 uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, int size) {
     if (size != 1 && size != 2 && size != 4) return PCI_NONE;
 
+#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
+
     // Generate the address
     uint32_t address = PCI_ADDR(bus, slot, func, offset);
 
@@ -62,6 +64,10 @@ uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t o
     } else {
         return out;
     }
+
+#else
+    return PCI_NONE;
+#endif
 }
 
 /**
@@ -77,6 +83,7 @@ uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t o
  * @returns 0 on success
  */
 int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value, int size) {
+#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
     // Generate the address
     uint32_t address = PCI_ADDR(bus, slot, func, offset);
 
@@ -106,6 +113,7 @@ int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offse
 
     // Write value
     outportl(PCI_CONFIG_DATA, value_fixed);
+#endif
 
     // Done
     return 0;
