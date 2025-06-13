@@ -30,7 +30,7 @@ boot.o: boot.S Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 ./$(OUTPUT_FILE): $(C_OBJS)
-	$(LD) -T linker.ld -nostdlib -o $(OUTPUT_FILE) $(C_OBJS)
+	$(LD) -T linker.ld -nostdlib -o $(OUTPUT_FILE) $(C_OBJS) $(LDFLAGS) -lkpolyhedron
 	$(OBJCOPY) --strip-debug $(OUTPUT_FILE)
 
 
