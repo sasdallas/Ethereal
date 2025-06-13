@@ -2,7 +2,7 @@
 include ./make.config
 
 # List of apps to compile
-APPS = init miniutils essence dhcpcli
+APPS = init miniutils essence dhcpcli celestial
 
 APPS_TARGETS_INSTALL := $(patsubst %, install-%, $(APPS))
 APPS_TARGETS_CLEAN := $(patsubst %, clean-%, $(APPS))
