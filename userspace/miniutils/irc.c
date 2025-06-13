@@ -342,7 +342,7 @@ int main(int argc, char *argv[]) {
     char *nick = "EtherealUser";
     
     // Parse any options given to us
-    char c;
+    int c;
     while ((c = getopt(argc, argv, "n:hv")) != -1) {
         switch (c) {
             case 'n':

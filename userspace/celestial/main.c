@@ -124,7 +124,7 @@ int celestial_removeClient(int fd) {
  * @brief Main function
  */
 int main(int argc, char *argv[]) {
-    char c;
+    int c;
     int index;
     int fake = 0;
 

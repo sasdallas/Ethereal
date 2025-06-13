@@ -87,7 +87,8 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
     if (!cmd || !(*cmd)) return;
 
     pid_t cpid = -1;
-    
+    int wait_for_child = !(argc > 1 && !strcmp(argv[argc-1], "&"));
+
     // First, check if the command is a builtin
     for (size_t i = 0; i < sizeof(command_list) / sizeof(command_t); i++) {
         if (!strcmp(command_list[i].name, cmd)) {
@@ -115,5 +116,12 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
     }
 
     if (cpid < 0) return;
-    essence_last_exit_status = essence_waitForExecution(cpid);
+
+
+    // Wait on execution?
+    if (wait_for_child) {
+        essence_last_exit_status = essence_waitForExecution(cpid);
+    } else {
+        printf("essence: PID %d spawned in the background\n", cpid);
+    }
 }

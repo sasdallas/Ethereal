@@ -31,7 +31,7 @@ void version() {
 }
 
 int main(int argc, char *argv[]) {
-    char c;
+    int c;
     int gateway = 0;
     int subnet = 0;
     int print_info = 0;

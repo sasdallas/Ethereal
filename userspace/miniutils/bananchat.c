@@ -40,7 +40,7 @@ void version() {
 }
 
 int main(int argc, char *argv[]) {
-    char c;
+    int c;
     char *server_ip = DEFAULT_SERVER_IP;
     uint32_t server_port = DEFAULT_SERVER_PORT;
 

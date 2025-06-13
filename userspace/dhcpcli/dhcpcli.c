@@ -274,7 +274,7 @@ void version() {
  * @brief Main function
  */
 int main(int argc, char *argv[]) {
-    char c;
+    int c;
     while ((c = getopt(argc, argv, "vh")) != -1) {
         switch (c) {
             case 'v':
