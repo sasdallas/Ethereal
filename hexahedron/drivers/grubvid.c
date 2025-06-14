@@ -33,7 +33,7 @@
  * @brief Update screen function
  */
 void grubvid_updateScreen(struct _video_driver *driver, uint8_t *buffer) {
-    memcpy(driver->videoBuffer, buffer, (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch));
+    memcpy(driver->videoBuffer, buffer, (driver->screenHeight * driver->screenPitch));
 }
 
 /**
@@ -41,7 +41,7 @@ void grubvid_updateScreen(struct _video_driver *driver, uint8_t *buffer) {
  */
 int grubvid_unload(video_driver_t *driver) {
     // Unmap
-    for (uintptr_t i = (uintptr_t)driver->videoBuffer; i < (uintptr_t)driver->videoBuffer + (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch);
+    for (uintptr_t i = (uintptr_t)driver->videoBuffer; i < (uintptr_t)driver->videoBuffer + (driver->screenHeight * driver->screenPitch);
         i += PAGE_SIZE) 
     {
         mem_allocatePage(mem_getPage(NULL, i, MEM_DEFAULT), MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);

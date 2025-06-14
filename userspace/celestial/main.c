@@ -215,6 +215,7 @@ int main(int argc, char *argv[]) {
 
     // Enter main loop
     celestial_main();
+    __builtin_unreachable();
 }
 
 
