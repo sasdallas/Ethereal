@@ -648,7 +648,6 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
         // Get a frame for a new page
         uintptr_t new_frame = pmm_allocateBlock();
-        ref_set(new_frame >> MEM_PAGE_SHIFT, 1);
 
         // Copy our data to it
         uintptr_t new_frame_remapped = mem_remapPhys(new_frame, PAGE_SIZE);
