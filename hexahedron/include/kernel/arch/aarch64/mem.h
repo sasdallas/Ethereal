@@ -21,15 +21,29 @@
 /**** TYPES ****/
 
 typedef union page {
+
+    // Table flags
+    struct {
+        uint64_t present:1;         // Table is valid
+        uint64_t table:1;           // Is a table
+        uint64_t next:46;           // Next
+        uint64_t reserved:11;       // Reserved
+        uint64_t pxn:1;             // Priviliged eXecute Never
+        uint64_t xn:1;              // eXecute Never
+        uint64_t ap:2;              // AP
+        uint64_t ns:1;              // NS
+    } table;
+
     // You can manually manipulate these flags
     struct {
         uint64_t present:1;         // Present in memory
         uint64_t table:1;           // Is a table
         uint64_t indx:3;            // MAIR index
         uint64_t ns:1;              // Security
-        uint64_t ap:1;              // Access permission
-        uint64_t sh:1;              // Shareable
+        uint64_t ap:2;              // Access permission
+        uint64_t sh:2;              // Shareable
         uint64_t af:1;              // Access flag
+        uint64_t ng:1;              // Not global
         uint64_t address:36;        // Address/frame
         uint64_t reserved:4;        // Reserved
         uint64_t contig:1;          // Contiguous

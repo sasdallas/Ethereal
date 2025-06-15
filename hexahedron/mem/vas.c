@@ -20,6 +20,7 @@
 
 #include <kernel/mem/vas.h>
 #include <kernel/mem/mem.h>
+#include <kernel/mem/pmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
@@ -57,6 +58,7 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags) {
  * @param vas The VAS to reserve in
  * @param address The region to reserve
  * @param size The size of the region to reserve
+ * @param type The type of allocation
  * @returns The created allocation or NULL on failure
  * 
  * @warning Use this ONLY if you plan on the kernel allocating the pages. This will just reserve a region for you.
@@ -64,7 +66,7 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags) {
  * @note    This is a bit slow due to sanity checks and sorting, I'm sure it could be improved but
  *          I'm worried that the VAS will be corrupt if it doesn't perform the additional region checks   
  */
-vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size) {
+vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int type) {
     if (!vas) return NULL;
 
     // Align
@@ -87,6 +89,8 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size) {
     allocation->base = address;
     allocation->size = size;
     allocation->prot = VAS_PROT_DEFAULT;
+    allocation->type = type;
+    allocation->references = 1; 
 
     LOG(DEBUG, "[ALLO] Allocate %p - %p\n", address, size);
 
@@ -200,6 +204,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
             allocation->size = size;
             allocation->next = n;
             allocation->prot = VAS_PROT_DEFAULT;
+            allocation->references = 1;
             n->prev = allocation;
             vas->head = allocation;
             goto _finish_allocation;
@@ -229,6 +234,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
             allocation->prev = n;
             allocation->next->prev = allocation;
             allocation->prot = VAS_PROT_DEFAULT;
+            allocation->references = 1;
 
             goto _finish_allocation;
         }
@@ -250,6 +256,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     allocation->size = size;
     allocation->prev = vas->tail;
     allocation->prot = VAS_PROT_DEFAULT;
+    allocation->references = 1;
     vas->tail->next = allocation;
     vas->tail = allocation;
 
@@ -258,6 +265,28 @@ _finish_allocation:
     vas->allocations++;
     spinlock_release(vas->lock);
     return allocation;
+}
+
+/**
+ * @brief Debug to convert allocation type to string
+ */
+static char *vas_typeToString(int type) {
+    switch (type) {
+        case VAS_ALLOC_NORMAL:
+            return "NORMAL ";
+        case VAS_ALLOC_MMAP:
+            return "MMAP   ";
+        case VAS_ALLOC_MMAP_SHARE:
+            return "MMAP SH";
+        case VAS_ALLOC_THREAD_STACK:
+            return "STACK  ";
+        case VAS_ALLOC_PROG_BRK:
+            return "PROGBRK";
+        case VAS_ALLOC_EXECUTABLE:
+            return "PROGRAM";
+        default:
+            return "???????";
+    }
 }
 
 /**
@@ -283,9 +312,16 @@ int vas_free(vas_t *vas, vas_allocation_t *allocation) {
         }
     }
 
-    // TODO: Free pages? CoW will handle this..
+    // Drop pages
+    for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
+        page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
+        if (pg && PAGE_PRESENT(pg)) {
+            // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
+            mem_freePage(pg);
+        }
+    }
 
-    LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, allocation->type == VAS_ALLOC_NORMAL ? "NORMAL" : "MMAP  ", allocation->base, allocation->base + allocation->size);
+    LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
 
     // Free and return
     kfree(allocation);
@@ -334,8 +370,12 @@ int vas_destroy(vas_t *vas) {
     while (alloc) {
         // TODO: mem_destroyVAS already frees memory so we need to move that to here (for CoW and more)
         vas_allocation_t *next = alloc->next;
-        kfree(alloc);
+        vas_free(vas, alloc);
         alloc = next;
+    }
+
+    if (vas->dir) {
+        mem_destroyVAS(vas->dir);
     }
 
     kfree(vas);
@@ -409,11 +449,78 @@ void vas_dump(vas_t *vas) {
 }
 
 /**
+ * @brief Create a copy of an allocation
+ * @param vas The VAS to create the copy in
+ * @param parent_vas The parent VAS to make a copy in
+ * @param source The source allocation to copy
+ * @returns A new allocation
+ */
+vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocation_t *source) {
+    vas_allocation_t *alloc = NULL; // The allocation to insert
+
+    // Do we support CoW?
+    // TODO: CoW
+    alloc = kzalloc(sizeof(vas_allocation_t));
+    alloc->base = source->base;
+    alloc->prot = source->prot;
+    alloc->size = source->size;
+    alloc->type = source->type;
+    alloc->references = 1;
+
+    // Iterate through allocation pages
+    for (uintptr_t i = 0; i < alloc->size; i += PAGE_SIZE) {
+        page_t *src = mem_getPage(parent_vas->dir, alloc->base + i, MEM_DEFAULT);
+        if (!src || !PAGE_IS_PRESENT(src)) continue;  
+
+        // Get a frame for a new page
+        uintptr_t new_frame = pmm_allocateBlock();
+        ref_set(new_frame >> MEM_PAGE_SHIFT, 1);
+
+        // Copy our data to it
+        uintptr_t new_frame_remapped = mem_remapPhys(new_frame, PAGE_SIZE);
+        memcpy((void*)new_frame_remapped, (void*)alloc->base + i, PAGE_SIZE);
+        mem_unmapPhys(new_frame_remapped, PAGE_SIZE);
+
+        // Create the new page in the new directory
+        page_t *dst = mem_getPage(vas->dir, alloc->base + i, MEM_CREATE);
+
+        // Setup protection flags on this page
+        int flags = (alloc->prot & VAS_PROT_READ ? 0 : MEM_PAGE_NOT_PRESENT) |
+                        (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) |
+                        (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) |
+                        (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | 
+                        MEM_PAGE_NOALLOC; 
+
+        mem_allocatePage(dst, flags);
+        MEM_SET_FRAME(dst, new_frame);
+
+        LOG(DEBUG, "Copied page at %016llX (frame %p - %p, source references: %d, new references: %d)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst), ref_get(MEM_GET_FRAME(src) >> MEM_PAGE_SHIFT), ref_get(MEM_GET_FRAME(dst) >> MEM_PAGE_SHIFT));
+    }
+
+    // Insert the allocation into the VAS
+    // !!!: THIS ASSUMES ORDERED
+    if (!vas->head) {
+        vas->head = alloc;
+        vas->tail = alloc;
+        alloc->prev = NULL;
+        alloc->next = NULL;
+    } else {
+        vas->tail->next = alloc;
+        alloc->prev = vas->tail;
+        alloc->next = NULL;
+        vas->tail = alloc;
+    }
+
+    vas->allocations++;
+    return alloc;
+}
+
+/**
  * @brief Clone a VAS to a new VAS
  * @param parent The parent VAS to clone from
  * @returns A new VAS from the parent VAS
  * 
- * This doesn't clone page directories yet
+ * This also sets up a new page directory with valid mappings from the parent
  */
 vas_t *vas_clone(vas_t *parent) {
     if (!parent) return NULL;
@@ -422,39 +529,25 @@ vas_t *vas_clone(vas_t *parent) {
     vas_t *vas = kzalloc(sizeof(vas_t));
     vas->name = parent->name;
     vas->base = parent->base;
-    vas->allocations = parent->allocations;
+    vas->allocations = 0; // Each call to vas_copyAllocation will increment this
     vas->lock = spinlock_create("vas lock");
     vas->size = parent->size;
     vas->flags = parent->flags;
+
+    // Make a clone of the kernel directory
+    vas->dir = mem_clone(mem_getKernelDirectory());
 
     // Copy each allocation
     vas_allocation_t *parent_alloc = parent->head;
 
     // Setup the head
     if (parent_alloc) {
-        vas_allocation_t *alloc = kzalloc(sizeof(vas_allocation_t));
-        vas->head = alloc;
-        vas->tail = alloc;
-
-        alloc->base = parent_alloc->base;
-        alloc->prev = NULL;
-        alloc->prot = parent_alloc->prot;
-        alloc->size = parent_alloc->size;
-        alloc->type = parent_alloc->type;
+        vas_copyAllocation(vas, parent, parent_alloc);
         
+        // Get into allocation loop
         parent_alloc = parent_alloc->next;
         while (parent_alloc) {
-            vas_allocation_t *next = kzalloc(sizeof(vas_allocation_t));
-            next->base = parent_alloc->base;
-            next->prev = alloc;
-            next->prot = parent_alloc->prot;
-            next->size = parent_alloc->size;
-            next->type = parent_alloc->type;
-            vas->tail = next;
-            next->next = NULL;
-
-            alloc->next = next;
-            alloc = next;
+            vas_copyAllocation(vas, parent, parent_alloc);
             parent_alloc = parent_alloc->next;
         }
     } else {

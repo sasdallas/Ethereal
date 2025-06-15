@@ -88,7 +88,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         }
 
         // Reserve memory in the VAS
-        vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len);
+        vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len, VAS_ALLOC_MMAP);
         if (alloc) {
             list_append(current_cpu->current_process->mmap, (void*)map);
             return (void*)alloc->base;

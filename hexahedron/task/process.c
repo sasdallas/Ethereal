@@ -284,7 +284,6 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->priority = priority;
     process->gid = process->uid = 0;
     process->pid = process_allocatePID();
-    if (!parent) process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -307,34 +306,17 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     // Make directory
     if (process->flags & PROCESS_KERNEL) {
         // Reuse kernel directory
+        // TODO: Can we verify that a VAS will never be used?
+        process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
         process->dir = NULL;
     } else if (parent) {
         // Clone parent directory
-        process->dir = mem_clone(parent->dir);
+        process->vas = vas_clone(parent->vas);
+        process->dir = process->vas->dir;
     } else {
         // Clone kernel
+        process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
         process->dir = mem_clone(NULL);
-    }
-
-    // Do we need to copy mappings?
-    if (parent) {
-        // vas_allocation_t *alloc = parent->vas->head;
-        // vas_allocation_t *alloc_past = NULL;
-
-        // while (alloc) {
-        //     // Create and copy this allocation
-        //     vas_allocation_t *new_alloc = kmalloc(sizeof(vas_allocation_t));
-        //     memcpy(new_alloc, alloc, sizeof(vas_allocation_t));
-        //     if (!alloc->prev) process->vas->head = new_alloc;
-        //     new_alloc->prev = alloc_past;
-        //     if (alloc_past) alloc_past->next = new_alloc;
-        //     alloc_past = new_alloc;
-        //     alloc = alloc->next;
-        // }
-
-        // process->vas->allocations = parent->vas->allocations;
-    extern vas_t *vas_clone(vas_t *parent);
-        process->vas = vas_clone(parent->vas);
     }
 
     process->vas->dir = process->dir;
@@ -486,7 +468,8 @@ void process_destroy(process_t *proc) {
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);
-    if (proc->dir) mem_destroyVAS(proc->dir);
+    // if (proc->dir) mem_destroyVAS(proc->dir);
+    if (proc->vas) vas_destroy(proc->vas);
     mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
@@ -496,7 +479,7 @@ void process_destroy(process_t *proc) {
     }
 
     kfree(proc->wd_path);
-    // kfree(proc->name);
+    kfree(proc->name);
     kfree(proc);
 }
 
@@ -628,10 +611,10 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
     page_t *last_dir = current_cpu->current_process->dir;
     current_cpu->current_process->dir = mem_clone(NULL);
     vas_destroy(current_cpu->current_process->vas);
-    mem_destroyVAS(last_dir);
 
     // Create a new VAS
     current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
+    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
 
     // Switch to directory
     mem_switchDirectory(current_cpu->current_process->dir);

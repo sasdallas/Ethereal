@@ -166,6 +166,7 @@ page_t *mem_createVAS() {
  */
 void mem_destroyVAS(page_t *vas) {
     // !!!: <256 - requires problem zone to be fixed in mem_clone()
+    // !!!: Relies on VAS but doesn't do the *obvious* strategy of just using the VAS...
     for (size_t pml4e = 0; pml4e < 256; pml4e++) {
         if (vas[pml4e].bits.present) {
             // Get the PDPT
@@ -183,15 +184,21 @@ void mem_destroyVAS(page_t *vas) {
                                 if (pg->bits.usermode && pg->bits.present && pg->bits.address) {
                                     // Free this page (only if refcounts == 0)
                                     uintptr_t address = ((pml4e << (9 * 3 + 12)) | (pdpte << (9*2 + 12)) | (pde << (9 + 12)) | (pte << MEM_PAGE_SHIFT));
-                                    // LOG(DEBUG, "Usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
+                                    LOG(WARN, "Unfreed usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
 
-                                    if (pg->bits.rw) {
-                                        mem_freePage(pg);
-                                    } else {
-                                        if (!ref_decrement(PAGE_FRAME_RAW(pg))) {
-                                            pmm_freeBlock(MEM_GET_FRAME(pg));
-                                        }
-                                    }
+                                    // // !!!: what am i doing
+                                    // uintptr_t f = MEM_GET_FRAME(pg);
+                                    // if (f >= 0xFD000000) {
+                                    //     continue;
+                                    // }
+                                    
+                                    // if (pg->bits.rw) {
+                                    //     mem_freePage(pg);
+                                    // } else {
+                                    //     if (!ref_decrement(PAGE_FRAME_RAW(pg))) {
+                                    //         pmm_freeBlock(MEM_GET_FRAME(pg));
+                                    //     }
+                                    // }
                                 }
                             }
 
@@ -458,6 +465,13 @@ page_t *mem_clone(page_t *dir) {
                     page_t *page_dest = &pt_dest[page];
                     if (!page_src || !(page_src->bits.present)) continue; // Not present
 
+                    // !!!: what am i doing
+                    uintptr_t f = MEM_GET_FRAME(page_src);
+                    if (f >= 0xFD000000) {
+                        page_dest->data = page_src->data;
+                        continue;
+                    }
+
                     if (page_src->bits.usermode) {
                         uintptr_t address = ((pdpt << (9 * 3 + 12)) | (pd << (9*2 + 12)) | (pt << (9 + 12)) | (page << MEM_PAGE_SHIFT));
                         mem_copyUserPage(page_src, page_dest, address, (address >= MEM_USERMODE_STACK_REGION) ? 1 : 0);
@@ -470,8 +484,6 @@ page_t *mem_clone(page_t *dir) {
             }
         }
     }
-    
-
     return dest;
 }
 
@@ -741,7 +753,12 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
 
         // TODO: This code can probably bug out - to be extensively tested
         printf(COLOR_CODE_RED "Process \"%s\" (PID: %d) encountered a page fault at address %p and will be shutdown\n" COLOR_CODE_RESET, current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2);
+        
+        // Dump debug information
         LOG(ERR, "Process \"%s\" (PID: %d) encountered page fault at %p with no valid resolution (error code: 0x%x). Shutdown\n", current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2, regs->err_code);
+        LOG(ERR, "The fault occurred @ IP %04x:%016llX SP %016llX\n", regs->cs, regs->rip, regs->rsp);
+        vas_dump(current_cpu->current_process->vas);
+        
         process_exit(current_cpu->current_process, 1);
         return 0;
     }

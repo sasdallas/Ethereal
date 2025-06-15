@@ -386,7 +386,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
         
                 // !!!: HACK
                 if (current_cpu->current_process) {
-                    vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz));
+                    vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
                 }
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);

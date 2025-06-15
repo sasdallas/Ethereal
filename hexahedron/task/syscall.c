@@ -375,7 +375,7 @@ void *sys_brk(void *addr) {
     current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
                                                             // (page fault handler will map this on a critical failure)
 
-    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap);
+    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VAS_ALLOC_PROG_BRK);
 
 
     return addr;

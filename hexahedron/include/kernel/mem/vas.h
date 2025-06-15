@@ -39,11 +39,13 @@
 
 #define VAS_PROT_DEFAULT    VAS_PROT_READ | VAS_PROT_WRITE | VAS_PROT_EXEC
 
-/* Types of allocations */
+/* Types of allocations (I just add one when I want to) */
 #define VAS_ALLOC_NORMAL        1       // Normal allocation
 #define VAS_ALLOC_MMAP          2       // Memory mapping that should remain untouched
 #define VAS_ALLOC_MMAP_SHARE    3       // Shared allocation
 #define VAS_ALLOC_THREAD_STACK  4       // Thread stack
+#define VAS_ALLOC_EXECUTABLE    5       // Executable memory
+#define VAS_ALLOC_PROG_BRK      6       // Program brk
 
 /**** TYPES ****/
 
@@ -58,9 +60,23 @@ typedef struct vas_allocation {
     size_t size;                    // Size of allocation
     uint8_t prot;                   // Protection flags
     uint8_t type;                   // Type of allocation
+
+    spinlock_t ref_lck;             // Reference count lock
+    size_t references;              // References to this allocation
+
     struct vas_allocation *next;    // Next allocation in the chain
     struct vas_allocation *prev;    // Previous allocation in the chain
 } vas_allocation_t;
+
+/**
+ * @brief Virtual address space node
+ */
+typedef struct vas_allocation_node {
+    vas_allocation_t *alloc;            // Allocation
+    struct vas_allocation_node *next;   // Next allocation in the chain
+    struct vas_allocation_node *prev;   // Previous allocation in the chain
+} vas_allocation_node_t;
+
 
 /**
  * @brief Virtual address space
@@ -95,6 +111,7 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags);
  * @param vas The VAS to reserve in
  * @param address The region to reserve
  * @param size The size of the region to reserve
+ * @param type The type of allocation
  * @returns The created allocation or NULL on failure
  * 
  * @warning Use this ONLY if you plan on the kernel allocating the pages. This will just reserve a region for you.
@@ -102,7 +119,7 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags);
  * @note    This is a bit slow due to sanity checks and sorting, I'm sure it could be improved but
  *          I'm worried that the VAS will be corrupt if it doesn't perform the additional region checks   
  */
-vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size);
+vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int type);
 
 /**
  * @brief Allocate memory in a VAS
@@ -154,7 +171,7 @@ int vas_destroy(vas_t *vas);
  * @param parent The parent VAS to clone from
  * @returns A new VAS from the parent VAS
  * 
- * This doesn't clone page directories yet
+ * This also sets up a new page directory with valid mappings from the parent
  */
 vas_t *vas_clone(vas_t *parent);
 
