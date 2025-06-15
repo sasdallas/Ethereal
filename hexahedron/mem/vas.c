@@ -374,7 +374,7 @@ vas_node_t *vas_get(vas_t *vas, uintptr_t address) {
     vas_node_t *nn = vas->head;
     while (nn) {
         vas_allocation_t *n = ALLOC(nn);
-        if (IN_RANGE(address, n->base, n->base + n->size)) {
+        if (IN_RANGE(address, n->base, n->base + n->size) && n->base + n->size != address) {
             // Found!
             spinlock_release(vas->lock);
             return nn;
@@ -450,7 +450,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
                 if (pg) mem_allocatePage(pg, flags);
             } 
         
-            LOG(DEBUG, "CoW released for %p - %p\n", alloc->base, alloc->base + alloc->size);
+            // LOG(DEBUG, "CoW released for %p - %p\n", alloc->base, alloc->base + alloc->size);
             spinlock_release(&alloc->ref_lck);
             return 1;
         }
@@ -483,7 +483,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
                 // Allocate a new frame for the page
                 uintptr_t new_frame = pmm_allocateBlock();
 
-                LOG(DEBUG, "CoW: Page %016llX swap frames %p - %p\n", i, MEM_GET_FRAME(pg), new_frame);
+                // LOG(DEBUG, "CoW: Page %016llX swap frames %p - %p\n", i, MEM_GET_FRAME(pg), new_frame);
                 
                 // Set the new frame
                 MEM_SET_FRAME(pg, new_frame);
