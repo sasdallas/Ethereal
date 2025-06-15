@@ -15,6 +15,7 @@
 #include <kernel/arch/i386/arch.h>
 #include <kernel/arch/i386/smp.h>
 #include <kernel/arch/arch.h>
+#include <kernel/task/process.h>
 
 /* Generic parameters */
 extern generic_parameters_t *parameters;

@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <structs/list.h>
+#include <kernel/misc/util.h>
 
 /* Driver list */
 extern list_t *driver_list;

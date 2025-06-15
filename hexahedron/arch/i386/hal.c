@@ -33,6 +33,7 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
+#include <kernel/arch/arch.h>
 
 /* Generic drivers */
 #include <kernel/drivers/serial.h>

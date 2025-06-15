@@ -458,7 +458,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        if (prev) process_removeMapping(proc, prev);
+        // if (prev) process_removeMapping(proc, prev);
         list_destroy(proc->mmap, false);
     }
 

@@ -16,7 +16,6 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/arch/arch.h>
 
 /**** TYPES ****/
 
