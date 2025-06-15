@@ -320,6 +320,7 @@ void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) 
 
     syscall_handle(&syscall);
     regs->rax = syscall.return_value;
+    signal_handle(current_cpu->current_thread, regs);
 }
 
 /**
@@ -339,6 +340,9 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         syscall.parameters[3] = regs->r10;
         syscall.parameters[4] = regs->r8;
         syscall.parameters[5] = regs->r9;
+
+        // HACK
+        current_cpu->current_process->regs = regs;
 
         syscall_handle(&syscall);
         regs->rax = syscall.return_value;
