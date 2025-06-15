@@ -1,5 +1,5 @@
-#ifndef FEATURES_H
-#define FEATURES_H
+#ifndef _FEATURES_H
+#define _FEATURES_H
 
 /* MUSL will mess with compilation of other programs if these are defined. */
 #ifdef __MUSL__
