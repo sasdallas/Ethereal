@@ -35,4 +35,9 @@
 #define PROFILE_END()   { struct timeval t_now; \
                         gettimeofday(&t_now, NULL); \
                         dprintf(DEBUG, "%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
+
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 #endif

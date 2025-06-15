@@ -25,6 +25,7 @@
 #include <kernel/mem/mem.h>
 #include <kernel/mem/pmm.h>
 #include <kernel/debug.h>
+#include <kernel/misc/util.h>
 #include <structs/list.h>
 #include <string.h>
 #include <stdio.h>
@@ -47,21 +48,48 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
     process_t *proc = (process_t*)node->dev;
 
     // Copy to buffer
-    char tmp_buffer[512];
-    node->length = snprintf((char*)tmp_buffer, 512,
-            "ProcessName:%s\n"
-            "ProcessPid:%d\n"
-            "SbrkHeapBase:%p-%p\n"
-            "Uid:%d\n"
-            "Gid:%d\n"
-            "KernelStack:%p\n"
-            "Parent:%s\n",
-                proc->name,
-                proc->pid,
-                proc->heap_base, proc->heap,
-                proc->uid, proc->gid,
-                proc->kstack,
-                (proc->parent ? proc->parent->name : "N/A"));
+    char tmp_buffer[512] = { 0 };
+    
+    switch (node->inode) {
+        case 1:
+            node->length = snprintf((char*)tmp_buffer, 512,
+                    "ProcessName:%s\n"
+                    "ProcessPid:%d\n"
+                    "SbrkHeapBase:%p-%p\n"
+                    "Uid:%d\n"
+                    "Gid:%d\n"
+                    "KernelStack:%p\n"
+                    "Parent:%s\n",
+                        proc->name,
+                        proc->pid,
+                        proc->heap_base, proc->heap,
+                        proc->uid, proc->gid,
+                        proc->kstack,
+                        (proc->parent ? proc->parent->name : "N/A"));
+        
+            break;
+
+        case 2:
+            node->length = 0;
+            for (size_t i = 0; i < proc->fd_table->total; i++) {
+                fd_t *fd = proc->fd_table->fds[i];
+                if (fd) {
+                    char tmp_buffer2[512];
+                    node->length += snprintf(tmp_buffer2, 512-strlen(tmp_buffer),
+                        "FileDescriptor:%d\n"
+                        "Name:%s\n",
+                            fd->fd_number,
+                            fd->node->name);
+                
+                    strcat(tmp_buffer, tmp_buffer2);
+                }
+            }
+            
+            break;
+
+        default:
+            node->length = 0;
+    }
 
 
     // Calculate off and size
@@ -85,19 +113,25 @@ void kernelfs_processdirOpen(fs_node_t *node, unsigned int flags) {
  * @brief /kernel/processes/<pid> finddir method
  */
 fs_node_t *kernelfs_processdirFinddir(fs_node_t *node, char *path) {
+    fs_node_t *file = kmalloc(sizeof(fs_node_t));
+    memset(file, 0, sizeof(fs_node_t));
+    snprintf(file->name, 256, "%s", path);
+    file->flags = VFS_FILE;
+    file->atime = file->mtime = file->ctime = now();
+    file->mask = 0777;
+    file->open = kernelfs_processdirOpen;
+    file->read = kernelfs_processdirRead;
+    file->dev = (void*)node->dev;
+
     if (!strncmp(path, "info", 256)) {
-        fs_node_t *file = kmalloc(sizeof(fs_node_t));
-        memset(file, 0, sizeof(fs_node_t));
-        snprintf(file->name, 256, "%s", path);
-        file->flags = VFS_FILE;
-        file->atime = file->mtime = file->ctime = now();
-        file->mask = 0777;
-        file->open = kernelfs_processdirOpen;
-        file->read = kernelfs_processdirRead;
-        file->dev = (void*)node->dev;
+        file->inode = 1;
+        return file;
+    } else if (!strncmp(path, "fds", 256)) {
+        file->inode = 2;
         return file;
     }
 
+    kfree(file);
     return NULL;
 }
 
@@ -116,14 +150,22 @@ struct dirent *kernelfs_processdirReaddir(fs_node_t *node, unsigned long index) 
 
     index -= 2;
 
-    if (index == 0) {
-        struct dirent *out = kmalloc(sizeof(struct dirent));
-        strcpy(out->d_name, "info");
-        out->d_ino = 0;
-        return out;
+    // Maximum count
+    if (index > 1) {
+        return NULL;
     }
 
-    return NULL;
+    // Get a dirent
+    struct dirent *out = kmalloc(sizeof(struct dirent));
+    out->d_ino = 0;
+
+    if (index == 0) {
+        strcpy(out->d_name, "info");
+        return out;
+    } else {
+        strcpy(out->d_name, "fds");
+        return out;
+    }
 }
 
 /**
