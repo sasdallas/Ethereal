@@ -62,7 +62,8 @@ typedef struct vas_allocation {
     uint8_t type;                   // Type of allocation
 
     spinlock_t ref_lck;             // Reference count lock
-    size_t references;              // References to this allocation
+    uint8_t pending_cow;            // Pending CoW (also acquire the lock if you modify this)
+    uint8_t references;             // References to this allocation
 } vas_allocation_t;
 
 /**

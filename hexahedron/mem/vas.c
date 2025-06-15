@@ -330,20 +330,30 @@ int vas_free(vas_t *vas, vas_node_t *node) {
         }
     }
 
-    // Drop pages
-    for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
-        if (pg && PAGE_PRESENT(pg)) {
-            // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
-            mem_freePage(pg);
+    spinlock_acquire(&allocation->ref_lck);
+    allocation->references--;
+    if (!allocation->references) {
+        // Drop pages
+        for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
+            page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
+            if (pg && PAGE_PRESENT(pg)) {
+                // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
+                mem_freePage(pg);
+            }
         }
+
+        LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
+
+        spinlock_release(&allocation->ref_lck);
+        kfree(allocation);
+    } else {
+        LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p (references: %d, cow waiting: %d)\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size, allocation->references, allocation->pending_cow);
+        spinlock_release(&allocation->ref_lck);
     }
 
-    LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
 
     // Free and return
     kfree(node);
-    kfree(allocation);
     vas->allocations--;
     spinlock_release(vas->lock);
     return 0;
@@ -422,6 +432,76 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
     if (!alloc_node) return 0;
     vas_allocation_t *alloc = ALLOC(alloc_node);
 
+    spinlock_acquire(&alloc->ref_lck);
+    
+    // Is it pending CoW?
+    if (alloc->pending_cow) {
+        // Is this the only reference to it?
+        if (alloc->references <= 1) {
+            // Yes, we can just map these pages as R/W
+            // TODO: We map the *entire* region in, instead of doing what the other (non-CoW) part does and following the size hint given. This wastes memory in certain cases.
+            alloc->pending_cow = 0;
+
+            for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + alloc->size; i += PAGE_SIZE)  {
+                page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+
+                // Allocate corresponding to prot flags
+                int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | MEM_PAGE_NOALLOC;
+                if (pg) mem_allocatePage(pg, flags);
+            } 
+        
+            spinlock_release(&alloc->ref_lck);
+            return 1;
+        }
+
+
+        // First decrease the old allocation references
+        alloc->references--;
+
+        // Make a new allocation
+        vas_allocation_t *old = alloc;
+        alloc = kzalloc(sizeof(vas_allocation_t));
+        alloc_node->alloc = alloc;
+
+        alloc->base = old->base;
+        alloc->prot = old->prot;
+        alloc->references = 1;
+        alloc->size = old->size;
+        alloc->type = old->type;
+        alloc->pending_cow = 0;
+
+        // Start copying pages
+        // TODO: We map the *entire* region in, instead of doing what the other (non-CoW) part does and following the size hint given. This wastes memory in certain cases.
+        for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + alloc->size; i += PAGE_SIZE)  {
+            page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
+            
+            if (pg && PAGE_IS_PRESENT(pg)) {
+                // Remap the old frame of the page
+                uintptr_t remapped = mem_remapPhys(MEM_GET_FRAME(pg), PAGE_SIZE);
+
+                // Allocate a new frame for the page
+                uintptr_t new_frame = pmm_allocateBlock();
+                MEM_SET_FRAME(pg, new_frame);
+
+                // Make the page R/W again
+                int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | MEM_PAGE_NOALLOC;
+                mem_allocatePage(pg, flags);
+
+                // Copy the data
+                memcpy((void*)i, (void*)remapped, PAGE_SIZE); 
+
+                mem_unmapPhys(remapped, PAGE_SIZE);
+            }
+        }
+
+        LOG(INFO, "Performed full CoW for %p - %p (now %d references remaining on this previous allocation)\n", alloc->base, alloc->base + alloc->size, old->references);
+        spinlock_release(&old->ref_lck);
+        return 1;
+    }
+
+    // Release lock
+    spinlock_release(&alloc->ref_lck);
+
     // There's an allocation here - its probably lazy. How much can we map in?
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
 
@@ -451,7 +531,7 @@ void vas_dump(vas_t *vas) {
 
     while (nn) {
         vas_allocation_t *n = ALLOC(nn);
-        LOG(DEBUG, "[VAS DUMP]\tAllocation %p: Reserved memory region %p - %p (prev=%p, next=%p)\n", n, n->base, n->base + n->size, nn->prev, nn->next);
+        LOG(DEBUG, "[VAS DUMP]\tAllocation %p: Reserved memory region %p - %p (prev=%p, next=%p, references=%d)\n", n, n->base, n->base + n->size, nn->prev, nn->next, n->references);
 
         if (nn->prev != last && !(nn == vas->head)) {
             LOG(ERR, "[VAS DUMP]\t\tALLOCATION CORRUPTED: n->prev != last (%p != %p)\n", nn->prev, last);
@@ -507,7 +587,45 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
     vas_node_t *node = kzalloc(sizeof(vas_node_t));
 
     // Do we support CoW?
-    // TODO: CoW
+    if (!(vas->flags & VAS_NO_COW)) {
+        // Yes, do this to be copy on write
+        alloc = source;
+        
+        // Check to see if adding a reference would overflow
+        spinlock_acquire(&alloc->ref_lck);
+        if (alloc->references < UINT8_MAX) {
+            // We have enough space
+            alloc->references++;
+            alloc->pending_cow = 1;
+
+            // Mark all these pages as read-only
+            for (uintptr_t i = alloc->base; i < alloc->base + alloc->size; i += PAGE_SIZE) {
+                page_t *srcpg = mem_getPage(parent_vas->dir, i, MEM_DEFAULT);
+                if (!srcpg || !PAGE_PRESENT(srcpg)) continue; 
+
+                page_t *dstpg = mem_getPage(vas->dir, i, MEM_CREATE);
+
+                int flags = (alloc->prot & VAS_PROT_READ ? 0 : MEM_PAGE_NOT_PRESENT) |
+                    MEM_PAGE_READONLY |
+                    (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) |
+                    (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | 
+                    MEM_PAGE_NOALLOC;
+                 
+                mem_allocatePage(srcpg, flags);
+                mem_allocatePage(dstpg, flags);
+
+                MEM_SET_FRAME(dstpg, MEM_GET_FRAME(srcpg));
+            }
+
+            LOG(DEBUG, "Copied page at %016llX (CoW for allocation %p)\n", alloc->base, alloc);
+            spinlock_release(&alloc->ref_lck);
+            goto _add_allocation;
+        }
+
+        spinlock_release(&alloc->ref_lck);
+    }
+
+    // No, we don't support CoW or we can't add a reference
     alloc = kzalloc(sizeof(vas_allocation_t));
     alloc->base = source->base;
     alloc->prot = source->prot;
@@ -545,6 +663,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         LOG(DEBUG, "Copied page at %016llX (frame %p - %p, source references: %d, new references: %d)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst), ref_get(MEM_GET_FRAME(src) >> MEM_PAGE_SHIFT), ref_get(MEM_GET_FRAME(dst) >> MEM_PAGE_SHIFT));
     }
 
+
+_add_allocation:
     // Insert the allocation into the VAS
     // !!!: THIS ASSUMES ORDERED
     node->alloc = alloc;
