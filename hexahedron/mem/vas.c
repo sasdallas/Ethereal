@@ -442,7 +442,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
             // TODO: We map the *entire* region in, instead of doing what the other (non-CoW) part does and following the size hint given. This wastes memory in certain cases.
             alloc->pending_cow = 0;
 
-            for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + alloc->size; i += PAGE_SIZE)  {
+            for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(alloc->base); i < alloc->base + alloc->size; i += PAGE_SIZE)  {
                 page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
 
                 // Allocate corresponding to prot flags
@@ -450,6 +450,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
                 if (pg) mem_allocatePage(pg, flags);
             } 
         
+            LOG(DEBUG, "CoW released for %p - %p\n", alloc->base, alloc->base + alloc->size);
             spinlock_release(&alloc->ref_lck);
             return 1;
         }
@@ -472,7 +473,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
         // Start copying pages
         // TODO: We map the *entire* region in, instead of doing what the other (non-CoW) part does and following the size hint given. This wastes memory in certain cases.
-        for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + alloc->size; i += PAGE_SIZE)  {
+        for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(alloc->base); i < alloc->base + alloc->size; i += PAGE_SIZE)  {
             page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
             
             if (pg && PAGE_IS_PRESENT(pg)) {
@@ -481,6 +482,10 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
                 // Allocate a new frame for the page
                 uintptr_t new_frame = pmm_allocateBlock();
+
+                LOG(DEBUG, "CoW: Page %016llX swap frames %p - %p\n", i, MEM_GET_FRAME(pg), new_frame);
+                
+                // Set the new frame
                 MEM_SET_FRAME(pg, new_frame);
 
                 // Make the page R/W again
@@ -504,6 +509,9 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
     // There's an allocation here - its probably lazy. How much can we map in?
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
+
+    // Too much?
+    if (address + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - address;
 
     for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + actual_map_size; i += PAGE_SIZE) {
         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
@@ -617,7 +625,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
                 MEM_SET_FRAME(dstpg, MEM_GET_FRAME(srcpg));
             }
 
-            LOG(DEBUG, "Copied page at %016llX (CoW for allocation %p)\n", alloc->base, alloc);
+            LOG(DEBUG, "Copied page at %016llX - %016llX (CoW for allocation %p)\n", alloc->base, alloc->base + alloc->size, alloc);
             spinlock_release(&alloc->ref_lck);
             goto _add_allocation;
         }
