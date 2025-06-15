@@ -36,6 +36,10 @@ color_t terminal_bg = TERMINAL_DEFAULT_BG;
 static int ansi_escape_code = 0; // 0 = no code, 1 = received a \033, 2 = received a [. Resets to 0 on m, meaning that yes, you can break this by not specifying m.
 static int ansi_color_code = 0; 
 
+#define ANSI_NO_CODE            0   // No code
+#define ANSI_BACKSLASH033       1   // \033
+#define ANSI_BRACKET            2   // [
+
 /**
  * @brief Initialize the terminal system - sets terminal_print as default printf method.
  * @returns 0 on success, -EINVAL on no video driver/font driver.
@@ -216,7 +220,7 @@ int terminal_putchar(int c) {
 
         case 'm':
             // Final part of the ANSI escape sequence.
-            if (ansi_escape_code == 2) {
+            if (ansi_escape_code == ANSI_BRACKET) {
                 // This means that our color codes are setup in ansi_color_code.
                 // Parse and handle (which will reset avlues as well).
                 terminal_parseANSI();
@@ -225,10 +229,19 @@ int terminal_putchar(int c) {
 
             // Fall through to default case.
 
+        case 'J':
+            if (ansi_color_code == 2) {
+                terminal_clear(terminal_fg, terminal_bg);
+                ansi_escape_code = ANSI_NO_CODE;
+                ansi_color_code = 0;
+            }
+
+            break;
+
         case '[':
             // Are we handling an ANSI escape sequence?
             if (ansi_escape_code) {
-                ansi_escape_code = 2;
+                ansi_escape_code = ANSI_BRACKET;
                 break;
             }
             
@@ -236,19 +249,19 @@ int terminal_putchar(int c) {
         
         case ';':
             // Are we handling an ANSI escape sequence? (it can be \033[1;XXm too)
-            if (ansi_escape_code == 2) {
+            if (ansi_escape_code == ANSI_BRACKET) {
                 // Reset color code & break;
-                ansi_color_code = 0;
+                ansi_color_code = ANSI_NO_CODE;
                 break;
             }
 
             // Fall through to default case.
 
         default:
-            if (ansi_escape_code == 1) {
+            if (ansi_escape_code == ANSI_BACKSLASH033) {
                 // No '[' was received, reset.
-                ansi_escape_code = 0; 
-            } else if (ansi_escape_code == 2) {
+                ansi_escape_code = ANSI_NO_CODE; 
+            } else if (ansi_escape_code == ANSI_BRACKET) {
                 // Tack on to ANSI color code.
                 ansi_color_code = (ansi_color_code * 10) + (c - '0');
                 break;
