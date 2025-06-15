@@ -67,4 +67,4 @@ arch_signal_trampoline:
     // Update RSP
     addq $16, %rsp
 
-    ret $128
+    ret
