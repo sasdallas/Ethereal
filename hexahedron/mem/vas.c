@@ -668,7 +668,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         mem_allocatePage(dst, flags);
         MEM_SET_FRAME(dst, new_frame);
 
-        LOG(DEBUG, "Copied page at %016llX (frame %p - %p, source references: %d, new references: %d)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst), ref_get(MEM_GET_FRAME(src) >> MEM_PAGE_SHIFT), ref_get(MEM_GET_FRAME(dst) >> MEM_PAGE_SHIFT));
+        LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }
 
 
