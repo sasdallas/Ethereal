@@ -157,6 +157,8 @@ page_t *mem_createVAS() {
  * @brief Destroys and frees the memory of a VAS
  * @param vas The VAS to destroy
  * 
+ * @warning IMPORTANT: DO NOT FREE ANY PAGES. Just free the associated PML/PDPT/PD/PT.  
+ * 
  * @warning Make sure the VAS being freed isn't the current one selected
  */
 void mem_destroyVAS(page_t *vas) {
@@ -169,7 +171,7 @@ void mem_destroyVAS(page_t *vas) {
  * 
  * This is a full PROPER page directory clone.
  * This function does it properly and clones the page directory, its tables, and their respective entries fully.
- * It also has the option to do CoW on usermode pages
+ * YOU SHOULD NOT DO COW ON THIS. The virtual address system (VAS) will handle CoW for you. 
  * 
  * @param dir The source page directory. Keep as NULL to clone the current page directory.
  * @returns The page directory on success

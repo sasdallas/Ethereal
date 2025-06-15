@@ -31,9 +31,6 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Uncomment to disable CoW */
-// #define DISABLE_COW
-
 // Heap/MMIO/driver space
 uintptr_t mem_kernelHeap                = 0xAAAAAAAAAAAAAAAA;   // Kernel heap
 uintptr_t mem_driverRegion              = MEM_DRIVER_REGION;    // Driver space
@@ -41,8 +38,6 @@ uintptr_t mem_dmaRegion                 = MEM_DMA_REGION;       // DMA region
 uintptr_t mem_mmioRegion                = MEM_MMIO_REGION;      // MMIO region
 
 // Spinlocks
-static spinlock_t ref_lock = { 0 };
-static spinlock_t cow_lock = { 0 };
 static spinlock_t heap_lock = { 0 };
 static spinlock_t driver_lock = { 0 };
 static spinlock_t dma_lock = { 0 };
@@ -162,6 +157,8 @@ page_t *mem_createVAS() {
  * @brief Destroys and frees the memory of a VAS
  * @param vas The VAS to destroy
  * 
+ * @warning IMPORTANT: DO NOT FREE ANY PAGES. Just free the associated PML/PDPT/PD/PT.  
+ * 
  * @warning Make sure the VAS being freed isn't the current one selected
  */
 void mem_destroyVAS(page_t *vas) {
@@ -179,26 +176,14 @@ void mem_destroyVAS(page_t *vas) {
                         if (pd[pde].bits.present) {
                             // Get the PT
                             page_t *pt = (page_t*)mem_remapPhys((pd[pde].bits.address << MEM_PAGE_SHIFT), 0);
+                            
+                            // !!!: ONLY FOR DEBUG
                             for (size_t pte = 0; pte < 512; pte++) {
                                 page_t *pg = &pt[pte];
-                                if (pg->bits.usermode && pg->bits.present && pg->bits.address) {
-                                    // Free this page (only if refcounts == 0)
+                                if (pg->bits.usermode && pg->bits.present && pg->bits.address && pg->bits.rw) {
+                                    // Debug
                                     uintptr_t address = ((pml4e << (9 * 3 + 12)) | (pdpte << (9*2 + 12)) | (pde << (9 + 12)) | (pte << MEM_PAGE_SHIFT));
                                     LOG(WARN, "Unfreed usermode page at address %016llX (frame: %p, cow waiting: %d, rw: %d) - FREE\n", address, MEM_GET_FRAME(pg), pg->bits.cow, pg->bits.rw);
-
-                                    // // !!!: what am i doing
-                                    // uintptr_t f = MEM_GET_FRAME(pg);
-                                    // if (f >= 0xFD000000) {
-                                    //     continue;
-                                    // }
-                                    
-                                    // if (pg->bits.rw) {
-                                    //     mem_freePage(pg);
-                                    // } else {
-                                    //     if (!ref_decrement(PAGE_FRAME_RAW(pg))) {
-                                    //         pmm_freeBlock(MEM_GET_FRAME(pg));
-                                    //     }
-                                    // }
                                 }
                             }
 
@@ -224,139 +209,12 @@ void mem_destroyVAS(page_t *vas) {
     pmm_freeBlock((uintptr_t)vas & ~MEM_PHYSMEM_MAP_REGION);
 }
 
-
 /**
- * @brief Handle a copy on write
- * @param page The page to handle CoW on
- * @param address Address for TLB shootdown if required
- */
-static void mem_copyOnWrite(page_t *page, uintptr_t address) {
-    if (!page || !page->bits.cow) {
-        LOG(ERR, "Cannot do copy-on-write for a page not pending copy-on-write\n");
-        return;
-    }
-
-    spinlock_acquire(&cow_lock);
-
-    // Is this the last reference to the page?
-    if (ref_decrement(PAGE_FRAME_RAW(page)) == 0) {
-        // Yes. We can just mark the page as writable
-        page->bits.rw = 1;
-        page->bits.cow = 0;
-        mem_invalidatePage(address);
-        spinlock_release(&cow_lock);
-        return;
-    }
-
-    uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(page), PAGE_SIZE);
-    uintptr_t dest_frame_block = pmm_allocateBlock();
-    uintptr_t dest_frame = mem_remapPhys(dest_frame_block, PAGE_SIZE);
-    memcpy((void*)dest_frame, (void*)src_frame, PAGE_SIZE);
-
-    // Setup bits
-    MEM_SET_FRAME(page, dest_frame_block);
-    page->bits.cow = 0; // Not CoW
-    page->bits.rw = 1;
-
-    mem_unmapPhys(dest_frame, PAGE_SIZE);
-    mem_unmapPhys(src_frame, PAGE_SIZE);
-
-    mem_invalidatePage(address);
-
-    spinlock_release(&cow_lock);
-    LOG(DEBUG, "Finished performing CoW for page %p. Switched frames from %p -> %p\n", address, src_frame, dest_frame);
-    return;
-}
-
-/**
- * @brief Maybe copy a usermode page. 
- * 
- * Does CoW if more than @c UINT8_MAX processes reference the page.
- * 
+ * @brief Copy a usermode page. 
  * @param src_page The source page
  * @param dest_page The destination page
- * @param address Address for TLB shootdown
  */
-static void mem_copyUserPage(page_t *src_page, page_t *dest_page, uintptr_t address, int force_no_cow) {
-#ifndef DISABLE_COW
-    // When a page needs to be shared during a clone, it is automatically CoW'd and has
-    // its reference counts initialized. Reference counts for a page are ONLY created when
-    // the page is being marked as CoW and R/O
-
-    if (force_no_cow) {
-        uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src_page), PAGE_SIZE);
-        uintptr_t dest_frame_block = pmm_allocateBlock();
-        uintptr_t dest_frame = mem_remapPhys(dest_frame_block, PAGE_SIZE);
-        memcpy((void*)dest_frame, (void*)src_frame, PAGE_SIZE);
-
-        // Setup bits
-        dest_page->data = src_page->data;
-        MEM_SET_FRAME(dest_page, dest_frame_block);
-        dest_page->bits.cow = 0; // Not CoW
-        dest_page->bits.rw = 1;
-
-        mem_unmapPhys(dest_frame, PAGE_SIZE);
-        mem_unmapPhys(src_frame, PAGE_SIZE);
-        return;
-    }
-
-    spinlock_acquire(&cow_lock);
-
-    // Is the source page writable or read only?
-    if (src_page->bits.rw) {
-        // Writable. That means the page is fresh and has no references.
-        // Just make sure though
-        if (ref_get(PAGE_FRAME_RAW(src_page))) {
-            // What? If a page has references it should be using CoW.
-            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "CoW", "*** Source page %p (frame %p) already has %d references. Corrupted references bitmap?\n", address, MEM_GET_FRAME(src_page), ref_get(PAGE_FRAME_RAW(src_page)));
-            __builtin_unreachable();
-        }
-
-        // Initialize references
-        ref_set(PAGE_FRAME_RAW(src_page), 2);
-
-        // Mark the source and destination page as R/O and set them both to have a CoW pending
-        // Writes will trigger a page fault which the handler with detect and auto handle CoW
-        src_page->bits.rw = 0;
-        src_page->bits.cow = 1;
-
-        // Raw copy the rest of the bits
-        dest_page->data = src_page->data;
-        dest_page->bits.cow = 1;
-
-        // All done
-        mem_invalidatePage(address);
-        spinlock_release(&cow_lock);
-        return;
-    }
-
-    // It's not writable and probably already has pending CoW
-    // Can we add a new reference?
-    if (ref_increment(PAGE_FRAME_RAW(src_page)) == -1) {
-        // No. There are too many reference counts and we should copy the page.
-        // This is gross..
-        uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src_page), PAGE_SIZE);
-        uintptr_t dest_frame_block = pmm_allocateBlock();
-        uintptr_t dest_frame = mem_remapPhys(dest_frame_block, PAGE_SIZE);
-        memcpy((void*)dest_frame, (void*)src_frame, PAGE_SIZE);
-
-        // Setup bits
-        dest_page->data = src_page->data;
-        MEM_SET_FRAME(dest_page, dest_frame_block);
-        dest_page->bits.cow = 0; // Not CoW
-        dest_page->bits.rw = 1;
-
-        mem_unmapPhys(dest_frame, PAGE_SIZE);
-        mem_unmapPhys(src_frame, PAGE_SIZE);
-        spinlock_release(&cow_lock);
-        return;
-    }
-
-    // Yes, we can. Raw copy and return
-    dest_page->data = src_page->data;
-    spinlock_release(&cow_lock);
-
-#else
+static void mem_copyUserPage(page_t *src_page, page_t *dest_page) {
     // Just copy the page
     uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src_page), PAGE_SIZE);
     uintptr_t dest_frame_block = pmm_allocateBlock();
@@ -371,17 +229,15 @@ static void mem_copyUserPage(page_t *src_page, page_t *dest_page, uintptr_t addr
 
     mem_unmapPhys(dest_frame, PAGE_SIZE);
     mem_unmapPhys(src_frame, PAGE_SIZE);
-#endif
 }
 
-spinlock_t clone_lock = { 0 };
 
 /**
  * @brief Clone a page directory.
  * 
  * This is a full PROPER page directory clone.
  * This function does it properly and clones the page directory, its tables, and their respective entries fully.
- * It also has the option to do CoW on usermode pages
+ * YOU SHOULD NOT DO COW ON THIS. The virtual address system (VAS) will handle CoW for you. 
  * 
  * @param dir The source page directory. Keep as NULL to clone the current page directory.
  * @returns The page directory on success
@@ -465,17 +321,10 @@ page_t *mem_clone(page_t *dir) {
                     page_t *page_dest = &pt_dest[page];
                     if (!page_src || !(page_src->bits.present)) continue; // Not present
 
-                    // !!!: what am i doing
-                    uintptr_t f = MEM_GET_FRAME(page_src);
-                    if (f >= 0xFD000000) {
-                        page_dest->data = page_src->data;
-                        continue;
-                    }
-
                     if (page_src->bits.usermode) {
                         uintptr_t address = ((pdpt << (9 * 3 + 12)) | (pd << (9*2 + 12)) | (pt << (9 + 12)) | (page << MEM_PAGE_SHIFT));
-                        mem_copyUserPage(page_src, page_dest, address, (address >= MEM_USERMODE_STACK_REGION) ? 1 : 0);
-                        LOG(DEBUG, "Usermode page at address %016llX (frame: %p, refs: %d) - CoW\n", address, MEM_GET_FRAME(page_src), ref_get(page_src->bits.address));
+                        mem_copyUserPage(page_src, page_dest);
+                        LOG(DEBUG, "Usermode page at address %016llX (frame: %p) - copy\n", address, MEM_GET_FRAME(page_src));
                     } else {
                         // Raw copy
                         page_dest->data = page_src->data;
@@ -651,11 +500,6 @@ void mem_allocatePage(page_t *page, uintptr_t flags) {
 void mem_freePage(page_t *page) {
     if (!page) return;
 
-    // Check reference counts
-    if (ref_get(PAGE_FRAME_RAW(page))) {
-        if (ref_decrement(PAGE_FRAME_RAW(page))) return; // Still references on this page
-    }
-
     // Mark the page as not present
     page->bits.present = 0;
     page->bits.rw = 0;
@@ -724,15 +568,6 @@ uintptr_t mem_getPhysicalAddress(page_t *dir, uintptr_t virtaddr) {
 int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registers_t *regs_extended) {
     // Check if this was a usermode page fault
     if (regs->cs != 0x08) {
-        // Yes, it was
-        page_t *pg = mem_getPage(NULL, regs_extended->cr2, MEM_DEFAULT);
-        if (pg) {
-            if (pg->bits.cow) {
-                mem_copyOnWrite(pg, regs_extended->cr2);
-                return 0;
-            }
-        }
-
         // Was this an exception because we didn't map their heap?
         if (regs_extended->cr2 >= current_cpu->current_process->heap_base && regs_extended->cr2 < current_cpu->current_process->heap) {
             // Yes, it was, handle appropriately by mapping this page
@@ -1013,9 +848,6 @@ extern uintptr_t __kernel_start, __kernel_end;
 
     // Initialize regions
     mem_regionsInitialize();
-
-    // Initialize references
-    ref_init(MEM_ALIGN_PAGE(mem_size / PMM_BLOCK_SIZE));
 
     // Register page fault
     hal_registerExceptionHandler(14, mem_pageFault);

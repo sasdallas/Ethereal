@@ -2,8 +2,7 @@
  * @file hexahedron/arch/i386/mem.c
  * @brief i386 memory subsystem
  * 
- * @todo A locking subsystem NEEDS to be implemented
- * @todo Reference bitmap for pages and cloning functions, but usermode is far away.
+ * 
  * @todo Map pool can use a trick from x86_64 and use 4MiB pages
  * 
  * @copyright
@@ -36,15 +35,9 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/arch/i386/smp.h>
 
-/* coming never */
-// #define EXPERIMENTAL_COW
-
 // Current & kernel directories
 static page_t       *mem_kernelDirectory;       // Kernel page directory
                                                 // TODO: We can stack allocate and align this.
-
-// Reference counts
-uint8_t     *mem_pageReferences     = NULL;     // Holds a bitmap of references
 
 // Heap/identity map stuff
 uintptr_t    mem_kernelHeap;                    // Location of the kernel heap in memory
@@ -166,54 +159,6 @@ int mem_switchDirectory(page_t *pagedir) {
 }
 
 /**
- * @brief Increment a page refcount
- * @param page The page to increment reference counts of
- * @returns The number of reference counts or 0 if maximum is reached
- */
-int mem_incrementPageReference(page_t *page) {
-    if (!page) return 0; // ???
-    if (!page->bits.present) {
-        dprintf(ERR, "Tried incrementing reference count on non-present page\n");
-        return 0;
-    }
-
-    // First get the index in refcounts of the frame
-    uintptr_t idx = page->bits.address;
-    if (mem_pageReferences[idx] == UINT8_MAX) {
-        // We're too high, return 0 and hope they make a copy of the page
-        return 0; 
-    }
-
-    mem_pageReferences[idx]++;
-    return mem_pageReferences[idx];
-}
-
-/**
- * @brief Decrement a page refcount
- * @param page The page to decrement the reference count of
- * @returns The number of reference counts. Panicks if 0
- */
-int mem_decrementPageReference(page_t *page) {
-    if (!page) return 0; // ???
-    if (!page->bits.present) {
-        dprintf(ERR, "Tried decrementing reference count on non-present page\n");
-        return 0;
-    }
-
-    // First get the index in refcounts of the frame
-    uintptr_t idx = page->bits.address;
-    if (mem_pageReferences[idx] == 0) {
-        // Bail out!
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pageref", "*** Tried to release reference on page with 0 references (bug)\n");
-        __builtin_unreachable();
-    }
-
-    mem_pageReferences[idx]--;
-    return mem_pageReferences[idx];
-}
-
-
-/**
  * @brief Create a new, completely blank virtual address space
  * @returns A pointer to the VAS
  */
@@ -235,68 +180,12 @@ void mem_destroyVAS(page_t *vas) {
 
 
 /**
- * @brief Maybe copy a usermode page
+ * @brief Copy a usermode page
  * @param src_pt The source page table
- * @param dest_pt The destination page table
- * 
- * @ref https://github.com/klange/toaruos/blob/master/kernel/arch/x86_64/mmu.c
- * 
+ * @param dest_pt The destination page tables
  * @returns The block address of the table
  */
 static void mem_copyUserPage(page_t *src, page_t *dest) {
-
-#ifdef EXPERIMENTAL_COW
-
-    // Check if the source page is writable
-    if (src->bits.rw) {
-        // It is, initialize reference counts for the page's frame
-        if (mem_pageReferences[src->bits.address]) {
-            // There's already references??
-            kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "CoW", "*** Source page already has references\n");
-            __builtin_unreachable();
-        }
-
-        // 2 references
-        mem_pageReferences[src->bits.address] = 2;
-
-        // Now what we do is mark the source AND destination page as R/O and set them both to have a CoW pending
-        // Any writes will trigger a page fault, which our handler will detect and auto handle CoW
-        src->bits.rw = 0;
-        src->bits.cow = 1;
-
-        // Raw copy to destination
-        dest->data = src->data;
-
-        // All done!
-        // TODO: Invalidate the page with TLB shootdown
-        dprintf(WARN, "IMPLEMENT TLB SHOOTDOWN\n");
-        return;
-    }
-
-    // It's not writable. Can we add a new reference?
-    if (mem_incrementPageReference(src) == 0) {
-        // There are too many reference counts. We need to create a copy of the page.
-        // We can do this by mapping the old page into memory, creating a new page, copying contents, and then done
-        uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src), PAGE_SIZE);
-        uintptr_t dest_frame_block = pmm_allocateBlock();
-        uintptr_t dest_frame = mem_remapPhys(dest_frame_block, PAGE_SIZE);
-        memcpy((void*)dest_frame, (void*)src_frame, PAGE_SIZE);
-
-        // Setup bits
-        dest->data = src->data;
-        MEM_SET_FRAME(dest, dest_frame_block);
-        dest->bits.cow = 0; // Not CoW
-
-        mem_unmapPhys(dest_frame, PAGE_SIZE);
-        mem_unmapPhys(src_frame, PAGE_SIZE);
-        return;
-    }
-
-    // Yes, we can. Raw copy and return
-    dest->data = src->data;
-
-#else
-
     // Copy the page
     uintptr_t src_frame = mem_remapPhys(MEM_GET_FRAME(src), PAGE_SIZE);
     uintptr_t dest_frame_block = pmm_allocateBlock();
@@ -306,12 +195,10 @@ static void mem_copyUserPage(page_t *src, page_t *dest) {
     // Setup bits
     dest->data = src->data;
     MEM_SET_FRAME(dest, dest_frame_block);
-    dest->bits.cow = 0; // Not CoW
 
     mem_unmapPhys(dest_frame, PAGE_SIZE);
     mem_unmapPhys(src_frame, PAGE_SIZE);
     return;
-#endif
 }
 
 
@@ -767,13 +654,6 @@ void mem_init(uintptr_t high_address) {
     mem_load_pdbr((uintptr_t)page_directory); // Load PMM block only (CR3 expects a physical address)
     current_cpu->current_dir = mem_kernelDirectory;
     mem_setPaging(true);
-
-    // Make space for reference counts in kernel heap
-    // Reference counts will be initialized when a user PTE is copied.
-    // NOTE: This has to be done here because mem_sbrk calls mem_getPage which in turn can wrap into mem_remapPhys' map pool system
-    size_t refcount_bytes = frame_bytes >> MEM_PAGE_SHIFT;  // One byte per page
-    mem_pageReferences = (uint8_t*)mem_sbrk((refcount_bytes & 0xFFF) ? MEM_ALIGN_PAGE(refcount_bytes) : refcount_bytes);
-    memset(mem_pageReferences, 0, refcount_bytes);
 
     // Initialize regions
     mem_regionsInitialize();
