@@ -448,7 +448,7 @@ void process_destroy(process_t *proc) {
         foreach(mmap_node, proc->mmap) {
             if (prev) {
                 LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-                process_removeMapping(current_cpu->current_process, prev);
+                process_removeMapping(proc, prev);
                 prev = NULL;
             }
 
@@ -458,7 +458,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        // if (prev) process_removeMapping(proc, prev);
+        if (prev) process_removeMapping(proc, prev);
         list_destroy(proc->mmap, false);
     }
 
