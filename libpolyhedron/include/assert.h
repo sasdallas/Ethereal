@@ -20,8 +20,12 @@ _Begin_C_Header
 
 #undef assert
 
+#ifdef NDEBUG
+#define assert(ignore) ((void)0)
+#else
 void __assert_failed(const char *file, int line, const char *stmt);
 #define assert(statement) (statement) ? (void)0 : __assert_failed(__FILE__, __LINE__, #statement)
+#endif
 
 #endif
 

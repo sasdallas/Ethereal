@@ -61,10 +61,10 @@ void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_colo
     int32_t width = rect->width;
     int32_t height = rect->height;
 
-    int32_t _left   = max(x, 0);
-	int32_t _top    = max(y, 0);
-	int32_t _right  = min(x + width,  ctx->width - 1);
-	int32_t _bottom = min(y + height, ctx->height - 1);
+    int32_t _left   = GFX_MAX(x, 0);
+	int32_t _top    = GFX_MAX(y, 0);
+	int32_t _right  = GFX_MIN(x + width,  ctx->width - 1);
+	int32_t _bottom = GFX_MIN(y + height, ctx->height - 1);
 	for (uint16_t _y = 0; _y < height; ++_y) {
 		for (uint16_t _x = 0; _x < width; ++_x) {
 			if (x + _x < _left || x + _x > _right || y + _y < _top || y + _y > _bottom)

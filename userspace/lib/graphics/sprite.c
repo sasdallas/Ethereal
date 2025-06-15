@@ -15,6 +15,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+/* util macros */
+#define GFX_MIN(a, b) (((a) > (b) ? (b) : (a)))
+#define GFX_MAX(a, b) (((a) > (b) ? (a) : (b)))
+
 /**
  * @brief Create a new sprite object
  * @param width The width of the sprite
@@ -158,10 +163,10 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file) {
  */
 int gfx_renderSprite(gfx_context_t *ctx, sprite_t *sprite, int x, int y) {
     // Calculate bounds of sprites
-    int32_t _left = max(x, 0);
-    int32_t _top = max(y, 0);
-    int32_t _right = min(x + sprite->width, GFX_WIDTH(ctx) - 1);
-    int32_t _bottom = min(y + sprite->height, GFX_HEIGHT(ctx) - 1);
+    int32_t _left = GFX_MAX(x, 0);
+    int32_t _top = GFX_MAX(y, 0);
+    int32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
+    int32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
 
     for (uint16_t _y = 0; _y < sprite->height; _y++) {
         if (y + _y < _top) continue;
