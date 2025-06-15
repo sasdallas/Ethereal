@@ -31,7 +31,6 @@
 #endif
 
 #include <kernel/mem/regions.h>
-#include <kernel/mem/reference.h>
 
 
 /**** DEFINITIONS ****/
