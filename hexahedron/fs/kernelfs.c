@@ -27,6 +27,8 @@
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <structs/list.h>
+#include <structs/hashmap.h>
+#include <kernel/config.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -538,9 +540,110 @@ int kernelfs_memoryRead(kernelfs_entry_t *entry, void *data) {
 }
 
 /**
+ * @brief Read kernel version information
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_versionRead(kernelfs_entry_t *entry, void *data) {
+    kernelfs_writeData(entry,
+        "KernelName:Hexahedron\n"
+        "KernelVersionMajor:%d\n"
+        "KernelVersionMinor:%d\n"
+        "KernelVersionLower:%d\n"
+        "KernelCodename:%s\n"
+        "Compiler:%s\n"
+        "BuildDate:%s\n"
+        "BuildTime:%s\n",
+            __kernel_version_major,
+            __kernel_version_minor,
+            __kernel_version_lower,
+            __kernel_version_codename,
+            __kernel_compiler,
+            __kernel_build_date,
+            __kernel_build_time);
+    return 0;
+}
+
+/**
+ * @brief Read kernel cmdline information
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_cmdlineRead(kernelfs_entry_t *entry, void *data) {
+    kernelfs_writeData(entry,
+        "%s\n", arch_get_generic_parameters()->kernel_cmdline);
+    return 0;
+}
+
+
+/**
+ * @brief Recursive VFS dump method
+ */
+static void kernelfs_filesystemsRecur(tree_node_t *node, int depth, kernelfs_entry_t *entry) {
+    if (!node) return;
+
+    // Calculate spaces
+    char spaces[256] = { 0 };
+    for (int i = 0; i < ((depth > 256) ? 256 : depth); i++) {
+        spaces[i] = ' ';
+    }
+    
+    if (node->value) {
+        vfs_tree_node_t *tnode = (vfs_tree_node_t*)node->value;
+        if (tnode->node) {
+            kernelfs_appendData(entry, "%s%s (filesystem %s) -> file %s\n", spaces, tnode->name, tnode->fs_type ? tnode->fs_type : "N/A", tnode->node->name);
+        } else {
+            kernelfs_appendData(entry, "%s%s (filesystem %s) -> N/A\n", spaces, tnode->name, tnode->fs_type ? tnode->fs_type : "N/A");
+        }
+    } else {
+        kernelfs_appendData(entry, "%s(node %p has NULL value)\n", spaces, node);
+    }
+
+    foreach (child, node->children) {
+        kernelfs_filesystemsRecur((tree_node_t*)child->value, depth + 1, entry);
+    }
+} 
+
+/**
+ * @brief Kernel mounts read method
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_mountsRead(kernelfs_entry_t *entry, void *data) {
+extern tree_t *vfs_tree;
+    kernelfs_filesystemsRecur(vfs_tree->root, 0, entry);
+    return 0;
+}
+
+/**
+ * @brief Kernel filesystems read method
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_filesystemsRead(kernelfs_entry_t *entry, void *data) {
+extern hashmap_t *vfs_filesystems;
+
+    foreach(key, hashmap_keys(vfs_filesystems)) {
+        kernelfs_appendData(entry, "%s\n", key->value);
+    }
+
+    return 0;
+}
+
+
+/**
+ * @brief Mount KernelFS on a different directory (basically just a symlink)
+ */
+fs_node_t *kernelfs_mount(char *argp, char *mountpoint) {
+    return kernelfs_parent->node;
+}
+
+/**
  * @brief Initialize the kernel filesystem
  */
 void kernelfs_init() {
+    vfs_registerFilesystem("kernelfs", kernelfs_mount);
+
     // Create parental node
     kernelfs_parent = kernelfs_createDirectory(NULL, "kernel", 1);
     vfs_mount(kernelfs_parent->node, "/kernel");
@@ -552,4 +655,16 @@ void kernelfs_init() {
 
     // Create memory
     kernelfs_createEntry(NULL, "memory", kernelfs_memoryRead, NULL);
+
+    // Create version
+    kernelfs_createEntry(NULL, "version", kernelfs_versionRead, NULL);
+
+    // Create cmdline
+    kernelfs_createEntry(NULL, "cmdline", kernelfs_cmdlineRead, NULL);
+
+    // Create mounts
+    kernelfs_createEntry(NULL, "mounts", kernelfs_mountsRead, NULL);
+
+    // Create filesystems
+    kernelfs_createEntry(NULL, "filesystems", kernelfs_filesystemsRead, NULL);
 }

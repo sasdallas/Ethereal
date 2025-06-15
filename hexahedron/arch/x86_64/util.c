@@ -13,9 +13,11 @@
 
 #include <kernel/arch/x86_64/arch.h>
 #include <kernel/arch/x86_64/hal.h>
+#include <kernel/arch/x86_64/smp.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/arch/arch.h>
 #include <kernel/processor_data.h>
+#include <stdio.h>
 
 /* External parameters */
 extern generic_parameters_t *parameters;
@@ -124,8 +126,44 @@ static int arch_pat_kernelfs(struct kernelfs_entry *entry, void *data) {
 }
 
 /**
+ * @brief /kernel/cpus/XXX in the kernelfs
+ */
+static int arch_cpu_kernelfs(struct kernelfs_entry *entry, void *data) {
+	processor_t *cpu = (processor_t*)data;
+
+	kernelfs_writeData(entry,
+		"CpuId:%d\n"
+		"LapicId:%d\n"
+		"Model:%s\n"
+		"Manufacturer:%s\n"
+		"Family:0x%x\n"
+		"ModelNumber:0x%x\n"
+		"CurrentDirectory:%p\n"
+		"CurrentProcess:%s\n",
+			cpu->cpu_id,
+			cpu->lapic_id,
+			cpu->cpu_model,
+			cpu->cpu_manufacturer,
+			cpu->cpu_family,
+			cpu->cpu_model_number,
+			cpu->current_dir,
+			cpu->current_process ? cpu->current_process->name : "N/A");
+
+	return 0;
+}
+
+/**
  * @brief Mount KernelFS nodes
  */
 void arch_mount_kernelfs() {
     kernelfs_createEntry(NULL, "pat", arch_pat_kernelfs, NULL);
+	
+	kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "cpus", 1);
+	for (int i = 0; i < MAX_CPUS; i++) {
+		if (processor_data[i].cpu_id || !i) {
+			char name[128];
+			snprintf(name, 128, "cpu%d", i);
+			kernelfs_createEntry(dir, name, arch_cpu_kernelfs, &processor_data[i]);
+		}
+	}
 }
