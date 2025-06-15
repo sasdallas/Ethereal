@@ -63,19 +63,16 @@ typedef struct vas_allocation {
 
     spinlock_t ref_lck;             // Reference count lock
     size_t references;              // References to this allocation
-
-    struct vas_allocation *next;    // Next allocation in the chain
-    struct vas_allocation *prev;    // Previous allocation in the chain
 } vas_allocation_t;
 
 /**
  * @brief Virtual address space node
  */
-typedef struct vas_allocation_node {
-    vas_allocation_t *alloc;            // Allocation
-    struct vas_allocation_node *next;   // Next allocation in the chain
-    struct vas_allocation_node *prev;   // Previous allocation in the chain
-} vas_allocation_node_t;
+typedef struct vas_node {
+    vas_allocation_t *alloc;        // Allocation
+    struct vas_node *next;          // Next allocation in the chain
+    struct vas_node *prev;          // Previous allocation in the chain
+} vas_node_t;
 
 
 /**
@@ -91,8 +88,8 @@ typedef struct vas {
     
     // NOTE: Not using list structures here despite the fact they're literally just this
     size_t allocations;     // Number of allocations
-    vas_allocation_t *head; // Start allocation
-    vas_allocation_t *tail; // End allocation
+    vas_node_t *head;       // Start allocation
+    vas_node_t *tail;       // End allocation
 } vas_t;    
 
 /**** FUNCTIONS ****/
@@ -132,18 +129,18 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size);
 /**
  * @brief Free memory in a VAS
  * @param vas The VAS to free the memory in
- * @param allocation The allocation to free
+ * @param node The node to free
  * @returns 0 on success or 1 on failure
  */
-int vas_free(vas_t *vas, vas_allocation_t *allocation);
+int vas_free(vas_t *vas, vas_node_t *node);
 
 /**
  * @brief Get an allocation from a VAS
  * @param vas The VAS to get the allocation from
  * @param address The address to find the allocation for
- * @returns The allocation or NULL if it could not be found
+ * @returns The node of the allocation or NULL if it could not be found
  */
-vas_allocation_t *vas_get(vas_t *vas, uintptr_t address);
+vas_node_t *vas_get(vas_t *vas, uintptr_t address);
 
 /**
  * @brief Dump VAS information
@@ -174,5 +171,13 @@ int vas_destroy(vas_t *vas);
  * This also sets up a new page directory with valid mappings from the parent
  */
 vas_t *vas_clone(vas_t *parent);
+
+/**
+ * @brief Get an allocation node from an allocation
+ * @param vas The VAS to search in 
+ * @param alloc The allocation to look for
+ * @returns The node or NULL
+ */
+vas_node_t *vas_getFromAllocation(vas_t *vas, vas_allocation_t *alloc);
 
 #endif

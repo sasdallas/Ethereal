@@ -19,6 +19,7 @@
 #include <kernel/multiboot.h>
 #include <kernel/arch/arch.h>
 #include <kernel/arch/i386/registers.h>
+#include <kernel/arch/i386/context.h>
 
 /**** DEFINITIONS ****/
 

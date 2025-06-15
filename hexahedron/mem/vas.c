@@ -27,6 +27,8 @@
 #include <kernel/panic.h>
 #include <string.h>
 
+/* Helper macro */
+#define ALLOC(n) (n->alloc)
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "MEM:VAS", __VA_ARGS__)
@@ -77,7 +79,6 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int ty
         // Outside of the VAS range!
         LOG(ERR, "Cannot reserve region outside of VAS space: %p - %p (VAS: %p - %p)\n", address, address + size, vas->base, vas->base + vas->size);
         return NULL;
-
     }
 
     // Lock the VAS
@@ -92,22 +93,27 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int ty
     allocation->type = type;
     allocation->references = 1; 
 
+    vas_node_t *node = kzalloc(sizeof(vas_node_t));
+    node->alloc = allocation;
+
     LOG(DEBUG, "[ALLO] Allocate %p - %p\n", address, size);
 
     // Sanity check and to find the spot where we need to place
-    vas_allocation_t *n = vas->head;
+    vas_node_t *nn = vas->head;
 
     // If n exists but we can just fit it in the hole of 0 - n do that
-    if (n) {
-        if (RANGE_IN_RANGE(address, address+size, 1, n->base)) {
-            vas->head = allocation;
-            allocation->next = n;
-            n->prev = allocation;
+    if (nn && ALLOC(nn)->base) {
+        if (RANGE_IN_RANGE(address, address+size, 1, ALLOC(nn)->base)) {
+            vas->head = node;
+            node->next = nn;
+            nn->prev = node;
             goto _finish_allocation;
         }
     }
 
-    while (n) {
+    while (nn) {
+        vas_allocation_t *n = ALLOC(nn);
+
         if (RANGE_IN_RANGE(n->base, n->base + n->size, address, address + size)) {
             LOG(WARN, "Reserving a VAS region (%p - %p) which is contained within another allocation (%p - %p)\n", n->base, n->base + n->size, address, address+size);
             LOG(WARN, "This is undefined behavior and may result in very bad consequences.\n");
@@ -130,37 +136,38 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int ty
 
         // There's enough space. Let's see what we have.
     
-        if (!n->next) {
+        if (!nn->next) {
             // That's all we have allocated.
-            n->next = allocation;
-            allocation->prev = n;
-            vas->tail = allocation;
+            nn->next = node;
+            node->prev = nn;
+            vas->tail = node;
             goto _finish_allocation;
         }
 
         // Calculate hole width
         uintptr_t hole_base = n->base + n->size;
-        size_t hole_size = n->next->base - hole_base;
+        size_t hole_size = nn->next->alloc->base - hole_base;
 
         LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", hole_base, hole_base + hole_size);
 
         // Is it enough?
         if (RANGE_IN_RANGE(address, address+size, hole_base, hole_base + hole_size)) {
             LOG(DEBUG, "[HOLE] Using hole %016llX - %016llX\n", hole_base, hole_base + hole_size);
-            allocation->next = n->next;
-            allocation->prev = n;
-            n->next = allocation;
-            allocation->next->prev = allocation;
+            node->next = nn->next;
+            node->prev = nn;
+            nn->next = node;
+            node->next->prev = node;
             goto _finish_allocation;
         }
 
         // No, go to next
-        n = n->next;
+        nn = nn->next;
     } 
 
     // If n is NULL, the VAS doesn't have any allocations
-    if (!n) {
-        vas->head = allocation;
+    if (!nn) {
+        vas->head = node;
+        vas->tail = node;
     }
 
 _finish_allocation:
@@ -189,50 +196,56 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     uintptr_t highest_address = vas->base;
 
     vas_allocation_t *allocation;
+    vas_node_t *node;
 
     // Start searching for holes in the VAS
-    vas_allocation_t *n = vas->head;
+    vas_node_t *nn = vas->head;
 
     // Real quick - can we fit an allocation in between VAS base and the first allocation/reservation?
-    if (n && n->base) {
-        uintptr_t distance = n->base - vas->base;
+    if (nn && ALLOC(nn)->base) {
+        uintptr_t distance = ALLOC(nn)->base - vas->base;
         
         if (distance && IN_RANGE_EXCLUSIVE(size, 0, distance)) {
             // Yes!
             allocation = kzalloc(sizeof(vas_allocation_t));
+            node = kzalloc(sizeof(vas_node_t));
+            node->alloc = allocation;
             allocation->base = vas->base;
             allocation->size = size;
-            allocation->next = n;
+            node->next = nn;
             allocation->prot = VAS_PROT_DEFAULT;
             allocation->references = 1;
-            n->prev = allocation;
-            vas->head = allocation;
+            nn->prev = node;
+            vas->head = node;
             goto _finish_allocation;
         }
     }
 
-    while (n) {
+    while (nn) {
+        vas_allocation_t *n = ALLOC(nn);
         if (n->base + n->size > highest_address) highest_address = n->base + n->size;
 
         // See if there's a hole
-        vas_allocation_t *next = n->next;
-        if (!next) break; // Nothing left, meaning that we've effectively reached the end
+        if (!nn->next) break; // Nothing left, meaning that we've effectively reached the end
+        vas_allocation_t *next = ALLOC(nn->next);
 
         // Calculate hole size
         size_t hole_size = next->base - (n->base + n->size);
-        if (!hole_size) { n = n->next; continue; }
+        if (!hole_size) { nn = nn->next; if (!nn) break; n = ALLOC(nn); continue; }
 
         LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", n->base + n->size, (n->base + n->size) + hole_size);
 
         if (IN_RANGE(size, 1, hole_size)) {
             // Create a new allocation here
             allocation = kzalloc(sizeof(vas_allocation_t));
+            node = kzalloc(sizeof(vas_node_t));
+            node->alloc = allocation;
             allocation->base = n->base + n->size;
             allocation->size = size;
-            allocation->next = n->next;
-            n->next = allocation;
-            allocation->prev = n;
-            allocation->next->prev = allocation;
+            node->next = nn->next;
+            nn->next = node;
+            node->prev = nn;
+            node->next->prev = node;
             allocation->prot = VAS_PROT_DEFAULT;
             allocation->references = 1;
 
@@ -240,7 +253,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
         }
 
 
-        n = n->next;
+        nn = nn->next;
     }
 
     // Ok, if highest_address is enough space for our allocation we're done.
@@ -252,13 +265,15 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
 
     // Enough memory!
     allocation = kzalloc(sizeof(vas_allocation_t));
+    node = kzalloc(sizeof(vas_node_t));
+    node->alloc = allocation;
     allocation->base = highest_address;
     allocation->size = size;
-    allocation->prev = vas->tail;
+    node->prev = vas->tail;
     allocation->prot = VAS_PROT_DEFAULT;
     allocation->references = 1;
-    vas->tail->next = allocation;
-    vas->tail = allocation;
+    if (vas->tail) vas->tail->next = node;
+    vas->tail = node;
 
     
 _finish_allocation:
@@ -292,23 +307,26 @@ static char *vas_typeToString(int type) {
 /**
  * @brief Free memory in a VAS
  * @param vas The VAS to free the memory in
- * @param allocation The allocation to free
+ * @param node The node to free
  * @returns 0 on success or 1 on failure
  */
-int vas_free(vas_t *vas, vas_allocation_t *allocation) {
-    if (!vas || !allocation) return 1;
+int vas_free(vas_t *vas, vas_node_t *node) {
+    if (!vas || !node) return 1;
     spinlock_acquire(vas->lock);
 
+    vas_allocation_t *allocation = ALLOC(node);
+
     // Setup chain now
-    if (allocation == vas->head) {
-        vas->head = allocation->next; 
+    if (node == vas->head) {
+        vas->head = node->next; 
+        if (!vas->head) vas->tail = NULL;
     } else {
-        if (allocation->prev) {
-            allocation->prev->next = allocation->next;
+        if (node->prev) {
+            node->prev->next = node->next;
         }
 
-        if (allocation->next) {
-            allocation->next->prev = allocation->prev;
+        if (node->next) {
+            node->next->prev = node->prev;
         }
     }
 
@@ -324,6 +342,7 @@ int vas_free(vas_t *vas, vas_allocation_t *allocation) {
     LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
 
     // Free and return
+    kfree(node);
     kfree(allocation);
     vas->allocations--;
     spinlock_release(vas->lock);
@@ -334,23 +353,24 @@ int vas_free(vas_t *vas, vas_allocation_t *allocation) {
  * @brief Get an allocation from a VAS
  * @param vas The VAS to get the allocation from
  * @param address The address to find the allocation for
- * @returns The allocation or NULL if it could not be found
+ * @returns The node of the allocation or NULL if it could not be found
  */
-vas_allocation_t *vas_get(vas_t *vas, uintptr_t address) {
+vas_node_t *vas_get(vas_t *vas, uintptr_t address) {
     if (!vas) return NULL;
 
     // TODO: Is there a better algorithm for this?
     spinlock_acquire(vas->lock);
 
-    vas_allocation_t *n = vas->head;
-    while (n) {
+    vas_node_t *nn = vas->head;
+    while (nn) {
+        vas_allocation_t *n = ALLOC(nn);
         if (IN_RANGE(address, n->base, n->base + n->size)) {
             // Found!
             spinlock_release(vas->lock);
-            return n;
+            return nn;
         }
 
-        n = n->next;
+        nn = nn->next;
     }
 
     spinlock_release(vas->lock);
@@ -366,12 +386,12 @@ int vas_destroy(vas_t *vas) {
     if (!vas) return 1;
     spinlock_acquire(vas->lock);
 
-    vas_allocation_t *alloc = vas->head;
-    while (alloc) {
+    vas_node_t *nn = vas->head;
+    while (nn) {
         // TODO: mem_destroyVAS already frees memory so we need to move that to here (for CoW and more)
-        vas_allocation_t *next = alloc->next;
-        vas_free(vas, alloc);
-        alloc = next;
+        vas_node_t *next = nn->next;
+        vas_free(vas, nn);
+        nn = next;
     }
 
     if (vas->dir) {
@@ -398,8 +418,9 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
     }
 
     // Try to get the allocation corresponding to address
-    vas_allocation_t *alloc = vas_get(vas, address);
-    if (!alloc) return 0;
+    vas_node_t *alloc_node = vas_get(vas, address);
+    if (!alloc_node) return 0;
+    vas_allocation_t *alloc = ALLOC(alloc_node);
 
     // There's an allocation here - its probably lazy. How much can we map in?
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
@@ -425,13 +446,15 @@ void vas_dump(vas_t *vas) {
     LOG(DEBUG, "[VAS DUMP] Head=%p, Tail=%p\n", vas->head, vas->tail);
 
     uintptr_t last_region = vas->base;
-    vas_allocation_t *last = vas->head;
-    vas_allocation_t *n = vas->head;
-    while (n) {
-        LOG(DEBUG, "[VAS DUMP]\tAllocation %p: Reserved memory region %p - %p (prev=%p, next=%p)\n", n, n->base, n->base + n->size, n->prev, n->next);
+    vas_node_t *last = vas->head;
+    vas_node_t *nn = vas->head;
 
-        if (n->prev != last && !(n == vas->head)) {
-            LOG(ERR, "[VAS DUMP]\t\tALLOCATION CORRUPTED: n->prev != last (%p != %p)\n", n->prev, last);
+    while (nn) {
+        vas_allocation_t *n = ALLOC(nn);
+        LOG(DEBUG, "[VAS DUMP]\tAllocation %p: Reserved memory region %p - %p (prev=%p, next=%p)\n", n, n->base, n->base + n->size, nn->prev, nn->next);
+
+        if (nn->prev != last && !(nn == vas->head)) {
+            LOG(ERR, "[VAS DUMP]\t\tALLOCATION CORRUPTED: n->prev != last (%p != %p)\n", nn->prev, last);
         }
 
 
@@ -441,11 +464,35 @@ void vas_dump(vas_t *vas) {
 
         last_region = n->base + n->size;
         
-        last = n;
-        n = n->next;
+        last = nn;
+        nn = nn->next;
     }
 
     LOG(DEBUG, "[VAS DUMP]\t(end of allocations)\n");
+}
+
+/**
+ * @brief Get an allocation node from an allocation
+ * @param vas The VAS to search in 
+ * @param alloc The allocation to look for
+ * @returns The node or NULL
+ */
+vas_node_t *vas_getFromAllocation(vas_t *vas, vas_allocation_t *alloc) {
+    if (!vas || !alloc) return NULL;
+
+    vas_node_t *n = vas->head;
+    spinlock_acquire(vas->lock);
+    while (n) {
+        if (ALLOC(n) == alloc) {
+            spinlock_release(vas->lock);
+            return n;
+        }
+
+        n = n->next;
+    }
+
+    spinlock_release(vas->lock);
+    return NULL;
 }
 
 /**
@@ -457,6 +504,7 @@ void vas_dump(vas_t *vas) {
  */
 vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocation_t *source) {
     vas_allocation_t *alloc = NULL; // The allocation to insert
+    vas_node_t *node = kzalloc(sizeof(vas_node_t));
 
     // Do we support CoW?
     // TODO: CoW
@@ -499,16 +547,17 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
     // Insert the allocation into the VAS
     // !!!: THIS ASSUMES ORDERED
+    node->alloc = alloc;
     if (!vas->head) {
-        vas->head = alloc;
-        vas->tail = alloc;
-        alloc->prev = NULL;
-        alloc->next = NULL;
+        vas->head = node;
+        vas->tail = node;
+        node->prev = NULL;
+        node->next = NULL;
     } else {
-        vas->tail->next = alloc;
-        alloc->prev = vas->tail;
-        alloc->next = NULL;
-        vas->tail = alloc;
+        vas->tail->next = node;
+        node->prev = vas->tail;
+        node->next = NULL;
+        vas->tail = node;
     }
 
     vas->allocations++;
@@ -538,16 +587,16 @@ vas_t *vas_clone(vas_t *parent) {
     vas->dir = mem_clone(mem_getKernelDirectory());
 
     // Copy each allocation
-    vas_allocation_t *parent_alloc = parent->head;
+    vas_node_t *parent_alloc = parent->head;
 
     // Setup the head
     if (parent_alloc) {
-        vas_copyAllocation(vas, parent, parent_alloc);
+        vas_copyAllocation(vas, parent, ALLOC(parent_alloc));
         
         // Get into allocation loop
         parent_alloc = parent_alloc->next;
         while (parent_alloc) {
-            vas_copyAllocation(vas, parent, parent_alloc);
+            vas_copyAllocation(vas, parent, ALLOC(parent_alloc));
             parent_alloc = parent_alloc->next;
         }
     } else {
