@@ -20,13 +20,13 @@
 void help() {
     printf("Usage: ls [OPTION]... [FILE]...\n");
     printf("List information about the FILEs (the current directory by default)\n");
-    exit(EXIT_SUCCESS);
+    exit(EXIT_FAILURE);
 }
 
 void version() {
     printf("ls (Ethereal miniutils) 1.00\n");
     printf("Copyright (C) 2025 The Ethereal Development Team\n");
-    exit(EXIT_SUCCESS);
+    exit(EXIT_FAILURE);
 }
 
 int main(int argc, char **argv) {
