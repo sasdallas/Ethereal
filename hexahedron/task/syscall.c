@@ -792,7 +792,36 @@ long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 /* MOUNTS */
 
 long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data) {
-    return -ENOTSUP;
+    SYSCALL_VALIDATE_PTR(src);
+    SYSCALL_VALIDATE_PTR(dst);
+    if (type) SYSCALL_VALIDATE_PTR(type);
+    if (data) SYSCALL_VALIDATE_PTR(data);
+    
+    if (!type) {
+        // Type can be NULL right? (Didn't care to read docs)
+        LOG(ERR, "Lack of type is not supported\n");
+        return -ENOTSUP;
+    }
+
+    // The current process must be root to mount
+    if (current_cpu->current_process->uid != 0) {
+        return -EPERM;
+    }
+
+    // Canonicalize paths
+    char *src_canonicalized = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)src);
+    char *dst_canonicalized = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)dst);
+
+
+    // Try to mount filesystem type
+    fs_node_t *node = vfs_mountFilesystemType((char*)type, (char*)src_canonicalized, (char*)dst_canonicalized);
+    kfree(src_canonicalized);
+    kfree(dst_canonicalized);
+
+    // Success?
+    if (!node) return -ENODEV;
+
+    return 0;
 }
 
 long sys_umount(const char *mountpoint) {

@@ -875,7 +875,7 @@ fs_node_t *vfs_mountFilesystemType(char *name, char *argp, char *mountpoint) {
 
     tree_node_t *tnode = vfs_mount(node, mountpoint);
     if (!tnode) {
-        LOG(WARN, "VFS failed to mount filesystem '%s' - freeing node\n");
+        LOG(WARN, "VFS failed to mount filesystem '%s' - freeing node\n", name);
         kfree(node);
         return NULL;    
     }

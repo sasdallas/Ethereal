@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <string.h>
 
 void usage() {
     printf("Usage: mount [-t TYPE] [DEVICE] [MOUNTPOINT]\n");
@@ -43,14 +44,14 @@ int main(int argc, char *argv[]) {
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
     };
 
-    while ((c = getopt_long(argc, argv, "thv", (const struct option*)&options, &index)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:hv", (const struct option*)&options, &index)) != -1) {
         if (!c && options[index].flag == 0) {
             c = options[index].val;
         }
 
         switch (c) {
             case 't':
-                type = optarg;
+                type = strdup(optarg);
                 break;
 
             case 'v':

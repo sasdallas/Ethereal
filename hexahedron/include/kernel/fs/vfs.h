@@ -372,6 +372,13 @@ fs_node_t *kopen_user(const char *path, unsigned int flags);
 char *vfs_canonicalizePath(char *cwd, char *addition);
 
 /**
+ * @brief Unmount a path from the filesystem
+ * @param path The path to unmount
+ * @returns 0 on success or error code
+ */
+int vfs_unmount(char *path);
+
+/**
  * @brief Dump VFS tree system
  */
 void vfs_dump();
