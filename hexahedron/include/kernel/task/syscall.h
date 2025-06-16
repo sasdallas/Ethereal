@@ -139,6 +139,7 @@ long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen);
 long sys_connect(int socket, const struct sockaddr *addr, socklen_t addrlen);
 long sys_listen(int socket, int backlog);
 long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
-
+long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data);
+long sys_umount(const char *mountpoint);
 
 #endif

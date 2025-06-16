@@ -13,6 +13,7 @@
 
 #include <kernel/task/syscall.h>
 #include <kernel/task/process.h>
+#include <kernel/loader/binfmt.h>
 #include <kernel/drivers/net/socket.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/misc/args.h>
@@ -70,6 +71,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_CONNECT]       = (syscall_func_t)(uintptr_t)sys_connect,
     [SYS_LISTEN]        = (syscall_func_t)(uintptr_t)sys_listen,
     [SYS_ACCEPT]        = (syscall_func_t)(uintptr_t)sys_accept,
+    [SYS_MOUNT]         = (syscall_func_t)(uintptr_t)sys_mount,
+    [SYS_UMOUNT]        = (syscall_func_t)(uintptr_t)sys_umount,
 };
 
 
@@ -503,8 +506,8 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     new_argv[argc] = NULL;
     new_envp[envc] = NULL;
 
-    process_execute(f, argc, new_argv, new_envp);
-    return -ENOEXEC;
+    // process_execute(f, argc, new_argv, new_envp);
+    return binfmt_exec(f, argc, new_argv, new_envp);
 }
 
 /**
@@ -784,4 +787,14 @@ long sys_listen(int socket, int backlog) {
 
 long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     return socket_accept(socket, addr, addrlen);
+}
+
+/* MOUNTS */
+
+long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data) {
+    return -ENOTSUP;
+}
+
+long sys_umount(const char *mountpoint) {
+    return -ENOTSUP;
 }
