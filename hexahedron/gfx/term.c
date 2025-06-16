@@ -218,6 +218,15 @@ int terminal_putchar(int c) {
             ansi_escape_code = 1;
             break;
 
+        case 'J':
+            if (ansi_color_code == 2) {
+                terminal_clear(terminal_fg, terminal_bg);
+                ansi_escape_code = ANSI_NO_CODE;
+                ansi_color_code = 0;
+            }
+
+            break;
+
         case 'm':
             // Final part of the ANSI escape sequence.
             if (ansi_escape_code == ANSI_BRACKET) {
@@ -228,15 +237,6 @@ int terminal_putchar(int c) {
             }
 
             // Fall through to default case.
-
-        case 'J':
-            if (ansi_color_code == 2) {
-                terminal_clear(terminal_fg, terminal_bg);
-                ansi_escape_code = ANSI_NO_CODE;
-                ansi_color_code = 0;
-            }
-
-            break;
 
         case '[':
             // Are we handling an ANSI escape sequence?
