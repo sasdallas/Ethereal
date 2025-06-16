@@ -119,20 +119,20 @@ int ac97_irq(void *data) {
             // Align sample count (else QEMU will get stuck)
             size_t samples = data->size/2;
             size_t samples_aligned = samples & 0xFF ? (samples + 0xFF) & ~0xFF : samples;
-            LOG(INFO, "Placing %d bytes of sound data in buffer %d (sample aigned to %d)\n", data->size, AC97_READ_BM8(AC97_PO_CIV), target_buffer, samples_aligned);
-            
+
             // Put it ahead
             ac->bdl[target_buffer].samples = samples_aligned;
             memcpy(ac->bdl_buffers[target_buffer], data->data, data->size);
 
             // Update the LVI so the card can keep processing
             AC97_WRITE_BM8(AC97_PO_LVI, target_buffer);
-        
+
+            kfree(data);
         }
         else {
             // Just update the LVI so the card will keep going in a loop
             ac->bdl[target_buffer].samples = 0x1000;
-            memset(ac->bdl_buffers[target_buffer], 0x00, AC97_BDL_SIZE);
+            memset(ac->bdl_buffers[target_buffer], 0x00, AC97_BDL_SIZE); // !!!: this is stupid
             AC97_WRITE_BM8(AC97_PO_LVI, target_buffer);
         }
     }
@@ -241,6 +241,7 @@ int ac97_init(uint32_t address) {
     ac97_createBDL(ac);
 
     // Check 5-bit or 6-bit volume support
+    // TODO
     AC97_WRITE16(AC97_REG_MASTER_VOLUME, 0x2020);
     uint16_t t = AC97_READ16(AC97_REG_MASTER_VOLUME) & 0x1F;
     if (t == 0x1F) {
