@@ -31,6 +31,22 @@ typedef struct sound_card_buffer_data {
     uint8_t data[];             // Data of the samples
 } sound_card_buffer_data_t;
 
+struct sound_card;
+
+/**
+ * @brief *Asyncronously* begin playing sound and processing entries in sound_data
+ * @param card The card being started
+ * @returns 0 on success
+ */
+typedef int (*sound_card_start_t)(struct sound_card *card);
+
+/**
+ * @brief Stop the sound card sound
+ * @param card The card being stopped
+ * @returns 0 on success
+ */
+typedef int (*sound_card_stop_t)(struct sound_card *card);
+
 /**
  * @brief Sound card write method
  * @param card The card being written to
@@ -49,6 +65,10 @@ typedef struct sound_card {
     // REQUESTS
     list_t *sound_data;         // Fully converted requests to play sound data
     spinlock_t sound_data_lock; // Lock for sound data
+
+    // FUNCTIONS
+    sound_card_start_t start;   // Start function
+    sound_card_stop_t stop;     // Stop function
 
     // DRIVER
     void *dev;                  // Driver-specific

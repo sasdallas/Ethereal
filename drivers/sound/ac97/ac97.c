@@ -152,6 +152,30 @@ int ac97_irq(void *data) {
 }
 
 /**
+ * @brief *Asyncronously* begin playing sound and processing entries in sound_data
+ * @param card The card being started
+ * @returns 0 on success
+ */
+int ac97_start(struct sound_card *card) {
+    ac97_t *ac = (ac97_t*)card->dev;
+    uint8_t cr = (AC97_READ_BM8(AC97_PO_CR)) | (AC97_CR_DMA);
+    AC97_WRITE_BM8(AC97_PO_CR, cr);
+    return 0;
+}
+
+/**
+ * @brief Stop the sound card sound
+ * @param card The card being stopped
+ * @returns 0 on success
+ */
+int ac97_stop(struct sound_card *card) {
+    ac97_t *ac = (ac97_t*)card->dev;
+    uint8_t cr = (AC97_READ_BM8(AC97_PO_CR)) & ~(AC97_CR_DMA);
+    AC97_WRITE_BM8(AC97_PO_CR, cr);
+    return 0;
+}
+
+/**
  * @brief Allocate AC/97 BDL
  * @param ac The AC/97 card
  */
@@ -254,8 +278,11 @@ int ac97_init(uint32_t address) {
     // Make a new sound card object
     sound_card_t *card = sound_createCard("ac97", SOUND_FORMAT_S16PCM, SOUND_RATE_48000HZ);
     card->dev = (void*)ac;
+    card->start = ac97_start;
+    card->stop = ac97_stop;
     sound_registerCard(card);
     ac->card = card;
+
 
     // Enable
     uint8_t cr = (AC97_READ_BM8(AC97_PO_CR) | AC97_CR_DMA);

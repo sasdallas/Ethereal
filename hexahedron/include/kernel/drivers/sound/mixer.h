@@ -39,6 +39,15 @@ typedef struct sound_card_play_request {
 } sound_card_play_request_t;
 
 
+/**
+ * @brief Stop request
+ * 
+ * Immediately stop any audio that is playing
+ */
+typedef struct sound_card_stop_request {
+    uint8_t type;                   // SOUND_CARD_REQUEST_TYPE_STOP
+} sound_card_stop_request_t;
+
 /**** FUNCTIONS ****/
 
 /**

@@ -62,21 +62,24 @@ int mixer_request(sound_card_t *card, void *buffer) {
             LOG(INFO, "Play sound request for %s sound at %d sample rate (need to convert to card %s at %d sample rate)\n", mixer_soundTypeToString(play_req->sound_format), play_req->sample_rate, mixer_soundTypeToString(card->sound_format), card->sample_rate);
 
             // Do we already match the card's target?
-            if (play_req->sample_rate == card->sample_rate && play_req->sound_format == card->sound_format) {
-                LOG(DEBUG, "Just adding data to sound queue\n");
-                spinlock_acquire(&card->sound_data_lock);
-
-                sound_card_buffer_data_t *data = kmalloc(sizeof(sound_card_buffer_data_t) + play_req->size);
-                data->size = play_req->size;
-                memcpy(data->data, play_req->data, play_req->size);
-                list_append(card->sound_data, (void*)data);
-
-                spinlock_release(&card->sound_data_lock);
-                return 0;
-            } else {
+            if (play_req->sample_rate != card->sample_rate || play_req->sound_format != card->sound_format) {
                 LOG(ERR, "Must convert card data\n");
                 return 1;
             }
+
+            spinlock_acquire(&card->sound_data_lock);
+            card->start(card);
+            sound_card_buffer_data_t *data = kmalloc(sizeof(sound_card_buffer_data_t) + play_req->size);
+            data->size = play_req->size;
+            memcpy(data->data, play_req->data, play_req->size);
+            list_append(card->sound_data, (void*)data);
+
+            spinlock_release(&card->sound_data_lock);
+            return 0;
+
+        case SOUND_CARD_REQUEST_TYPE_STOP:
+            LOG(INFO, "Stop sound\n");
+            return card->stop(card);
 
         default:
             LOG(ERR, "Unimplemented request: %d\n", play_req->type);
@@ -99,7 +102,6 @@ sound_card_buffer_data_t *mixer_buffer(sound_card_t *card) {
     spinlock_acquire(&card->sound_data_lock);
     if (card->sound_data->length) {
         // Yes, pull data
-        LOG(INFO, "Available data in card sound data\n");
         node_t *n = list_popleft(card->sound_data);
         sound_card_buffer_data_t *data = (sound_card_buffer_data_t*)n->value;
         kfree(n);
