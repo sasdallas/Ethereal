@@ -52,6 +52,7 @@
 #include <kernel/drivers/net/udp.h>
 #include <kernel/drivers/net/tcp.h>
 #include <kernel/drivers/net/unix.h>
+#include <kernel/drivers/sound/mixer.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -190,10 +191,10 @@ void kmain() {
     kernelfs_init();
     tmpfs_init();
     driverfs_init();
-    nic_init(); // This initializes the network directory
+    nic_init(); // This initializes the network kernelfs directory
     socket_init();
     video_mount();
-    pci_mount(); // !!!: Can crash for some reason
+    pci_mount();
     arch_mount_kernelfs();
 
     // TEMPORARY
@@ -209,6 +210,9 @@ void kmain() {
     udp_init();
     tcp_init();
     unix_init();
+
+    // Audio
+    mixer_init();
 
     // Setup loopback interface
     loopback_install();
