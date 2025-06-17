@@ -91,7 +91,7 @@ static int pic8259_unmask(uintptr_t interrupt) {
  * @param interrupt The interrupt to send EOI signal on
  */
 static int pic8259_eoi(uintptr_t interrupt) {
-    if (interrupt > 8) outportb(PIC2_COMMAND, X86_64_PIC_EOI);
+    if (interrupt > 8) outportb(PIC2_COMMAND, PIC_EOI);
     outportb(PIC1_COMMAND, PIC_8259_EOI);
     return 0;
 }
