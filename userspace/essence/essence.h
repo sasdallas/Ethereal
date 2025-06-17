@@ -50,9 +50,10 @@ extern int essence_last_exit_status;
  * @brief Parse a command into argc and argv
  * @param in_command The input command string to parse
  * @param out_argc Output for argc
- * @returns A pointer to argv or NULL if parsing failed
+ * @param out_argv Output for argv
+ * @returns 0 on success
  */
-char **essence_parse(char *in_command, int *out_argc);
+int essence_parse(char *in_command, int *out_argc, char ***out_argv);
 
 /**
  * @brief Get a fully processed line of input
@@ -71,6 +72,8 @@ char *essence_getPrompt();
  * @param argv The argument pointer
  */
 void essence_executeCommand(char *cmd, int argc, char *argv[]);
+
+
 
 /**** COMMANDS ****/
 

@@ -38,9 +38,10 @@
  * @brief Parse a command into argc and argv
  * @param in_command The input command string to parse
  * @param out_argc Output for argc
- * @returns A pointer to argv or NULL if parsing failed
+ * @param out_argv Output for argv
+ * @returns 0 on success
  */
-char **essence_parse(char *in_command, int *out_argc) {
+int essence_parse(char *in_command, int *out_argc, char ***out_argv) {
     // Let's start parsing this command
     char **argv = malloc(MAX_ARGV * sizeof(char*));
     assert(argv);
@@ -129,6 +130,25 @@ char **essence_parse(char *in_command, int *out_argc) {
                 if (quoted) ESSENCE_ONLY_PUSH(*p);
                 ESSENCE_NEW_ARGV();
                 ESSENCE_NEXT_CHARACTER();
+            
+            case '"':
+                if (backslash || quoted_single) ESSENCE_ONLY_PUSH(*p);
+                quoted = (quoted ? 0 : 1);
+                ESSENCE_NEXT_CHARACTER();
+                break;
+
+            case '#':
+                if (!buffer_len) {
+                    if (quoted_single || !quoted) {
+                        // Ignore everything else from here
+                        // Consume this argv
+                        free(buffer);
+                        goto _finished;
+                    }
+                }
+
+                ESSENCE_ONLY_PUSH(*p);
+                ESSENCE_NEXT_CHARACTER();
 
             default:
                 ESSENCE_ONLY_PUSH(*p);
@@ -136,6 +156,10 @@ char **essence_parse(char *in_command, int *out_argc) {
 
     _loop_continue:
         p++;
+        continue;
+
+    _finished:
+        break;
     }
 
     // Push final argument
@@ -148,5 +172,6 @@ char **essence_parse(char *in_command, int *out_argc) {
     // Clean up
     argv[argc] = NULL;
     *out_argc = argc;
-    return argv;
+    *out_argv = argv;
+    return 0;
 }
