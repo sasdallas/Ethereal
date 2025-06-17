@@ -58,9 +58,10 @@
 /**
  * @brief Initialize a specific type of PIC
  * @param type The type of PIC to initialize
+ * @param data Additional data
  * @returns Whatever the PIC init method does
  */
-int pic_init(int type);
+int pic_init(int type, void *data);
 
 /**
  * @brief Shutdown an old PIC

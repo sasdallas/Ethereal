@@ -487,7 +487,7 @@ void hal_initializeInterrupts() {
     hal_registerInterruptVector(128, I86_IDT_DESC_PRESENT | I86_IDT_DESC_BIT32 | I86_IDT_DESC_RING3, 0x08, (uint32_t)&halSystemCallInterrupt);
 
     // Setup the PIC
-    pic_init(PIC_TYPE_8259);
+    pic_init(PIC_TYPE_8259, NULL);
 
     // Install IDT in BSP
     hal_installIDT();

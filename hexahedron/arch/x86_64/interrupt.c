@@ -539,7 +539,7 @@ void hal_initializeInterrupts() {
     hal_installIDT();
 
     // Initialize 8259 PICs
-    pic_init(PIC_TYPE_8259);
+    pic_init(PIC_TYPE_8259, NULL);
 
     // Enable interrupts
     asm volatile ("sti");
