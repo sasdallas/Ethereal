@@ -52,6 +52,8 @@
 /* Root system descriptor pointer */
 static uint64_t hal_rsdp = 0x0; 
 
+/* Using ACPICA */
+static int hal_acpica_in_use = 0;
 
 /**
  * @brief Sets an RSDP if one was set
@@ -97,6 +99,8 @@ smp_info_t *hal_initACPI() {
         dprintf(ERR, "ACPICA failed to initialize correctly - please see log messages.\n");
         return NULL;
     }
+
+    hal_acpica_in_use = 1;
 
     // Get SMP information
     smp_info_t *smp = ACPICA_GetSMPInfo();
@@ -246,6 +250,12 @@ void hal_init(int stage) {
     }
 }
 
+/**
+ * @brief Get whether ACPICA is in use and callable
+ */
+int hal_getACPICA() {
+    return hal_acpica_in_use;
+}
 
 /* PORT I/O FUNCTIONS */
 

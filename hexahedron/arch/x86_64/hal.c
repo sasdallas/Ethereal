@@ -43,6 +43,8 @@
 #include <kernel/drivers/x86/minacpi.h>
 
 static uintptr_t hal_rsdp = 0x0;
+static int hal_acpica_in_use = 0;
+
 
 /**
  * @brief Sets an RSDP if one was set
@@ -120,6 +122,8 @@ smp_info_t *hal_initACPI() {
         return NULL;
     }
 
+    hal_acpica_in_use = 1;
+
     // Get SMP information
     smp_info_t *smp = ACPICA_GetSMPInfo();
     if (!smp) {
@@ -193,10 +197,6 @@ _no_debug: ;
 
 _no_smp: ;
 
-extern void liballoc_dump();
-
-    liballoc_dump();
-
     /* VIDEO INITIALIZATION */
 
     if (!kargs_has("--no-video")) {
@@ -246,6 +246,12 @@ void hal_init(int stage) {
 }
 
 
+/**
+ * @brief Get whether ACPICA is in use and callable
+ */
+int hal_getACPICA() {
+    return hal_acpica_in_use;
+}
 
 /* PORT I/O FUNCTIONS */
 

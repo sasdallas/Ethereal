@@ -132,6 +132,11 @@ void hal_setRSDP(uint64_t rsdp);
  */
 uint64_t hal_getRSDP();
 
+/**
+ * @brief Get whether ACPICA is in use and callable
+ */
+int hal_getACPICA();
+
 /* I/O port functions (no headers) */
 void io_wait();
 void outportb(unsigned short port, unsigned char data);
