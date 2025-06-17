@@ -16,6 +16,7 @@
 #include <kernel/arch/i386/hal.h>
 #include <kernel/arch/i386/interrupt.h>
 #include <kernel/arch/i386/cpu.h>
+#include <kernel/drivers/x86/pic.h>
 #include <kernel/processor_data.h>
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/clock.h>
@@ -235,6 +236,7 @@ int smp_init(smp_info_t *info) {
 _finish_collection:
     hal_registerInterruptHandler(124 - 32, smp_handleTLBShootdown);
     smp_collectAPInfo(0);
+    if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
     processor_count = smp_data->processor_count;
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
 

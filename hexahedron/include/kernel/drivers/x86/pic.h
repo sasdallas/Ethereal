@@ -90,4 +90,10 @@ int pic_unmask(uintptr_t interrupt);
  */
 int pic_eoi(uintptr_t interrupt);
 
+/**
+ * @brief Get current PIC type in use
+ * @returns The PIC type in use
+ */
+int pic_type();
+
 #endif

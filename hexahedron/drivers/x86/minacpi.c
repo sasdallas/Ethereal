@@ -175,6 +175,9 @@ smp_info_t *minacpi_parseMADT() {
     smp_info_t *info = kmalloc(sizeof(smp_info_t));
     memset(info, 0, sizeof(smp_info_t));
 
+    // Construct IRQ override list
+    for (int i = 0; i < MAX_INT_OVERRIDES; i++) info->irq_overrides[i] = i;
+
     // Setup basic variables
     info->lapic_address = (void*)madt->local_apic_address;
     
@@ -223,11 +226,6 @@ smp_info_t *minacpi_parseMADT() {
                 LOG(DEBUG, "INTERRUPT OVERRIDE - SRCIRQ 0x%x BUS 0%x GLOBAL IRQ 0x%x INTI FLAGS 0x%x\n", override->irq_source, override->bus_source, override->gsi, override->flags);
 
                 if (override->irq_source != override->gsi) {
-                    if (override->irq_source > MAX_INT_OVERRIDES) {
-                        // Not enough space.
-                        kernel_panic_extended(ACPI_SYSTEM_ERROR, "acpica", "*** Interrupt override (SRC 0x%x -> GLBL 0x%x) larger than maximum override (0x%x)\n", override->irq_source, override->gsi, MAX_INT_OVERRIDES);
-                    }
-
                     // Need to map this one
                     info->irq_overrides[override->irq_source] = override->gsi;
                 }

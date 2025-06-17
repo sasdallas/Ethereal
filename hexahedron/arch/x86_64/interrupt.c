@@ -389,6 +389,8 @@ int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_t handler) 
         return -EINVAL;
     }
 
+    pic_unmask(int_no);
+
     hal_handler_table[int_no] = handler;
     hal_interrupt_context_table[int_no] = NULL;
 
@@ -399,6 +401,7 @@ int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_t handler) 
  * @brief Unregisters an interrupt handler
  */
 void hal_unregisterInterruptHandler(uintptr_t int_no) {
+    pic_mask(int_no);
     hal_handler_table[int_no] = NULL;
 }
 
@@ -437,6 +440,8 @@ int hal_registerInterruptHandlerContext(uintptr_t int_no, interrupt_handler_cont
     if (hal_handler_table[int_no] != NULL) {
         return -EINVAL;
     }
+
+    pic_unmask(int_no);
 
     // !!!: i mean, they're the same data type at the core level.. right?
     hal_handler_table[int_no] = handler;

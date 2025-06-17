@@ -12,6 +12,7 @@
  */
 
 #include <kernel/drivers/x86/pic.h>
+#include <kernel/drivers/x86/io_apic.h>
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
 
@@ -111,8 +112,9 @@ int pic_init(int type, void *data) {
             pic_selected = PIC_TYPE_8259;
             return pic8259_init();
         case PIC_TYPE_IOAPIC:
-            LOG(ERR, "I/O APIC support is not implemented yet\n");
-            break;
+            int r = ioapic_init(data);
+            if (!r) pic_selected = PIC_TYPE_IOAPIC;
+            return r;
         default:
             LOG(ERR, "Unknown PIC type\n");
             break;
@@ -130,8 +132,7 @@ void pic_shutdown(int type) {
         case PIC_TYPE_8259:
             return pic8259_shutdown();
         case PIC_TYPE_IOAPIC:
-            LOG(ERR, "I/O APIC support is not implemented yet\n");
-            break;
+            return ioapic_shutdown();
         default:
             LOG(ERR, "Unknown PIC type\n");
             break;
@@ -148,8 +149,7 @@ int pic_mask(uintptr_t interrupt) {
         case PIC_TYPE_8259:
             return pic8259_mask(interrupt);
         case PIC_TYPE_IOAPIC:
-            LOG(ERR, "I/O APIC support is not implemented yet\n");
-            break;
+            return ioapic_mask(interrupt);
         default:
             LOG(ERR, "Unknown PIC type\n");
             break;
@@ -168,8 +168,7 @@ int pic_unmask(uintptr_t interrupt) {
         case PIC_TYPE_8259:
             return pic8259_unmask(interrupt);
         case PIC_TYPE_IOAPIC:
-            LOG(ERR, "I/O APIC support is not implemented yet\n");
-            break;
+            return ioapic_unmask(interrupt);
         default:
             LOG(ERR, "Unknown PIC type\n");
             break;
@@ -188,12 +187,19 @@ int pic_eoi(uintptr_t interrupt) {
         case PIC_TYPE_8259:
             return pic8259_eoi(interrupt);
         case PIC_TYPE_IOAPIC:
-            LOG(ERR, "I/O APIC support is not implemented yet\n");
-            break;
+            return ioapic_eoi(interrupt);
         default:
             LOG(ERR, "Unknown PIC type\n");
             break;
     }
 
     return 1;
+}
+
+/**
+ * @brief Get current PIC type in use
+ * @returns The PIC type in use
+ */
+int pic_type() {
+    return pic_selected;
 }

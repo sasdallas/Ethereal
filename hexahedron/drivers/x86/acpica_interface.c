@@ -21,6 +21,7 @@
 #include <kernel/panic.h>
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/drivers/pci.h>
 #include <stdarg.h>
 #include <errno.h>
 
@@ -35,9 +36,77 @@
 #error "Unsupported architecture - do not compile this file"
 #endif
 
-
 /* Log method */
 #define LOG(status, message, ...) dprintf_module(status, "ACPICA:KRN", message, ## __VA_ARGS__)
+
+ACPI_STATUS AcpiWalkForPCICallback(ACPI_HANDLE Object, UINT32 NestingLevel, void *Context, void **ReturnValue) {
+    ACPI_STATUS Status;
+    ACPI_BUFFER Name;
+    char buffer[256];
+    Name.Length = sizeof(buffer);
+    Name.Pointer = buffer;
+
+    Status = AcpiGetName(Object, ACPI_FULL_PATHNAME, &Name);
+    if (ACPI_SUCCESS(Status)) {
+        LOG(INFO, "Assuming is PCI root namespace: %s\n", buffer);
+        *ReturnValue = Object;
+    }
+
+    return AE_OK;
+}
+
+/**
+ * @brief Try to initialize IRQ redirections
+ */
+int ACPICA_InitializeIRQRedirects() {
+    ACPI_STATUS status;
+
+    void *PCIBusHandle = NULL;
+    status = AcpiGetDevices("PNP0A03", AcpiWalkForPCICallback, NULL, &PCIBusHandle);
+    if (ACPI_FAILURE(status) || PCIBusHandle == NULL) {
+        LOG(ERR, "PCI root bridge not found\n");
+        return 1;
+    }
+
+    // Evalute _PRT
+    ACPI_BUFFER Buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+    status = AcpiEvaluateObject(PCIBusHandle, "_PRT", NULL, &Buffer);
+    if (ACPI_FAILURE(status)) {
+        LOG(ERR, "Error getting _PRT table\n");
+        return 1;
+    }
+
+
+    ACPI_OBJECT *PrtPackage = (ACPI_OBJECT*)Buffer.Pointer;
+    LOG(INFO, "Found _PRT table successfully (elements: %d)\n", PrtPackage->Package.Count);
+
+    for (UINT32 i = 0; i < PrtPackage->Package.Count; i++) {
+        ACPI_OBJECT *Entry = &PrtPackage->Package.Elements[i];
+        
+        // Each entry in the _PRT is structured as:
+        // 1. PCI address
+        // 2. IRQ pin
+        // 3. Source (string or 0)
+        // 4. Source index (if Source is 0, GSI)
+
+        ACPI_OBJECT *Address = &Entry->Package.Elements[0];
+        ACPI_OBJECT *Pin = &Entry->Package.Elements[1];
+        ACPI_OBJECT *Source = &Entry->Package.Elements[2];
+        ACPI_OBJECT *SourceIndex = &Entry->Package.Elements[3];
+
+        UINT32 AddressValue = (UINT32)Address->Integer.Value;
+
+        // Is the source a GSI?
+        if (Source->Integer.Type != ACPI_TYPE_STRING || Source->String.Length == 0) {
+            LOG(DEBUG, "IRQ REMAP: PCI %d.%d.%d PIN %d -> GSI %d\n", PCI_BUS(AddressValue), PCI_SLOT(AddressValue), PCI_FUNCTION(AddressValue), Pin->Integer.Value, SourceIndex->Integer.Value);
+        } else {
+            LOG(DEBUG, "IRQ REMAP: PCI %d.%d.%d PIN %d -> %s %d\n", PCI_BUS(AddressValue), PCI_SLOT(AddressValue), PCI_FUNCTION(AddressValue), Pin->Integer.Value, Source->String.Pointer, SourceIndex->Integer.Value);
+        }
+    }
+
+
+    return 0;
+}
 
 /**
  * @brief Initialize ACPICA
@@ -85,6 +154,8 @@ int ACPICA_Initialize() {
         return -1;
     }
 
+    ACPICA_InitializeIRQRedirects();
+
     LOG(INFO, "Initialization completed successfully.\n");
     return 0;
 }
@@ -111,6 +182,9 @@ smp_info_t *ACPICA_GetSMPInfo() {
     smp_info_t *smp_info = kmalloc(sizeof(smp_info_t));
     memset(smp_info, 0, sizeof(smp_info_t));
     smp_info->lapic_address = (void*)(uintptr_t)MadtTable->Address;
+
+    // Construct IRQ override list
+    for (int i = 0; i < MAX_INT_OVERRIDES; i++) smp_info->irq_overrides[i] = i;
 
     LOG(DEBUG, "MADT Local APIC address = 0x%x\n", MadtTable->Address);
 
@@ -158,13 +232,7 @@ smp_info_t *ACPICA_GetSMPInfo() {
                 ACPI_MADT_INTERRUPT_OVERRIDE *IntOverride = (ACPI_MADT_INTERRUPT_OVERRIDE*)Subtable;
                 LOG(DEBUG, "INTERRUPT OVERRIDE - SRCIRQ 0x%x BUS 0x%x GLOBAL IRQ 0x%x INTI FLAGS 0x%x\n", IntOverride->SourceIrq, IntOverride->Bus, IntOverride->GlobalIrq, IntOverride->IntiFlags);
                 
-                // Update IRQ override
                 if (IntOverride->SourceIrq != IntOverride->GlobalIrq) {
-                    if (IntOverride->SourceIrq > MAX_INT_OVERRIDES) {
-                        // Not enough space.
-                        kernel_panic_extended(ACPI_SYSTEM_ERROR, "acpica", "*** Interrupt override (SRC 0x%x -> GLBL 0x%x) larger than maximum override (0x%x)\n", IntOverride->SourceIrq, IntOverride->GlobalIrq, MAX_INT_OVERRIDES);
-                    }
-
                     // Need to map this one
                     smp_info->irq_overrides[IntOverride->SourceIrq] = IntOverride->GlobalIrq;
                 }
@@ -221,6 +289,7 @@ ACPI_STATUS AcpiWalkCallback(ACPI_HANDLE Object, UINT32 NestingLevel, void *Cont
 void ACPICA_PrintNamespace() {
     AcpiWalkNamespace(ACPI_TYPE_DEVICE, ACPI_ROOT_OBJECT, 256, AcpiWalkCallback, NULL, NULL, NULL);
 }
+
 
 
 

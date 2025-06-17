@@ -17,6 +17,7 @@
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/arch/x86_64/arch.h>
 #include <kernel/processor_data.h>
+#include <kernel/drivers/x86/pic.h>
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/misc/spinlock.h>
@@ -230,6 +231,9 @@ _finish_collection:
 
     // Register TLB shootdown IRQ
     hal_registerInterruptHandler(124 - 32, smp_handleTLBShootdown);
+
+    // Initialize I/O APIC
+    if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
 
     processor_count = smp_data->processor_count;
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);

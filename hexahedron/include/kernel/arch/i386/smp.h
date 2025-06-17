@@ -23,7 +23,7 @@
 #define MAX_CPUS            32
 
 // IMPORTANT: This value controls the maximum amount of supported interrupt overrides
-#define MAX_INT_OVERRIDES   24
+#define MAX_INT_OVERRIDES   0x100
 
 // IMPORTANT: This value controls the page that AP bootstrap code is aligned to (if this isn't an aligned value, I will kill you)
 // !!!: DO. NOT. MODIFY. THIS WILL BREAK LITERALLY EVERYTHING!
