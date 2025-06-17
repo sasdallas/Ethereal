@@ -35,9 +35,6 @@
 uint8_t ps2_mouse_packet[4];
 int ps2_mouse_packet_cycle = 0;
 
-int last_x = 0;
-int last_y = 0;
-
 
 /**
  * @brief Send something to the mouse port
@@ -111,7 +108,4 @@ void mouse_init() {
     
     // Register IRQ
     hal_registerInterruptHandlerContext(PS2_MOUSE_IRQ, mouse_irq, NULL);
-
-    last_x = video_getDriver()->screenWidth / 2;
-    last_y = video_getDriver()->screenHeight / 2;
 }
