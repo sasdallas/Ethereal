@@ -403,9 +403,13 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 LOG(DEBUG, "PHDR %d PT_NOTE: Ignored\n", i);
                 break;
                 
+            case PT_GNU_PROPERTY:
+                LOG(DEBUG, "PHDR %d PT_GNU_PROPERTY: Ignored\n", i);
+                break;
+            
             default:
-                LOG(ERR, "Failed to load PHDR #%d - unimplemented type 0x%x\n", i, phdr->p_type);
-                return ELF_FAIL;
+                LOG(WARN, "Failed to load PHDR #%d - unimplemented type 0x%x\n", i, phdr->p_type);
+                break; // Keep going
         }
     }
 
