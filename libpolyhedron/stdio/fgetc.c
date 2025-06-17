@@ -22,6 +22,23 @@ int fgetc(FILE *stream) {
 }
 
 char *fgets(char *s, int size, FILE *stream) {
-    if (!__fileio_read_bytes(stream, s, size)) return NULL;
+    int c;
+
+    char *p = s;
+    int remaining = size;
+    while ((c = fgetc(stream)) > 0 && remaining) {
+        *p++ = c;
+        remaining--;
+        if (c == '\n') return s;
+    }
+
+    if (c == EOF) {
+        stream->eof = 1;
+        
+        // Return NULL if we didn't get anything
+        if (remaining == size) return NULL;
+        else return s;
+    }
+    
     return s;
 }
