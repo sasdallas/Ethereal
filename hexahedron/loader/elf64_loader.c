@@ -375,7 +375,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
             case PT_TLS:
                 // We have to load and map it into memory
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
-                LOG(DEBUG, "PHDR #%d - OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
+                LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
                 
                 for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
                     page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
@@ -397,6 +397,12 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 }
 
                 break;
+
+            case PT_NOTE:
+                // Ignore, this doesn't matter.
+                LOG(DEBUG, "PHDR %d PT_NOTE: Ignored\n", i);
+                break;
+                
             default:
                 LOG(ERR, "Failed to load PHDR #%d - unimplemented type 0x%x\n", i, phdr->p_type);
                 return ELF_FAIL;
