@@ -15,6 +15,7 @@
 #include <kernel/arch/x86_64/hal.h>
 #include <kernel/arch/x86_64/smp.h>
 #include <kernel/arch/x86_64/arch.h>
+#include <kernel/drivers/x86/pic.h>
 #include <kernel/task/syscall.h>
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
@@ -204,8 +205,7 @@ int hal_registerInterruptVector(uint8_t index, uint8_t flags, uint16_t segment, 
  * @brief Handle ending an interrupt
  */
 void hal_endInterrupt(uintptr_t interrupt_number) {
-    if (interrupt_number > 8) outportb(X86_64_PIC2_COMMAND, X86_64_PIC_EOI);
-    outportb(X86_64_PIC1_COMMAND, X86_64_PIC_EOI);
+    pic_eoi(interrupt_number);
 }
 
 /**
@@ -446,46 +446,6 @@ int hal_registerInterruptHandlerContext(uintptr_t int_no, interrupt_handler_cont
 }
 
 /**
- * @brief Initialize the 8259 PIC(s)
- * Uses default offsets 0x20 for master and 0x28 for slave
- */
-void hal_initializePIC() {
-    // Begin initialization sequence in cascade mode
-    outportb(X86_64_PIC1_COMMAND, X86_64_PIC_ICW1_INIT | X86_64_PIC_ICW1_ICW4); 
-    io_wait();
-    outportb(X86_64_PIC2_COMMAND, X86_64_PIC_ICW1_INIT | X86_64_PIC_ICW1_ICW4);
-    io_wait();
-
-    // Send offsets
-    outportb(X86_64_PIC1_DATA, 0x20);
-    io_wait();
-    outportb(X86_64_PIC2_DATA, 0x28);
-    io_wait();
-
-    // Identify slave PIC to be at IRQ2
-    outportb(X86_64_PIC1_DATA, 4);
-    io_wait();
-
-    // Notify slave PIC of cascade identity
-    outportb(X86_64_PIC2_DATA, 2);
-    io_wait();
-
-    // Switch to 8086 mode
-    outportb(X86_64_PIC1_DATA, X86_64_PIC_ICW4_8086);
-    io_wait();
-    outportb(X86_64_PIC2_DATA, X86_64_PIC_ICW4_8086);  
-    io_wait();
-}
-
-/**
- * @brief Disable the 8259 PIC(s)
- */
-void hal_disablePIC() {
-    outportb(X86_64_PIC1_DATA, 0xFF);
-    outportb(X86_64_PIC2_DATA, 0xFF);
-}
-
-/**
  * @brief Installs the IDT in the current AP
  */
 void hal_installIDT() {
@@ -579,7 +539,7 @@ void hal_initializeInterrupts() {
     hal_installIDT();
 
     // Initialize 8259 PICs
-    hal_initializePIC();
+    pic_init(PIC_TYPE_8259);
 
     // Enable interrupts
     asm volatile ("sti");

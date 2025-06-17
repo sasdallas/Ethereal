@@ -133,29 +133,6 @@ typedef int (*interrupt_handler_context_t)(void *context);
 #define I86_MAX_INTERRUPTS  255
 #define I86_MAX_EXCEPTIONS  31
 
-// PIC definitions
-#define I86_PIC1_ADDR       0x20                // Master PIC address
-#define I86_PIC2_ADDR       0xA0                // Slave PIC address
-#define I86_PIC1_COMMAND    (I86_PIC1_ADDR)     // Command address for master PIC
-#define I86_PIC2_COMMAND    (I86_PIC2_ADDR)     // Command address for slave PIC
-#define I86_PIC1_DATA       (I86_PIC1_ADDR)+1   // Data address for master PIC
-#define I86_PIC2_DATA       (I86_PIC2_ADDR)+1   // Data address for slave PIC
-
-#define I86_PIC_EOI             0x20        // End of interrupt code
-
-// PIC ICW (initialization words)
-#define I86_PIC_ICW1_ICW4       0x01        // Indicates that ICW4 is present
-#define I86_PIC_ICW1_SINGLE     0x02        // Enables PIC cascade mode
-#define I86_PIC_ICW1_INTERVAL4  0x04        // Call address interval 4
-#define I86_PIC_ICW1_LEVEL      0x08        // Edge mode
-#define I86_PIC_ICW1_INIT       0x10        // Initialization bit
-
-#define I86_PIC_ICW4_8086       0x01        // Enables 8086/88 mode
-#define I86_PIC_ICW4_AUTO       0x02        // Auto EOI 
-#define I86_PIC_ICW4_BUF_SLAVE  0x08        // Enable buffered mode (slave)
-#define I86_PIC_ICW4_BUF_MASTER 0x0C        // Enable buffered mode (master)
-#define I86_PIC_ICW4_SFNM       0x10        // Special fully nested
-
 /**** FUNCTIONS ****/
 
 /* EXTERNAL HANDLERS FROM irq.S */

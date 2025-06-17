@@ -20,7 +20,7 @@
 #include <kernel/arch/i386/smp.h>
 #include <kernel/arch/i386/arch.h>
 #include <kernel/hal.h>
-
+#include <kernel/drivers/x86/pic.h>
 #include <kernel/task/syscall.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -182,8 +182,7 @@ void hal_gdtInit() {
  * @brief Handle ending an interrupt
  */
 void hal_endInterrupt(uintptr_t interrupt_number) {
-    if (interrupt_number > 8) outportb(I86_PIC2_COMMAND, I86_PIC_EOI);
-    outportb(I86_PIC1_COMMAND, I86_PIC_EOI);
+    pic_eoi(interrupt_number);
     hal_did_end_interrupt = 1;
 }
 
@@ -418,46 +417,6 @@ void hal_loadKernelStack(uintptr_t stack) {
 }
 
 /**
- * @brief Initialize the 8259 PIC(s)
- * Uses default offsets 0x20 for master and 0x28 for slave
- */
-void hal_initializePIC() {
-    // Begin initialization sequence in cascade mode
-    outportb(I86_PIC1_COMMAND, I86_PIC_ICW1_INIT | I86_PIC_ICW1_ICW4); 
-    io_wait();
-    outportb(I86_PIC2_COMMAND, I86_PIC_ICW1_INIT | I86_PIC_ICW1_ICW4);
-    io_wait();
-
-    // Send offsets
-    outportb(I86_PIC1_DATA, 0x20);
-    io_wait();
-    outportb(I86_PIC2_DATA, 0x28);
-    io_wait();
-
-    // Identify slave PIC to be at IRQ2
-    outportb(I86_PIC1_DATA, 4);
-    io_wait();
-    
-    // Notify slave PIC of cascade identity
-    outportb(I86_PIC2_DATA, 2);
-    io_wait();
-
-    // Switch to 8086 mode
-    outportb(I86_PIC1_DATA, I86_PIC_ICW4_8086);
-    io_wait();
-    outportb(I86_PIC2_DATA, I86_PIC_ICW4_8086);  
-    io_wait();
-}
-
-/**
- * @brief Disable the 8259 PIC(s)
- */
-void hal_disablePIC() {
-    outportb(I86_PIC1_DATA, 0xFF);
-    outportb(I86_PIC2_DATA, 0xFF);
-}
-
-/**
  * @brief Installs the IDT in the current AP
  */
 void hal_installIDT() {
@@ -528,7 +487,7 @@ void hal_initializeInterrupts() {
     hal_registerInterruptVector(128, I86_IDT_DESC_PRESENT | I86_IDT_DESC_BIT32 | I86_IDT_DESC_RING3, 0x08, (uint32_t)&halSystemCallInterrupt);
 
     // Setup the PIC
-    hal_initializePIC();
+    pic_init(PIC_TYPE_8259);
 
     // Install IDT in BSP
     hal_installIDT();

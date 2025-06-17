@@ -217,64 +217,6 @@ int font_loadPSF(fs_node_t *file) {
     memset(psf, 0, sizeof(font_psf_t));
     psf->psf_data = buffer;
 
-    // // Do we need to do unicode translation?
-    // if (psf_header->flags) {
-    //     // Yes, translate
-    //     psf->unicode = kcalloc(USHRT_MAX, 2);
-        
-    //     // Get the table offset
-    //     uint8_t *table = (uint8_t*)(buffer +  psf_header->headersize + (psf_header->glyphs * psf_header->glyph_bytes));
-    //     uint16_t glyph = 0;
-
-    //     LOG(DEBUG, "Processing unicode table at offset 0x%x\n", table - buffer);
-
-    //     while (table < buffer + file->length) {
-    //         uint8_t sequence = *(uint8_t*)table;
-
-    //         // Translate
-    //         if (sequence == 0xFF) {
-    //             glyph++;
-    //             table++;
-    //             continue;
-    //         } else if (sequence & 128) {
-    //             wchar_t uc = 0;
-
-    //             // Convert from UTF-8 to unicode
-    //             if ((sequence & 0xE0) == 0xC0) {
-    //                 uc = ((table[0] & 0x1F) << 6);
-    //                 uc |= (table[1] & 0x3F);
-    //                 table += 2;
-    //             } else if ((sequence & 0xF0) == 0xE0) {
-    //                 uc = (table[0] & 0xF) << 12;
-    //                 uc |= (table[1] & 0x3F) << 6;
-    //                 uc |= (table[2] & 0x3F);
-    //                 table += 3;
-    //             } else if ((sequence & 0xF8) == 0xF0) {
-    //                 uc = (table[0] & 0x7) << 18;
-    //                 uc |= (table[1] & 0x3F) << 12;
-    //                 uc |= (table[2] & 0x3F) << 6;
-    //                 uc |= (table[3] & 0x3F);
-    //                 table += 4;
-    //             } else if ((sequence & 0xFC) == 0xF8) {
-    //                 uc = (table[0] & 0x3) << 24;
-    //                 uc |= (table[1] & 0x3F) << 18;
-    //                 uc |= (table[2] & 0x3F) << 12;
-    //                 uc |= (table[3] & 0x3F) << 6;
-    //                 uc |= (table[4] & 0x3F);
-    //                 table += 5;
-    //             } else {
-
-    //                 table++;
-    //             }
-
-    //             // Store translation
-    //             psf->unicode[uc] = glyph;
-    //         } else {
-    //             table++;
-    //         }
-    //     }
-    // }
-
     // Unload current font
     if (current_font && current_font->data) kfree(current_font->data); // NOTE: Unless we plan on supporting custom fonts in the future this should be fine.
     if (current_font) kfree(current_font);

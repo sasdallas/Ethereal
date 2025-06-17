@@ -127,29 +127,6 @@ typedef int (*interrupt_handler_context_t)(void *context);
 #define X86_64_MAX_INTERRUPTS  255
 #define X86_64_MAX_EXCEPTIONS  31
 
-// PIC definitions
-#define X86_64_PIC1_ADDR       0x20                // Master PIC address
-#define X86_64_PIC2_ADDR       0xA0                // Slave PIC address
-#define X86_64_PIC1_COMMAND    (X86_64_PIC1_ADDR)     // Command address for master PIC
-#define X86_64_PIC2_COMMAND    (X86_64_PIC2_ADDR)     // Command address for slave PIC
-#define X86_64_PIC1_DATA       (X86_64_PIC1_ADDR)+1   // Data address for master PIC
-#define X86_64_PIC2_DATA       (X86_64_PIC2_ADDR)+1   // Data address for slave PIC
-
-#define X86_64_PIC_EOI             0x20        // End of interrupt code
-
-// PIC ICW (initialization words)
-#define X86_64_PIC_ICW1_ICW4       0x01        // Indicates that ICW4 is present
-#define X86_64_PIC_ICW1_SINGLE     0x02        // Enables PIC cascade mode
-#define X86_64_PIC_ICW1_INTERVAL4  0x04        // Call address interval 4
-#define X86_64_PIC_ICW1_LEVEL      0x08        // Edge mode
-#define X86_64_PIC_ICW1_INIT       0x10        // Initialization bit
-
-#define X86_64_PIC_ICW4_8086       0x01        // Enables 8086/88 mode
-#define X86_64_PIC_ICW4_AUTO       0x02        // Auto EOI 
-#define X86_64_PIC_ICW4_BUF_SLAVE  0x08        // Enable buffered mode (slave)
-#define X86_64_PIC_ICW4_BUF_MASTER 0x0C        // Enable buffered mode (master)
-#define X86_64_PIC_ICW4_SFNM       0x10        // Special fully nested
-
 /**** FUNCTIONS ****/
 
 /* EXTERNAL HANDLERS FROM irq.S */
