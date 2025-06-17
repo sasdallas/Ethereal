@@ -18,6 +18,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/task/sleep.h>
+#include <stddef.h>
+#include <sys/types.h>
 
 /**** TYPES ****/
 
@@ -31,6 +34,8 @@ typedef struct circbuf {
     size_t buffer_size;     // Size of the buffer
     volatile int head;      // Head of the buffer
     volatile int tail;      // Tail of the buffer
+    sleep_queue_t *readers; // Reader sleep queue
+    sleep_queue_t *writers; // Writers sleep queue
 } circbuf_t;
 
 /**** FUNCTIONS ****/
@@ -46,20 +51,20 @@ circbuf_t *circbuf_create(char *name, size_t size);
 /**
  * @brief Get some data from a circular buffer
  * @param circbuf The buffer to get from
- * @param size The amount of data to get
+ * @param size The MAXIMUM amount of data to get
  * @param buffer The output buffer
- * @returns 0 on success, anything else probably means the buffer is empty
+ * @returns Amount of characters read or error code
  */
-int circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer);
+ssize_t circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer);
 
 /**
  * @brief Write some data to a circular buffer
  * @param circbuf The buffer to write to
  * @param size The amount of data to write
  * @param buffer The input buffer
- * @returns 0 on success
+ * @returns Amount of characters written or error code
  */
-int circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer);
+ssize_t circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer);
 
 /**
  * @brief Returns whether a circular buffer has any content available

@@ -189,6 +189,12 @@ ssize_t pty_writeMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer
         pty_input(pty, buffer[i]);
     }
 
+    // Flush input because we wrote to slave input
+    if (size && pty->flush_in) pty->flush_in(pty);
+
+    // !!!: Also flush output because of ECHO
+    if (size && pty->flush_out) pty->flush_out(pty);
+
     return size;
 }
 
@@ -235,6 +241,8 @@ ssize_t pty_writeSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
         WRITE_OUTPUT(ch);
     }
 
+    if (size && pty->flush_out) pty->flush_out(pty);
+ 
     return size;
 }
 
@@ -253,22 +261,13 @@ ssize_t pty_readSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) 
 
     // Check for canonical mode
     if (LFLAG(ICANON) || CC(VMIN) == 0) {
-        // Either we're in canonical mode, or VMIN == 0 so just read from the circular buffer
-        for (size_t i = 0; i < size; i++) {
-            // !!!: VERY BAD
-            while (circbuf_read(pty->in, 1, buffer+i)) {
-                while (!circbuf_available(pty->in)) arch_pause(); // !!!: We NEED to be putting the thread to sleep.
-            } 
-        }
+        return circbuf_read(pty->in, size, buffer);
     } else {
         // We need to follow VMIN
         size_t sz_to_read = CC(VMIN);
         if (size < sz_to_read) sz_to_read = size;
-        size_t read = 0;
         for (size_t i = 0; i < sz_to_read; i++) {
-            while (circbuf_read(pty->in, 1, buffer+i)) {
-                while (!circbuf_available(pty->in)) arch_pause(); // !!!: We NEED to be putting the thread to sleep.
-            } 
+            circbuf_read(pty->in, 1, buffer+i);
         }
 
         return sz_to_read;
