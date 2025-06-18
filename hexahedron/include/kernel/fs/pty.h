@@ -49,12 +49,18 @@
 struct pty;
 
 /**
- * @brief PTY write output method
+ * @brief PTY write method
  * @param pty The PTY to write out to
  * @param ch The character to write out
  * @returns 0 on success
  */
 typedef int (*pty_write_t)(struct pty *pty, char ch);
+
+/**
+ * @brief PTY flush method
+ * @param pty The PTY to flush
+ */
+typedef void (*pty_flush_t)(struct pty *pty);
 
 /**
  * @brief PTY structure
@@ -77,8 +83,10 @@ typedef struct pty {
     circbuf_t *out;             // Output buffer
 
     // Functions
-    pty_write_t write_in;       // Input write method (stdin)
-    pty_write_t write_out;      // Output write method (stdout)
+    pty_write_t write_in;       // Input write method
+    pty_write_t write_out;      // Output write method
+    pty_flush_t flush_in;       // Input flush method
+    pty_flush_t flush_out;      // Output flush method
 
     void *_impl;                // Implementation-defined
 } pty_t;
