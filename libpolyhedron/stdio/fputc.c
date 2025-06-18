@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
-extern ssize_t __fileio_write_bytes(FILE *f, char *buf, size_t size);
+extern ssize_t __fileio_write_bytes(FILE *f, const char *buf, size_t size);
 
 int fputc(int c, FILE *f) {
     char data[1] = { c };

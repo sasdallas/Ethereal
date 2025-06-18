@@ -68,7 +68,7 @@ ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
 	
     if (r < 0) {
 		f->error = 1;
-	} else if (r < size) {
+	} else if (r < (ssize_t)size) {
 		f->eof = 1;
 	}
 
