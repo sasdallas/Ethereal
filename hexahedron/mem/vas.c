@@ -539,7 +539,7 @@ void vas_dump(vas_t *vas) {
 
     while (nn) {
         vas_allocation_t *n = ALLOC(nn);
-        LOG(DEBUG, "[VAS DUMP]\tAllocation %p: Reserved memory region %p - %p (prev=%p, next=%p, references=%d)\n", n, n->base, n->base + n->size, nn->prev, nn->next, n->references);
+        LOG(DEBUG, "[VAS DUMP]\tAllocation [%p] [%s]: Reserved memory region %p - %p (prev=%p, next=%p, references=%d)\n", n, vas_typeToString(n->type), n->base, n->base + n->size, nn->prev, nn->next, n->references);
 
         if (nn->prev != last && !(nn == vas->head)) {
             LOG(ERR, "[VAS DUMP]\t\tALLOCATION CORRUPTED: n->prev != last (%p != %p)\n", nn->prev, last);
@@ -601,7 +601,9 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         
         // Check to see if adding a reference would overflow
         spinlock_acquire(&alloc->ref_lck);
-        if (alloc->references < UINT8_MAX) {
+        
+        // TODO: Maybe have an alloc flag that lets it not be CoW'd
+        if (alloc->references < UINT8_MAX && alloc->type != VAS_ALLOC_MMAP_SHARE) {
             // We have enough space
             alloc->references++;
             alloc->pending_cow = 1;
@@ -647,13 +649,22 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         if (!src || !PAGE_IS_PRESENT(src)) continue;  
 
         // Get a frame for a new page
-        uintptr_t new_frame = pmm_allocateBlock();
+        uintptr_t new_frame = 0x0;
 
-        // Copy our data to it
-        uintptr_t new_frame_remapped = mem_remapPhys(new_frame, PAGE_SIZE);
-        memcpy((void*)new_frame_remapped, (void*)alloc->base + i, PAGE_SIZE);
-        mem_unmapPhys(new_frame_remapped, PAGE_SIZE);
+        if (alloc->type != VAS_ALLOC_MMAP_SHARE) {
+            // Get a frame
+            new_frame = pmm_allocateBlock();
 
+            // Copy our data to it
+            uintptr_t new_frame_remapped = mem_remapPhys(new_frame, PAGE_SIZE);
+            memcpy((void*)new_frame_remapped, (void*)alloc->base + i, PAGE_SIZE);
+            mem_unmapPhys(new_frame_remapped, PAGE_SIZE);
+        } else {
+            new_frame = MEM_GET_FRAME(src);
+            // LOG(INFO, "Not fully copying page at %016llx (frame: %p)\n", i + alloc->base, MEM_GET_FRAME(src));
+            alloc->references++; // Increase the references but we're not pending CoW
+        }
+        
         // Create the new page in the new directory
         page_t *dst = mem_getPage(vas->dir, alloc->base + i, MEM_CREATE);
 

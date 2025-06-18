@@ -41,10 +41,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         if (!FD_VALIDATE(current_cpu->current_process, filedes)) return (void*)-EBADF;
     }
 
-    // TODO: MAP_SHARED
     if (flags & MAP_SHARED) {
-        LOG(ERR, "mmap allocation failed - MAP_SHARED not implemented!\n");
-        return (void*)-ENOTSUP;
+        LOG(WARN, "MAP_SHARED may unstable (more testing required)\n");
     }
 
     // Get VAS
@@ -88,7 +86,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         }
 
         // Reserve memory in the VAS
-        vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len, VAS_ALLOC_MMAP);
+        vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len, (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP);
         if (alloc) {
             list_append(current_cpu->current_process->mmap, (void*)map);
             return (void*)alloc->base;
@@ -113,10 +111,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // TODO: Protect allocation
-    alloc->type = VAS_ALLOC_MMAP;
+    alloc->type = (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP;
     map->addr = (void*)alloc->base;
-
-    vas_dump(current_cpu->current_process->vas);
 
     // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
     if (filedes == -1 || flags & MAP_ANONYMOUS) {
@@ -127,6 +123,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     // No - call fs_mmap()
     int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, (void*)alloc->base, len, off);
     if (mmap_result < 0) {
+        vas_free(vas, vas_get(vas, alloc->base));
         kfree(map);
         return (void*)(uintptr_t)mmap_result;
     }
