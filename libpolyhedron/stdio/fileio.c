@@ -65,9 +65,10 @@ ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
     // screw it, just read directly from the buffer
     // TODO: This is not good. We should probably be using f->readbuf for buffered I/O (needed as well for ungetc)
     ssize_t r = read(f->fd, buf, size);
-	if(r < 0){
-		f->error = r;
-	} else if(r < size){
+	
+    if (r < 0) {
+		f->error = 1;
+	} else if (r < size) {
 		f->eof = 1;
 	}
 
