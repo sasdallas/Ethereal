@@ -21,44 +21,34 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/net/socket.h>
 #include <sys/un.h>
+#include <structs/circbuf.h>
 
 /**** DEFINITIONS ****/
 
-#define UNIX_TYPE_ORDERED   0
-#define UNIX_TYPE_BETTER    1   // UDP is better!
-
-/* Packet types for an ordered UNIX transfer */
-#define UNIX_PACKET_TYPE_DATA   0   // New data
-#define UNIX_PACKET_TYPE_ACK    1   // Acknowledgement of previous data
-#define UNIX_PACKET_TYPE_CLOSE  2   // Close connection
-#define UNIX_PACKET_TYPE_ACCEPT 3   // Accept connection and start sesion
+#define UNIX_PACKET_BUFFER_SIZE     4096
 
 /**** TYPES ****/
 
-typedef struct unix_ordered_packet {
-    uint8_t type;                       // Type of the packet
-    uint32_t pkt_idx;                   // Index of packet
-    size_t size;                        // Size of the packet (including header)
-    uint8_t data[];                     // Data of the packet
-} unix_ordered_packet_t;
-
-typedef struct unix_unordered_packet {
-    struct sockaddr_un un;              // Address of incoming
-    size_t size;                        // Size of the packet (including header)
-    uint8_t data[];                     // Data of the packet
-} unix_unordered_packet_t;
-
 typedef struct unix_conn_request {
     sock_t *sock;                       // Incoming connection request socket
+    sock_t *new_sock;                   // New socket flag (NULL until connection accepted)
 } unix_conn_request_t;
+
+typedef struct unix_datagram_data {
+    size_t packet_size;                 // Packet size
+    struct sockaddr_un un;              // UNIX address
+} unix_datagram_data_t;
 
 typedef struct unix_sock {
     sock_t *connected_socket;           // Connected socket
     struct thread *thr;                 // Thread to wakeup on new packet
     fs_node_t *bound;                   // Bound node
     char sun_path[108];                 // Path to socket
+    char *map_path;                     // Map path
 
-    uint32_t packet_index;              // (Ordered) Packet index
+    circbuf_t *packet_buffer;           // Packet buffer
+    list_t *dgram_data;                 // (UDP only) Packet sizes list
+
     spinlock_t incoming_connect_lock;   // Incoming socket connections lock
     list_t *incoming_connections;       // Incoming socket connections
 } unix_sock_t;

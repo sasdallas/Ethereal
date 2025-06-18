@@ -3,17 +3,10 @@
  * @brief UNIX socket driver
  * 
  * UNIX sockets can either operate in datagram mode or streamed mode.
- * In streamed mode, Hexahedron uses its own packet types (DATA/ACK/CLOSE/ACCEPT) and packet indexes
- * to ensure ordered transfer.
+ * In either mode, Hexahedron uses a circular buffer (combined with a datagram data system) that ensures reliable
+ * transmission.
  * 
- * Every packet sent other than a type of ACK must be acknowledged by the sender, else it will time out and be dropped.
- * 
- * Datagram sockets do not follow this protocol, and Hexahedron does not care whether the data gets there or not.
- * 
- * Do note that Hexahedron does not comply very well with the "sockets as files" things, and reading a socket file will treat
- * it as an actual file. I do not care enough to fix this (nor do I actually know enough about UNIX sockets to determine the best way to)
- * 
- * @warning There can be a lot of race conditions here
+ * Thank you to Stanislas Orsola (@tayoky4848) for helping me see the light in pipe implementations.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
@@ -28,6 +21,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/task/syscall.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/misc/util.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
 #include <sys/un.h>
@@ -59,66 +53,13 @@ void unix_init() {
 }
 
 /**
- * @brief Acknowledge a packet from an ordered UNIX socket
- * @param sock The UNIX socket to acknowledge on
- * @param packet The packet to acknowledge
- * @returns 0 on success
- */
-int unix_acknowledge(sock_t *sock, unix_ordered_packet_t *packet) {
-    // Generate an ACK packet and send it
-    unix_ordered_packet_t *ack = kmalloc(sizeof(unix_ordered_packet_t));
-    ack->type = UNIX_PACKET_TYPE_ACK;
-    ack->size = sizeof(unix_ordered_packet_t);
-    ack->pkt_idx = packet->pkt_idx;
-
-    int r = unix_sendPacket(sock, ack, ack->size);
-    kfree(ack);
-    return r;
-}
-
-/**
- * @brief Resolve type
- */
-char *unix_resolveType(int type) {
-    switch (type) {
-        case UNIX_PACKET_TYPE_ACCEPT:
-            return "ACCEPT";
-        case UNIX_PACKET_TYPE_ACK:
-            return "ACK";
-        case UNIX_PACKET_TYPE_CLOSE:
-            return "CLOSE";
-        case UNIX_PACKET_TYPE_DATA:
-            return "DATA";
-        default:
-            return "???";
-    }
-}
-
-/**
  * @brief Read a packet from a UNIX socket
  * @param sock The UNIX socket to read from
  * @returns Received packet
  */
 sock_recv_packet_t *unix_getPacket(sock_t *sock) {
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    
-    while (1) {
-        // We need to read (and possibly acknowledge) the packet
-        // Sleep until new data is available
-        sock_recv_packet_t *recv = socket_get(sock);
-        if (!recv) return NULL;
-
-        // Are we an ordered socket?
-        if (sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) {
-            // Yes, we need to ACK this packet back (probably)
-            unix_ordered_packet_t *upkt = (unix_ordered_packet_t*)recv->data;
-            LOG(DEBUG, "[RECV/%s] %p %s <- %s\n", unix_resolveType(upkt->type), upkt, usock->sun_path, ((unix_sock_t*)usock->connected_socket->driver)->sun_path);
-            if (upkt->type != UNIX_PACKET_TYPE_ACK && upkt->type != UNIX_PACKET_TYPE_CLOSE) unix_acknowledge(sock, upkt);
-        }
-
-        return recv;
-    }
-
+    for (;;);
 }
 
 /**
@@ -130,40 +71,8 @@ sock_recv_packet_t *unix_getPacket(sock_t *sock) {
  */
 int unix_sendPacket(sock_t *sock, void *packet, size_t size) {
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    unix_sock_t *target = (unix_sock_t*)usock->connected_socket->driver;
 
-    socket_received(usock->connected_socket, packet, size);
-
-    if (sock->type == SOCK_STREAM) {
-        // We need to wait for an ACK if this packet wasn't one
-        unix_ordered_packet_t *sent_pkt = (unix_ordered_packet_t*)packet;
-        LOG(DEBUG, "[SEND/%s] %p %s -> %s\n", unix_resolveType(sent_pkt->type), sent_pkt, usock->sun_path, target->sun_path);
-        if (sent_pkt->type != UNIX_PACKET_TYPE_ACK) {
-            // No, it wasn't
-            sock_recv_packet_t *recv = unix_getPacket(sock);
-            if (!recv) return 1;
-
-            unix_ordered_packet_t *ack = (unix_ordered_packet_t*)recv->data;
-            if (ack->type != UNIX_PACKET_TYPE_ACK)  {
-
-                // !!!: If two sockets try to close at the same time, all hell breaks lose. There's other hacky checks but this is
-                // !!!: just to silence the error log
-                if (ack->type != UNIX_PACKET_TYPE_CLOSE) LOG(ERR, "Acknowledgement error on UNIX socket (%s): This packet is of type %d and is not an expected ACK\n", usock->sun_path, ack->type);
-                kfree(recv);
-                return 1;
-            }
-
-            if (ack->pkt_idx != sent_pkt->pkt_idx) {
-                LOG(ERR, "Invalid ACK: Expected an ACK for %d but got one for %d\n", sent_pkt->pkt_idx, ack->pkt_idx);
-                kfree(recv);
-                return 1;
-            }
-
-            // Yup, we got an ACK!
-            usock->packet_index++;
-            kfree(recv);
-        }
-    }
+    for (;;);
 
     return 0;
 }
@@ -178,75 +87,61 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
 
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
-
-    struct sockaddr_un *un = NULL;
-
-    // Do we accept msg_name?
-    if (sock->type == SOCK_DGRAM) {
-        // Yeah, but did they give one?
-        if (msg->msg_name) {
-            if (msg->msg_namelen < sizeof(struct sockaddr_un)) return -EINVAL;
-            un = (struct sockaddr_un*)msg->msg_name;
-        }
-    }
-
-    if (!un) {
-        if (!usock->connected_socket) return -ENOTCONN;
-        struct sockaddr_un temp;
-        temp.sun_family = AF_UNIX;
-        strncpy(temp.sun_path, ((unix_sock_t*)usock->connected_socket->driver)->sun_path, 108);
-        un = &temp;
-    }
-
-    if (!sock->recv_queue->length && sock->flags & SOCKET_FLAG_NONBLOCKING) return -EWOULDBLOCK;
-
     ssize_t total_received = 0;
     if (sock->type == SOCK_DGRAM) {
-        for (int i = 0; i < msg->msg_iovlen; i++) {
-            // Preserve message boundaries
+        if (msg->msg_iovlen > 1) {
+            LOG(ERR, "Multiple iovecs are not supported right now\n");
             return -ENOTSUP;
         }
+
+        // Datagram sockets are easy enough, we just need to also pop from the datagram data queue
+        // Reuse the lock from the ringbuffer
+        spinlock_acquire(usock->packet_buffer->lock);
+        if (!usock->dgram_data->length) {
+            if (sock->flags & SOCKET_FLAG_NONBLOCKING) {
+                spinlock_release(usock->packet_buffer->lock);
+                return -EWOULDBLOCK;
+            }
+
+            // There is no length, keep holding the lock and prepare to sleep
+            sleep_untilNever(current_cpu->current_thread);
+            usock->thr = current_cpu->current_thread;
+            
+            spinlock_release(usock->packet_buffer->lock);
+            
+            int w = sleep_enter();
+            if (w == WAKEUP_SIGNAL) return -EINTR;
+
+            // Another thread must've woken us up, reacquire the lock
+            spinlock_acquire(usock->packet_buffer->lock);
+        }
+
+        // We have the lock and there's content available.
+        // Pop the node
+        node_t *n = list_popleft(usock->dgram_data);
+        if (!n) return -EINTR;  // ???
+        unix_datagram_data_t *data = (unix_datagram_data_t*)n->value;
+        kfree(n);
+
+        // We have the size of the packet. Which is less?
+        size_t size_to_read = min(msg->msg_iov[0].iov_len, data->packet_size);
+        
+        // Read from the buffer
+        ssize_t r = circbuf_read(usock->packet_buffer, size_to_read, msg->msg_iov[0].iov_base);
+        if (r && msg->msg_name && msg->msg_namelen == sizeof(struct sockaddr_un)) {
+            // We got a message name as well
+            memcpy(msg->msg_name, &data->un, sizeof(struct sockaddr_un));
+        }
+
+        kfree(data);
+        return r;
     } else {
         if (msg->msg_iovlen > 1) {
             LOG(ERR, "More than one iovec is not currently supported (KERNEL BUG)\n");
             return -ENOTSUP;
         }
 
-        // TODO: This isn't valid. We need to split the data across the iovecs,
-        // TODO: not put one packet in one iovec.
-        for (int i = 0; i < msg->msg_iovlen; i++) {
-            // Get the packet and copy it in
-            sock_recv_packet_t *recv = unix_getPacket(sock);
-            if (!recv) return -EINTR;
-            unix_ordered_packet_t *pkt = (unix_ordered_packet_t*)recv->data;
-            
-            while (pkt->type != UNIX_PACKET_TYPE_DATA) {
-                kfree(recv);
-                recv = unix_getPacket(sock);
-                pkt = (unix_ordered_packet_t*)recv->data;
-                if (pkt->type == UNIX_PACKET_TYPE_CLOSE) {
-                    kfree(recv);
-                    return -ECONNABORTED;
-                }
-            }
-
-            // Copy in data
-            size_t actual_size = pkt->size - sizeof(unix_ordered_packet_t);
-  
-            if (actual_size > msg->msg_iov[i].iov_len) {
-                // TODO: Set MSG_TRUNC and store this data to be reread
-                LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
-                memcpy(msg->msg_iov[i].iov_base, pkt->data, msg->msg_iov[i].iov_len);
-                total_received += msg->msg_iov[i].iov_len;
-                kfree(recv);
-                continue;
-            }
-
-            // Copy it
-            memcpy(msg->msg_iov[i].iov_base, pkt->data, actual_size);
-            total_received += actual_size;
-            kfree(recv);
-        }
+        return -ENOTSUP;
     }
 
     return total_received;
@@ -264,6 +159,7 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
 
     struct sockaddr_un *un = NULL;
+    sock_t *chosen_socket = NULL;
 
     // Do we accept msg_name?
     if (sock->type == SOCK_DGRAM) {
@@ -271,51 +167,61 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         if (msg->msg_name) {
             if (msg->msg_namelen < sizeof(struct sockaddr_un)) return -EINVAL;
             un = (struct sockaddr_un*)msg->msg_name;
+        
+            // Lookup the path they're trying to send to
+            // Canonicalize the path
+            char *canon = vfs_canonicalizePath(current_cpu->current_process->wd_path, un->sun_path);
+            if (!canon) return -EINVAL;
+
+            // Try to get the node at the address
+            sock_t *serv_sock = hashmap_get(unix_mount_map, canon);
+            if (!serv_sock) return -ENOTSOCK; // !!!: ENOENT?
+
+            // Double-check type
+            if (serv_sock->type != SOCK_DGRAM) return -EPROTOTYPE;
+        
+            // Chosen socket
+            chosen_socket = serv_sock;
+            LOG(DEBUG, "Resolved address for \"%s\"\n", un->sun_path);
+        } else {
+            if (!usock->connected_socket) return -ENOTCONN;
+            chosen_socket = usock->connected_socket;
         }
-    }
-
-    if (!un) {
+    } else {
         if (!usock->connected_socket) return -ENOTCONN;
-        struct sockaddr_un temp;
-        temp.sun_family = AF_UNIX;
-        strncpy(temp.sun_path, ((unix_sock_t*)usock->connected_socket->driver)->sun_path, 108);
-        un = &temp;
     }
-
-
 
     ssize_t total_sent = 0;
 
     if (sock->type == SOCK_DGRAM) {
         // DGRAM sockets are easy, just throw a packet at them
-        for (int i = 0; i < msg->msg_iovlen; i++) {
-            unix_unordered_packet_t *pkt = kmalloc(sizeof(unix_unordered_packet_t) + msg->msg_iov[i].iov_len);
-            pkt->un.sun_family = AF_UNIX;
-            strncpy(pkt->un.sun_path, usock->sun_path, 108);
-            pkt->size = sizeof(unix_unordered_packet_t) + msg->msg_iov[i].iov_len;
-            memcpy(pkt->data, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-            unix_sendPacket(usock->connected_socket, pkt, pkt->size);
-            total_sent += msg->msg_iov[i].iov_len;
+        if (msg->msg_iovlen > 1) {
+            LOG(ERR, "Multiple IOVs not supported yet!\n");
+            return 1;
         }
+
+        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
+        
+        // Create packet data
+        unix_datagram_data_t *data = kmalloc(sizeof(unix_datagram_data_t));
+        data->packet_size = msg->msg_iov[0].iov_len;
+        data->un.sun_family = AF_UNIX;
+        memcpy(data->un.sun_path, usock->sun_path, 108);
+ 
+        // Write to circular buffer
+        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
+        if (r) {
+            // Acquire lock to push packet data
+            spinlock_acquire(usock_target->packet_buffer->lock);
+            list_append(usock_target->dgram_data, data);
+            spinlock_release(usock_target->packet_buffer->lock);
+
+            if (usock_target->thr) sleep_wakeup(usock_target->thr);
+        }
+
+        return r;
     } else {
-        // STREAM sockets are not easy, because they don't preserve message boundaries.
-        // However, that's all client-side (recvmsg). We can just send each iovec and then have client reassemble them :D
-        for (int i = 0; i < msg->msg_iovlen; i++) {
-            unix_ordered_packet_t *pkt = kmalloc(sizeof(unix_ordered_packet_t) + msg->msg_iov[i].iov_len);
-            pkt->type = UNIX_PACKET_TYPE_DATA;
-            pkt->pkt_idx = usock->packet_index;
-            pkt->size = sizeof(unix_ordered_packet_t) + msg->msg_iov[i].iov_len;
-            memcpy(pkt->data, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-
-            if (unix_sendPacket(sock, pkt, pkt->size)) {
-                kfree(pkt);
-                return -ECONNRESET;
-            }
-
-            kfree(pkt);
-            total_sent += msg->msg_iov[i].iov_len;
-        }
-
+        return -ENOTSUP;
     }
     
     return total_sent;
@@ -347,10 +253,20 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
 
     // Is it the same type as us?
     unix_sock_t *serv = (unix_sock_t*)serv_sock->driver;
-    if (!serv->incoming_connections) return -ECONNREFUSED; // Server has not issued a call to listen()
-    if (!(sock->type == serv_sock->type) && !(sock->type == SOCK_SEQPACKET && serv_sock->type == SOCK_STREAM) && !(sock->type == SOCK_STREAM && serv_sock->type == SOCK_SEQPACKET)) return -EPROTOTYPE;
+    if (!(sock->type == serv_sock->type) && !(sock->type == SOCK_SEQPACKET && serv_sock->type == SOCK_STREAM) && !(sock->type == SOCK_STREAM && serv_sock->type == SOCK_SEQPACKET)) {
+        LOG(WARN, "Cannot connect to socket of type %d when you are type %d\n", serv_sock->type, sock->type);
+        return -EPROTOTYPE;
+    }
+
+    // If we are a datagram socket, stop now
+    if (sock->type == SOCK_DGRAM) {
+        usock->connected_socket = serv_sock;
+        return 0;
+    }
 
     // Create a pending connection
+    if (!serv->incoming_connections) return -ECONNREFUSED; // Server has not issued a call to listen()
+
     // TODO: Handle backlog
     unix_conn_request_t *creq = kzalloc(sizeof(unix_conn_request_t));
     creq->sock = sock;
@@ -382,34 +298,19 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
                 return -EINTR;
             }
             
-            if (w == WAKEUP_TIME || !sock->recv_queue || !sock->recv_queue->length) {
-                sleep_untilTime(current_cpu->current_thread, 1, 0);
-                fs_wait(sock->node, VFS_EVENT_READ);
-                continue;
-            }
-            
-            // A thread must've woke us up, read the ordered packet.
-            sock_recv_packet_t *recv = socket_get(sock);
-            unix_ordered_packet_t *pkt = (unix_ordered_packet_t*)recv->data;
-
-            if (pkt->type == UNIX_PACKET_TYPE_ACCEPT) {
-                // ACCEPT packet, let's get the socket we need to connect to and ACK this packet.
-                uintptr_t data[1] = { 0x0 };
-                memcpy(data, pkt->data, sizeof(uintptr_t));
-                sock_t *new_sock = (sock_t*)data[0];
-                usock->connected_socket = new_sock;
-                
-
-                unix_acknowledge(sock, pkt);
-                kfree(recv);
+            // Is it accepted?
+            if (creq->new_sock) {
+                LOG(INFO, "Connection request accepted\n");
+                usock->connected_socket = creq->new_sock;        
+                kfree(creq);
                 return 0;
             }
 
-            // Anything else indicates connection failure
-            kfree(recv);
-            return -ECONNREFUSED;
+            sleep_untilTime(current_cpu->current_thread, 1, 0);
+            fs_wait(sock->node, VFS_EVENT_READ);
         }
 
+        kfree(creq);
         return -ETIMEDOUT;
     }
 
@@ -458,6 +359,8 @@ int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) 
     spinlock_acquire(&unix_mount_lock);
     hashmap_set(unix_mount_map, path, sock);
     spinlock_release(&unix_mount_lock);
+    
+    usock->map_path = path;
 
     strncpy(usock->sun_path, addr->sun_path, 108);
 
@@ -473,6 +376,8 @@ int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) 
  */
 int unix_listen(sock_t *sock, int backlog) {
     // Create incoming connections
+    if (sock->type == SOCK_DGRAM) return -EOPNOTSUPP;
+
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
     if (usock->connected_socket) return -EINVAL;
     if (!usock->incoming_connections) usock->incoming_connections = list_create("unix socket incoming connections");
@@ -541,23 +446,8 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     new_usock->connected_socket = creq->sock;
     strncpy(new_usock->sun_path, usock->sun_path, 108);
 
-    // We've got a connection request, let's send back an ACCEPT event
-    unix_ordered_packet_t *pkt = kzalloc(sizeof(unix_ordered_packet_t) + sizeof(void*));
-    pkt->type = UNIX_PACKET_TYPE_ACCEPT;
-    pkt->size = sizeof(unix_ordered_packet_t) + sizeof(void*);
-    pkt->pkt_idx = usock->packet_index;
-    
-    uintptr_t data[1] = { (uintptr_t)new_sock };
-    memcpy((void*)pkt->data, data, sizeof(uintptr_t));
-
-    if (unix_sendPacket(new_sock, pkt, pkt->size)) {
-        kfree(creq);
-        kfree(pkt);
-        fs_close(new_sock->node);
-        return -ECONNABORTED;
-    }
-
-    kfree(pkt);
+    // Set the new socket
+    creq->new_sock = new_sock;
     
     // Fill in accept info if we can
     if (addrlen) {
@@ -572,7 +462,6 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     }
 
     // We are connected
-    kfree(creq);
     return sock_fd;
 }
 
@@ -585,28 +474,27 @@ int unix_close(sock_t *sock) {
 
     // !!!: Race condition?
     if (usock->incoming_connections) {
-        // TODO: Reply with a CLOSE (?)
+        // TODO: Reply with a close?
         list_destroy(usock->incoming_connections, false); 
         usock->incoming_connections = NULL;
     }
 
-    if (usock->connected_socket) {
-        sock_t *prev_sock = usock->connected_socket;
-        ((unix_sock_t*)usock->connected_socket->driver)->connected_socket = NULL;
-    
-        // Make a CLOSED packet
-        unix_ordered_packet_t close = {
-            .type = UNIX_PACKET_TYPE_CLOSE,
-            .pkt_idx = usock->packet_index,
-            .size = sizeof(unix_ordered_packet_t)
-        };
-
-        socket_received(prev_sock, (void*)&close, sizeof(unix_ordered_packet_t));
+    // Stop the other socket's buffer
+    if (usock->connected_socket && sock->type != SOCK_DGRAM) {
+        unix_sock_t *other_sock = (unix_sock_t*)usock->connected_socket->driver;
+        circbuf_stop(other_sock->packet_buffer);
     }
 
+    // Drop from hashmap
+    spinlock_acquire(&unix_mount_lock);
+    hashmap_remove(unix_mount_map, usock->map_path);
+    spinlock_release(&unix_mount_lock);
+
+    // Close bound node
     if (usock->bound) fs_close(usock->bound);
-    
-    // TODO: Any other things? There are a lot of race conditions...
+
+    if (sock->type == SOCK_DGRAM) list_destroy(usock->dgram_data, true);
+    circbuf_destroy(usock->packet_buffer);
     kfree(usock);
     return 0;
 }
@@ -621,6 +509,9 @@ sock_t *unix_socket(int type, int protocol) {
 
     sock_t *sock = kzalloc(sizeof(sock_t));
     unix_sock_t *usock = kzalloc(sizeof(unix_sock_t));
+
+    usock->packet_buffer = circbuf_create("unix packet buffer", UNIX_PACKET_BUFFER_SIZE);
+    if (type == SOCK_DGRAM) usock->dgram_data = list_create("unix packet sizes");
 
     sock->sendmsg = unix_sendmsg;
     sock->recvmsg = unix_recvmsg;
