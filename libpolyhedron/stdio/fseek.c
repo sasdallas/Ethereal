@@ -19,6 +19,9 @@ int fseek(FILE *stream, long offset, int whence) {
     // TODO: Flush EVERYTHING
     if (stream->wbuflen) fflush(stream);
 
+    // Reset EOF
+    stream->eof = 0;
+
     // This should handle errno
     int return_value = lseek(stream->fd, offset, whence);
     if (return_value < 0) return -1;
