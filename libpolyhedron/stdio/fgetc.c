@@ -33,7 +33,7 @@ char *fgets(char *s, int size, FILE *stream) {
         if (c == '\n') break;
     }
 
-    if(remaning > 1)*p = '\0';
+    if (remaining > 1) *p = '\0';
 
     // Return NULL if we didn't get anything
     if (remaining == size) return NULL;   
