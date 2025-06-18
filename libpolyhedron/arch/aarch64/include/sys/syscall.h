@@ -75,7 +75,7 @@ _Begin_C_Header
 #define SYS_SOCKETPAIR      58
 #define SYS_MOUNT           59
 #define SYS_UMOUNT          60
-
+#define SYS_PIPE            61
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

@@ -141,5 +141,6 @@ long sys_listen(int socket, int backlog);
 long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
 long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data);
 long sys_umount(const char *mountpoint);
+long sys_pipe(int fildes[2]);
 
 #endif

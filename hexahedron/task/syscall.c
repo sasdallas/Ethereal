@@ -16,6 +16,7 @@
 #include <kernel/loader/binfmt.h>
 #include <kernel/drivers/net/socket.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/fs/pipe.h>
 #include <kernel/misc/args.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
@@ -73,6 +74,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_ACCEPT]        = (syscall_func_t)(uintptr_t)sys_accept,
     [SYS_MOUNT]         = (syscall_func_t)(uintptr_t)sys_mount,
     [SYS_UMOUNT]        = (syscall_func_t)(uintptr_t)sys_umount,
+    [SYS_PIPE]          = (syscall_func_t)(uintptr_t)sys_pipe,
 };
 
 
@@ -217,7 +219,9 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
     // stdout?
-    if (fd == STDOUT_FILE_DESCRIPTOR) {
+    // !!!: lol
+extern int video_ks;
+    if ((fd == STDOUT_FILE_DESCRIPTOR || fd == STDERR_FILE_DESCRIPTOR) && !video_ks) {
         char *buf = (char*)buffer;
         for (size_t i = 0; i < count; i++) terminal_putchar(buf[i]);
         video_updateScreen();
@@ -826,4 +830,12 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
 
 long sys_umount(const char *mountpoint) {
     return -ENOTSUP;
+}
+
+/**** PIPES ****/
+
+long sys_pipe(int fildes[2]) {
+    SYSCALL_VALIDATE_PTR(fildes);
+
+    return pipe_create(current_cpu->current_process, fildes);
 }

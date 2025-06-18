@@ -74,6 +74,7 @@ clock_t times(struct tms *buf);
 int dup2(int oldfd, int newfd);
 int dup(int fd);
 int getopt(int argc, char * const argv[], const char * optstring);
+int pipe(int fildes[2]);
 
 /* STUBS */
 int mkdir(const char *pathname, mode_t mode);
