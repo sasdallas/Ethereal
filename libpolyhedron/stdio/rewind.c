@@ -9,10 +9,12 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Stanislas Orsola
  */
 
 #include <stdio.h>
 
 void rewind(FILE *stream) {
+	clearerr(stream);
     fseek(stream, 0, SEEK_SET);
 }

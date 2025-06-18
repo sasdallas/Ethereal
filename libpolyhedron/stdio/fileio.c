@@ -8,7 +8,8 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2024 Samuel Stuart,
+ * Copyright (C) 2025 Stanislas Orsola,
  */
 
 #include <stdio.h>
@@ -21,7 +22,7 @@
  * @param buf The buffer to write
  * @param size The size of the buffer to write
  */
-size_t __fileio_write_bytes(FILE *f, char *buf, size_t size) {
+ssize_t __fileio_write_bytes(FILE *f, char *buf, size_t size) {
     if (!f) return 0;
 
     // Allocate a write buffer if needed
@@ -63,5 +64,13 @@ ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
 
     // screw it, just read directly from the buffer
     // TODO: This is not good. We should probably be using f->readbuf for buffered I/O (needed as well for ungetc)
-    return read(f->fd, buf, size);
+    ssize_t r = read(f->fd, buf, size);
+	
+    if (r < 0) {
+		f->error = 1;
+	} else if (r < size) {
+		f->eof = 1;
+	}
+
+	return r;
 }
