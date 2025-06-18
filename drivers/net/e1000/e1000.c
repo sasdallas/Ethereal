@@ -452,22 +452,9 @@ void e1000_init(uint32_t device, uint16_t type) {
     nic->mmio = mem_mapMMIO(bar->address, bar->size);
     kfree(bar);
 
-    // Detect an EEPROM
-    nic->eeprom = e1000_detectEEPROM(nic);
-
-    // Read the MAC address
-    uint8_t mac[6];
-    e1000_readMAC(nic, mac);
-
-    // We have a confirmed NIC, time to create its generic structure.
-    nic->nic = nic_create("e1000", mac, NIC_TYPE_ETHERNET, (void*)nic);
-    nic->nic->write = e1000_write;
-
-    LOG(INFO, "E1000 found with MAC " MAC_FMT "\n", MAC(mac));
-
     // Register our IRQ handler
     uint8_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
-    
+
     if (irq == 0xFF) {
         LOG(ERR, "E1000 NIC does not have interrupt number\n");
         LOG(ERR, "This is an implementation bug, halting system (REPORT THIS)\n");
@@ -475,7 +462,6 @@ void e1000_init(uint32_t device, uint16_t type) {
     }
 
     // Register the interrupt handler
-    hal_unregisterInterruptHandler(irq);
     if (hal_registerInterruptHandlerContext(irq, e1000_irq, (void*)nic)) {
         LOG(ERR, "Error registering IRQ%d for E1000\n", irq);
         
@@ -488,6 +474,19 @@ void e1000_init(uint32_t device, uint16_t type) {
             hal_registerInterruptHandlerContext(vector, e1000_irq, (void*)nic);
         }
     }
+
+    // Detect an EEPROM
+    nic->eeprom = e1000_detectEEPROM(nic);
+
+    // Read the MAC address
+    uint8_t mac[6];
+    e1000_readMAC(nic, mac);
+
+    // We have a confirmed NIC, time to create its generic structure.
+    nic->nic = nic_create("e1000", mac, NIC_TYPE_ETHERNET, (void*)nic);
+    nic->nic->write = e1000_write;
+
+    LOG(INFO, "E1000 found with MAC " MAC_FMT "\n", MAC(mac));
 
     // Reset the E1000 controller
     e1000_reset(nic);
