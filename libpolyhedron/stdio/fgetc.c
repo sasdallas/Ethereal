@@ -29,7 +29,7 @@ char *fgets(char *s, int size, FILE *stream) {
     while ((c = fgetc(stream)) > 0 && remaining) {
         *p++ = c;
         remaining--;
-        if (c == '\n') return s;
+        if (c == '\n') { *p++ = 0; return s; }
     }
 
     if (c == EOF) {
@@ -39,6 +39,7 @@ char *fgets(char *s, int size, FILE *stream) {
         if (remaining == size) return NULL;
         else return s;
     }
+    
     
     return s;
 }
