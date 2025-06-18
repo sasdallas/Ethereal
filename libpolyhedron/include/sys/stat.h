@@ -83,4 +83,10 @@ struct stat {
     blkcnt_t st_blocks;
 };
 
+/**** FUNCTIONS ****/
+
+int stat(const char *pathname, struct stat *statbuf);
+int fstat(int fd, struct stat *statbuf);
+int lstat(const char *pathname, struct stat *statbuf);
+
 #endif

@@ -1,5 +1,5 @@
 /**
- * @file libpolyhedron/unistd/stat.c
+ * @file libpolyhedron/sys/stat.c
  * @brief stat, fstat, and lstat
  * 
  * 
@@ -12,7 +12,7 @@
  */
 
 #include <sys/syscall.h>
-#include <unistd.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <errno.h>
 
