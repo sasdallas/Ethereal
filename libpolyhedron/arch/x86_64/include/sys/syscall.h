@@ -76,7 +76,9 @@ _Begin_C_Header
 #define SYS_MOUNT           59
 #define SYS_UMOUNT          60
 #define SYS_PIPE            61
-
+#define SYS_SHARED_NEW      62  // Ethereal API
+#define SYS_SHARED_KEY      63  // Ethereal API
+#define SYS_SHARED_OPEN     64  // Ethereal API
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

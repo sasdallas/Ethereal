@@ -39,6 +39,7 @@
 #include <kernel/fs/pty.h>
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
+#include <kernel/fs/shared.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -194,6 +195,7 @@ void kmain() {
     nic_init(); // This initializes the network kernelfs directory
     socket_init();
     video_mount();
+    shared_init();
     pci_mount();
     arch_mount_kernelfs();
 

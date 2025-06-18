@@ -143,4 +143,9 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
 long sys_umount(const char *mountpoint);
 long sys_pipe(int fildes[2]);
 
+long sys_ethereal_shared_new(size_t size, int flags);
+key_t sys_ethereal_shared_key(int fd);
+long sys_ethereal_shared_open(key_t key);
+
+
 #endif
