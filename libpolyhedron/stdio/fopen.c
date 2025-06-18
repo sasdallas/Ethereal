@@ -8,7 +8,8 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2024 Samuel Stuart,
+ * Copyright (C) 2025 Stanislas Orsola,
  */
 
 #include <stdio.h>
@@ -55,7 +56,8 @@ FILE *fopen(const char *pathname, const char *mode) {
     p++;
     if (*p == '+') {
         // + detected, use O_RDWR and clear any bits that arent used
-        flags &= ~(O_RDWR | O_APPEND);
+        flags &= ~(O_RDWR | O_APPEND | O_CREAT | O_TRUC);
+		flags |= O_RDWR;
     }
 
     // Okay we're good now. Ty to open the file
