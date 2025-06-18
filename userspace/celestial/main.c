@@ -62,12 +62,19 @@ void version() {
  */
 void celestial_main() {
     while (1) {
+        // Reset graphics clips
+        gfx_resetClips(WM_GFX);
+
+        // Accept new sockets
         socket_accept();
-    
-        if (!__celestial_client_count) continue;
+        
+        // Update mouse cursor
+        mouse_update();
+
 
         // !!!: Sorta slow, but probably the easiest way with the client map
         struct pollfd p[__celestial_client_count];
+        if (!__celestial_client_count) goto _next_iter;
         int i = 0;
         foreach (kn, hashmap_keys(WM_SW_MAP)) {
             p[i].fd = (int)(uintptr_t)kn->value;
@@ -75,7 +82,7 @@ void celestial_main() {
             i++;
         } 
 
-        if (!i) continue;
+        if (!i) goto _next_iter;
 
         // Wait for events
         int r = poll(p, __celestial_client_count, 0);
@@ -92,7 +99,10 @@ void celestial_main() {
             }
         }
 
-        if (!r) continue;
+        if (!r) goto _next_iter;
+
+    _next_iter:
+        gfx_render(WM_GFX);
     }
 }
 
@@ -136,7 +146,7 @@ int main(int argc, char *argv[]) {
         { .name = "virtual", .has_arg = no_argument, .flag = NULL, .val = 'f'}
     };
 
-    while ((c = getopt_long(argc, argv, "dlhvf", (const struct option*)longopts, &index)) != -1) {
+    while ((c = getopt_long(argc, argv, "dl:hvf", (const struct option*)longopts, &index)) != -1) {
         if (!c && longopts[index].flag == 0) {
             c = longopts[index].val;
         }
@@ -193,7 +203,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        gfx_clear(WM_GFX, GFX_RGB(255, 255, 255));
+        gfx_clear(WM_GFX, GFX_RGB(0,0,0));
         gfx_render(WM_GFX);
     }
 
@@ -208,10 +218,15 @@ int main(int argc, char *argv[]) {
     socket_init();
     CELESTIAL_DEBUG("Created sockets successfully\n");
 
-    // if (!fork()) {
-    //     const char *a[] = { "/device/initrd/bin/wmtest", NULL };
-    //     execvp("/device/initrd/bin/wmtest", a);
-    // }
+    // Initialize mouse
+    mouse_init();
+    CELESTIAL_DEBUG("Created mouse successfully\n");
+
+    if (!fork()) {
+        const char *a[] = { "/device/initrd/bin/wmtest", NULL };
+        execvp("/device/initrd/bin/wmtest", a);
+        exit(1);
+    }
 
     // Enter main loop
     celestial_main();

@@ -25,6 +25,7 @@
 
 #include "window.h"
 #include "socket.h"
+#include "mouse.h"
 
 /**** VARIABLES ****/
 extern FILE *__celestial_log_device;
@@ -34,6 +35,10 @@ extern int __celestial_socket;
 extern list_t *__celestial_window_list;
 extern hashmap_t *__celestial_map;
 extern int __celestial_client_count;
+extern int __celestial_mouse_fd;
+extern int __celestial_mouse_x;
+extern int __celestial_mouse_y;
+extern sprite_t *__celestial_mouse_sprite;
 
 /**** MACROS ****/
 
@@ -46,6 +51,10 @@ extern int __celestial_client_count;
 #define WM_SOCK __celestial_socket
 #define WM_WINDOW_LIST __celestial_window_list
 #define WM_SW_MAP __celestial_map
+#define WM_MOUSE __celestial_mouse_fd
+#define WM_MOUSEX __celestial_mouse_x
+#define WM_MOUSEY __celestial_mouse_y
+#define WM_MOUSE_SPRITE __celestial_mouse_sprite
 
 /**** FUNCTIONS ****/
 

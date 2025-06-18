@@ -37,14 +37,14 @@ void socket_init() {
 
     if (bind(WM_SOCK, (const struct sockaddr*)&addr, sizeof(struct sockaddr_un)) < 0) {
         CELESTIAL_PERROR("bind");
-        CELESTIAL_ERR("Could not bind to %s\n", CELESTIAL_SOCKET_NAME);
+        CELESTIAL_ERR("socket: Could not bind to %s\n", CELESTIAL_SOCKET_NAME);
         celestial_fatal();
     }
 
     // Start accepting connections
     if (listen(WM_SOCK, 5) < 0) {
         CELESTIAL_PERROR("listen");
-        CELESTIAL_ERR("Could not listen for connections\n");
+        CELESTIAL_ERR("socket: Could not listen for connections\n");
         celestial_fatal();
     }
 
@@ -52,7 +52,7 @@ void socket_init() {
     int i = 1;
     if (ioctl(WM_SOCK, FIONBIO, &i) < 0) {
         CELESTIAL_PERROR("FIONBIO");
-        CELESTIAL_ERR("Could not set socket as nonblocking\n");
+        CELESTIAL_ERR("socket: Could not set socket as nonblocking\n");
         celestial_fatal();
     }
 }
@@ -68,7 +68,7 @@ void socket_accept() {
         if (errno == EWOULDBLOCK) return;
     }
 
-    CELESTIAL_DEBUG("New connection on fd %d\n", fd);
+    CELESTIAL_DEBUG("socket: New connection on fd %d\n", fd);
     celestial_addClient(fd, -1);
 }
 
@@ -122,7 +122,7 @@ void socket_handle(int sock) {
     // Check the type of request
     switch (hdr->type) {
         case CELESTIAL_REQ_CREATE_WINDOW:
-            CELESTIAL_DEBUG("CELESTIAL_REQ_CREATE_WINDOW\n");
+            CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_CREATE_WINDOW\n");
             return socket_error(sock, hdr->type, ENOTSUP);
             
         default:
