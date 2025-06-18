@@ -36,6 +36,7 @@ typedef struct circbuf {
     volatile int tail;      // Tail of the buffer
     sleep_queue_t *readers; // Reader sleep queue
     sleep_queue_t *writers; // Writers sleep queue
+    volatile uint8_t stop;  // Stop flag
 } circbuf_t;
 
 /**** FUNCTIONS ****/
@@ -77,5 +78,24 @@ int circbuf_available(circbuf_t *circbuf);
  * @param circbuf The circular buffer to destroy
  */
 void circbuf_destroy(circbuf_t *circbuf);
+
+/**
+ * @brief Returns how much content a circbuf has left to read
+ * @param circbuf The circbuf to check
+ */
+ssize_t circbuf_remaining_read(circbuf_t *circbuf);
+
+/**
+ * @brief Returns how much content a circbuf has left to write
+ * @param circbuf The circbuf to check
+ */
+ssize_t circbuf_remaining_write(circbuf_t *circbuf);
+
+/**
+ * @brief Wakes up all threads sleeping in the ringbuffer and makes them return an error code of -EINTR
+ * @param circbuf The circbuf to stop 
+ * @returns 0 on success
+ */
+int circbuf_stop(circbuf_t *circbuf);
 
 #endif

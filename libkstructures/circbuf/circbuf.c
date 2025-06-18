@@ -61,6 +61,9 @@ ssize_t circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
                 int w = sleep_inQueue(circbuf->readers);
                 if (w == WAKEUP_SIGNAL) return -EINTR;
 
+                // Were we stopped?
+                if (circbuf->stop) return 0;
+
                 // Keep going
                 continue;
             } else {
@@ -107,6 +110,10 @@ ssize_t circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
             // Sleep in writers queue
             int w = sleep_inQueue(circbuf->writers);
             if (w == WAKEUP_SIGNAL) return -EINTR;
+
+            // Were we stopped?
+            if (circbuf->stop) return 0;
+
             continue;
         }
         
@@ -124,7 +131,7 @@ ssize_t circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
         sleep_wakeupQueue(circbuf->readers, 1);
     }
 
-    return 0;
+    return copied;
 }
 
 /**
@@ -145,4 +152,49 @@ void circbuf_destroy(circbuf_t *circbuf) {
     spinlock_destroy(circbuf->lock);
     kfree(circbuf->buffer);
     kfree(circbuf);
+}
+
+/**
+ * @brief Returns how much content a circbuf has left to read
+ * @param circbuf The circbuf to check
+ */
+ssize_t circbuf_remaining_read(circbuf_t *circbuf) {
+    // Three conditions:
+    // Head is equal to tail, i.e. nothing is left to read
+    // Head is behind tail, in which case it looped back around and there's stuff left
+    // Head is in front of tail, in which case there's stuff left to read
+
+    if (circbuf->tail == circbuf->head) return 0;
+    else if (circbuf->head < circbuf->tail) return (circbuf->buffer_size - circbuf->tail) + circbuf->head;
+    else return circbuf->head - circbuf->tail;
+}
+
+/**
+ * @brief Returns how much content a circbuf has left to write
+ * @param circbuf The circbuf to check
+ */
+ssize_t circbuf_remaining_write(circbuf_t *circbuf) {
+    // Three conditions:
+    // Head is one behind tail, nothing left to write
+    // Head is equal to tail, we have the buffer's size - 1 left to write
+    // Head is in front of tail, we have loop around + offset - 1
+
+    if (circbuf->head == circbuf->tail - 1) return 0;
+    else if (circbuf->head == circbuf->tail) return circbuf->buffer_size - 1;
+    else return ((circbuf->buffer_size - circbuf->head) + circbuf->tail) - 1;
+}
+
+/**
+ * @brief Wakes up all threads sleeping in the ringbuffer and makes them return an error code of -EINTR
+ * @param circbuf The circbuf to stop 
+ * @returns 0 on success
+ */
+int circbuf_stop(circbuf_t *circbuf) {
+    spinlock_acquire(circbuf->lock);
+    circbuf->stop = 1;
+    sleep_wakeupQueue(circbuf->readers, -1);
+    sleep_wakeupQueue(circbuf->writers, -1);
+    spinlock_release(circbuf->lock);
+
+    return 0;
 }
