@@ -304,6 +304,12 @@ void fs_destroy(fs_node_t *node);
 fs_node_t *fs_copy(fs_node_t *node);
 
 /**
+ * @brief Create and return a filesystem object
+ * @note This API is relatively new and may not be in use everywhere
+ */
+fs_node_t *fs_node();
+
+/**
  * @brief creat() equivalent for VFS
  * @param node The node to output to
  * @param path The path to create

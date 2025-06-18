@@ -439,12 +439,19 @@ void fs_destroy(fs_node_t *node) {
  * @returns A new node object
  */
 fs_node_t *fs_copy(fs_node_t *node) {
-    fs_node_t *newnode = kmalloc(sizeof(fs_node_t));
-    memcpy(newnode, node, sizeof(fs_node_t));
-    newnode->refcount = 1;
-    newnode->waiting_nodes = NULL;
-    newnode->mmap_contexts = NULL; 
-    return newnode;
+    // Increase refcount
+    node->refcount++;
+    return node;
+}
+
+/**
+ * @brief Create and return a filesystem object
+ * @note This API is relatively new and may not be in use everywhere
+ */
+fs_node_t *fs_node() {
+    fs_node_t *node = kzalloc(sizeof(fs_node_t));
+    node->refcount = 1;
+    return node;
 }
 
 /**
