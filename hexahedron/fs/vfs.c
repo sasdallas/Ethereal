@@ -447,10 +447,12 @@ fs_node_t *fs_copy(fs_node_t *node) {
 /**
  * @brief Create and return a filesystem object
  * @note This API is relatively new and may not be in use everywhere
+ * 
+ * Does not initialize the refcount of the node. Open it somewhere,.
  */
 fs_node_t *fs_node() {
     fs_node_t *node = kzalloc(sizeof(fs_node_t));
-    node->refcount = 1;
+    // We don't set refcount because you should open the node after creation
     return node;
 }
 

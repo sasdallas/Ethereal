@@ -141,6 +141,7 @@ int pipe_create(process_t *process, int fildes[2]) {
     pipe->read->read = pipe_read;
     pipe->read->close = pipe_closeRead;
     pipe->read->ready = pipe_readyRead;
+    fs_open(pipe->read, 0);
 
     // Create write end of the pipe
     pipe->write = fs_node();
@@ -151,6 +152,7 @@ int pipe_create(process_t *process, int fildes[2]) {
     pipe->write->write = pipe_write;
     pipe->write->close = pipe_closeWrite;
     pipe->write->ready = pipe_readyWrite;
+    fs_open(pipe->write, 0);
 
     // Add file descriptors to process
     fd_t *read_fd = fd_add(process, pipe->read);

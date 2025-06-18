@@ -297,17 +297,19 @@ int fs_wait(fs_node_t *node, int events);
 void fs_destroy(fs_node_t *node);
 
 /**
+ * @brief Create and return a filesystem object
+ * @note This API is relatively new and may not be in use everywhere
+ * 
+ * Does not initialize the refcount of the node. Open it somewhere,.
+ */
+fs_node_t *fs_node();
+
+/**
  * @brief Create a copy of a filesystem node object
  * @param node The node to copy
  * @returns A new node object
  */
 fs_node_t *fs_copy(fs_node_t *node);
-
-/**
- * @brief Create and return a filesystem object
- * @note This API is relatively new and may not be in use everywhere
- */
-fs_node_t *fs_node();
 
 /**
  * @brief creat() equivalent for VFS
