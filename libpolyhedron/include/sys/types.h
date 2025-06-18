@@ -31,6 +31,7 @@ typedef int mode_t;
 typedef int caddr_t;
 typedef int pid_t;
 typedef int id_t;
+typedef int key_t;
 
 typedef long off_t;
 typedef long time_t;
