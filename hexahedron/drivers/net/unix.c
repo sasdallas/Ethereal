@@ -29,9 +29,6 @@
 #include <errno.h>
 #include <fcntl.h>
 
-/* Require type of socket */
-#define UNIX_IS_TYPE(t) (((unix_sock_t*)sock->driver)->type == t)
-
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NET:UNIX", __VA_ARGS__)
 
@@ -50,31 +47,6 @@ extern void socket_close(fs_node_t *node);
 void unix_init() {
     unix_mount_map = hashmap_create("unix mount map", 20);
     socket_register(AF_UNIX, unix_socket);
-}
-
-/**
- * @brief Read a packet from a UNIX socket
- * @param sock The UNIX socket to read from
- * @returns Received packet
- */
-sock_recv_packet_t *unix_getPacket(sock_t *sock) {
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    for (;;);
-}
-
-/**
- * @brief Send a packet to a connected UNIX socket
- * @param sock The UNIX packet to send on
- * @param packet The packet to send
- * @param size The size of the packet
- * @returns 0 on success (for ordered will block until ACK if needed)
- */
-int unix_sendPacket(sock_t *sock, void *packet, size_t size) {
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-
-    for (;;);
-
-    return 0;
 }
 
 /**
@@ -141,7 +113,16 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             return -ENOTSUP;
         }
 
-        return -ENOTSUP;
+        // Streamed sockets are easy, just try to read as much as possible
+        LOG(INFO, "Now waiting for data\n");
+        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) return -ECONNRESET;
+        ssize_t r = 0;
+        
+        while (!r) {
+            r = circbuf_read(usock->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+        }
+        
+        return r;
     }
 
     return total_received;
@@ -189,6 +170,7 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
     } else {
         if (!usock->connected_socket) return -ENOTCONN;
+        chosen_socket = usock->connected_socket;
     }
 
     ssize_t total_sent = 0;
@@ -221,7 +203,17 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         return r;
     } else {
-        return -ENOTSUP;
+        if (msg->msg_iovlen > 1) {
+            LOG(ERR, "Multiple IOVs not supported yet!\n");
+            return 1;
+        }
+
+        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
+
+        // Streamed sockets are even easier, just write the packet for them.
+        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
+        return r;
     }
     
     return total_sent;
@@ -449,6 +441,9 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     // Set the new socket
     creq->new_sock = new_sock;
     
+    // Wakeup the waiting socket thread
+    sleep_wakeup(((unix_sock_t*)creq->sock->driver)->thr);
+
     // Fill in accept info if we can
     if (addrlen) {
         size_t size = (*addrlen > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : *addrlen;
