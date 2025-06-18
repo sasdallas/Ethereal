@@ -49,7 +49,7 @@ size_t __fileio_write_bytes(FILE *f, char *buf, size_t size) {
  * @param buf The buffer to use
  * @param size The size of the buffer to use
  */
-size_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
+ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size) {
     if (!f) return 0;
 
     // ungetc()

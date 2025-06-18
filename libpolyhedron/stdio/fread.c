@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 
-extern size_t __fileio_read_bytes(FILE *f, char *buf, size_t size);
+extern ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size);
 
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     if (!size || !nmemb || !stream) return 0;
