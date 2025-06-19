@@ -308,9 +308,10 @@ static char *vas_typeToString(int type) {
  * @brief Free memory in a VAS
  * @param vas The VAS to free the memory in
  * @param node The node to free
+ * @param mem_freed Whether to actually free the memory, or whether it was freed/unmapped already
  * @returns 0 on success or 1 on failure
  */
-int vas_free(vas_t *vas, vas_node_t *node) {
+int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
     if (!vas || !node) return 1;
     spinlock_acquire(vas->lock);
 
@@ -333,6 +334,15 @@ int vas_free(vas_t *vas, vas_node_t *node) {
     spinlock_acquire(&allocation->ref_lck);
     allocation->references--;
     if (!allocation->references) {
+        // If the memory was already freed by something else (such as a framebuffer shared memory mapping), don't actually free the pages
+        // but consume the allocation
+        if (mem_freed) {
+            LOG(DEBUG, "Allocation already dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
+            spinlock_release(&allocation->ref_lck);
+            kfree(allocation);
+            goto _finish;
+        }
+
         // Drop pages
         for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
             page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
@@ -353,6 +363,7 @@ int vas_free(vas_t *vas, vas_node_t *node) {
 
 
     // Free and return
+_finish:
     kfree(node);
     vas->allocations--;
     spinlock_release(vas->lock);
@@ -400,7 +411,7 @@ int vas_destroy(vas_t *vas) {
     while (nn) {
         // TODO: mem_destroyVAS already frees memory so we need to move that to here (for CoW and more)
         vas_node_t *next = nn->next;
-        vas_free(vas, nn);
+        vas_free(vas, nn, 0);
         nn = next;
     }
 

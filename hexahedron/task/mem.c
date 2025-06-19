@@ -123,7 +123,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     // No - call fs_mmap()
     int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, (void*)alloc->base, len, off);
     if (mmap_result < 0) {
-        vas_free(vas, vas_get(vas, alloc->base));
+        vas_free(vas, vas_get(vas, alloc->base), 0);
         kfree(map);
         return (void*)(uintptr_t)mmap_result;
     }
@@ -142,15 +142,16 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
     if (!map) return 0;
 
     // If there was a file descriptor, close it
+    int munmapped = 0;
     if (!(map->flags & MAP_ANONYMOUS) && map->filedes) {
         // Sometimes a proc will close a file descriptor before it exited
         if (FD_VALIDATE(proc, map->filedes)) {
-            fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
+            munmapped = !fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
         }
     }
 
     // Free the memory in the VAS
-    vas_free(proc->vas, vas_get(proc->vas, (uintptr_t)map->addr));
+    vas_free(proc->vas, vas_get(proc->vas, (uintptr_t)map->addr), munmapped);
 
     // Cleanup
     if (proc->mmap) list_delete(proc->mmap, list_find(proc->mmap, (void*)map));

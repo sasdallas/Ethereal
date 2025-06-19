@@ -131,9 +131,10 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size);
  * @brief Free memory in a VAS
  * @param vas The VAS to free the memory in
  * @param node The node to free
+ * @param mem_freed Whether to actually free the memory, or whether it was freed/unmapped already
  * @returns 0 on success or 1 on failure
  */
-int vas_free(vas_t *vas, vas_node_t *node);
+int vas_free(vas_t *vas, vas_node_t *node, int mem_freed);
 
 /**
  * @brief Get an allocation from a VAS
