@@ -80,6 +80,9 @@ void mouse_update() {
     // Parse the mouse event
     if (event.event_type != EVENT_MOUSE_UPDATE) return;
 
+    // int32_t last_mouse_x = WM_MOUSEX;
+    // int32_t last_mouse_y = WM_MOUSEY;
+
     // Update X and Y
     WM_MOUSEX += event.x_difference;
     WM_MOUSEY -= event.y_difference; // TODO: Maybe add kernel flag to invert this or do it in driver
@@ -87,10 +90,17 @@ void mouse_update() {
     // Do we need to adjust?
     if (WM_MOUSEX < 0) WM_MOUSEX = 0;
     if (WM_MOUSEY < 0) WM_MOUSEY = 0;
-    if ((size_t)WM_MOUSEX >= GFX_WIDTH(WM_GFX)) WM_MOUSEX = GFX_WIDTH(WM_GFX);
-    if ((size_t)WM_MOUSEY >= GFX_HEIGHT(WM_GFX)) WM_MOUSEY = GFX_HEIGHT(WM_GFX);
+    if ((size_t)WM_MOUSEX >= GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width-1) WM_MOUSEX = GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width;
+    if ((size_t)WM_MOUSEY >= GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height) WM_MOUSEY = GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height;
 
-    // Render
+    // Make clips
+    // if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY) gfx_createClip(WM_GFX, last_mouse_x, last_mouse_y, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
     gfx_createClip(WM_GFX, WM_MOUSEX, WM_MOUSEY, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
+}
+
+/**
+ * @brief Render the mouse
+ */
+void mouse_render() {
     gfx_renderSprite(WM_GFX, WM_MOUSE_SPRITE, WM_MOUSEX, WM_MOUSEY);
 }

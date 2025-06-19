@@ -58,6 +58,24 @@ void version() {
 
 
 /**
+ * @brief Main redraw function of Celestial
+ */
+void celestial_redraw() {
+    // Redraw windows
+    window_redraw();
+
+    // Render the mouse
+    mouse_render();
+
+extern void gfx_drawClips(gfx_context_t *ctx);
+    gfx_drawClips(WM_GFX);
+
+
+    // Render the grahics
+    gfx_render(WM_GFX);
+}
+
+/**
  * @brief Main loop of Celestial
  */
 void celestial_main() {
@@ -67,14 +85,17 @@ void celestial_main() {
 
         // Accept new sockets
         socket_accept();
-        
-        // Update mouse cursor
+
+        // Update the mouse cursor (to make clips)
         mouse_update();
+        
+        // Redraw
+        celestial_redraw();
 
 
         // !!!: Sorta slow, but probably the easiest way with the client map
         struct pollfd p[__celestial_client_count];
-        if (!__celestial_client_count) goto _next_iter;
+        if (!__celestial_client_count) continue;
         int i = 0;
 
         list_t *keys = hashmap_keys(WM_SW_MAP);
@@ -87,7 +108,7 @@ void celestial_main() {
 
         list_destroy(keys, false);
 
-        if (!i) goto _next_iter;
+        if (!i) continue;
 
         // Wait for events
         int r = poll(p, __celestial_client_count, 0);
@@ -97,7 +118,7 @@ void celestial_main() {
         }
 
 
-        if (!r) goto _next_iter;
+        if (!r) continue;
 
         for (int i = 0; i < __celestial_client_count; i++) {
             if (p[i].revents & POLLIN) {
@@ -106,9 +127,6 @@ void celestial_main() {
                 socket_handle(p[i].fd);
             }
         }
-
-    _next_iter:
-        gfx_render(WM_GFX);
     }
 }
 

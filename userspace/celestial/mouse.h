@@ -30,8 +30,13 @@
 int mouse_init();
 
 /**
- * @brief Update and redraw the mouse (non-blocking)
+ * @brief Update the mouse (non-blocking)
  */
 void mouse_update();
+
+/**
+ * @brief Render the mouse
+ */
+void mouse_render();
 
 #endif

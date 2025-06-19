@@ -13,12 +13,21 @@
 
 #include "celestial.h"
 #include <stdlib.h>
+#include <time.h>
+#include <string.h>
+#include <sys/mman.h>
 
 /* Window map */
 hashmap_t *__celestial_window_map = NULL;
 
+/* Window list */
+list_t *__celestial_window_list = NULL;
+
 /* Window ID bitmap */
 uint32_t window_id_bitmap[CELESTIAL_MAX_WINDOW_ID/4] = { 0 };
+
+/* Last redraw time */
+uint64_t __celestial_last_redraw_time = 0;
 
 /**
  * @brief Allocate a new ID for a window
@@ -68,12 +77,13 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->height = height;
 
     // Make buffer for it
-    win->buffer = malloc(win->height * (win->width*4));
-    win->shmfd = shared_new(win->height * (win->width*4), SHARED_DEFAULT);
+    win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
     win->bufkey = shared_key(win->shmfd);
-    
+    win->buffer = mmap(NULL, win->height * win->width * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
+
     CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
 
+    list_append(WM_WINDOW_LIST, win);
     hashmap_set(WM_WINDOW_MAP, (void*)(uintptr_t)win->id, win);
     return win;
 }
@@ -83,4 +93,41 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
  */
 void window_init() {
     WM_WINDOW_MAP = hashmap_create_int("celestial window map", 20);
+    WM_WINDOW_LIST = list_create("celestial window list");
+}
+
+/**
+ * @brief Redraw all windows 
+ */
+void window_redraw() {
+    // Get the current time
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    uint64_t curtime = (tv.tv_sec * 1000) + (tv.tv_usec);
+    uint64_t threshold = curtime - __celestial_last_redraw_time;
+
+    int time_to_redraw = (threshold > CELESTIAL_WINDOW_REDRAW_THRESHOLD);
+    if (!time_to_redraw) return;
+
+
+    // Update redraw time
+    __celestial_last_redraw_time = curtime;
+
+    // We need to redraw all our windows
+    // TODO: Z order, we are just drawing all of them
+    // TODO: Use our clipping system to allow windows to be marked for drawing. They can call celestial_flip() to redraw their content (and will only be redrawn if they call flip())
+    foreach(window_node, WM_WINDOW_LIST) {
+        wm_window_t *win = (wm_window_t*)window_node->value;
+    
+        // Make a sprite and render it
+        sprite_t sp = {
+            .bitmap = (uint32_t*)win->buffer,
+            .width = win->width,
+            .height = win->height,
+        };
+
+        gfx_createClip(WM_GFX, win->x, win->y, win->width, win->height);
+        gfx_renderSprite(WM_GFX, &sp, win->x, win->y);
+    }
 }

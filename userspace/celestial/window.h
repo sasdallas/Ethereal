@@ -23,7 +23,8 @@
 
 /**** DEFINITIONS ****/
 
-#define CELESTIAL_MAX_WINDOW_ID     32767
+#define CELESTIAL_MAX_WINDOW_ID                 32767
+#define CELESTIAL_WINDOW_REDRAW_THRESHOLD       10
 
 /**** TYPES ****/
 
@@ -66,5 +67,10 @@ void window_init();
  * @returns A new window object
  */
 wm_window_t *window_new(int sock, int flags, size_t width, size_t height);
+
+/**
+ * @brief Redraw all windows 
+ */
+void window_redraw();
 
 #endif
