@@ -16,69 +16,119 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <getopt.h>
+#include <fcntl.h>
 
-void help() {
+/**
+ * @brief Usage
+ */
+void usage() {
     printf("Usage: cat [OPTION]... [FILE]...\n");
     printf("Concatenates FILE(s) to standard output\n");
     exit(EXIT_SUCCESS);
 }
 
+
+/**
+ * @brief Version
+ */
 void version() {
     printf("cat (Ethereal miniutils) 1.00\n");
     printf("Copyright (C) 2025 The Ethereal Development Team\n");
     exit(EXIT_SUCCESS);
 }
 
+/**
+ * @brief Main
+ */
 int main(int argc, char *argv[]) {
+    struct option longopts[] = {
+        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h' },
+        { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' }
+    };
 
-    // Check arguments
-    if (argc > 1 && !strcmp(argv[1], "--help")) {
-        help();
-    }
+    int ch;
+    int index;
 
-    if (argc > 1 && !strcmp(argv[1], "--version")) {
-        version();
-    }
-
-    if (argc < 2) {
-        // temporary
-        return 0;
-    }
-
-    // Stat to make sure
-    if (argc > 1) {
-        struct stat st;
-        if (stat(argv[1], &st) < 0){ 
-            printf("cat: %s: %s\n", argv[1], strerror(errno));
-            return 1;
+    // pointless getopt for now
+    while ((ch = getopt_long(argc, argv, "hv?", (const struct option*)&longopts, &index)) != -1) {
+        if (!ch && longopts[index].flag == NULL) ch = longopts[index].val;
+        switch (ch) {
+            case 'v':
+                version();
+                break;
+            case 'h':
+            default:
+                usage();
         }
     }
 
-    FILE *f = NULL;
-    if (argc < 1) {
-        f = stdin;
-    } else {
-        f = fopen(argv[1], "r");
-        if (!f) {
-            printf("cat: %s: %s\n", argv[1], strerror(errno));
-            return 1;
+    if (argc-optind == 0) {
+        while (1) {
+            // We were given no argument, read from stdin file descriptor
+            char buf[4096] = { 0 };
+            ssize_t r = read(STDIN_FILENO, buf, 4096);
+            
+            // If we didn't get anything then return
+            if (r < 0) {
+                fprintf(stderr, "cat: stdin: %s\n", strerror(errno));
+                return 1;
+            }
+
+            if (!r) return 0;
+
+            write(STDOUT_FILENO, buf, 4096);
+        }
+
+    }
+
+
+    int return_value = 0;
+    for (int i = optind; i < argc; i++) {
+        int fd = STDIN_FILENO;
+
+        // Is this trying to read from stdin?
+        if (strcmp(argv[i], "-")) {
+            // No, open the file requested
+            char *filename = argv[i];
+            if ((fd = open(filename, O_RDONLY)) < 0) {
+                fprintf(stderr, "cat: %s: %s\n", filename, strerror(errno));
+                return_value = 1;
+                continue;
+            }
+
+            // Get stat
+            struct stat st;
+            if ((fstat(fd, &st)) < 0) {
+                fprintf(stderr, "cat: stat: %s\n", strerror(errno));
+                return_value = 1;
+                continue;
+            }
+
+            if (S_ISDIR(st.st_mode)) {
+                fprintf(stderr, "cat: %s: Is a directory\n", filename);
+                return_value = 1;
+                continue;
+            }
+        }
+
+        // Enter read loop
+        while (1) {
+            char buf[4096] = { 0 };
+            ssize_t r = read(fd, buf, 4096);
+            
+            // Error
+            if (r < 0) {
+                fprintf(stderr, "cat: %s: %s\n", (fd == STDIN_FILE_DESCRIPTOR ? "stdin" : argv[i]), strerror(errno));
+                return_value = 1;
+                continue;
+            }
+
+            if (!r) break; // Done
+
+            write(STDOUT_FILENO, buf, 4096);
         }
     }
 
-    fseek(f, 0, SEEK_END);
-    long flen = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    // Chunk the file up
-    char *buffer = malloc(4097);
-    memset(buffer, 0, 4097);
-    for (int i = 0; i < flen; i += 4096) {
-        fread(buffer, 1, 4096, f);
-        printf("%s", buffer);
-    }
-
-    fflush(stdout);
-    free(buffer);
-
-    return 0;
+    return return_value;
 }

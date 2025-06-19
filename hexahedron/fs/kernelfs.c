@@ -355,7 +355,13 @@ ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *b
 void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
     // !!!: kill me, it's too late here.
     // This will update node->length
+    LOG(INFO, "Opened: Updating node->length\n");
     kernelfs_genericRead(node, 0, 0, NULL);
+
+    // !!!: Because vfs_open creates a copy of the node, update this copies length from the original
+    kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
+    node->length = entry->node->length;
+
     return;
 }
 
