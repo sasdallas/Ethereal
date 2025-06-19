@@ -52,7 +52,7 @@ gfx_context_t *gfx_createFullscreen(int flags) {
 
     // mmap() the video interface in
     size_t bufsz = (info.screen_height * info.screen_pitch);
-    ctx->buffer = mmap(NULL, bufsz, PROT_READ | PROT_WRITE, MAP_PRIVATE, ctx->fb_fd, 0);
+    ctx->buffer = mmap(NULL, bufsz, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fb_fd, 0);
     if (ctx->buffer == MAP_FAILED) {
         // We failed to map the buffer in...
         perror("mmap");
@@ -65,6 +65,39 @@ gfx_context_t *gfx_createFullscreen(int flags) {
     if (!(flags & CTX_NO_BACKBUFFER)) {
         ctx->backbuffer = malloc(GFX_SIZE(ctx));
     }
+    return ctx;
+}
+
+/**
+ * @brief Initialize graphics in a smaller subarea
+ * @param parent Parent context
+ * @param x The X offset of the graphics
+ * @param y The Y offset of the graphics
+ * @param width The width of the graphics
+ * @param height The height of the graphics
+ * @returns A pointer to the new graphics context
+ */
+gfx_context_t *gfx_createSubarea(gfx_context_t *parent, int x, int y, size_t width, size_t height) {
+    // Can we fit this into the parent?
+    if (x<0 || x+width > parent->width || y<0 || y+height > parent->height) return NULL;
+
+    gfx_context_t *ctx = malloc(sizeof(gfx_context_t));
+    ctx->fb_fd = parent->fb_fd;
+    ctx->width = width;
+    ctx->height = height;
+    ctx->pitch = parent->pitch;
+    ctx->bpp = parent->bpp;
+    ctx->flags = parent->flags;
+
+    if (!(ctx->flags & CTX_NO_BACKBUFFER)) {
+        ctx->backbuffer = parent->backbuffer + (GFX_PITCH(ctx) * y) + x * (GFX_BPP(ctx)/8);
+    }
+
+    ctx->buffer = parent->buffer + (GFX_PITCH(ctx) * y) + x * (GFX_BPP(ctx)/8);
+
+    // TODO: Move any parent clips we can.
+    ctx->clip = NULL;
+    ctx->clip_last = NULL;
     return ctx;
 }
 
@@ -87,7 +120,11 @@ void gfx_render(gfx_context_t *ctx) {
             clip = clip->next;
         }
     } else {
-        memcpy(ctx->buffer, ctx->backbuffer, GFX_SIZE(ctx));
+
+        for (uint32_t y = 0; y < ctx->height; y++) {
+            memcpy(ctx->buffer + (y*GFX_PITCH(ctx)), ctx->backbuffer + (y*GFX_PITCH(ctx)), GFX_WIDTH(ctx) * 4);
+        }
+        // memcpy(ctx->buffer, ctx->backbuffer, GFX_SIZE(ctx));
     }
 }
 
