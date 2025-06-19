@@ -114,7 +114,6 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         // Streamed sockets are easy, just try to read as much as possible
-        LOG(INFO, "Now waiting for data\n");
         if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) return -ECONNRESET;
         ssize_t r = 0;
         
@@ -213,6 +212,9 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         // Streamed sockets are even easier, just write the packet for them.
         ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
         if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
+
+        // Alert the target node
+        fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
         return r;
     }
     
