@@ -102,9 +102,9 @@ int essence_executeScript(FILE *f) {
 int main(int argc, char *argv[]) {
 
     struct option options[] = {
-        { .flag = NULL, .name = "--command", .has_arg = required_argument, .val = 'c'},
-        { .flag = NULL, .name = "--version", .has_arg = no_argument, .val = 'v'},
-        { .flag = NULL, .name = "--help", .has_arg = no_argument, .val = 'h'}
+        { .flag = NULL, .name = "command", .has_arg = required_argument, .val = 'c'},
+        { .flag = NULL, .name = "version", .has_arg = no_argument, .val = 'v'},
+        { .flag = NULL, .name = "help", .has_arg = no_argument, .val = 'h'}
     };
 
     int c;
@@ -180,6 +180,7 @@ int main(int argc, char *argv[]) {
         // Execute command
         essence_executeCommand(cmd_argv[0], cmd_argc, cmd_argv);
 
+        for (int i = 0; i < cmd_argc; i++) free(cmd_argv[i]);
         free(cmd_argv);
     }
     return 0;
