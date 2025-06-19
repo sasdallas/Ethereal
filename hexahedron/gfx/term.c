@@ -225,7 +225,7 @@ int terminal_putchar(int c) {
                 ansi_color_code = 0;
             }
 
-            break;
+            // Fall through to default case.
 
         case 'm':
             // Final part of the ANSI escape sequence.
