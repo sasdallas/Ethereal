@@ -462,9 +462,13 @@ void socket_close(fs_node_t *node) {
  */
 int socket_ready(fs_node_t *node, int events) {
     if (node->flags != VFS_SOCKET) return 0;
-    int revents = VFS_EVENT_WRITE;
 
     sock_t *sock = (sock_t*)node->dev;
+
+    // Does the socket provide its own ready method?
+    if (sock->ready) return sock->ready(sock, events);
+
+    int revents = VFS_EVENT_WRITE;
     if (sock->recv_queue->length) revents |= VFS_EVENT_READ;
 
     return revents;

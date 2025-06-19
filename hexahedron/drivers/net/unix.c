@@ -495,6 +495,17 @@ int unix_close(sock_t *sock) {
 }
 
 /**
+ * @brief UNIX socket ready method
+ * @param sock The socket
+ * @param events Events to check for
+ */
+int unix_ready(sock_t *sock, int events) {
+    unix_sock_t *usock = (unix_sock_t*)sock->driver;
+    int revents = (circbuf_available(usock->packet_buffer) ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
+    return revents;
+}
+
+/**
  * @brief Create a UNIX socket
  * @param type The type
  * @param protocol The protocol
@@ -515,6 +526,7 @@ sock_t *unix_socket(int type, int protocol) {
     sock->bind = unix_bind;
     sock->listen = unix_listen;
     sock->accept = unix_accept;
+    sock->ready = unix_ready;
 
     sock->driver = (void*)usock;
 

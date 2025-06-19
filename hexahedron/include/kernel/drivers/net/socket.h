@@ -45,7 +45,7 @@ typedef int (*sock_connect_t)(struct sock *sock, const struct sockaddr *addr, so
 typedef int (*sock_accept_t)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
 typedef int (*sock_listen_t)(struct sock *sock, int backlog);
 typedef int (*sock_close_t)(struct sock *sock);
-
+typedef int (*sock_ready_t)(struct sock *sock, int events);
 
 /**
  * @brief Socket object
@@ -67,6 +67,7 @@ typedef struct sock {
     sock_listen_t listen;               // listen
     sock_accept_t accept;               // accept
     sock_close_t close;                 // close
+    sock_ready_t ready;                 // (VFS replacement) ready
 
     // RECEIVE
     spinlock_t *recv_lock;              // Receive lock
