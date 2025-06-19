@@ -12,9 +12,10 @@
  */
 
 #include "celestial.h"
+#include <stdlib.h>
 
-/* Window list */
-list_t *__celestial_window_list = NULL;
+/* Window map */
+hashmap_t *__celestial_window_map = NULL;
 
 /* Window ID bitmap */
 uint32_t window_id_bitmap[CELESTIAL_MAX_WINDOW_ID/4] = { 0 };
@@ -48,8 +49,38 @@ static void window_freeID(pid_t id) {
 } 
 
 /**
+ * @brief Create a new window in the window system
+ * @param sock Socket creating the window
+ * @param flags Flags for window creation
+ * @param width Width
+ * @param height Height
+ * @returns A new window object
+ */
+wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
+    wm_window_t *win = malloc(sizeof(wm_window_t));
+    win->id = window_allocateID();
+    win->sock = sock;
+    win->width = width;
+    win->height = height;
+    win->x = GFX_WIDTH(WM_GFX) / 2 - (width/2);
+    win->y = GFX_HEIGHT(WM_GFX) / 2 - (height/2);
+    win->width = width;
+    win->height = height;
+
+    // Make buffer for it
+    win->buffer = malloc(win->height * (win->width*4));
+    win->shmfd = shared_new(win->height * (win->width*4), SHARED_DEFAULT);
+    win->bufkey = shared_key(win->shmfd);
+    
+    CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
+
+    hashmap_set(WM_WINDOW_MAP, (void*)(uintptr_t)win->id, win);
+    return win;
+}
+
+/**
  * @brief Initialize the window system
  */
 void window_init() {
-    WM_WINDOW_LIST = list_create("window list");
+    WM_WINDOW_MAP = hashmap_create_int("celestial window map", 20);
 }

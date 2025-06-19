@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <graphics/gfx.h>
+#include <structs/hashmap.h>
+#include <sys/ethereal/shared.h>
 
 /**** DEFINITIONS ****/
 
@@ -32,8 +34,21 @@ typedef struct wm_window {
     int32_t y;                  // Y position of the window
     size_t width;               // Width of the window
     size_t height;              // Height of the window
-    gfx_context_t *ctx;         // Context allocated to the window
+
+    uint8_t *buffer;            // Buffer allocated to the window
+    key_t bufkey;               // Buffer shared memory key
+    int shmfd;                  // Buffer shared memory fd
 } wm_window_t;
+
+/**** VARIABLES ****/
+
+extern hashmap_t *__celestial_window_map;
+
+/**** MACROS ****/
+
+#define WID_EXISTS(wid) (hashmap_has(__celestial_window_map, (void*)(uintptr_t)wid))
+#define WID(wid) ((wm_window_t*)hashmap_get(__celestial_window_map, (void*)(uintptr_t)wid))
+#define WID_BELONGS_TO_SOCKET(wid, sock) (WID(wid)->sock == sock)
 
 /**** FUNCTIONS ****/
 
@@ -41,5 +56,15 @@ typedef struct wm_window {
  * @brief Initialize the window system
  */
 void window_init();
+
+/**
+ * @brief Create a new window in the window system
+ * @param sock Socket creating the window
+ * @param flags Flags for window creation
+ * @param width Width
+ * @param height Height
+ * @returns A new window object
+ */
+wm_window_t *window_new(int sock, int flags, size_t width, size_t height);
 
 #endif

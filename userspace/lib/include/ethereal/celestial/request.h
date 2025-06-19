@@ -46,7 +46,14 @@ typedef struct celestial_req_header {
 typedef struct celestial_req_create_window {
     CELESTIAL_REQ_COMMON                // Common
     int flags;                          // Window flags
+    size_t width;                       // Width of the window
+    size_t height;                      // Height of the window
 } celestial_req_create_window_t;
+
+typedef struct celestial_req_get_window_info {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_get_window_info_t;
 
 typedef struct celestial_resp_error {
     CELESTIAL_REQ_COMMON                // Common
@@ -57,6 +64,26 @@ typedef struct celestial_resp_create_window {
     CELESTIAL_REQ_COMMON                // Common
     wid_t id;                           // ID of the new window
 } celestial_resp_create_window_t;
+
+typedef struct celestial_resp_get_window_info {
+    CELESTIAL_REQ_COMMON                // Common
+    int32_t x;                          // X position
+    int32_t y;                          // Y position
+    size_t width;                       // Width of the window
+    size_t height;                      // Height of the window
+    key_t buffer_key;                   // Ethereal shared memory key
+} celestial_resp_get_window_info_t;
+
+/**** MACROS ****/
+
+/* Internal macro */
+#define CELESTIAL_HANDLE_RESP_ERROR(resp, errval)   if (resp->magic == CELESTIAL_MAGIC_ERROR) { \
+    celestial_resp_error_t *err = (celestial_resp_error_t*)resp; \
+    errno = err->errno; \
+    free(err); \
+    return errval; \
+}
+
 
 /**** FUNCTIONS ****/
 

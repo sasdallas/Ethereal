@@ -12,6 +12,7 @@
  */
 
 #include <ethereal/celestial.h>
+#include <stdio.h>
 #include <structs/list.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -106,6 +107,7 @@ void *celestial_getResponse(int type) {
         fds[0].fd = __celestial_socket;
         fds[0].events = POLLIN;
 
+        fprintf(stderr, "celestial: [lib] Waiting for events from Celestial\n");
         int p = poll(fds, 1, -1);
         if (p <= 0 || !(fds[0].revents & POLLIN)) return NULL;
 

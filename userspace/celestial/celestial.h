@@ -32,7 +32,7 @@ extern FILE *__celestial_log_device;
 extern int __celestial_debug;
 extern gfx_context_t *__celestial_gfx;
 extern int __celestial_socket;
-extern list_t *__celestial_window_list;
+extern hashmap_t *__celestial_window_map;
 extern hashmap_t *__celestial_map;
 extern int __celestial_client_count;
 extern int __celestial_mouse_fd;
@@ -49,7 +49,7 @@ extern sprite_t *__celestial_mouse_sprite;
 
 #define WM_GFX __celestial_gfx
 #define WM_SOCK __celestial_socket
-#define WM_WINDOW_LIST __celestial_window_list
+#define WM_WINDOW_MAP __celestial_window_map
 #define WM_SW_MAP __celestial_map
 #define WM_MOUSE __celestial_mouse_fd
 #define WM_MOUSEX __celestial_mouse_x

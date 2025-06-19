@@ -16,14 +16,8 @@
 
 /**** INCLUDES ****/
 #include <ethereal/celestial/request.h>
+#include <ethereal/celestial/window.h>
 
 /**** FUNCTIONS ****/
-
-/**
- * @brief Create a new window in Ethereal (undecorated)
- * @param flags The flags to use when creating the window
- * @returns A window ID or -1
- */
-wid_t celestial_createWindowUndecorated(int flags);
 
 #endif

@@ -75,8 +75,6 @@ void mouse_update() {
         celestial_fatal();
     }
 
-    CELESTIAL_DEBUG("Mouse: %d\n", r);
-
     if (!r) return;
 
     // Parse the mouse event

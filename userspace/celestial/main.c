@@ -76,11 +76,16 @@ void celestial_main() {
         struct pollfd p[__celestial_client_count];
         if (!__celestial_client_count) goto _next_iter;
         int i = 0;
-        foreach (kn, hashmap_keys(WM_SW_MAP)) {
+
+        list_t *keys = hashmap_keys(WM_SW_MAP);
+
+        foreach (kn, keys) {
             p[i].fd = (int)(uintptr_t)kn->value;
             p[i].events = POLLIN;
             i++;
         } 
+
+        list_destroy(keys, false);
 
         if (!i) goto _next_iter;
 
@@ -91,6 +96,9 @@ void celestial_main() {
             celestial_fatal();
         }
 
+
+        if (!r) goto _next_iter;
+
         for (int i = 0; i < __celestial_client_count; i++) {
             if (p[i].revents & POLLIN) {
                 // INPUT available
@@ -98,8 +106,6 @@ void celestial_main() {
                 socket_handle(p[i].fd);
             }
         }
-
-        if (!r) goto _next_iter;
 
     _next_iter:
         gfx_render(WM_GFX);
