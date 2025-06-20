@@ -77,6 +77,8 @@ void srand(unsigned int seed);
 void qsort(void * base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
 void qsort_r(void * base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void * arg);
 
+char *mktemp(char *template);
+
 int system(const char *command);
 
 #endif

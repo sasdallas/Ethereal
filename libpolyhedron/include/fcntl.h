@@ -42,6 +42,23 @@ _Begin_C_Header
 #define O_CLOEXEC       0x02000000
 #define O_PATH          0x04000000
 
-/* File bitflags are todo */
+
+/* fcntl codes */
+#define F_DUPFD             0
+#define F_GETFD             1
+#define F_SETFD             2
+#define F_GETFL             3
+#define F_SETFL             4
+#define F_GETLK             5
+#define F_SETLK             6
+#define F_SETLKW            7
+#define F_GETOWN            8
+#define F_SETOWN            9
+
+#define FD_CLOEXEC          0x1
+
+/**** FUNCTIONS ****/
+
+int  fcntl(int, int, ...);
 
 #endif

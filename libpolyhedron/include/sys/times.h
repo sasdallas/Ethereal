@@ -19,8 +19,7 @@ _Begin_C_Header
 #define _SYS_TIMES_H
 
 /**** INCLUDES ****/
-#include <sys/times.h>
-
+#include <sys/time.h>
 
 /**** TYPES ****/
 

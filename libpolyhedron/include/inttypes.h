@@ -47,6 +47,12 @@ _Begin_C_Header
 #define PRId32          "d"
 #define PRId64          "lds"
 
+/* 'o' format */
+#define PRIo8     "hho"
+#define PRIo16    "ho"
+#define PRIo32    "lo"
+#define PRIo64    "llo"
+
 #endif
 
 _End_C_Header

@@ -15,7 +15,11 @@
 
 DEFINE_SYSCALL1(exit, SYS_EXIT, int);
 
-void exit(int status) {
-    // TODO: Actually properly exit
+void __attribute__((noreturn)) _exit(int status) {
     __syscall_exit(status);
+    __builtin_unreachable();
+}
+
+void __attribute__((noreturn)) exit(int status) {
+    _exit(status);
 }

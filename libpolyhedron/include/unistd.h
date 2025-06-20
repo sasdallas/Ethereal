@@ -40,9 +40,14 @@ extern char **environ;
 #define W_OK    2
 #define X_OK    1
 
+/* temporary */
+#define _PC_PATH_MAX    256
+
+
 /**** FUNCTIONS ****/
 
-void exit(int status);
+void __attribute__((noreturn)) _exit(int status);
+void __attribute__((noreturn)) exit(int status);
 int open(const char *pathname, int flags, ...);
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
@@ -81,6 +86,8 @@ int system(const char *command);
 int unlink(const char *pathname);
 int access(const char *path, int amode);
 int isatty(int fd);
+long pathconf(const char *path, int name);
+long fpathconf(int fd, int name);
 
 #endif
 

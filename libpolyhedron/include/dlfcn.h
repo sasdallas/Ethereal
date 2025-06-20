@@ -18,7 +18,15 @@ _Begin_C_Header;
 #ifndef _DLFCN_H
 #define _DLFCN_H
 
-/* STUB */
+/**** DEFINITIONS ****/
+#define RTLD_NOW        1
+
+/**** FUNCTIONS ****/
+
+void  *dlopen(const char *filename, int flags);
+void  *dlsym(void *handle, const char *symbol);
+int    dlclose(void *handle);
+char  *dlerror(void);
 
 #endif
 
