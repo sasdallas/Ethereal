@@ -139,7 +139,7 @@ static size_t print_hex(unsigned long long value, unsigned int width, int (*call
 }
 
 /* xvasprintf is Ethereal code and not ToaruOS. Above functions are ToaruOS */ 
-size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args) {
+size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args) {
 	if (!fmt || !callback) return 0;
 	size_t written = 0;
 
@@ -457,6 +457,10 @@ size_t xvasprintf(int (*callback)(void *, char), void * userData, const char * f
 	
 	return written;
 }
+
+/* This is an alias to fix building binutils */
+/* libiberty provides its own xvasprintf, but the kernel uses it too so we can just use this */
+size_t __attribute__((weak, alias("__xvasprintf"))) xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args);
 
 struct CBData {
 	char * str;

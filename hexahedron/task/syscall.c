@@ -56,11 +56,11 @@ static syscall_func_t syscall_table[] = {
     [SYS_FCHDIR]            = (syscall_func_t)(uintptr_t)sys_fchdir,
     [SYS_UNAME]             = (syscall_func_t)(uintptr_t)sys_uname,
     [SYS_GETPID]            = (syscall_func_t)(uintptr_t)sys_getpid,
-    [SYS_TIMES]             = (syscall_func_t)(uintptr_t)0xCAFECAFE,
+    [SYS_TIMES]             = (syscall_func_t)(uintptr_t)sys_times,
     [SYS_MMAP]              = (syscall_func_t)(uintptr_t)sys_mmap,
     [SYS_MUNMAP]            = (syscall_func_t)(uintptr_t)sys_munmap,
-    [SYS_MSYNC]             = (syscall_func_t)(uintptr_t)0xCAFECAFE,
-    [SYS_MPROTECT]          = (syscall_func_t)(uintptr_t)0xCAFECAFE,
+    [SYS_MSYNC]             = (syscall_func_t)(uintptr_t)sys_msync,
+    [SYS_MPROTECT]          = (syscall_func_t)(uintptr_t)sys_mprotect,
     [SYS_DUP2]              = (syscall_func_t)(uintptr_t)sys_dup2,
     [SYS_SIGNAL]            = (syscall_func_t)(uintptr_t)sys_signal,
     [SYS_KILL]              = (syscall_func_t)(uintptr_t)sys_kill,
@@ -687,6 +687,8 @@ pid_t sys_getpid() {
     return current_cpu->current_process->pid;
 }
 
+/* MMAP */
+
 long sys_mmap(sys_mmap_context_t *context) {
     SYSCALL_VALIDATE_PTR(context);
     return (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
@@ -695,6 +697,25 @@ long sys_mmap(sys_mmap_context_t *context) {
 long sys_munmap(void *addr, size_t len) {
     return process_munmap(addr, len);
 }
+
+long sys_msync(void *addr, size_t len, int flush) {
+    LOG(WARN, "sys_msync %p %d %d\n");
+    return 0;
+}
+
+long sys_mprotect(void *addr, size_t len, int prot) {
+    LOG(WARN, "sys_mprotect %p %d %d\n", addr, len, prot);
+    return 0;
+}
+
+/* TIMES */
+
+clock_t sys_times(struct tms *buf) {
+    LOG(WARN, "sys_times\n");
+    return 0;
+}
+
+/* DUP */
 
 long sys_dup2(int oldfd, int newfd) {
     if (!FD_VALIDATE(current_cpu->current_process, oldfd)) {
