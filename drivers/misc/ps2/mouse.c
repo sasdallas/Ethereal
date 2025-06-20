@@ -35,6 +35,8 @@
 uint8_t ps2_mouse_packet[4];
 int ps2_mouse_packet_cycle = 0;
 
+/* Last pressed buttons */
+uint32_t ps2_last_buttons = 0;
 
 /**
  * @brief Send something to the mouse port
@@ -84,15 +86,14 @@ int mouse_irq(void *context) {
     if (ps2_mouse_packet[0] & PS2_MOUSE_DATA_X_OVERFLOW) x_diff = 0;
     if (ps2_mouse_packet[0] & PS2_MOUSE_DATA_Y_OVERFLOW) y_diff = 0;
 
-    if (!x_diff && !y_diff) return 0;
-
-
     // Get buttons
     uint32_t buttons =  (ps2_mouse_packet[0] & PS2_MOUSE_DATA_LEFTBTN ? MOUSE_BUTTON_LEFT : 0) | 
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_RIGHTBTN ? MOUSE_BUTTON_RIGHT : 0) | 
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_MIDDLEBTN ? MOUSE_BUTTON_MIDDLE : 0);
 
+    if (buttons == ps2_last_buttons && !x_diff && !y_diff) return 0;
     periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, x_diff, y_diff);
+    ps2_last_buttons = buttons;
     return 0;
 }
 
