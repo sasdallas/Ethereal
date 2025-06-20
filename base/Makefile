@@ -19,6 +19,8 @@ install:
 	@echo "Ignored"
 
 install-headers:
+	-mkdir -pv $(SYSROOT)
+	-mkdir -pv $(INITRD)
 	-cp -rp initrd/* $(INITRD)/
 	-cp -rp sysroot/* $(SYSROOT)/
 
