@@ -54,6 +54,7 @@ extern int __celestial_mouse_x;
 extern int __celestial_mouse_y;
 extern sprite_t *__celestial_mouse_sprite;
 extern wm_window_t *__celestial_mouse_window;
+extern uint32_t __celestial_mouse_buttons;
 
 /**** MACROS ****/
 
@@ -72,6 +73,7 @@ extern wm_window_t *__celestial_mouse_window;
 #define WM_MOUSEY __celestial_mouse_y
 #define WM_MOUSE_SPRITE __celestial_mouse_sprite
 #define WM_MOUSE_WINDOW __celestial_mouse_window
+#define WM_MOUSE_BUTTONS __celestial_mouse_buttons
 
 /**** FUNCTIONS ****/
 
