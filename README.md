@@ -46,7 +46,9 @@ Currently, the project is developing its usermode stages.
 - `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
 
 ## Building
-To build Ethereal, you will need a cross compiler for your target architecture.\
+To build Ethereal, you will need an Ethereal toolchain for your target architecture.\
+The Ethereal toolchain can be found at [the repository](https://github.com/sasdallas/Ethereal-Toolchain)
+
 Other packages required: `grub-common`, `xorriso`, `qemu-system`
 
 Edit `buildscripts/build-arch.sh` to change the target build architecture. \
