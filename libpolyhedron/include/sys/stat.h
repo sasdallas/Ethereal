@@ -26,14 +26,14 @@ _Begin_C_Header
 
 /**** DEFINITIONS ****/
 
-#define S_IFBLK         0x01        // Block special
-#define S_IFCHR         0x02        // Character special
-#define S_IFIFO         0x04        // FIFO special
-#define S_IFREG         0x08        // Regular
-#define S_IFDIR         0x10        // Directory
-#define S_IFLNK         0x20        // Symbolic link
-#define S_IFSOCK        0x40        // Socket
-#define S_IFMT          0x7F        // Format of file
+#define S_IFBLK         0x01000      // Block special
+#define S_IFCHR         0x02000      // Character special
+#define S_IFIFO         0x04000      // FIFO special
+#define S_IFREG         0x08000      // Regular
+#define S_IFDIR         0x10000      // Directory
+#define S_IFLNK         0x20000      // Symbolic link
+#define S_IFSOCK        0x40000      // Socket
+#define S_IFMT          0x7F000      // Format of file
 
 #define S_IRUSR         0x001   // Read permission, owner
 #define S_IWUSR         0x002   // Write permission, owner
