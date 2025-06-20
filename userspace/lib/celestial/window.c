@@ -12,8 +12,14 @@
  */
 
 #include <ethereal/celestial.h>
+#include <sys/ethereal/shared.h>
+#include <sys/mman.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <structs/hashmap.h>
+
+/* Global celestial window map (WID -> Window object) */
+hashmap_t *celestial_window_map = NULL;
 
 /**
  * @brief Create a new window in Ethereal (undecorated)
@@ -57,6 +63,14 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
  * @returns A window object or -1 (errno set)
  */
 window_t *celestial_getWindow(wid_t wid) {
+    // Do we have a map?
+    if (celestial_window_map) {
+        window_t *w = (window_t*)hashmap_get(celestial_window_map, (void*)(uintptr_t)wid);
+        if (w) return w;
+    } else {
+        celestial_window_map = hashmap_create_int("celestial window map", 20);
+    }
+    
     // Build a new request
     celestial_req_get_window_info_t req = {
         .magic = CELESTIAL_MAGIC,
@@ -76,13 +90,42 @@ window_t *celestial_getWindow(wid_t wid) {
     CELESTIAL_HANDLE_RESP_ERROR(resp, NULL);
 
     window_t *win = malloc(sizeof(window_t));
+    win->shmfd = -1;
+    win->buffer = NULL;
     win->wid = wid;
     win->key = resp->buffer_key;
     win->x = resp->x;
     win->y = resp->y;
     win->width = resp->width;
     win->height = resp->height;
+    win->event_handler_map = hashmap_create_int("event handler map", 20);
+
+    hashmap_set(celestial_window_map, (void*)(uintptr_t)wid, win);
 
     free(resp);
     return win;
+}
+
+/**
+ * @brief Get a raw framebuffer that you can draw to
+ * @param win The window object to get a framebuffer for
+ * @returns A framebuffer object or NULL (errno set)
+ */
+uint32_t *celestial_getFramebuffer(window_t *win) {
+    // Obtain SHM mapping for window
+    if (win->shmfd < 0) {
+        // We need to get the shared mapping
+        win->shmfd = shared_open(win->key);
+        if (win->shmfd < 0) {
+            return NULL;
+        }
+
+        // Map it into memory
+        win->buffer = mmap(NULL, win->width * win->height * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
+        if (win->buffer == MAP_FAILED) {
+            return NULL;
+        }
+    }
+
+    return win->buffer;
 }

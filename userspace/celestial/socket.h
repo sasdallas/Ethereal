@@ -42,4 +42,21 @@ void socket_accept();
  */
 void socket_handle(int sock);
 
+/**
+ * @brief Send a response to a socket
+ * @param sock The socket to send to
+ * @param resp The response to send
+ * @returns 0 on success
+ */
+int socket_sendResponse(int sock, void *resp);
+
+/**
+ * @brief Send a packet to a socket
+ * @param sock The socket to send the packet to
+ * @param size The size of the packet
+ * @param packet The packet to send
+ * @returns 0 on success
+ */
+int socket_send(int sock, size_t size, void *packet);
+
 #endif

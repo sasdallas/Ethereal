@@ -26,19 +26,34 @@
 #include "window.h"
 #include "socket.h"
 #include "mouse.h"
+#include "event.h"
 
 /**** VARIABLES ****/
+
+/* GLOBALS */
 extern FILE *__celestial_log_device;
 extern int __celestial_debug;
+
+/* GRAPHICS GLOBALS */
 extern gfx_context_t *__celestial_gfx;
+
+/* SOCKET GLOBALS */
 extern int __celestial_socket;
+
+/* WINDOW GLOBALS */
 extern hashmap_t *__celestial_window_map;
+extern list_t *__celestial_window_list;
+
+/* CLIENT GLOBALS */
 extern hashmap_t *__celestial_map;
 extern int __celestial_client_count;
+
+/* MOUSE GLOBALS */
 extern int __celestial_mouse_fd;
 extern int __celestial_mouse_x;
 extern int __celestial_mouse_y;
 extern sprite_t *__celestial_mouse_sprite;
+extern wm_window_t *__celestial_mouse_window;
 
 /**** MACROS ****/
 
@@ -50,11 +65,13 @@ extern sprite_t *__celestial_mouse_sprite;
 #define WM_GFX __celestial_gfx
 #define WM_SOCK __celestial_socket
 #define WM_WINDOW_MAP __celestial_window_map
+#define WM_WINDOW_LIST __celestial_window_list
 #define WM_SW_MAP __celestial_map
 #define WM_MOUSE __celestial_mouse_fd
 #define WM_MOUSEX __celestial_mouse_x
 #define WM_MOUSEY __celestial_mouse_y
 #define WM_MOUSE_SPRITE __celestial_mouse_sprite
+#define WM_MOUSE_WINDOW __celestial_mouse_window
 
 /**** FUNCTIONS ****/
 

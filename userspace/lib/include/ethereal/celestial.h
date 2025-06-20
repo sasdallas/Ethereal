@@ -17,7 +17,13 @@
 /**** INCLUDES ****/
 #include <ethereal/celestial/request.h>
 #include <ethereal/celestial/window.h>
+#include <ethereal/celestial/event.h>
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief Main loop for a Celestial window
+ */
+void celestial_mainLoop();
 
 #endif

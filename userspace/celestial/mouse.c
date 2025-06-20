@@ -26,6 +26,9 @@ int __celestial_mouse_y = 0;
 /* Mouse sprite */
 sprite_t *__celestial_mouse_sprite = NULL;
 
+/* Selected window */
+wm_window_t *__celestial_mouse_window = NULL;
+
 /**
  * @brief Initialize the mouse system
  * @returns 0 on success
@@ -62,6 +65,61 @@ int mouse_init() {
 }
 
 /**
+ * @brief Send any mouse events
+ */
+void mouse_events() {
+    // Check to make sure still in window
+    if (WM_MOUSE_WINDOW) {
+        if (!(WM_MOUSE_WINDOW->x <= WM_MOUSEX) || !((int)(WM_MOUSE_WINDOW->x + WM_MOUSE_WINDOW->width) > WM_MOUSEX) ||
+                !(WM_MOUSE_WINDOW->y <= WM_MOUSEY) || !((int)(WM_MOUSE_WINDOW->y + WM_MOUSE_WINDOW->height) > WM_MOUSEY)) {
+           
+            // Send exit event
+            celestial_event_mouse_exit_t exit = {
+                .magic = CELESTIAL_MAGIC_EVENT,
+                .type = CELESTIAL_EVENT_MOUSE_EXIT,
+                .size = sizeof(celestial_event_mouse_exit_t),
+                .wid = WM_MOUSE_WINDOW->id
+            };
+
+            event_send(WM_MOUSE_WINDOW, &exit);
+            WM_MOUSE_WINDOW = NULL;
+        }
+    }
+
+    // Send corresponding event
+    if (!WM_MOUSE_WINDOW) {
+        // Try to get a new window
+        WM_MOUSE_WINDOW = window_top(WM_MOUSEX, WM_MOUSEY);
+        if (WM_MOUSE_WINDOW) {
+            // Send new event
+            celestial_event_mouse_enter_t enter = {
+                .magic = CELESTIAL_MAGIC_EVENT,
+                .type = CELESTIAL_EVENT_MOUSE_ENTER,
+                .size = sizeof(celestial_event_mouse_enter_t),
+                .wid = WM_MOUSE_WINDOW->id,
+                .x = WM_MOUSEX,
+                .y = WM_MOUSEY
+            };
+
+            event_send(WM_MOUSE_WINDOW, &enter);
+        }
+    } else {
+        // Send motion event
+        celestial_event_mouse_motion_t motion = {
+            .magic = CELESTIAL_MAGIC_EVENT,
+            .type = CELESTIAL_EVENT_MOUSE_MOTION,
+            .size = sizeof(celestial_event_mouse_motion_t),
+            .wid = WM_MOUSE_WINDOW->id,
+            .x = WM_MOUSEX,
+            .y = WM_MOUSEY,
+            .buttons = 0, // TODO
+        };
+
+        event_send(WM_MOUSE_WINDOW, &motion);
+    }
+}
+
+/**
  * @brief Update and redraw the mouse (non-blocking)
  */
 void mouse_update() {
@@ -80,8 +138,8 @@ void mouse_update() {
     // Parse the mouse event
     if (event.event_type != EVENT_MOUSE_UPDATE) return;
 
-    // int32_t last_mouse_x = WM_MOUSEX;
-    // int32_t last_mouse_y = WM_MOUSEY;
+    int32_t last_mouse_x = WM_MOUSEX;
+    int32_t last_mouse_y = WM_MOUSEY;
 
     // Update X and Y
     WM_MOUSEX += event.x_difference;
@@ -93,8 +151,13 @@ void mouse_update() {
     if ((size_t)WM_MOUSEX >= GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width-1) WM_MOUSEX = GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width;
     if ((size_t)WM_MOUSEY >= GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height) WM_MOUSEY = GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height;
 
+    // Did things change?
+    if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY) {
+        mouse_events();
+        gfx_createClip(WM_GFX, last_mouse_x, last_mouse_y, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
+    }
+
     // Make clips
-    // if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY) gfx_createClip(WM_GFX, last_mouse_x, last_mouse_y, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
     gfx_createClip(WM_GFX, WM_MOUSEX, WM_MOUSEY, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
 }
 

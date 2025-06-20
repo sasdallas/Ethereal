@@ -120,7 +120,15 @@ void *celestial_getResponse(int type) {
         void *m = malloc(((celestial_req_header_t*)data)->size);
         memcpy(m, data, ((celestial_req_header_t*)data)->size);
 
+        // Is it an event? Process those immediately
+        if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
+            fprintf(stderr, "Received event from Celestial\n");
+            celestial_handleEvent(m);
+            continue;
+        }
+
         if (((celestial_req_header_t*)data)->type == type || type == -1) {
+            fprintf(stderr, "celestial: [lib] Received response\n");
             return m;
         }
 

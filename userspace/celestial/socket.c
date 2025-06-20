@@ -76,6 +76,19 @@ void socket_accept() {
 }
 
 /**
+ * @brief Send a packet to a socket
+ * @param sock The socket to send the packet to
+ * @param size The size of the packet
+ * @param packet The packet to send
+ * @returns 0 on success
+ */
+int socket_send(int sock, size_t size, void *packet) {
+    ssize_t r = send(sock, packet, size, 0);
+    if (r < 0) return -1;
+    return 0;
+}
+
+/**
  * @brief Send a response to a socket
  * @param sock The socket to send to
  * @param resp The response to send
@@ -83,8 +96,7 @@ void socket_accept() {
  */
 int socket_sendResponse(int sock, void *resp) {
     CELESTIAL_DEBUG("socket: Send response %d\n", ((celestial_req_header_t*)resp)->type);
-    if (send(sock, resp, ((celestial_req_header_t*)resp)->size, 0) < 0) return -1;
-    return 0;
+    return socket_send(sock, ((celestial_req_header_t*)resp)->size, resp);
 }
 
 /**
@@ -102,6 +114,21 @@ void socket_error(int sock, int type, int errno) {
     };
 
     socket_sendResponse(sock, &err);
+}
+
+/**
+ * @brief Send OK on a socket
+ * @param sock The socket to error on
+ * @param type The type of request to respond with an ok to
+ */
+void socket_ok(int sock, int type) {
+    celestial_resp_ok_t ok = {
+        .magic = CELESTIAL_MAGIC_OK,
+        .type = type,
+        .size = sizeof(celestial_resp_ok_t),
+    };
+
+    socket_sendResponse(sock, &ok);
 }
 
 /**
@@ -165,7 +192,20 @@ void socket_handle(int sock) {
 
         socket_sendResponse(sock, &resp);
         return;
+    } else if (hdr->type == CELESTIAL_REQ_SUBSCRIBE) {
+        // Subscribe request
+        CELESTIAL_VALIDATE(celestial_req_subscribe_t, CELESTIAL_REQ_SUBSCRIBE);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_SUBSCRIBE\n");
+        celestial_req_subscribe_t *req = (celestial_req_subscribe_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_SUBSCRIBE, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_SUBSCRIBE, EPERM);
+
+        wm_window_t *win = WID(req->wid);
+        win->events |= req->events;
+
+        return socket_ok(sock, CELESTIAL_REQ_SUBSCRIBE);
     } else {
+        CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);
     }
 }

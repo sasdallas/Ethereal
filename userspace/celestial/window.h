@@ -35,6 +35,7 @@ typedef struct wm_window {
     int32_t y;                  // Y position of the window
     size_t width;               // Width of the window
     size_t height;              // Height of the window
+    uint32_t events;            // Events the window subscribed to
 
     uint8_t *buffer;            // Buffer allocated to the window
     key_t bufkey;               // Buffer shared memory key
@@ -72,5 +73,10 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height);
  * @brief Redraw all windows 
  */
 void window_redraw();
+
+/**
+ * @brief Get the topmost window the mouse is in
+ */
+wm_window_t *window_top(int32_t x, int32_t y);
 
 #endif

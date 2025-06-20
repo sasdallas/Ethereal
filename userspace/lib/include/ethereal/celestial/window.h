@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <ethereal/celestial/types.h>
+#include <structs/hashmap.h>
 
 /**** DEFINITIONS ****/
 #define CELESTIAL_DEFAULT_WINDOW_WIDTH      256
@@ -29,12 +30,17 @@
  * @brief Celestial window
  */
 typedef struct window {
-    wid_t wid;          // Window ID
-    int32_t x;          // X
-    int32_t y;          // Y
-    size_t width;       // Width
-    size_t height;      // Height
-    key_t key;          // SHM key for the buffer
+    wid_t wid;                          // Window ID
+    int32_t x;                          // X
+    int32_t y;                          // Y
+    size_t width;                       // Width
+    size_t height;                      // Height
+    
+    key_t key;                          // SHM key for the buffer
+    int shmfd;                          // SHM file descriptor
+    uint32_t *buffer;                   // Buffer for the window
+
+hashmap_t *event_handler_map;       // Window event handler map
 } window_t;
 
 /**** FUNCTIONS ****/
@@ -54,5 +60,12 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height);
  * @returns A window object or NULL (errno set)
  */
 window_t *celestial_getWindow(wid_t wid);
+
+/**
+ * @brief Get a raw framebuffer that you can draw to
+ * @param win The window object to get a framebuffer for
+ * @returns A framebuffer object or NULL (errno set)
+ */
+uint32_t *celestial_getFramebuffer(window_t *win);
 
 #endif

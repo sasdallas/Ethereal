@@ -36,14 +36,24 @@ void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t co
 
 	// Draw the two vertical sides
 	for (uint16_t _y = 0; _y < height; _y++) {
-		GFX_PIXEL(ctx, x, _y + y) = color; 
-		GFX_PIXEL(ctx, x + width, _y + y) = color; 
+		if (ctx->flags & CTX_NO_BACKBUFFER) {
+			GFX_PIXEL_REAL(ctx, x, _y + y) = color; 
+			GFX_PIXEL_REAL(ctx, x + width, _y + y) = color; 
+		} else {
+			GFX_PIXEL(ctx, x, _y + y) = color; 
+			GFX_PIXEL(ctx, x + width, _y + y) = color; 
+		}
 	}
 
 	// Draw the two horizontal sides
 	for (uint16_t _x = 0; _x < width; _x++) {
-		GFX_PIXEL(ctx, _x + x, y) = color;
-		GFX_PIXEL(ctx, _x + x, y + height) = color;
+		if (ctx->flags & CTX_NO_BACKBUFFER) {
+			GFX_PIXEL_REAL(ctx, _x + x, y) = color;
+			GFX_PIXEL_REAL(ctx, _x + x, y + height) = color;
+		} else {
+			GFX_PIXEL(ctx, _x + x, y) = color;
+			GFX_PIXEL(ctx, _x + x, y + height) = color;
+		}
 	}
 }
 
@@ -69,7 +79,9 @@ void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_colo
 		for (uint16_t _x = 0; _x < width; ++_x) {
 			if (x + _x < _left || x + _x > _right || y + _y < _top || y + _y > _bottom)
 				continue;
-			GFX_PIXEL(ctx, x + _x, y + _y) = color;
+
+			if (ctx->flags & CTX_NO_BACKBUFFER) GFX_PIXEL_REAL(ctx, x + _x, y + _y) = color;
+			else GFX_PIXEL(ctx, x + _x, y + _y) = color;
 		}
 	}
 }

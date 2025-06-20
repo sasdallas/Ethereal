@@ -16,6 +16,7 @@
 #include <time.h>
 #include <string.h>
 #include <sys/mman.h>
+#include "event.h"
 
 /* Window map */
 hashmap_t *__celestial_window_map = NULL;
@@ -75,6 +76,7 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->y = GFX_HEIGHT(WM_GFX) / 2 - (height/2);
     win->width = width;
     win->height = height;
+    win->events = CELESTIAL_EVENT_DEFAULT_SUBSCRIBED;
 
     // Make buffer for it
     win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
@@ -130,4 +132,21 @@ void window_redraw() {
         gfx_createClip(WM_GFX, win->x, win->y, win->width, win->height);
         gfx_renderSprite(WM_GFX, &sp, win->x, win->y);
     }
+}
+
+/**
+ * @brief Get the topmost window the mouse is in
+ */
+wm_window_t *window_top(int32_t x, int32_t y) {
+    // TODO: Z ordering
+
+    foreach(window_node, WM_WINDOW_LIST) {
+        wm_window_t *win = (wm_window_t*)window_node->value;
+
+        if (win->x <= x && (int)(win->x + win->width) > x && win->y <= y && (int)(win->y + win->height) > y) {
+            return win;
+        }
+    }
+
+    return NULL;
 }

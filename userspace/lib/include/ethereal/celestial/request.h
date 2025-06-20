@@ -3,6 +3,9 @@
  * @brief Celestial request framework
  * 
  * 
+ * The client sends requests to the Celestial server and the celestial server replies with 
+ * a reponse. This response, depending on the request, can be an error response, a generic "OK" response, or a specific response
+ * 
  * @copyright
  * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -22,6 +25,7 @@
 /**** DEFINITIONS ****/
 
 #define CELESTIAL_MAGIC                     0x45485445
+#define CELESTIAL_MAGIC_OK                  0x00004B4F
 #define CELESTIAL_MAGIC_ERROR               0x00525245
 
 #define CELESTIAL_REQ_CREATE_WINDOW         0x1000
@@ -30,6 +34,8 @@
 #define CELESTIAL_REQ_SET_WINDOW_POS        0x1003
 #define CELESTIAL_REQ_SUBSCRIBE             0x1004
 #define CELESTIAL_REQ_UNSUBSCRIBE           0x1005
+#define CELESTIAL_REQ_DRAG_START            0x1006
+#define CELESTIAL_REQ_DRAG_STOP             0x1007
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -55,10 +61,47 @@ typedef struct celestial_req_get_window_info {
     wid_t wid;                          // Window ID
 } celestial_req_get_window_info_t;
 
+typedef struct celestial_req_set_window_pos {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    int32_t x;                          // X
+    int32_t y;                          // Y
+} celestial_req_set_window_pos_t;
+
+typedef struct celestial_req_subscribe {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint32_t events;                    // Events to subscribe to
+} celestial_req_subscribe_t;
+
+typedef struct celestial_req_unsubscribe {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint32_t events;                    // Events to unsubscribe from
+} celestial_req_unsubscribe_t;
+
+typedef struct celestial_req_drag_start {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_drag_start_t;
+
+typedef struct celestial_req_drag_stop {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_drag_stop_t;
+
+/* RESPONSES */
+
+/* Generic error response */
 typedef struct celestial_resp_error {
     CELESTIAL_REQ_COMMON                // Common
     int errno;                          // Errno
 } celestial_resp_error_t;
+
+/* Generic OK response */
+typedef struct celestial_resp_ok {
+    CELESTIAL_REQ_COMMON                // Common
+} celestial_resp_ok_t;
 
 typedef struct celestial_resp_create_window {
     CELESTIAL_REQ_COMMON                // Common
