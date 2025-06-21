@@ -12,6 +12,7 @@
  */
 
 #include <wchar.h>
+#include <stdlib.h>
 
 size_t mbstowcs(wchar_t *dest,const char *src,size_t n){
     size_t len = 0;
