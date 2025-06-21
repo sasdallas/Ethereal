@@ -81,6 +81,9 @@ char *mktemp(char *template);
 
 int system(const char *command);
 
+int mbtowc(wchar_t *pwcs,const char *str,size_t n);
+size_t mbstowcs(wchar_t *pwcs,const char *str,size_t n);
+
 #endif
 
 _End_C_Header

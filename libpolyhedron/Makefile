@@ -9,7 +9,7 @@ OUT_OBJ_LIBK = $(OUT_OBJ)/libk
 
 # SOURCE DIRECTORIES
 SOURCE_DIRECTORIES = stdlib stdio string time net
-LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal
+LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar
 LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Include the architecture Make configuration to allow it to add to DIRECTORIES
