@@ -16,7 +16,8 @@
 
 //simple mbtowc for utf8
 #define S_CHECK(c) ((c & (3<<6)) == 1<<7)
-int mbtowc(wchar_t *dest, const char *src, size_t n){
+int mbtowc(wchar_t *dest, const char *s, size_t n){
+    const unsigned char *src = (const unsigned char *)s;
     if (!src || n == 0) return 0;
     int len;
     if (n >= 1 && src[0] <= 0x7F) {
