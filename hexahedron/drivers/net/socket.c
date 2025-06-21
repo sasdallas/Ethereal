@@ -567,7 +567,8 @@ int socket_waitForContent(sock_t *sock) {
     if (sock->recv_queue->length) return 0;
 
     // Just sleep in the queue, we'll be woken up eventually
-    int r = sleep_inQueue(sock->recv_wait_queue);
+    sleep_inQueue(sock->recv_wait_queue);
+    int r = sleep_enter();
     return r == WAKEUP_SIGNAL;
 }
 

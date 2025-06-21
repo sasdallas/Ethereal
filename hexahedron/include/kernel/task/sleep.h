@@ -161,7 +161,7 @@ sleep_queue_t *sleep_createQueue(char *name);
 /**
  * @brief Put yourself in a sleep queue
  * @param queue The queue to sleep in
- * @returns Status of being woken up
+ * @returns 0 on success. Use sleep_enter to put yourself to sleep
  */
 int sleep_inQueue(sleep_queue_t *queue);
 

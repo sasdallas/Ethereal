@@ -47,7 +47,7 @@ typedef struct unix_sock {
     char *map_path;                     // Map path
 
     circbuf_t *packet_buffer;           // Packet buffer
-    list_t *dgram_data;                 // (UDP only) Packet sizes list
+    list_t *dgram_data;                 // (datagram/seqpacket only) Packet sizes list
 
     spinlock_t incoming_connect_lock;   // Incoming socket connections lock
     list_t *incoming_connections;       // Incoming socket connections

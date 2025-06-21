@@ -41,6 +41,7 @@ static void sleep_callback(uint64_t ticks) {
     
     spinlock_acquire(&sleep_queue_lock);
     foreach(node, sleep_queue) {
+        if (!node) continue;
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;
         if (!sleep || !sleep->thread) {
             LOG(WARN, "Corrupt node in sleep queue %p\n", node);
@@ -252,7 +253,7 @@ sleep_queue_t *sleep_createQueue(char *name) {
 /**
  * @brief Put yourself in a sleep queue
  * @param queue The queue to sleep in
- * @returns Status of being woken up
+ * @returns 0 on success. Use sleep_enter to enter your slee
  */
 int sleep_inQueue(sleep_queue_t *queue) {
     if (!queue) return 1;
@@ -262,7 +263,7 @@ int sleep_inQueue(sleep_queue_t *queue) {
     sleep_untilNever(current_cpu->current_thread);
     spinlock_release(&queue->lock);
 
-    return sleep_enter(); // !!!: Validate that in the time from putting ourselves in this queue to sleeping we can't be woken up, and if so we can be woken up properly.
+    return 0; // !!!: Validate that in the time from putting ourselves in this queue to sleeping we can't be woken up, and if so we can be woken up properly.
 }
 
 /**

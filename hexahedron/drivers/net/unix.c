@@ -59,6 +59,8 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
 
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
+    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && !usock->connected_socket) return -ENOTCONN;
+
     ssize_t total_received = 0;
     if (sock->type == SOCK_DGRAM) {
         if (msg->msg_iovlen > 1) {
@@ -94,16 +96,65 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         if (!n) return -EINTR;  // ???
         unix_datagram_data_t *data = (unix_datagram_data_t*)n->value;
         kfree(n);
+        spinlock_release(usock->packet_buffer->lock);
 
         // We have the size of the packet. Which is less?
         size_t size_to_read = min(msg->msg_iov[0].iov_len, data->packet_size);
-        
+        kfree(data);
+
         // Read from the buffer
         ssize_t r = circbuf_read(usock->packet_buffer, size_to_read, msg->msg_iov[0].iov_base);
         if (r && msg->msg_name && msg->msg_namelen == sizeof(struct sockaddr_un)) {
             // We got a message name as well
             memcpy(msg->msg_name, &data->un, sizeof(struct sockaddr_un));
         }
+
+        return r;
+    } else if (sock->type == SOCK_SEQPACKET) {
+        if (msg->msg_iovlen > 1) {
+            LOG(ERR, "Multiple iovecs are not supported right now\n");
+            return -ENOTSUP;
+        }
+        // Sequenced packet sockets are easy enough, we just need to also pop from the datagram data queue
+        // Reuse the lock from the ringbuffer
+        spinlock_acquire(usock->packet_buffer->lock);
+        if (!usock->dgram_data->length) {
+            if (sock->flags & SOCKET_FLAG_NONBLOCKING) {
+                spinlock_release(usock->packet_buffer->lock);
+                return -EWOULDBLOCK;
+            }
+
+            // There is no length, keep holding the lock and prepare to sleep
+            sleep_untilNever(current_cpu->current_thread);
+            usock->thr = current_cpu->current_thread;
+            
+            spinlock_release(usock->packet_buffer->lock);
+            
+            int w = sleep_enter();
+            if (w == WAKEUP_SIGNAL) return -EINTR;
+
+            // Another thread must've woken us up, reacquire the lock
+            spinlock_acquire(usock->packet_buffer->lock);
+        }
+
+        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) {
+            spinlock_release(usock->packet_buffer->lock);
+            return -ECONNRESET;
+        }
+
+        // We have the lock and there's content available.
+        // Pop the node
+        node_t *n = list_popleft(usock->dgram_data);
+        if (!n) return -EINTR;  // ???
+        unix_datagram_data_t *data = (unix_datagram_data_t *)n->value;
+        kfree(n);
+        spinlock_release(usock->packet_buffer->lock);
+
+        // We have the size of the packet. Which is less?
+        size_t size_to_read = min(msg->msg_iov[0].iov_len, data->packet_size);
+
+        // Read from the buffer
+        ssize_t r = circbuf_read(usock->packet_buffer, size_to_read, msg->msg_iov[0].iov_base);
 
         kfree(data);
         return r;
@@ -116,7 +167,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         // Streamed sockets are easy, just try to read as much as possible
         if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) return -ECONNRESET;
         ssize_t r = 0;
-        
+
         while (!r) {
             r = circbuf_read(usock->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
         }
@@ -178,7 +229,7 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         // DGRAM sockets are easy, just throw a packet at them
         if (msg->msg_iovlen > 1) {
             LOG(ERR, "Multiple IOVs not supported yet!\n");
-            return 1;
+            return -ENOTSUP;
         }
 
         unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
@@ -201,10 +252,38 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         return r;
+    } else if (sock->type == SOCK_SEQPACKET) {
+        // SEQPACKET sockets are easy, just throw a packet at them
+        if (msg->msg_iovlen > 1) {
+            LOG(ERR, "Multiple IOVs not supported yet!\n");
+            return -ENOTSUP;
+        }
+
+        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
+        
+        // Create packet data
+        unix_datagram_data_t *data = kmalloc(sizeof(unix_datagram_data_t));
+        data->packet_size = msg->msg_iov[0].iov_len;
+ 
+        // Write to circular buffer
+        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
+        if (r) {
+            // Acquire lock to push packet data
+            spinlock_acquire(usock_target->packet_buffer->lock);
+            list_append(usock_target->dgram_data, data);
+            spinlock_release(usock_target->packet_buffer->lock);
+
+            if (usock_target->thr) sleep_wakeup(usock_target->thr);
+            fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
+        }
+
+        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
+
+        return r;
     } else {
         if (msg->msg_iovlen > 1) {
             LOG(ERR, "Multiple IOVs not supported yet!\n");
-            return 1;
+            return -ENOTSUP;
         }
 
         unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
@@ -247,7 +326,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
 
     // Is it the same type as us?
     unix_sock_t *serv = (unix_sock_t*)serv_sock->driver;
-    if (!(sock->type == serv_sock->type) && !(sock->type == SOCK_SEQPACKET && serv_sock->type == SOCK_STREAM) && !(sock->type == SOCK_STREAM && serv_sock->type == SOCK_SEQPACKET)) {
+    if (!(sock->type == serv_sock->type)) {
         LOG(WARN, "Cannot connect to socket of type %d when you are type %d\n", serv_sock->type, sock->type);
         return -EPROTOTYPE;
     }
@@ -271,11 +350,9 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     spinlock_release(&serv->incoming_connect_lock);
 
     // Prepare ourselves if needed
-    if (sock->type == SOCK_STREAM) {
-        sleep_untilTime(current_cpu->current_thread, 1, 0);
-        fs_wait(sock->node, VFS_EVENT_READ);
-        usock->thr = current_cpu->current_thread;
-    }
+    sleep_untilTime(current_cpu->current_thread, 1, 0);
+    fs_wait(sock->node, VFS_EVENT_READ);
+    usock->thr = current_cpu->current_thread;
 
     if (serv->thr && serv->thr->sleep) sleep_wakeup(serv->thr);
     
@@ -289,6 +366,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
         for (int i = 0; i < 3; i++) {
             int w = sleep_enter();
             if (w == WAKEUP_SIGNAL) {
+                usock->thr = NULL;
                 return -EINTR;
             }
             
@@ -297,6 +375,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
                 LOG(INFO, "Connection request accepted\n");
                 usock->connected_socket = creq->new_sock;        
                 kfree(creq);
+                usock->thr = NULL;
                 return 0;
             }
 
@@ -305,6 +384,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
         }
 
         kfree(creq);
+        usock->thr = NULL;
         return -ETIMEDOUT;
     }
 
@@ -503,7 +583,13 @@ int unix_close(sock_t *sock) {
  */
 int unix_ready(sock_t *sock, int events) {
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    int revents = (circbuf_available(usock->packet_buffer) ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
+
+    if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
+        int revents = (usock->dgram_data->length ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
+        return revents;
+    }
+
+    int revents = (circbuf_remaining_read(usock->packet_buffer) ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
     return revents;
 }
 
@@ -519,7 +605,7 @@ sock_t *unix_socket(int type, int protocol) {
     unix_sock_t *usock = kzalloc(sizeof(unix_sock_t));
 
     usock->packet_buffer = circbuf_create("unix packet buffer", UNIX_PACKET_BUFFER_SIZE);
-    if (type == SOCK_DGRAM) usock->dgram_data = list_create("unix packet sizes");
+    if (type == SOCK_DGRAM || type == SOCK_SEQPACKET) usock->dgram_data = list_create("unix packet sizes");
 
     sock->sendmsg = unix_sendmsg;
     sock->recvmsg = unix_recvmsg;
