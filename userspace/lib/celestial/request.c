@@ -39,7 +39,7 @@ int celestial_connect(char *sockname) {
     }
 
     // Create a new socket
-    __celestial_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+    __celestial_socket = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     if (__celestial_socket < 0) {
         return -1;
     }
@@ -122,7 +122,7 @@ void *celestial_getResponse(int type) {
 
         // Is it an event? Process those immediately
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
-            fprintf(stderr, "Received event from Celestial\n");
+            fprintf(stderr, "Received event from Celestial: %x\n", ((celestial_req_header_t*)m)->type);
             celestial_handleEvent(m);
             continue;
         }

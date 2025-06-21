@@ -129,3 +129,65 @@ uint32_t *celestial_getFramebuffer(window_t *win) {
 
     return win->buffer;
 }
+
+/**
+ * @brief Start dragging a window
+ * @param win The window object to start dragging
+ * @returns 0 on success or -1 
+ * 
+ * This will lock the mouse cursor in place and have it continuously drag the window.
+ * Usually, unless you have an undecorated window, don't use this.
+ */
+int celestial_startDragging(window_t *win) {
+    // Build a new request
+    celestial_req_drag_start_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .type = CELESTIAL_REQ_DRAG_START,
+        .size = sizeof(celestial_req_create_window_t),
+        .wid = win->wid,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1; 
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_DRAG_START);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Stop dragging a window
+ * @param win The window object to stop dragging
+ * @returns 0 on success
+ *  
+ * This will unlock the mouse cursor.
+ * Usually, unless you have an undecorated window, don't use this.
+ */
+int celestial_stopDragging(window_t *win) {
+    // Build a new request
+    celestial_req_drag_stop_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .type = CELESTIAL_REQ_DRAG_STOP,
+        .size = sizeof(celestial_req_create_window_t),
+        .wid = win->wid,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1; 
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_DRAG_STOP);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}

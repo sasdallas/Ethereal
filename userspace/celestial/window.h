@@ -26,6 +26,13 @@
 #define CELESTIAL_MAX_WINDOW_ID                 32767
 #define CELESTIAL_WINDOW_REDRAW_THRESHOLD       10
 
+
+#define WINDOW_STATE_NORMAL                     0
+#define WINDOW_STATE_DRAGGING                   1
+#define WINDOW_STATE_RESIZING                   2
+#define WINDOW_STATE_CLOSING                    3
+
+
 /**** TYPES ****/
 
 typedef struct wm_window {
@@ -36,6 +43,7 @@ typedef struct wm_window {
     size_t width;               // Width of the window
     size_t height;              // Height of the window
     uint32_t events;            // Events the window subscribed to
+    uint8_t state;              // Current window state
 
     uint8_t *buffer;            // Buffer allocated to the window
     key_t bufkey;               // Buffer shared memory key

@@ -25,7 +25,7 @@ int __celestial_socket = -1;
  * @brief Create and bind the window server socket
  */
 void socket_init() {
-    WM_SOCK = socket(AF_UNIX, SOCK_STREAM, 0);
+    WM_SOCK = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 
     if (WM_SOCK < 0) {
         CELESTIAL_PERROR("socket");
@@ -204,6 +204,30 @@ void socket_handle(int sock) {
         win->events |= req->events;
 
         return socket_ok(sock, CELESTIAL_REQ_SUBSCRIBE);
+    } else if (hdr->type == CELESTIAL_REQ_DRAG_START) {
+        // Start drag request
+        CELESTIAL_VALIDATE(celestial_req_drag_start_t, CELESTIAL_REQ_DRAG_START);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_DRAG_START\n");
+        celestial_req_drag_start_t *req = (celestial_req_drag_start_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_DRAG_START, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_DRAG_START, EPERM);
+
+        wm_window_t *win = WID(req->wid);
+        win->state = WINDOW_STATE_DRAGGING;
+
+        return socket_ok(sock, CELESTIAL_REQ_DRAG_START);
+    } else if (hdr->type == CELESTIAL_REQ_DRAG_STOP) {
+        // Start drag request
+        CELESTIAL_VALIDATE(celestial_req_drag_stop_t, CELESTIAL_REQ_DRAG_STOP);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_DRAG_STOP\n");
+        celestial_req_drag_stop_t *req = (celestial_req_drag_stop_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_DRAG_STOP, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_DRAG_STOP, EPERM);
+
+        wm_window_t *win = WID(req->wid);
+        win->state = WINDOW_STATE_NORMAL;
+
+        return socket_ok(sock, CELESTIAL_REQ_DRAG_START);
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);

@@ -37,6 +37,10 @@ wm_window_t *__celestial_mouse_window = NULL;
 uint32_t __celestial_mouse_buttons = 0;
 uint32_t __celestial_previous_buttons = 0;
 
+/* Calculated on left button press (for dragging) */
+static int mouse_window_off_x = 0;
+static int mouse_window_off_y = 0;
+
 /**
  * @brief Initialize the mouse system
  * @returns 0 on success
@@ -78,6 +82,14 @@ int mouse_init() {
 void mouse_events() {
     // Check to make sure still in window
     if (WM_MOUSE_WINDOW) {
+        // Are we dragging the mouse window?
+        if (WM_MOUSE_WINDOW->state == WINDOW_STATE_DRAGGING) {
+            // Yes, calculate bounds and update position
+            CELESTIAL_DEBUG("Mouse position updated\n");
+            WM_MOUSE_WINDOW->x = WM_MOUSEX + mouse_window_off_x;
+            WM_MOUSE_WINDOW->y = WM_MOUSEY + mouse_window_off_y;
+        }
+        
         if (!(WM_MOUSE_WINDOW->x <= WM_MOUSEX) || !((int)(WM_MOUSE_WINDOW->x + WM_MOUSE_WINDOW->width) > WM_MOUSEX) ||
                 !(WM_MOUSE_WINDOW->y <= WM_MOUSEY) || !((int)(WM_MOUSE_WINDOW->y + WM_MOUSE_WINDOW->height) > WM_MOUSEY)) {
            
@@ -146,6 +158,12 @@ void mouse_events() {
                     // Debug check to make sure we can't hit two at once
                     CELESTIAL_ERR("mouse: Pressed two buttons at the same time (0x%x)! Forgetting about event.\n", btn_pressed);
                 } else {
+
+                    if (btn_pressed == CELESTIAL_MOUSE_BUTTON_LEFT) {
+                        mouse_window_off_x = WM_MOUSE_WINDOW->x - WM_MOUSEX;
+                        mouse_window_off_y = WM_MOUSE_WINDOW->y - WM_MOUSEY;
+                    }
+
                     // Send!
                     celestial_event_mouse_button_down_t down = {
                         .magic = CELESTIAL_MAGIC_EVENT,
@@ -164,17 +182,33 @@ void mouse_events() {
 
         // Send motion event if there was any
         if (WM_MOUSEX != last_mouse_x || WM_MOUSEY != last_mouse_y) {
-            celestial_event_mouse_motion_t motion = {
-                .magic = CELESTIAL_MAGIC_EVENT,
-                .type = CELESTIAL_EVENT_MOUSE_MOTION,
-                .size = sizeof(celestial_event_mouse_motion_t),
-                .wid = WM_MOUSE_WINDOW->id,
-                .x = WM_MOUSEX,
-                .y = WM_MOUSEY,
-                .buttons = WM_MOUSE_BUTTONS,
-            };
+            // Is this just a motion event or a drag event?
+            // TODO: Maybe its both?
 
-            event_send(WM_MOUSE_WINDOW, &motion);
+            if (WM_MOUSE_BUTTONS & CELESTIAL_MOUSE_BUTTON_LEFT) {
+                celestial_event_mouse_drag_t drag = {
+                    .magic = CELESTIAL_MAGIC_EVENT,
+                    .type = CELESTIAL_EVENT_MOUSE_DRAG,
+                    .size = sizeof(celestial_event_mouse_drag_t),
+                    .wid = WM_MOUSE_WINDOW->id,
+                    .x = WM_MOUSEX,
+                    .y = WM_MOUSEY,
+                };
+
+                event_send(WM_MOUSE_WINDOW, &drag);
+            } else {
+                celestial_event_mouse_motion_t motion = {
+                    .magic = CELESTIAL_MAGIC_EVENT,
+                    .type = CELESTIAL_EVENT_MOUSE_MOTION,
+                    .size = sizeof(celestial_event_mouse_motion_t),
+                    .wid = WM_MOUSE_WINDOW->id,
+                    .x = WM_MOUSEX,
+                    .y = WM_MOUSEY,
+                    .buttons = WM_MOUSE_BUTTONS,
+                };
+
+                event_send(WM_MOUSE_WINDOW, &motion);
+            }
         }
     }
 }

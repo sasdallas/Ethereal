@@ -77,8 +77,9 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->width = width;
     win->height = height;
     win->events = CELESTIAL_EVENT_DEFAULT_SUBSCRIBED;
+    win->state = WINDOW_STATE_NORMAL;
 
-    // Make buffer for it
+    // Make buffer for it   
     win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
     win->bufkey = shared_key(win->shmfd);
     win->buffer = mmap(NULL, win->height * win->width * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
@@ -102,19 +103,19 @@ void window_init() {
  * @brief Redraw all windows 
  */
 void window_redraw() {
-    // Get the current time
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
+    // // Get the current time
+    // struct timeval tv;
+    // gettimeofday(&tv, NULL);
 
-    uint64_t curtime = (tv.tv_sec * 1000) + (tv.tv_usec);
-    uint64_t threshold = curtime - __celestial_last_redraw_time;
+    // uint64_t curtime = (tv.tv_sec * 1000) + (tv.tv_usec);
+    // uint64_t threshold = curtime - __celestial_last_redraw_time;
 
-    int time_to_redraw = (threshold > CELESTIAL_WINDOW_REDRAW_THRESHOLD);
-    if (!time_to_redraw) return;
+    // int time_to_redraw = (threshold > CELESTIAL_WINDOW_REDRAW_THRESHOLD);
+    // if (!time_to_redraw) return;
 
 
-    // Update redraw time
-    __celestial_last_redraw_time = curtime;
+    // // Update redraw time
+    // __celestial_last_redraw_time = curtime;
 
     // We need to redraw all our windows
     // TODO: Z order, we are just drawing all of them

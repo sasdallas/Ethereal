@@ -68,4 +68,24 @@ window_t *celestial_getWindow(wid_t wid);
  */
 uint32_t *celestial_getFramebuffer(window_t *win);
 
+/**
+ * @brief Start dragging a window
+ * @param win The window object to start dragging
+ * @returns 0 on success or -1 
+ * 
+ * This will lock the mouse cursor in place and have it continuously drag the window.
+ * Usually, unless you have an undecorated window, don't use this.
+ */
+int celestial_startDragging(window_t *win);
+
+/**
+ * @brief Stop dragging a window
+ * @param win The window object to stop dragging
+ * @returns 0 on success
+ * 
+ * This will unlock the mouse cursor.
+ * Usually, unless you have an undecorated window, don't use this.
+ */
+int celestial_stopDragging(window_t *win);
+
 #endif
