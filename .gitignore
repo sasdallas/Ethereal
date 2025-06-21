@@ -1,5 +1,6 @@
 build-output/
 external/acpica/acpica-src/
+external/freetype/build-freetype/
 ser_output.txt
 ser_output2.txt
 .gdb_history

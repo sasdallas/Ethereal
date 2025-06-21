@@ -1,1 +1,0 @@
-conftest.o: conftest.c
