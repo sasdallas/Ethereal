@@ -35,6 +35,7 @@ void tmpfs_close(fs_node_t *node);
 fs_node_t *tmpfs_finddir(fs_node_t *node, char *path);
 struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index);
 fs_node_t *tmpfs_create(fs_node_t *node, char *path, mode_t mode);
+int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode);
 
 /**
  * @brief Convert a temporary filesystem object into a VFS node
@@ -85,6 +86,7 @@ static fs_node_t *tmpfs_convertVFS(tmpfs_entry_t *t) {
         node->create = tmpfs_create;
         node->readdir = tmpfs_readdir;
         node->finddir = tmpfs_finddir;
+        node->mkdir = tmpfs_mkdir;
     }
 
     return node;
@@ -111,7 +113,7 @@ static tmpfs_entry_t *tmpfs_createEntry(tmpfs_entry_t *parent, int type, char *n
         entry->file = kmalloc(sizeof(tmpfs_file_t));
         memset(entry->file, 0, sizeof(tmpfs_file_t));
         entry->file->lock = spinlock_create("tmpfs lock");
-    }  
+    } 
 
     if (parent) {
         entry->tree = parent->tree;
@@ -273,6 +275,18 @@ struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index) {
     return NULL;
 }
 
+/**
+ * @brief Temporary filesystem make directory method
+ */
+int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode) {
+    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
+
+    // Try to make a new tmpfs entry
+    tmpfs_createEntry(entry, TMPFS_DIRECTORY, path);
+
+    // Return
+    return 0;
+}
 
 /**
  * @brief Mount method for tmpfs

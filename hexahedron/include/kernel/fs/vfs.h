@@ -240,21 +240,6 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off);
 int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off);
 
 /**
- * @brief Make directory
- * @param path The path of the directory
- * @param mode The mode of the directory created
- * @returns Error code
- */
-int fs_mkdir(char *path, mode_t mode);
-
-/**
- * @brief Unlink file
- * @param name The name of the file to unlink
- * @returns Error code
- */
-int fs_unlink(char *name);
-
-/**
  * @brief I/O control file
  * @param node The node to ioctl
  * @param request The ioctl request to use
@@ -310,6 +295,21 @@ fs_node_t *fs_node();
  * @returns A new node object
  */
 fs_node_t *fs_copy(fs_node_t *node);
+
+/**
+ * @brief Make directory
+ * @param path The path of the directory
+ * @param mode The mode of the directory created
+ * @returns Error code
+ */
+int vfs_mkdir(char *path, mode_t mode);
+
+/**
+ * @brief Unlink file
+ * @param name The name of the file to unlink
+ * @returns Error code
+ */
+int vfs_unlink(char *name);
 
 /**
  * @brief creat() equivalent for VFS

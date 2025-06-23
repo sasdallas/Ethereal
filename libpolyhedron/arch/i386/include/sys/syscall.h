@@ -33,6 +33,7 @@ _Begin_C_Header
 #define SYS_IOCTL           9
 #define SYS_READDIR         10
 #define SYS_POLL            11
+#define SYS_MKDIR           12
 /* reserved */
 #define SYS_BRK             20
 #define SYS_FORK            21

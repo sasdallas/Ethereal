@@ -110,6 +110,7 @@ long sys_lstat(const char *pathname, struct stat *statbuf);
 long sys_ioctl(int fd, unsigned long request, void *argp);
 long sys_readdir(struct dirent *ent, int fd, unsigned long index);
 long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout);
+long sys_mkdir(const char *pathname, mode_t mode);
 void *sys_brk(void *addr);
 pid_t sys_fork();
 off_t sys_lseek(int fd, off_t offset, int whence);

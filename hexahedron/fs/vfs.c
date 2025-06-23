@@ -166,21 +166,6 @@ fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode) {
 }
 
 /**
- * @brief Make directory
- * @param path The path of the directory
- * @param mode The mode of the directory created
- * @returns Error code
- */
-int fs_mkdir(char *path, mode_t mode) { return -ENOTSUP; }
-
-/**
- * @brief Unlink file
- * @param name The name of the file to unlink
- * @returns Error code
- */
-int fs_unlink(char *name) { return -ENOTSUP; }
-
-/**
  * @brief I/O control file
  * @param node The node to ioctl
  * @param request The ioctl request to use
@@ -457,6 +442,81 @@ fs_node_t *fs_node() {
 }
 
 /**
+ * @brief Make directory
+ * @param path The path of the directory
+ * @param mode The mode of the directory created
+ * @returns Error code
+ */
+int vfs_mkdir(char *path, mode_t mode) {
+    // First, canonicalize the path
+    char *path_canon = vfs_canonicalizePath(current_cpu->current_process->wd_path, path);
+    if (!path_canon) {
+        return -EINVAL;
+    }
+
+    // Now go back (UGLY)
+    size_t canon_len = strlen(path_canon);
+    char *parent_uncanon = kmalloc(canon_len + 4);
+    snprintf(parent_uncanon, canon_len+4, "%s/..", path_canon);
+    char *parent = vfs_canonicalizePath(NULL, parent_uncanon);
+    kfree(parent_uncanon);
+    
+    // Before we free path_canon, parse it to find the last
+    char *p = path_canon + (canon_len-1);
+    while (p > path_canon) {
+        if (*p == '/') {
+            // We found a slash, exit.
+            p++;
+            break;
+        }
+        p--;
+    }
+
+    // Continue parsing past that if needed
+    while (*p == '/') p++;
+    
+    LOG(DEBUG, "Making %s in %s\n", p, parent);
+
+    // We should have the directory path in p
+    fs_node_t *parent_node = kopen(parent, 0);
+    if (!parent_node) {
+        kfree(path_canon);
+        kfree(parent);
+        return -ENOENT;
+    }
+
+    // Does it exist?
+    fs_node_t *exist_check = kopen(path_canon, 0);
+    if (exist_check) {
+        kfree(path_canon);
+        kfree(parent);
+        fs_close(parent_node);
+        fs_close(exist_check);
+        return -EEXIST;
+    }
+
+    // Create the directory
+    int ret = -EROFS;
+    if (parent_node->mkdir) {
+        ret = parent_node->mkdir(parent_node, p, mode);
+    }
+
+    // Free memory
+    kfree(path_canon);
+    kfree(parent);
+    fs_close(parent_node);
+    return ret;
+}
+
+/**
+ * @brief Unlink file
+ * @param name The name of the file to unlink
+ * @returns Error code
+ */
+int vfs_unlink(char *name) { return -ENOTSUP; }
+
+
+/**
  * @brief creat() equivalent for VFS
  * @param node The node to output to
  * @param path The path to create
@@ -646,6 +706,7 @@ _canonicalize: ;
             // pch = "..", go up one.
             node_t *node = list_pop(list);
             if (node) {
+                path_size -= strlen((const char *)node->value);
                 kfree(node);
                 kfree(node->value);
             }
@@ -673,10 +734,14 @@ _canonicalize: ;
         kfree(output); // realloc is boring 
         output = strdup("/");
     } else {
-        // Append each element together
+    // Append each element together
         foreach(i, list) {
             // !!!: unsafe call to sprintf
             sprintf(output, "%s/%s", output, i->value);
+        }
+
+        if (!strlen(output)) {
+            *output = '/';
         }
     }
 

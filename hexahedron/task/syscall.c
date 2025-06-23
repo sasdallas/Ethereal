@@ -43,6 +43,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_IOCTL]             = (syscall_func_t)(uintptr_t)sys_ioctl,
     [SYS_READDIR]           = (syscall_func_t)(uintptr_t)sys_readdir,
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
+    [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
     [SYS_LSEEK]             = (syscall_func_t)(uintptr_t)sys_lseek,
@@ -658,6 +659,11 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     }
 
     return 1;   // At least one thread woke us up
+}
+
+long sys_mkdir(const char *pathname, mode_t mode) {
+    SYSCALL_VALIDATE_PTR(pathname);
+    return vfs_mkdir((char*)pathname, mode);
 }
 
 

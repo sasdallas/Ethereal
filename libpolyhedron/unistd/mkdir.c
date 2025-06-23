@@ -12,9 +12,11 @@
  */
 
 #include <unistd.h>
-#include <stdio.h>
+#include <sys/syscall.h>
+#include <errno.h>
+
+DEFINE_SYSCALL2(mkdir, SYS_MKDIR, const char *, mode_t);
 
 int mkdir(const char *pathname, mode_t mode) {
-    printf("mkdir %s 0x%x\n", pathname, mode);
-    return 0;
+    __sets_errno(__syscall_mkdir(pathname, mode));
 }

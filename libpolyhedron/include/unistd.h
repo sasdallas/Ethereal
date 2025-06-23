@@ -77,9 +77,9 @@ int dup2(int oldfd, int newfd);
 int dup(int fd);
 int getopt(int argc, char * const argv[], const char * optstring);
 int pipe(int fildes[2]);
+int mkdir(const char *pathname, mode_t mode);
 
 /* STUBS */
-int mkdir(const char *pathname, mode_t mode);
 int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);
 int system(const char *command);
