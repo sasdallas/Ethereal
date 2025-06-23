@@ -169,9 +169,9 @@ ssize_t tarfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer)
 }
 
 /**
- * @brief tarfs readdir method
+ * @brief tarfs readdir (root) method
  */
-struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
+struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
     // First, if index == 0 or 1, return ./.. respectively
     if (index < 2) {
         struct dirent *out = kmalloc(sizeof(struct dirent));
@@ -191,43 +191,27 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
         // Invalid ustar
         return NULL;
     }
-    
-    // Create the basic search name - files that contain this will be used as indexes
-    char search_filename[256] = { 0 };
-
-    if (strcmp(header->name, "/")) {
-        // We are NOT the root, so concatenate node->name and a slash
-        strncat(search_filename, header->nameprefix, 155);
-        strncat(search_filename, header->name, 100);
-    }  
-
-    // Count the slashes in the path
-    int slashes;
-    char *s = (char*)search_filename;
-    for (slashes=0; s[slashes]; s[slashes]=='/' ? slashes++ : *s++);
 
     int fileidx = 0; // Index of the current file
     
     // Start iterating
     while (header) {
-        if (fileidx == 0) {
-            // fileidx = 0, go to next entry
-            fileidx++;
-            goto _next;
-        }
-
         // Construct the full filename
         char path_filename[256] = { 0 };
         strncat(path_filename, header->nameprefix, 155);
         strncat(path_filename, header->name, 150);
 
-        // If 0 slashes, then strchr() to check
-        if (slashes == 0 && strchr(path_filename, '/')) goto _next;
+        int slashes = 0;
+        char *s = (char*)path_filename;
+        for (int idx = 0; s[idx]; (s[idx]=='/' && s[idx+1]) ? slashes++, idx++ : idx++);
 
         // Use strstr to find the occurence of search_filename in path_filename (or if !slashes we checked that earlier)
-        if (strstr(path_filename, search_filename) == path_filename || !slashes) {
+        if (!slashes) {
+            char *slash = strstr(path_filename, "/");
+            if (slash) *slash = 0;
+
             // Match found - is it the one we want?
-            if (fileidx == (int)index) {
+            if (fileidx == (int)index && strlen(path_filename)) {
                 // Found the right one!
                 struct dirent *out = kmalloc(sizeof(struct dirent));
                 memset(out, 0, sizeof(struct dirent));
@@ -239,7 +223,7 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
                 }
 
                 // Copy name
-                strncat(out->d_name, (!slashes) ? path_filename : strrchr(path_filename, '/')+1, 256);
+                strncpy(out->d_name, path_filename, 256);
     
                 // Setup other parameters
                 out->d_reclen = strtoull(header->size, NULL, 8);
@@ -283,7 +267,128 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
             fileidx++;
         }
 
-_next: ;
+        // Go to the next one, get the filesize and increment.
+        // Remember that GNU devs sometimes get high, so this is encoded in octal.
+        uint64_t filesize = strtoull(header->size, NULL, 8);
+    
+        // Increment ino (512 = sizeof ustar header)
+        ino += 512;
+        ino += USTAR_SIZE(filesize);
+
+        // Get next header
+        kfree(header);
+        header = tarfs_getUstar(node, ino);
+    }
+
+    return NULL;
+}
+
+
+/**
+ * @brief tarfs readdir method
+ */
+struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
+    // First, if index == 0 or 1, return ./.. respectively
+    if (index < 2) {
+        struct dirent *out = kmalloc(sizeof(struct dirent));
+        strcpy(out->d_name, (index == 0) ? "." : "..");
+        out->d_ino = 0;
+        return out;
+    }
+
+    index -= 1; // Start from a 1-index, that way we don't return node. 
+
+    if (!node) return NULL;
+
+    // Get the header and verify it
+    uint64_t ino = node->inode;
+    ustar_header_t *header = tarfs_getUstar(node, ino);
+    if (!header) {
+        // Invalid ustar
+        return NULL;
+    }
+    
+    // Create the basic search name - files that contain this will be used as indexes
+    char search_filename[256];
+    memset(search_filename, 0, 256);
+    strncat(search_filename, header->nameprefix, 155);
+    strncat(search_filename, header->name, 100);
+    
+    int fileidx = 0; // Index of the current file
+    
+    // Start iterating
+    while (header) {
+        // Construct the full filename
+        char path_filename[256];
+        memset(path_filename, 0, 256);
+        strncat(path_filename, header->nameprefix, 155);
+        strncat(path_filename, header->name, 150);
+
+        // Count slashes
+        int slashes;
+        char *s = (char*)path_filename + strlen(search_filename);
+        for (slashes=0; s[slashes]; (s[slashes]=='/' && s[slashes+1]) ? slashes++ : *s++);
+
+
+        // Use strstr to find the occurence of search_filename in path_filename (or if !slashes we checked that earlier)
+        if (strstr(path_filename, search_filename) == path_filename && !slashes && strlen((char*)path_filename + strlen(search_filename))) {
+            // Match found - is it the one we want?
+            if (fileidx == (int)index) {
+                // Found the right one!
+                struct dirent *out = kmalloc(sizeof(struct dirent));
+                memset(out, 0, sizeof(struct dirent));
+                out->d_ino = ino;
+                
+                // Update name to remove last slash
+                if (path_filename[strlen(path_filename) - 1] == '/') {
+                    path_filename[strlen(path_filename) - 1] = '\0';
+                }
+
+                // Copy name
+                strncat(out->d_name, path_filename + strlen(search_filename), 256);
+    
+                // Setup other parameters
+                out->d_reclen = strtoull(header->size, NULL, 8);
+                
+                // Interpret the type now
+                switch (header->type[0]) {
+                    case USTAR_HARD_LINK:
+                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header->name);
+                        node->flags = DT_REG;
+                        break;
+
+                    case USTAR_SYMLINK:
+                        out->d_type = DT_LNK;
+                        break;
+
+                    case USTAR_CHARDEV:
+                        out->d_type = DT_CHR;
+                        break;
+
+                    case USTAR_BLOCKDEV:
+                        out->d_type = DT_BLK;
+                        break;
+
+                    case USTAR_DIRECTORY:
+                        out->d_type = DT_DIR;
+                        break;
+
+                    case USTAR_PIPE:
+                        out->d_type = DT_FIFO;
+                        break;
+                    
+                    default:
+                        out->d_type = DT_REG;
+                        break;
+                }
+
+                kfree(header);
+                return out;
+            }
+
+            fileidx++;
+        }
+
         // Go to the next one, get the filesize and increment.
         // Remember that GNU devs sometimes get high, so this is encoded in octal.
         uint64_t filesize = strtoull(header->size, NULL, 8);
@@ -401,6 +506,7 @@ fs_node_t *tarfs_mount(char *argp, char *mountpoint) {
     kfree(node);
     kfree(header);
     node = rootnode;
+    node->readdir = tarfs_readdir_root;
 
     // All done!
     return node;
