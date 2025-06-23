@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 int execvpe(const char *file, const char *argv[], char *envp[]) {
     // Does file contain a "/" anywhere?
@@ -32,13 +33,15 @@ int execvpe(const char *file, const char *argv[], char *envp[]) {
 
     // Start looping through path
     char *p = (char*)path;
-    
+    int last = 0;
+
     char exec_path[strlen(file) + 128 + 1]; // PATH_MAX?
     while (*p) {
         // Get the next occurance of a :
         char *p_next = strchrnul(p, ':');
-        if (*p_next == 0) break;
+        if (*p_next == 0) { last = 1; }
 
+        *p_next = 0;
         if (strlen(p) > 128) continue; // Next iteration
 
         // Construct a basic path
@@ -67,9 +70,16 @@ int execvpe(const char *file, const char *argv[], char *envp[]) {
                 return -1;
         }
 
+        // Last entry?
+        if (last) {
+            errno = ENOENT;
+            break;
+        }
+
         // Ok, make sure p_next is valid
-        if (!p_next[1]) break; 
-        p = p_next;
+        if (!p_next[1]) break;
+        *p_next = ':'; 
+        p = p_next+1;
     }
 
     return -1;
