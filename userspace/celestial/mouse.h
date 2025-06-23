@@ -19,7 +19,7 @@
 
 /**** DEFINITIONS ****/
 
-#define CELESTIAL_DEFAULT_MOUSE_CURSOR "/device/initrd/cursor.bmp"
+#define CELESTIAL_DEFAULT_MOUSE_CURSOR "/usr/share/cursor.bmp"
 
 /**** FUNCTIONS ****/
 

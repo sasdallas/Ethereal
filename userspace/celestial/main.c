@@ -67,9 +67,8 @@ void celestial_redraw() {
     // Render the mouse
     mouse_render();
 
-extern void gfx_drawClips(gfx_context_t *ctx);
-    gfx_drawClips(WM_GFX);
-
+// extern void gfx_drawClips(gfx_context_t *ctx);
+//     gfx_drawClips(WM_GFX);
 
     // Render the grahics
     gfx_render(WM_GFX);
@@ -247,8 +246,8 @@ int main(int argc, char *argv[]) {
     CELESTIAL_DEBUG("Created mouse successfully\n");
 
     if (!fork()) {
-        const char *a[] = { "/device/initrd/bin/wmtest", NULL };
-        execvp("/device/initrd/bin/wmtest", a);
+        const char *a[] = { "wmtest", NULL };
+        execvp("wmtest", a);
         exit(1);
     }
 
