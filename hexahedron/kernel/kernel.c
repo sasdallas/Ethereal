@@ -65,6 +65,7 @@
 
 // Tasking
 #include <kernel/task/process.h>
+#include <structs/ini.h>
 
 /* Log method of generic */
 #define LOG(status, ...) dprintf_module(status, "GENERIC", __VA_ARGS__)
@@ -222,24 +223,34 @@ void kmain() {
     // Now we need to mount the initial ramdisk
     kernel_mountRamdisk(parameters);
 
+    // Load the INI file
+    ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
+    if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
+
     // Try to load new font file
     if (!kargs_has("--no-psf-font")) {
-        fs_node_t *new_font = kopen("/device/initrd/usr/share/ter-112n.psf", O_RDONLY);
-        if (new_font) {
-            // Load PSF
-            if (!font_loadPSF(new_font)) {
-                // Say hello
-                gfx_drawLogo(TERMINAL_DEFAULT_FG);
-                arch_say_hello(0);
-            } else {
-                fs_close(new_font);
-                LOG(ERR, "Failed to load font file \"/device/initrd/usr/share/ter-112n.psf\".\n");
-            }
+        char *font_file = ini_get(ini, "boot", "kernel_font");
+        if (!font_file) {
+            LOG(ERR, "No entry for \"kernel_font\" in /boot/conf.ini, cannot load new font\n");
         } else {
-            LOG(ERR, "Could not find new font file \"/device/initrd/usr/share/ter-112n.psf\", using old font\n");
+            fs_node_t *new_font = kopen("/device/initrd/usr/share/ter-112n.psf", O_RDONLY);
+            if (new_font) {
+                // Load PSF
+                if (!font_loadPSF(new_font)) {
+                    // Say hello
+                    gfx_drawLogo(TERMINAL_DEFAULT_FG);
+                    arch_say_hello(0);
+                    printf("Loaded font from initial ramdisk successfully\n");
+                } else {
+                    fs_close(new_font);
+                    LOG(ERR, "Failed to load font file \"/device/initrd/usr/share/ter-112n.psf\".\n");
+                }
+            } else {
+                LOG(ERR, "Could not find new font file \"/device/initrd/usr/share/ter-112n.psf\", using old font\n");
+            }
         }
-        printf("Loaded font from initial ramdisk successfully\n");
     }
+
 
     // At this point in time if the user wants to view debugging output not on the serial console, they
     // can. Look for kernel boot argument "--debug=console"
@@ -252,7 +263,13 @@ void kmain() {
     }
 
     // Load symbols
-    fs_node_t *symfile = kopen("/device/initrd/boot/hexahedron-kernel-symmap.map", O_RDONLY);
+    char *symmap_path = ini_get(ini, "boot", "symmap");
+    if (!symmap_path) {
+        LOG(WARN, "Boot config file (/boot/conf.ini) does not specify symbol map, assuming default path");
+        symmap_path = "/device/initrd/boot/hexahedron-kernel-symmap.map";
+    }
+
+    fs_node_t *symfile = kopen(symmap_path, O_RDONLY);
     if (!symfile) {
         kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing hexahedron-kernel-symmap.map\n");
         __builtin_unreachable();
