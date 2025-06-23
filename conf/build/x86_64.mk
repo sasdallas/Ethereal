@@ -9,3 +9,6 @@ CFLAGS += -DACPICA_ENABLED
 endif
 
 CFLAGS += -mcmodel=large
+
+# !!!: HACK
+CFLAGS += -I$(PROJECT_ROOT)/build-output/sysroot/usr/include/freetype2/

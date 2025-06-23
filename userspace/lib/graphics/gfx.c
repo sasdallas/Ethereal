@@ -69,35 +69,31 @@ gfx_context_t *gfx_createFullscreen(int flags) {
 }
 
 /**
- * @brief Initialize graphics in a smaller subarea
- * @param parent Parent context
- * @param x The X offset of the graphics
- * @param y The Y offset of the graphics
- * @param width The width of the graphics
- * @param height The height of the graphics
- * @returns A pointer to the new graphics context
+ * @brief Initialize graphics for a specific buffer, width, height, etc.
+ * @param flags Flags of the context
+ * @param buffer The buffer to use
+ * @param width The width of the buffer
+ * @param height The height of the buffer
+ * @returns New graphics object 
  */
-gfx_context_t *gfx_createSubarea(gfx_context_t *parent, int x, int y, size_t width, size_t height) {
-    // Can we fit this into the parent?
-    if (x<0 || x+width > parent->width || y<0 || y+height > parent->height) return NULL;
-
+gfx_context_t *gfx_createContext(int flags, uint8_t *buffer, size_t width, size_t height) {
     gfx_context_t *ctx = malloc(sizeof(gfx_context_t));
-    ctx->fb_fd = parent->fb_fd;
+    ctx->flags = flags;
     ctx->width = width;
     ctx->height = height;
-    ctx->pitch = parent->pitch;
-    ctx->bpp = parent->bpp;
-    ctx->flags = parent->flags;
-
-    if (!(ctx->flags & CTX_NO_BACKBUFFER)) {
-        ctx->backbuffer = parent->backbuffer + (GFX_PITCH(ctx) * y) + x * (GFX_BPP(ctx)/8);
-    }
-
-    ctx->buffer = parent->buffer + (GFX_PITCH(ctx) * y) + x * (GFX_BPP(ctx)/8);
-
-    // TODO: Move any parent clips we can.
+    ctx->bpp = 32; // TODO: Change?
+    ctx->pitch = width * sizeof(uint32_t); // TODO: Change?
     ctx->clip = NULL;
     ctx->clip_last = NULL;
+    ctx->fb_fd = -1;
+    ctx->buffer = buffer;
+
+    if (!(flags & CTX_NO_BACKBUFFER)) {
+        ctx->backbuffer = malloc(width * height * (ctx->bpp/8));
+    } else {
+        ctx->backbuffer = NULL;
+    }
+
     return ctx;
 }
 
@@ -137,9 +133,17 @@ void gfx_clear(gfx_context_t *ctx, gfx_color_t color) {
     if (!ctx) return;
 
     if (ctx->flags & CTX_NO_BACKBUFFER) {
-        memset(ctx->buffer, color, GFX_SIZE(ctx));
+        for (uint32_t y = 0; y < ctx->height; y++) {
+            for (uint32_t x = 0; x < ctx->width; x++) {
+                GFX_PIXEL_REAL(ctx, x, y) = color;
+            }
+        }
     } else {
-        memset(ctx->backbuffer, color, GFX_SIZE(ctx));
+        for (uint32_t y = 0; y < ctx->height; y++) {
+            for (uint32_t x = 0; x < ctx->width; x++) {
+                GFX_PIXEL(ctx, x, y) = color;
+            }
+        }
     }
 }
 
@@ -218,6 +222,5 @@ void gfx_drawClips(gfx_context_t *ctx) {
     while (clip) {
         gfx_drawRectangle(ctx, &clip->rect, GFX_RGB(255, 0, 0));
         clip = clip->next;
-
     }
 }

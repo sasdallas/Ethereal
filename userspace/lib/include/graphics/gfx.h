@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <graphics/draw.h>
 #include <graphics/sprite.h>
+#include <graphics/text.h>
 
 /**** DEFINITIONS ****/
 
@@ -56,6 +57,9 @@ typedef struct gfx_context {
     size_t height;          // Height of the buffer
     size_t bpp;             // Bits per pixel of the buffer
     size_t pitch;           // Pitch of the buffer
+
+    uint8_t ft_initialized; // FreeType initialized
+    FT_Library ftlib;       // FreeType library
 } gfx_context_t;
 
 /**** MACROS ****/
@@ -136,5 +140,15 @@ void gfx_resetClips(gfx_context_t *ctx);
  * @param bottom The bottom color
  */
 gfx_color_t gfx_alphaBlend(gfx_color_t top, gfx_color_t bottom);
+
+/**
+ * @brief Initialize graphics for a specific buffer, width, height, etc.
+ * @param flags Flags of the context
+ * @param buffer The buffer to use
+ * @param width The width of the buffer
+ * @param height The height of the buffer
+ * @returns New graphics object 
+ */
+gfx_context_t *gfx_createContext(int flags, uint8_t *buffer, size_t width, size_t height);
 
 #endif
