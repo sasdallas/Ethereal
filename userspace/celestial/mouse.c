@@ -85,9 +85,20 @@ void mouse_events() {
         // Are we dragging the mouse window?
         if (WM_MOUSE_WINDOW->state == WINDOW_STATE_DRAGGING) {
             // Yes, calculate bounds and update position
-            CELESTIAL_DEBUG("Mouse position updated\n");
-            WM_MOUSE_WINDOW->x = WM_MOUSEX + mouse_window_off_x;
-            WM_MOUSE_WINDOW->y = WM_MOUSEY + mouse_window_off_y;
+            int32_t new_x = WM_MOUSEX + mouse_window_off_x;
+            int32_t new_y = WM_MOUSEY + mouse_window_off_y;
+        
+            // Make sure window is within boundaries
+            if (new_x < 0) new_x = 0;
+            if (new_x + WM_MOUSE_WINDOW->width >= GFX_WIDTH(WM_GFX)) new_x = GFX_WIDTH(WM_GFX) - WM_MOUSE_WINDOW->width - 1;
+            if (new_y < 0) new_y = 0;
+            if (new_y + WM_MOUSE_WINDOW->height >= GFX_HEIGHT(WM_GFX)) new_y = GFX_HEIGHT(WM_GFX) - WM_MOUSE_WINDOW->height - 1;
+            WM_MOUSE_WINDOW->x = new_x;
+            WM_MOUSE_WINDOW->y = new_y;
+
+            // Remember to hold the mouse cursor in place if we're hitting the edge.
+            WM_MOUSEX = WM_MOUSE_WINDOW->x - mouse_window_off_x;
+            WM_MOUSEY = WM_MOUSE_WINDOW->y - mouse_window_off_y;
         }
         
         if (!(WM_MOUSE_WINDOW->x <= WM_MOUSEX) || !((int)(WM_MOUSE_WINDOW->x + WM_MOUSE_WINDOW->width) > WM_MOUSEX) ||
