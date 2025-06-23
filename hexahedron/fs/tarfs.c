@@ -296,7 +296,7 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
         return out;
     }
 
-    index -= 1; // Start from a 1-index, that way we don't return node. 
+    index -= 2; // Start from a 1-index, that way we don't return node. 
 
     if (!node) return NULL;
 
@@ -328,7 +328,6 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
         int slashes;
         char *s = (char*)path_filename + strlen(search_filename);
         for (slashes=0; s[slashes]; (s[slashes]=='/' && s[slashes+1]) ? slashes++ : *s++);
-
 
         // Use strstr to find the occurence of search_filename in path_filename (or if !slashes we checked that earlier)
         if (strstr(path_filename, search_filename) == path_filename && !slashes && strlen((char*)path_filename + strlen(search_filename))) {
