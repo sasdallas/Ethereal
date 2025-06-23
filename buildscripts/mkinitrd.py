@@ -13,6 +13,7 @@ dir = sys.argv[2]
 def ramdisk_filter(tarinfo):
     tarinfo.uid = 0
     tarinfo.gid = 0
+    return tarinfo
 
 with tarfile.open(file, "w", format=tarfile.USTAR_FORMAT) as ramdisk:
     ramdisk.add(dir, arcname="/", filter=ramdisk_filter)
