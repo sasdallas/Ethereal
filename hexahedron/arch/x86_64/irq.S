@@ -110,7 +110,11 @@ halCommonExceptionHandler:
 
     movq %rax, %rdi                 // registers_t
     movq %rsp, %rsi                 // extended_registers_t
+
+    movq %rsp, %rbp                 // ABI
+    and $0xFFFFFFFFFFFFFFF0, %rsp   // Align stack for SSE instructions
     call hal_exceptionHandler 
+    mov %rbp, %rsp                  // Restore stack
     
     RESTORE_REGISTERS // Restore registers
     
@@ -125,8 +129,12 @@ halCommonIRQHandler:
 
     movq %rax, %rdi                 // registers_t
     movq %rsp, %rsi                 // extended_registers_t
+
+    movq %rsp, %rbp                 // ABI
+    and $0xFFFFFFFFFFFFFFF0, %rsp   // Align stack for SSE instructions
     call hal_interruptHandler 
-    
+    mov %rbp, %rsp                  // Restore stack
+
     RESTORE_REGISTERS // Restore registers
     
     iretq   // NOTE: The q is required!
@@ -334,8 +342,13 @@ halSyscallEntrypoint:
     leaq 52(%rsp), %rax             // Load address of registers_t
 
     movq %rax, %rdi                 // registers_t
-    movq %rsp, %rsi                 // extended_registers_t
+    movq %rsp, %rsi       
+
+    /* Call C handler */
+    movq %rsp, %rbp                 // ABI
+    and $0xFFFFFFFFFFFFFFF0, %rsp   // Align stack for SSE instructions
     call hal_syscallHandler 
+    movq %rbp, %rsp                 // Restore stack
     
     
     /* Skip over extended registers */
