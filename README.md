@@ -36,7 +36,7 @@ Currently, the project is developing its usermode stages.
 - Full ACPI support with the ACPICA library
 
 ## Project structure
-- `base`: Contains the base filesystem. Files in `base/initrd` go in the initial ramdisk and files in `base/sysroot` go in sysroot.
+- `base`: Contains the base filesystem. Files in `base/initrd` go in the initial ramdisk (for non LiveCD boots) and files in `base/sysroot` go in sysroot.
 - `buildscripts`: Contains buildscripts for the build system
 - `conf`: Contains misc. configuration files, such as architecture files, GRUB configs, extra boot files, etc.
 - `drivers`: Drivers for Hexahedron, copied based on their configuration.
@@ -54,10 +54,14 @@ Other packages required: `grub-common`, `xorriso`, `qemu-system`
 Edit `buildscripts/build-arch.sh` to change the target build architecture. \
 Running `make all` will build an ISO in `build-output/ethereal.iso`
 
+Currently, Ethereal's lack of filesystem drivers means that LiveCD boots are usually the best option.\
+The initial ramdisk in a LiveCD is the sysroot, and if the OS detects the boot it will copy the initial ramdisk into RAM.
+
 ## External components
 Certain external components are available in `external`. Here is a list of them and their versions:
 - ACPICA UNIX* (Intel License): Version 20240927 [available here](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/download.html)
 - libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
+- freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
 
 ## Licensing
 
