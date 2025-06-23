@@ -8,6 +8,8 @@
  * @todo Perhaps we should avoid putting files as tree nodes - maybe we can separate directories and files sort of similar to how the VFS does it.
  * @todo A bit messy, but luckily abstracted so can be fixed up :D
  * 
+ * The idea of fragmentation is, again, stolen from ToaruOS
+ * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -19,6 +21,8 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/mem/mem.h>
+#include <kernel/mem/pmm.h>
 #include <string.h>
 
 /* Size rounding */
@@ -113,7 +117,11 @@ static tmpfs_entry_t *tmpfs_createEntry(tmpfs_entry_t *parent, int type, char *n
         entry->file = kmalloc(sizeof(tmpfs_file_t));
         memset(entry->file, 0, sizeof(tmpfs_file_t));
         entry->file->lock = spinlock_create("tmpfs lock");
-    } 
+        entry->file->blocks = kzalloc(TMPFS_DEFAULT_BLOCKS * sizeof(uintptr_t));
+        entry->file->blk_size = TMPFS_DEFAULT_BLOCKS;
+        entry->file->blk_count = 0;
+    }
+     
 
     if (parent) {
         entry->tree = parent->tree;
@@ -140,6 +148,43 @@ void tmpfs_close(fs_node_t *node) {
 }
 
 /**
+ * @brief Get a block from the block system
+ * @param file The file object to get a block for
+ * @param blknum The block number to get
+ */
+uintptr_t tmpfs_getBlock(tmpfs_file_t *file, size_t blknum) {
+    if (blknum >= file->blk_count) return 0x0;
+    return file->blocks[blknum];
+}
+
+/**
+ * @brief Get or allocate a new block
+ * @param file The file to get a new block for
+ * @param blknum The block number to get
+ */
+uintptr_t tmpfs_getNewBlock(tmpfs_file_t *file, size_t blknum) {
+    uintptr_t exist = tmpfs_getBlock(file, blknum);
+    if (exist) return exist;
+
+    // Allocate a new block
+    if (blknum >= file->blk_size) {
+        file->blk_size *= 2;
+        file->blocks = krealloc(file->blocks, file->blk_size * sizeof(uintptr_t));
+        memset(&file->blocks[file->blk_size/2], 0, file->blk_size/2 * sizeof(uintptr_t));
+    }
+
+    
+    for (uintptr_t i = file->blk_count; i <= blknum; i++) {
+        file->blocks[i] = pmm_allocateBlock();
+        file->blk_count++;
+    }
+
+
+    return file->blocks[blknum];
+}
+
+
+/**
  * @brief Temporary filesystem read method
  */
 ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
@@ -161,8 +206,36 @@ ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
         size = available_size - off;
     }
 
-    // Now, let's read
-    memcpy(buffer, entry->file->blk_start + off, size);
+    // Do some math to calculate the starting and ending block
+    uintptr_t start_block = off / TMPFS_BLOCK_SIZE;
+    uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
+    uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
+    if (end_block > entry->file->blk_count) return 0;
+
+    // If the start block is the same, handle
+    if (start_block == end_block) {
+        // Get a block, read it, you know the drill
+        uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, start_block), TMPFS_BLOCK_SIZE);
+        memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), size);
+        mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+    } else {
+        // Else, enter this freaky math loop.
+        uintptr_t blocks_read = 0;
+        for (uintptr_t i = start_block; i < end_block; i++) {
+            uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, i), TMPFS_BLOCK_SIZE);
+            if (!blocks_read) memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
+            else memcpy(buffer + (blocks_read*TMPFS_BLOCK_SIZE) - (off % TMPFS_BLOCK_SIZE), (const void*)(blk), TMPFS_BLOCK_SIZE);
+            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+
+            blocks_read++;
+        }
+
+        // Handle any overhang
+        if (overhang) {
+            uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, end_block), TMPFS_BLOCK_SIZE);
+            memcpy(buffer + TMPFS_BLOCK_SIZE * blocks_read - (off % TMPFS_BLOCK_SIZE), (const void*)blk, size);
+        }
+    }
 
     spinlock_release(entry->file->lock);
     return size;
@@ -178,31 +251,42 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     // First, get a lock on the file
     spinlock_acquire(entry->file->lock);
 
-    // Let's see if we need to expand the file
-    size_t needed_size = off + size;
-    size_t available_size = entry->file->blk_count * TMPFS_BLOCK_SIZE;
+    // Now do some calculations to find the starting and ending block
+    uintptr_t start_block = off / TMPFS_BLOCK_SIZE;
+    uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
+    uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
 
-    if (needed_size > available_size) {
-        // Round to TMPFS_BLOCK_SIZE
-        needed_size = TMPFS_ROUND_SIZE(needed_size);
-        if (entry->file->blk_start) {
-            entry->file->blk_start = krealloc(entry->file->blk_start, needed_size);
-            entry->file->blk_count = needed_size / TMPFS_BLOCK_SIZE;
-        } else {
-            entry->file->blk_start = kmalloc(needed_size);
-            entry->file->blk_count = needed_size / TMPFS_BLOCK_SIZE;
+    // If we have the same start and end block, then just write to it
+    if (start_block == end_block) {
+        uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, start_block), TMPFS_BLOCK_SIZE);
+        memcpy((void*)(blk + (off % TMPFS_BLOCK_SIZE)), buffer, size);
+        mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+    } else {
+        // Write normally
+        uintptr_t blocks_written = 0;
+        for (uintptr_t i = start_block; i < end_block; i++) {
+            // Get a new block to write to
+            uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, i), TMPFS_BLOCK_SIZE);
+
+            // Depending on blocks_written, we might need to copy at an offst
+            if (!blocks_written) memcpy((void*)(blk + (off % TMPFS_BLOCK_SIZE)), buffer, TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
+            else memcpy((void*)blk, buffer + blocks_written * TMPFS_BLOCK_SIZE, TMPFS_BLOCK_SIZE);
+            blocks_written++;
+
+            // Unmap block
+            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
         }
 
-        entry->file->length = off + size;
+        // Handle overhang
+        if (overhang) {
+            uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, end_block), TMPFS_BLOCK_SIZE);
+            memcpy((void*)blk, buffer + TMPFS_BLOCK_SIZE * blocks_written - (off % TMPFS_BLOCK_SIZE), overhang);
+            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+        }
     }
 
-    LOG(DEBUG, "%s: now using %d blocks - %p - %p\n", entry->name, entry->file->blk_count, entry->file->blk_start, entry->file->blk_start + (entry->file->blk_count * TMPFS_BLOCK_SIZE));
-    
-    // Ok, we should have enough size
-    memcpy(entry->file->blk_start + off, buffer, size);
-
-
-
+    entry->file->length = off + size;
+    // LOG(DEBUG, "%s: now using %d blocks (%d bytes)\n", entry->name, entry->file->blk_count, (entry->file->blk_count * TMPFS_BLOCK_SIZE));
     spinlock_release(entry->file->lock);
     return size;
 }

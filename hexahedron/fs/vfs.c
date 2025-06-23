@@ -561,7 +561,7 @@ int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
     *last_slash = '/';
     last_slash++;
 
-    LOG(DEBUG, "Creating file %s (file: %s)\n", path, last_slash);
+    // LOG(DEBUG, "Creating file %s (file: %s)\n", path, last_slash);
 
     // Make sure this is a directory
     if (parent->flags != VFS_DIRECTORY) {

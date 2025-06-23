@@ -194,7 +194,7 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
         fd->offset = node->length;
     }
 
-    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
+    // LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
     return fd->fd_number;
 }
 
@@ -252,7 +252,7 @@ int sys_close(int fd) {
         return -EBADF;
     }
 
-    LOG(DEBUG, "sys_close fd %d\n", fd);
+    // LOG(DEBUG, "sys_close fd %d\n", fd);
     fd_remove(current_cpu->current_process, fd);
     return 0;
 }

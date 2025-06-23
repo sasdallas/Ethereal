@@ -30,7 +30,8 @@
 #define TMPFS_SYMLINK       2
 
 /* Block size */
-#define TMPFS_BLOCK_SIZE    4096
+#define TMPFS_BLOCK_SIZE        4096
+#define TMPFS_DEFAULT_BLOCKS    16
 
 /**** TYPES ****/
 
@@ -38,8 +39,9 @@ typedef struct tmpfs_file {
     spinlock_t  *lock;              // Lock for the file
     fs_node_t   *parent;            // Parent filesystem node
 
-    // TODO: Maybe we should allow fragmentation? This needs a lot of improvement
-    void        *blk_start;         // Block start
+    // Fragmented blocks
+    uintptr_t   *blocks;            // Block list
+    size_t      blk_size;           // Size of block array
     size_t      blk_count;          // Amount of blocks allocated for the file
     size_t      length;             // Length
 } tmpfs_file_t;
