@@ -8,8 +8,6 @@
  * 
  * Hexahedron's process system will create VASes for each process. 
  * 
- * @todo CoW and proper destruction
- * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -343,6 +341,8 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
             goto _finish;
         }
 
+        LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
+
         // Drop pages
         for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
             page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
@@ -351,8 +351,6 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
                 mem_freePage(pg);
             }
         }
-
-        LOG(DEBUG, "Allocation dropped: [%p] [%s] %p - %p\n", allocation, vas_typeToString(allocation->type), allocation->base, allocation->base + allocation->size);
 
         spinlock_release(&allocation->ref_lck);
         kfree(allocation);
@@ -664,7 +662,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
                 MEM_SET_FRAME(dstpg, MEM_GET_FRAME(srcpg));
             }
 
-            LOG(DEBUG, "Copied page at %016llX - %016llX (CoW for allocation %p)\n", alloc->base, alloc->base + alloc->size, alloc);
+            // LOG(DEBUG, "Copied page at %016llX - %016llX (CoW for allocation %p)\n", alloc->base, alloc->base + alloc->size, alloc);
             spinlock_release(&alloc->ref_lck);
             goto _add_allocation;
         }
@@ -679,6 +677,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
     alloc->size = source->size;
     alloc->type = source->type;
     alloc->references = 1;
+
+    if (alloc->type == VAS_ALLOC_MMAP_SHARE) alloc->references++;
 
     // Iterate through allocation pages
     for (uintptr_t i = 0; i < alloc->size; i += PAGE_SIZE) {
@@ -698,8 +698,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
             mem_unmapPhys(new_frame_remapped, PAGE_SIZE);
         } else {
             new_frame = MEM_GET_FRAME(src);
-            // LOG(INFO, "Not fully copying page at %016llx (frame: %p)\n", i + alloc->base, MEM_GET_FRAME(src));
-            alloc->references++; // Increase the references but we're not pending CoW
+            LOG(INFO, "Not fully copying page at %016llx (frame: %p)\n", i + alloc->base, MEM_GET_FRAME(src));
         }
         
         // Create the new page in the new directory
