@@ -250,16 +250,8 @@ generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
     parameters->module_start->cmdline = (char*)arch_relocate_structure(MBRELOC(module->cmdline), strlen((char*)MBRELOC(module->cmdline)));
     
     dprintf(DEBUG, "Relocating module %p - %p (%d)\n", module->mod_start, module->mod_end, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
-    uintptr_t relocated = arch_relocate_structure((uintptr_t)module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
-    parameters->module_start->mod_start = relocated; 
-    parameters->module_start->mod_end = relocated + (module->mod_end - module->mod_start);
-
-    
-
-    if ((module->mod_end - module->mod_start) > PMM_BLOCK_SIZE) {
-        // Reinitialize the region.
-        pmm_initializeRegion(module->mod_start, module->mod_end - module->mod_start);
-    }
+    parameters->module_start->mod_start = (uintptr_t)mem_remapPhys(module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start); 
+    parameters->module_start->mod_end = parameters->module_start->mod_start + (module->mod_end - module->mod_start);
 
     // Are we done yet?
     if (bootinfo->mods_count == 1) goto _done_modules;

@@ -60,12 +60,6 @@ ssize_t ramdev_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer
  * @param size The size of the ramdev
  */
 fs_node_t *ramdev_mount(uintptr_t addr, uintptr_t size) {
-    page_t *pg = mem_getPage(NULL, addr, MEM_DEFAULT);
-    if (!pg || !PAGE_IS_WRITABLE(pg))  {
-        dprintf(WARN, "Failed to create RAM device - requires read/write page\n");
-        return NULL;
-    }
-
     fs_node_t *node = (fs_node_t*)kmalloc(sizeof(fs_node_t));
     memset(node, 0, sizeof(fs_node_t));
 
