@@ -224,7 +224,7 @@ void kmain() {
 
     // Try to load new font file
     if (!kargs_has("--no-psf-font")) {
-        fs_node_t *new_font = kopen("/device/initrd/ter-112n.psf", O_RDONLY);
+        fs_node_t *new_font = kopen("/device/initrd/usr/share/ter-112n.psf", O_RDONLY);
         if (new_font) {
             // Load PSF
             if (!font_loadPSF(new_font)) {
@@ -233,10 +233,10 @@ void kmain() {
                 arch_say_hello(0);
             } else {
                 fs_close(new_font);
-                LOG(ERR, "Failed to load font file \"/device/initrd/ter-112n.psf\".\n");
+                LOG(ERR, "Failed to load font file \"/device/initrd/usr/share/ter-112n.psf\".\n");
             }
         } else {
-            LOG(ERR, "Could not find new font file \"/device/initrd/ter-112n.psf\", using old font\n");
+            LOG(ERR, "Could not find new font file \"/device/initrd/usr/share/ter-112n.psf\", using old font\n");
         }
         printf("Loaded font from initial ramdisk successfully\n");
     }
@@ -252,7 +252,7 @@ void kmain() {
     }
 
     // Load symbols
-    fs_node_t *symfile = kopen("/device/initrd/hexahedron-kernel-symmap.map", O_RDONLY);
+    fs_node_t *symfile = kopen("/device/initrd/boot/hexahedron-kernel-symmap.map", O_RDONLY);
     if (!symfile) {
         kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing hexahedron-kernel-symmap.map\n");
         __builtin_unreachable();
@@ -288,7 +288,7 @@ void kmain() {
     current_cpu->current_process = process_spawnInit();
 
     // !!!: TEMPORARY
-    const char *path = "/device/initrd/bin/init";
+    const char *path = "/device/initrd/usr/bin/init";
 
     fs_node_t *file;
     char *argv[] = { "init", NULL, NULL };

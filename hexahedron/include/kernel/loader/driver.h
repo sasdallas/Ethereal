@@ -61,8 +61,8 @@ typedef struct loaded_driver {
 /**** DEFINITIONS ****/
 
 // The default location of the drivers directory and config file
-#define DRIVER_DEFAULT_PATH                 "/device/initrd/drivers/"
-#define DRIVER_DEFAULT_CONFIG_LOCATION      "/device/initrd/drivers/driver_conf.json"
+#define DRIVER_DEFAULT_PATH                 "/device/initrd/boot/drivers/"
+#define DRIVER_DEFAULT_CONFIG_LOCATION      "/device/initrd/boot/drivers/driver_conf.json"
 
 // Make sure to update buildscripts/create_driver_data.py if you change this
 #define DRIVER_CRITICAL     0   // Panic if load fails

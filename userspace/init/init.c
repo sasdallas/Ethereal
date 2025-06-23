@@ -40,12 +40,12 @@ int main(int argc, char *argv[]) {
 
 
 
-    putenv("PATH=/device/initrd/bin/:"); // TEMP
+    putenv("PATH=/device/initrd/usr/bin/:"); // TEMP
 
     printf("Welcome to Ethereal\n");
     printf("Initializing shell...\n");
 
-    argv[0] = "/device/initrd/bin/essence";
-    execvpe("/device/initrd/bin/essence", (const char**)argv, environ);
+    argv[0] = "/device/initrd/usr/bin/essence";
+    execvpe("/device/initrd/usr/bin/essence", (const char**)argv, environ);
     return 0;
 }

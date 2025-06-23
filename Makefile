@@ -34,7 +34,7 @@ build:
 
 initrd:
 	$(MAKE) headerlog header="Creating initial ramdisk, please wait..."
-	python3 $(BUILDSCRIPTS_ROOT)/mkinitrd.py $(BUILDSCRIPTS_ROOT)/../build-output/sysroot/boot/initrd.tar.img $(BUILDSCRIPTS_ROOT)/../build-output/initrd/
+	python3 $(BUILDSCRIPTS_ROOT)/mkinitrd.py $(BUILDSCRIPTS_ROOT)/../build-output/sysroot/boot/initrd.tar.img $(BUILDSCRIPTS_ROOT)/../build-output/sysroot/
 	@echo
 	@echo
 	@echo "[ Finished creating initial ramdisk ]"
