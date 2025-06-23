@@ -20,6 +20,10 @@ OUTPUT_FILE = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_lib_i
 C_SRCS = $(shell find . -name "*.c" -printf '%f ')
 C_OBJS = $(patsubst %.c, $(OBJ_DIR)/%.o, $(C_SRCS))
 
+# freetype-specific
+# TODO: better way
+CFLAGS += -I$(DESTDIR)$(INCLUDE_DIRECTORY)/freetype2
+
 PRINT_HEADER:
 	@echo "-- Building library \"$(OUTPUT_FILE)\""
 
