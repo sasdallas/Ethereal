@@ -40,4 +40,10 @@ typedef struct fs_pipe {
  */
 int pipe_create(process_t *process, int fildes[2]);
 
+/**
+ * @brief Create a pipe set for usage
+ * @returns Pipe object
+ */
+fs_pipe_t *pipe_createPipe();
+
 #endif

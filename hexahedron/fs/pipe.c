@@ -123,12 +123,10 @@ int pipe_readyWrite(fs_node_t *node, int ready) {
 }
 
 /**
- * @brief Create a new pipe set for a process
- * @param process The process to create the pipes on
- * @param fildes The file descriptor array to fill with pipes
- * @returns Error code
+ * @brief Create a pipe set for usage
+ * @returns Pipe object
  */
-int pipe_create(process_t *process, int fildes[2]) {
+fs_pipe_t *pipe_createPipe() {
     fs_pipe_t *pipe = kzalloc(sizeof(fs_pipe_t));
     pipe->buf = circbuf_create("pipe", 4096);
 
@@ -153,6 +151,18 @@ int pipe_create(process_t *process, int fildes[2]) {
     pipe->write->close = pipe_closeWrite;
     pipe->write->ready = pipe_readyWrite;
     fs_open(pipe->write, 0);
+    
+    return pipe;
+}
+
+/**
+ * @brief Create a new pipe set for a process
+ * @param process The process to create the pipes on
+ * @param fildes The file descriptor array to fill with pipes
+ * @returns Error code
+ */
+int pipe_create(process_t *process, int fildes[2]) {
+    fs_pipe_t *pipe = pipe_createPipe();
 
     // Add file descriptors to process
     fd_t *read_fd = fd_add(process, pipe->read);
