@@ -42,6 +42,8 @@ gfx_context_t *gfx_createFullscreen(int flags) {
         return NULL;
     }
 
+    ctx->ftlib = NULL;
+    ctx->ft_initialized = 0;
     ctx->width = info.screen_width;
     ctx->height = info.screen_height;
     ctx->bpp = info.screen_bpp;
@@ -78,6 +80,8 @@ gfx_context_t *gfx_createFullscreen(int flags) {
  */
 gfx_context_t *gfx_createContext(int flags, uint8_t *buffer, size_t width, size_t height) {
     gfx_context_t *ctx = malloc(sizeof(gfx_context_t));
+    ctx->ftlib = NULL;
+    ctx->ft_initialized = 0;
     ctx->flags = flags;
     ctx->width = width;
     ctx->height = height;
