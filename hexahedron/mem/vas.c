@@ -700,7 +700,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
             mem_unmapPhys(new_frame_remapped, PAGE_SIZE);
         } else {
             new_frame = MEM_GET_FRAME(src);
-            LOG(INFO, "Not fully copying page at %016llx (frame: %p)\n", i + alloc->base, MEM_GET_FRAME(src));
+            // LOG(INFO, "Not fully copying page at %016llx (frame: %p)\n", i + alloc->base, MEM_GET_FRAME(src));
         }
         
         // Create the new page in the new directory
@@ -737,6 +737,7 @@ _add_allocation:
     }
 
     vas->allocations++;
+
     return alloc;
 }
 
@@ -749,6 +750,8 @@ _add_allocation:
  */
 vas_t *vas_clone(vas_t *parent) {
     if (!parent) return NULL;
+
+    spinlock_acquire(parent->lock);
 
     // Make a new VAS
     vas_t *vas = kzalloc(sizeof(vas_t));
@@ -780,5 +783,7 @@ vas_t *vas_clone(vas_t *parent) {
         vas->tail = NULL;
     }
 
+
+    spinlock_release(parent->lock);
     return vas;
 }

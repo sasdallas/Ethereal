@@ -267,6 +267,9 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
  
         // Write to circular buffer
         ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
+        
+        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
+        
         if (r) {
             // Acquire lock to push packet data
             spinlock_acquire(usock_target->packet_buffer->lock);
@@ -276,8 +279,6 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             if (usock_target->thr) sleep_wakeup(usock_target->thr);
             fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
         }
-
-        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
 
         return r;
     } else {
