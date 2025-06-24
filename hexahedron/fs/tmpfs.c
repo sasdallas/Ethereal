@@ -285,6 +285,10 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
         }
     }
 
+    if (!entry->file) {
+        LOG(WARN, "Oh shit, entry %p is now corrupt.\n", entry);
+    }
+
     entry->file->length = off + size;
     // LOG(DEBUG, "%s: now using %d blocks (%d bytes)\n", entry->name, entry->file->blk_count, (entry->file->blk_count * TMPFS_BLOCK_SIZE));
     spinlock_release(entry->file->lock);
@@ -314,6 +318,7 @@ fs_node_t *tmpfs_finddir(fs_node_t *node, char *path) {
 
     foreach(child_node, tnode->children) {
         tmpfs_entry_t *target = (tmpfs_entry_t*)((tree_node_t*)child_node->value)->value;
+        if (!target) continue;
         if (!strncmp(target->name, path, 256)) {
             // Match!
             return tmpfs_convertVFS(target);
