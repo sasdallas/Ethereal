@@ -115,6 +115,12 @@ void celestial_handleEvent(void *event) {
     window_t *win = celestial_getWindow(hdr->wid);
     if (!win) { free(event); return; }
 
+    // First drop it into decor, see if it needs anything
+    if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED && !celestial_handleDecorationEvent(win, event)) {
+        free(event);
+        return;
+    }
+
     celestial_event_handler_t handler = (celestial_event_handler_t)hashmap_get(win->event_handler_map, (void*)(uintptr_t)hdr->type);
     if (handler) handler(win, hdr->type, event);
     free(event);

@@ -18,11 +18,15 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <ethereal/celestial/types.h>
+#include <ethereal/celestial/decor.h>
+#include <graphics/gfx.h>
 #include <structs/hashmap.h>
 
 /**** DEFINITIONS ****/
 #define CELESTIAL_DEFAULT_WINDOW_WIDTH      256
 #define CELESTIAL_DEFAULT_WINDOW_HEIGHT     256
+
+#define CELESTIAL_WINDOW_FLAG_DECORATED     0x1
 
 /**** TYPES ****/
 
@@ -30,6 +34,8 @@
  * @brief Celestial window
  */
 typedef struct window {
+    uint8_t flags;                      // Flags
+
     wid_t wid;                          // Window ID
     int32_t x;                          // X
     int32_t y;                          // Y
@@ -39,9 +45,19 @@ typedef struct window {
     key_t key;                          // SHM key for the buffer
     int shmfd;                          // SHM file descriptor
     uint32_t *buffer;                   // Buffer for the window
+    gfx_context_t *ctx;                 // Context for the window
 
-hashmap_t *event_handler_map;       // Window event handler map
+    decor_t *decor;                     // Decorations
+    uint32_t *decor_buffer;             // Decorations buffers
+    decor_window_info_t *info;          // REAL window information. Our macros will use this
+
+    hashmap_t *event_handler_map;       // Window event handler map
 } window_t;
+
+/**** MACROS ****/
+
+#define CELESTIAL_REAL_WIDTH(win) ((win->info ? win->info->width : win->width))
+#define CELESTIAL_REAL_HEIGHT(win) ((win->info ? win->info->height : win->height))
 
 /**** FUNCTIONS ****/
 
@@ -53,6 +69,22 @@ hashmap_t *event_handler_map;       // Window event handler map
  * @returns A window ID or -1 (errno set)
  */
 wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height);
+
+/**
+ * @brief Create a new window in Ethereal (decorated)
+ * @param flags The flags to use when creating the window
+ * @param width Width of the window
+ * @param height Height of the window
+ * @returns A window ID or -1
+ */
+wid_t celestial_createWindow(int flags, size_t width, size_t height);
+
+/**
+ * @brief Set the title of a decorated window
+ * @param window The window to set title of decorated
+ * @param title The title to set
+ */
+void celestial_setTitle(window_t *win, char *title);
 
 /**
  * @brief Get a window object from an ID
@@ -87,5 +119,20 @@ int celestial_startDragging(window_t *win);
  * Usually, unless you have an undecorated window, don't use this.
  */
 int celestial_stopDragging(window_t *win);
+
+/**
+ * @brief Initialize graphics for a window
+ * @param win The window object to initialize graphics for
+ * @param flags Flags to use during context creation
+ * @returns Graphics object
+ */
+gfx_context_t *celestial_initGraphics(window_t *win, int flags);
+
+/**
+ * @brief Get graphical context for a window
+ * @param win The window object to get the graphics context for
+ * @returns Graphics context
+ */
+gfx_context_t *celestial_getGraphicsContext(window_t *win);
 
 #endif

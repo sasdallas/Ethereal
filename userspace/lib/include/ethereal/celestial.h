@@ -18,6 +18,7 @@
 #include <ethereal/celestial/request.h>
 #include <ethereal/celestial/window.h>
 #include <ethereal/celestial/event.h>
+#include <ethereal/celestial/decor.h>
 
 /**** FUNCTIONS ****/
 
