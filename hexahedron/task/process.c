@@ -818,17 +818,16 @@ pid_t process_fork() {
  * @brief waitpid equivalent
  */
 long process_waitpid(pid_t pid, int *wstatus, int options) {
-    // Let's go. wstatus pointer was validated by syscall, so that's not a need to check.
+    if (!current_cpu->current_process->node) {
+        // lol
+        return -ECHILD;
+    }
+
+    // Put ourselves in our wait queue
+    if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
+    list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
+
     for (;;) {
-        if (!current_cpu->current_process->node) {
-            // lol
-            return -ECHILD;
-        }
-
-        // Put ourselves in our wait queue
-        if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
-        list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
-
         // We need this to stop interferance from other threads also trying to waitpid
         spinlock_acquire(&reap_queue_lock);
 
