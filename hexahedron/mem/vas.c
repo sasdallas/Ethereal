@@ -21,6 +21,7 @@
 #include <kernel/mem/pmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/misc/util.h>
+#include <kernel/misc/args.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <string.h>
@@ -630,7 +631,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
     vas_node_t *node = kzalloc(sizeof(vas_node_t));
 
     // Do we support CoW?
-    if (!(vas->flags & VAS_NO_COW)) {
+    // TODO: Perform CoW in thread stacks - this was bugging out for some reason
+    if (!(vas->flags & VAS_NO_COW) && !kargs_has("--disable-cow") && source->type != VAS_ALLOC_THREAD_STACK) {
         // Yes, do this to be copy on write
         alloc = source;
         
