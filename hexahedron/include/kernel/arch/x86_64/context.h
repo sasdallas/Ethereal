@@ -29,7 +29,7 @@ typedef struct arch_context {
     uintptr_t r14;      // R14
     uintptr_t r15;      // R15
 
-    uintptr_t gsbase;   // GSBASE
+    uintptr_t fsbase;   // FSBASE (TLS)
 
     uintptr_t rip;      // Instruction pointer
 } arch_context_t;
@@ -62,6 +62,7 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context);
 #define IP(context) (context.rip)
 #define SP(context) (context.rsp)
 #define BP(context) (context.rbp)
+#define TLSBASE(context) (context.fsbase)
 
 #define REGS_IP(regs) (regs->rip)
 #define REGS_SP(regs) (regs->rsp)

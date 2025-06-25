@@ -97,6 +97,7 @@ typedef struct process {
     page_t *dir;                        // Page directory
     struct _registers *regs;            // Dirty hack. See process_fork
     arch_context_t sigctx;              // Signal handler context
+    pid_t tid_next;                     // Next TID to use
 } process_t;
 
 /**** FUNCTIONS ****/
@@ -204,5 +205,17 @@ long process_waitpid(pid_t pid, int *wstatus, int options);
  * @returns The process if found, otherwise NULL
  */
 process_t *process_getFromPID(pid_t pid);
+
+/**
+ * @brief Add a new thread to the current process (sort of similar to clone())
+ * @param stack The stack of the thread to add
+ * @param tls (Optional) Thread local stack
+ * @param entry The thread entrypoint
+ * @param arg An argument to the thread
+ * @returns ID of the new thread
+ * 
+ * If @c tls is 0x0, then the TLS of the current thread will be used.
+ */
+pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 
 #endif

@@ -25,9 +25,7 @@ _Begin_C_Header
 
 /**** TYPES ****/
 
-typedef struct __pthread {
-    unsigned int tid                // Thread ID
-} pthread_t;
+typedef unsigned long pthread_t;
 
 /* ATTRIBUTES */
 

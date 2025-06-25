@@ -48,7 +48,7 @@ arch_save_context:
         - R13: 32
         - R14: 40
         - R15: 48
-        - GSBASE: 56
+        - FSBASE: 56
         - RIP: 64
     */
 
@@ -64,7 +64,7 @@ arch_save_context:
     movq %r14, 40(%rdi)
     movq %r15, 48(%rdi)
 
-    /* We need to read from the GSBASE MSR - 0xC0000100 */
+    /* We need to read from the FSBASE MSR - 0xC0000100 */
     movq $0xC0000100, %rcx
     rdmsr
 
@@ -91,7 +91,7 @@ arch_load_context:
         - R13: 32
         - R14: 40
         - R15: 48
-        - GSBASE: 56
+        - FSBASE: 56
         - RIP: 64
     */
     movq 0(%rdi), %rsp
@@ -102,7 +102,7 @@ arch_load_context:
     movq 40(%rdi), %r14
     movq 48(%rdi), %r15
 
-    /* Restore GSBASE */
+    /* Restore FSBASE */
     movl 56(%rdi), %eax
     movl 60(%rdi), %edx
     movq $0xC0000100, %rcx

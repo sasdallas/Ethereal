@@ -299,9 +299,9 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     }
 
     // Create process' kernel stack
-    process->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
+    // process->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
     // memset((void*)process->kstack - PROCESS_KSTACK_SIZE, 0, PROCESS_KSTACK_SIZE*2);
-    dprintf(DEBUG, "Process '%s' has had its kstack %p allocated in page directory %p\n", name, process->kstack, current_cpu->current_dir);
+    // dprintf(DEBUG, "Process '%s' has had its kstack %p allocated in page directory %p\n", name, process->kstack, current_cpu->current_dir);
     
     // Make directory
     if (process->flags & PROCESS_KERNEL) {
@@ -356,15 +356,15 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 
     if (process_list) list_append(process_list, (void*)process);
 
-#ifdef __ARCH_I386__
-    // !!!: very dirty hack
-    // !!!: resets pages in process->kstack to be global, meaning they won't be invalidated when the TLB flushes (mem_switchDirectory)
-    // !!!: this is bad. kernel allocations should be global in all directories. they are in i386, but stacks cant be handled by its current system.
-    for (uintptr_t i = (process->kstack - PROCESS_KSTACK_SIZE); i < process->kstack; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
-        if (pg) pg->bits.global = 1;
-    }
-#endif
+// #ifdef __ARCH_I386__
+//     // !!!: very dirty hack
+//     // !!!: resets pages in process->kstack to be global, meaning they won't be invalidated when the TLB flushes (mem_switchDirectory)
+//     // !!!: this is bad. kernel allocations should be global in all directories. they are in i386, but stacks cant be handled by its current system.
+//     for (uintptr_t i = (process->kstack - PROCESS_KSTACK_SIZE); i < process->kstack; i += PAGE_SIZE) {
+//         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
+//         if (pg) pg->bits.global = 1;
+//     }
+// #endif
 
     return process;
 }
@@ -470,7 +470,7 @@ void process_destroy(process_t *proc) {
     fd_destroyTable(proc);
     // if (proc->dir) mem_destroyVAS(proc->dir);
     if (proc->vas) vas_destroy(proc->vas);
-    mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
+    // mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
     if (proc->node) {
@@ -721,6 +721,14 @@ void process_exit(process_t *process, int status_code) {
         foreach(thread_node, process->thread_list) {
             if (thread_node->value) {
                 thread_t *thr = (thread_t*)thread_node->value;
+          
+                // If the thread is already stopped, then that means it was waited on before and we can destroy it now
+                if (thr->status & THREAD_STATUS_STOPPED) {
+                    thread_destroy(thr);
+                    continue;
+                }
+
+                // Else, mark the thread as stopping and let the scheduler catch it.
                 __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
             }
         }
@@ -787,7 +795,7 @@ pid_t process_fork() {
     
     // Configure context of child thread
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
-    SP(child->main_thread->context) = child->kstack;
+    SP(child->main_thread->context) = child->main_thread->kstack;
     BP(child->main_thread->context) = SP(child->main_thread->context);
     
     // Push the registers onto the stack
@@ -867,7 +875,8 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 if (wstatus) *wstatus = WSTATUS_EXITED | (child->exit_status << WSTATUS_EXITCODE);
 
                 if (!PROCESS_IN_USE(child)) {
-                    process_destroy(child);
+                    list_append(reap_queue, child);
+                    sleep_wakeup(reaper_proc->main_thread);
                 }
 
                 spinlock_release(&reap_queue_lock);
@@ -893,4 +902,55 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }
+}
+
+/**
+ * @brief Add a new thread to the currnet process (sort of similar to clone())
+ * @param stack The stack of the thread to add
+ * @param tls (Optional) Thread local stack
+ * @param entry The thread entrypoint
+ * @param arg An argument to the thread
+ * @returns ID of the new thread
+ * 
+ * If @c tls is 0x0, then the TLS of the current thread will be used.
+ */
+pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
+    if (!current_cpu->current_process->thread_list) current_cpu->current_process->thread_list = list_create("process thread list");
+    thread_t *thr = thread_create(current_cpu->current_process, current_cpu->current_process->dir, (uintptr_t)entry, THREAD_FLAG_CHILD);
+    thr->stack = stack; // Fix stack
+    list_append(current_cpu->current_process->thread_list, thr);
+
+    // Boom, we have a thread. That was easy, right?
+    // Well, unfortunately we have to steal the hack from fork() and use arch_restore_context
+
+    // Configure context of child thread
+    IP(thr->context) = (uintptr_t)&arch_restore_context;
+    SP(thr->context) = thr->kstack;
+    BP(thr->context) = thr->kstack;
+    TLSBASE(thr->context) = (tls == 0x0) ? TLSBASE(current_cpu->current_thread->context) : tls;
+
+    // Make some registers
+    struct _registers r;
+    memcpy(&r, current_cpu->current_process->regs, sizeof(struct _registers));
+
+#ifdef __ARCH_I386__
+    THREAD_PUSH_STACK(thr->stack, void*, arg);
+#elif defined(__ARCH_X86_64__)
+    r.rdi = (uint64_t)arg;
+#elif defined(__ARCH_AARCH64__)
+    r.x0 = (uint64_t)arg;
+#else
+    #error "Please handle this"
+#endif
+
+    // Update registers
+    REGS_IP((&r)) = (uintptr_t)entry;
+    REGS_SP((&r)) = thr->stack;
+    REGS_BP((&r)) = thr->stack;
+
+    THREAD_PUSH_STACK(SP(thr->context), struct _registers, r);
+
+    scheduler_insertThread(thr);
+
+    return thr->tid;
 }

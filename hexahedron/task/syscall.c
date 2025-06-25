@@ -78,7 +78,13 @@ static syscall_func_t syscall_table[] = {
     [SYS_PIPE]              = (syscall_func_t)(uintptr_t)sys_pipe,
     [SYS_SHARED_NEW]        = (syscall_func_t)(uintptr_t)sys_ethereal_shared_new,
     [SYS_SHARED_KEY]        = (syscall_func_t)(uintptr_t)sys_ethereal_shared_key,
-    [SYS_SHARED_OPEN]       = (syscall_func_t)(uintptr_t)sys_ethereal_shared_open
+    [SYS_SHARED_OPEN]       = (syscall_func_t)(uintptr_t)sys_ethereal_shared_open,
+    [SYS_CREATE_THREAD]     = (syscall_func_t)(uintptr_t)sys_create_thread,
+    [SYS_GETTID]            = (syscall_func_t)(uintptr_t)sys_gettid,
+    [SYS_SETTLS]            = (syscall_func_t)(uintptr_t)sys_settls,
+    [SYS_EXIT_THREAD]       = (syscall_func_t)(uintptr_t)sys_exit_thread,
+    [SYS_JOIN_THREAD]       = (syscall_func_t)(uintptr_t)sys_join_thread,
+    [SYS_KILL_THREAD]       = (syscall_func_t)(uintptr_t)sys_kill_thread
 }; 
 
 
@@ -617,7 +623,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
         if (ready & events) {
             // Oh, we already have a hit! :D
-            LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
             return 1;
         } 
@@ -642,7 +648,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     // Enter sleep state
     int wakeup = sleep_enter();
 
-    LOG(INFO, "Woken up from a poll due to reason %d\n", wakeup);
+    // LOG(INFO, "Woken up from a poll due to reason %d\n", wakeup);
     if (wakeup == WAKEUP_SIGNAL) return -EINTR;
     if (wakeup == WAKEUP_TIME) return 0;
 
@@ -652,7 +658,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
 
         if (ready & events) {
-            LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
             return 1;
         } 

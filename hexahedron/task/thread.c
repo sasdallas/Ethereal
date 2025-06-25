@@ -37,6 +37,7 @@ static thread_t *thread_createStructure(process_t *parent, page_t *dir, int stat
     thr->status = status;
     thr->dir = dir;
     thr->flags = flags;
+    thr->tid = parent->tid_next++;
 
     // Thread ticks aren't updated because they should ONLY be updated when scheduler_insertThread is called
     return thr;
@@ -58,6 +59,9 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
     page_t *prev_dir = current_cpu->current_dir;
     mem_switchDirectory(dir);
 
+    // Allocate a kstack for the thread
+    thr->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
+
     if (!(flags & THREAD_FLAG_KERNEL) ) {
         // Allocate usermode stack 
         // !!!: This will need a lot of work done for when supporting multiple threads is ready
@@ -71,7 +75,7 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
         }
     } else {
         // Don't bother, use the parent's kernel stack
-        thr->stack = parent->kstack; 
+        thr->stack = thr->kstack; 
     }
 
     // Initialize thread context
@@ -92,14 +96,8 @@ int thread_destroy(thread_t *thr) {
 
     // TODO: Free memory
 
-    // // Free the thread's stack
-    // for (uintptr_t i = thr->stack - THREAD_STACK_SIZE; i < thr->stack; i += PAGE_SIZE) {
-    //     page_t *pg = mem_getPage(thr->dir, i, MEM_DEFAULT);
-    //     if (pg) {
-    //         // Bomb it
-    //         mem_freePage(pg);
-    //     }
-    // }
+    // Free the thread's stack
+    // mem_free(thr->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP);
 
     LOG(INFO, "Thread %p has exited successfully\n", thr);
 

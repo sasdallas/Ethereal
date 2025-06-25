@@ -14,6 +14,7 @@
 #include <kernel/task/syscall.h>
 #include <kernel/task/fd.h>
 #include <kernel/fs/shared.h>
+#include <kernel/arch/arch.h>
 #include <kernel/debug.h>
 
 /* Log method */
@@ -32,4 +33,94 @@ key_t sys_ethereal_shared_key(int fd) {
 
 long sys_ethereal_shared_open(key_t key) {
     return sharedfs_openFromKey(current_cpu->current_process, key);
+}
+
+/**** PTHREAD API ****/
+
+long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
+    return process_createThread(stack, tls, entry, arg);   
+}
+
+long sys_exit_thread(void *retval) {
+    // Notify joined threads of our exit
+    spinlock_acquire(&current_cpu->current_thread->joiner_lck);
+
+    current_cpu->current_thread->retval = retval;
+
+    if (current_cpu->current_thread->joiners) {
+        foreach(thr_node, current_cpu->current_thread->joiners) {
+            sleep_wakeup(((thread_t*)thr_node->value));
+        }
+    }
+
+    // Mark this thread as stopped
+    __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPED);
+    spinlock_release(&current_cpu->current_thread->joiner_lck);
+
+    // Bye thread
+    process_yield(0);
+    return -1;
+}
+
+pid_t sys_gettid() {
+    return current_cpu->current_thread->tid;
+}
+
+int sys_settls(uintptr_t tls) {
+    SYSCALL_VALIDATE_PTR(tls);
+
+    // Context won't reflect until next save/load cycle
+    arch_set_tlsbase(tls);
+    return 0;
+}
+
+
+long sys_join_thread(pid_t tid, void **retval) {
+    // Find the thread by the TID
+    if (!current_cpu->current_process->thread_list) return -ESRCH; // Can't join the main thread, buddy.
+    if (retval) SYSCALL_VALIDATE_PTR(retval);
+
+    thread_t *target = NULL;
+    foreach(t_node, current_cpu->current_process->thread_list) {
+        thread_t *t = (thread_t*)t_node->value;
+        if (t->tid == tid) {
+            target = t;
+            break;
+        }
+    }
+
+    if (!target) return -ESRCH;
+    if (target == current_cpu->current_thread) return -EDEADLK; // Nice try wise guy
+
+    spinlock_acquire(&target->joiner_lck);
+
+    // Has the thread exited already?
+    if (target->status & THREAD_STATUS_STOPPED) {
+        // Yep, set retval and let it go
+        spinlock_release(&target->joiner_lck);
+        
+        if (retval) *retval = target->retval;
+        return 0;
+    }
+
+    // Nope, we should add ourselves to the queue
+    if (!target->joiners) target->joiners = list_create("thread joiners");
+    sleep_untilNever(current_cpu->current_thread);
+    list_append(target->joiners, current_cpu->current_thread);
+    spinlock_release(&target->joiner_lck);
+
+    // Enter sleep
+    int w = sleep_enter();
+
+    // TODO: Spec says NEVER to do this...
+    if (w == WAKEUP_SIGNAL) return -EINTR;
+
+    // Ok, set retval
+    if (retval) *retval = target->retval;
+    return 0;
+}
+
+long sys_kill_thread(pid_t tid, int sig) {
+    LOG(ERR, "sys_kill_thread: UNIMPL\n");
+    return 0;
 }

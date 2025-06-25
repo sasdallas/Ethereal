@@ -167,4 +167,12 @@ void arch_say_hello(int is_debug);
  */
 void arch_mount_kernelfs();
 
+/**
+ * @brief Set the usermode TLS base
+ * @param tls The TLS base to set
+ * 
+ * This should also reflect in the context when saved/restored
+ */
+void arch_set_tlsbase(uintptr_t tls);
+
 #endif

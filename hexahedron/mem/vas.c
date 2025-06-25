@@ -404,7 +404,6 @@ vas_node_t *vas_get(vas_t *vas, uintptr_t address) {
  */
 int vas_destroy(vas_t *vas) {
     if (!vas) return 1;
-    spinlock_acquire(vas->lock);
 
     vas_node_t *nn = vas->head;
     while (nn) {
@@ -418,7 +417,6 @@ int vas_destroy(vas_t *vas) {
     }
 
     kfree(vas);
-    spinlock_destroy(vas->lock);
 
     return 0;
 }
@@ -718,7 +716,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }
 
-    LOG(DEBUG, "Copied allocation [%s] [%p] successfully (no CoW)\n", vas_typeToString(alloc->type), alloc);
+    LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p (no CoW)\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);
 
 
 _add_allocation:

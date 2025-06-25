@@ -60,7 +60,7 @@ int arch_from_usermode(registers_t *registers, extended_registers_t *extended) {
  */
 void arch_prepare_switch(struct thread *thread) {
     // Ask HAL to nicely load the kstack
-    hal_loadKernelStack(thread->parent->kstack);
+    hal_loadKernelStack(thread->kstack);
 }
 
 /**

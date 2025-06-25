@@ -16,6 +16,7 @@
 #include <sys/ethereal/thread.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
 
@@ -28,12 +29,11 @@ struct __pthread_startup_context {
 
 __attribute__((naked)) void *__pthread_startup(void *arg) {
     struct __pthread_startup_context *ctx = (struct __pthread_startup_context*)arg;
-    ctx->entry(ctx->argument);
-    for (;;);
-    
-    return NULL;
+    pthread_exit(ctx->entry(ctx->argument));
+    __builtin_unreachable();
 }
 
+/**** OTHER PTHREAD FUNCTIONS ****/
 
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(void *), void *arg) {
     // First, create a stack for the new thread
@@ -55,9 +55,15 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     };
 
     // Now make a new thread
-    return ethereal_createThread((uintptr_t)stk + stack_size, 0x0, __pthread_startup, &ctx);
+    pid_t tid = ethereal_createThread((uintptr_t)stk + stack_size, 0x0, __pthread_startup, &ctx);
+    if (tid >= 0) *thread = (pthread_t)tid;
+    return (tid >= 0) ? 0 : -1;
 }
 
 __attribute__((noreturn)) void pthread_exit(void *retval) {
     ethereal_exitThread(retval);
+}
+
+int pthread_join(pthread_t thr, void **retval) {
+    return ethereal_joinThread(thr, retval);
 }

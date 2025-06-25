@@ -26,6 +26,7 @@ typedef struct arch_context {
     uintptr_t ebx;  // EBX
     uintptr_t edi;  // EDI
     uintptr_t esi;  // ESI
+    uintptr_t tls;  // TLS
     uintptr_t eip;  // Instruction pointer
 } __attribute__((packed)) arch_context_t;
 
@@ -57,6 +58,7 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context);
 #define IP(context) (context.eip)
 #define SP(context) (context.esp)
 #define BP(context) (context.ebp)
+#define TLSBASE(context) (context.tls)
 
 #define REGS_IP(regs) (regs->eip)
 #define REGS_SP(regs) (regs->esp)

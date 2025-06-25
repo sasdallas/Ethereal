@@ -50,7 +50,8 @@ arch_save_context:
         - EBX: 8
         - EDI: 12
         - ESI: 16
-        - EIP: 20
+        - TLS: 20
+        - EIP: 24
     */
 
     /* Load structure -> ECX */
@@ -68,7 +69,7 @@ arch_save_context:
 
     /* Load IP */
     movl 0(%esp), %eax
-    movl %eax, 20(%ecx)
+    movl %eax, 24(%ecx)
 
     /* Clear EAX for return value */
     xor %eax, %eax
@@ -83,7 +84,8 @@ arch_load_context:
         - EBX: 8
         - EDI: 12
         - ESI: 16
-        - EIP: 20
+        - TLS: 20
+        - EIP: 24
     */
 
     /* Load structure -> ECX */
@@ -98,7 +100,7 @@ arch_load_context:
 
     /* arch_save_context returns twice, load that second return value in */
     movl $1, %eax
-    jmpl *20(%ecx)
+    jmpl *24(%ecx)
 
 /* Enter kernel thread */
 .global arch_enter_kthread

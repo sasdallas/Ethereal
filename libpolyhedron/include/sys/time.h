@@ -21,6 +21,7 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <sys/types.h>
+#include <sys/select.h>
 
 /**** TYPES ****/
 

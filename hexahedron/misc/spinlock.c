@@ -50,7 +50,7 @@ void spinlock_destroy(spinlock_t *spinlock) {
  * Will spin around until we acquire the lock
  */
 void spinlock_acquire(spinlock_t *spinlock) {
-    if (spinlock->cpu == arch_current_cpu()) return; // We already own this CPU
+    // if (spinlock->cpu == arch_current_cpu()) return; // We already own this CPU
     while (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
         // TODO: CPU pause
     }

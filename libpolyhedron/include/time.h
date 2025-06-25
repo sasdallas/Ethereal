@@ -48,6 +48,10 @@ struct tm {
 
 #define CLOCKS_PER_SEC 1000000
 
+/**** VARIABLES ****/
+
+extern long timezone;
+
 /**** FUNCTIONS ****/
 
 extern struct tm *localtime(const time_t *ptr);

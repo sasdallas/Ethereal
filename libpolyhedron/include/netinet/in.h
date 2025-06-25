@@ -22,7 +22,14 @@ _Begin_C_Header
 /**** INCLUDES ****/
 #include <stdint.h>
 
+/**** DEFINITIONS ****/
+
+#define INADDR_ANY              0
+#define INADDR_NONE             0xFFFFFFFF
+#define INADDR_LOOPBACK         0x7F000001
+
 /**** TYPES ****/
+
 typedef uint16_t in_port_t;
 typedef uint32_t in_addr_t;
 

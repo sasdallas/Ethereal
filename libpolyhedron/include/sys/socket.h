@@ -64,10 +64,20 @@ _Begin_C_Header
 #define SHUT_WR             3
 
 /* IP protocols */
+/* TODO: Move to netinet/in.h */
 #define IPPROTO_IP          0
 #define IPPROTO_ICMP        1
 #define IPPROTO_TCP         6
 #define IPPROTO_UDP         17
+
+/* Message flags */
+#define MSG_CTRUNC          0x01
+#define MSG_DONTROUTE       0x02
+#define MSG_EOR             0x04
+#define MSG_OOB             0x08
+#define MSG_PEEK            0x10
+#define MSG_TRUNC           0x20
+#define MSG_WAITALL         0x40
 
 /**** TYPES ****/
 typedef size_t socklen_t;
@@ -86,6 +96,16 @@ typedef struct msghdr {
     void            *msg_control;       // Ancillary data
     socklen_t       msg_controllen;     // Ancillary data buffer length
     int             msg_flags;          // Flags on received message
+};
+
+struct sockaddr_storage {
+    sa_family_t     ss_family;
+    char            ss_storage[256];
+};
+
+struct linger {
+    int     l_onoff;                    // Indicates whether linger option is enabled
+    int     l_linger;                   // Linger time
 };
 
 /**** FUNCTIONS ****/

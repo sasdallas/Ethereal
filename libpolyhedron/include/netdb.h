@@ -21,6 +21,7 @@ _Begin_C_Header
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 
 /**** DEFINITIONS ****/
 
@@ -36,6 +37,16 @@ _Begin_C_Header
 #define NO_DATA             2
 #define NO_RECOVERY         3
 #define TRY_AGAIN           4
+
+#define NI_NOFQDN           0x01
+#define NI_NUMERICHOST      0x02
+#define NI_NAMEREQD         0x04
+#define NI_NUMERICSERV      0x08
+#define NI_NUMERICSCOPE     0x10
+#define NI_DGRAM            0x20
+
+#define NI_MAXHOST          1025
+#define NI_MAXSERV          32
 
 /**** TYPES ****/
 

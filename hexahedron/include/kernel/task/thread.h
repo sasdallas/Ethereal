@@ -19,6 +19,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/mem/mem.h>
 #include <kernel/task/sleep.h>
+#include <sys/types.h>
 
 /**** DEFINITIONS ****/
 
@@ -65,8 +66,18 @@ typedef struct thread {
     arch_context_t context;     // Thread context (defined by architecture)
     uint8_t fp_regs[512] __attribute__((aligned(16))); // FPU registers (TEMPORARY - should be moved into arch_context?)
 
+    // OTHER
     page_t *dir;                // Page directory for the thread
-    uintptr_t stack;            // Thread stack (kernel will load parent->kstack in TSS)
+    uintptr_t stack;            // Thread stack (kernel will load kstack in TSS)
+    uintptr_t kstack;           // Kernel stack
+    
+    // PTHREAD RELATED
+    pid_t tid;                  // Thread ID
+    list_t *joiners;            // List of joiners
+    void *retval;               // Return value of the thread
+                                // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
+                                // NOTE: except the actual object itself, until the process exits.
+    spinlock_t joiner_lck;      // Joiner lock
 } thread_t;
 
 

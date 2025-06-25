@@ -61,7 +61,7 @@ int arch_from_usermode(registers_t *registers, extended_registers_t *extended) {
  */
 void arch_prepare_switch(struct thread *thread) {
     // Ask HAL to nicely load the kstack
-    hal_loadKernelStack(thread->parent->kstack);
+    hal_loadKernelStack(thread->kstack);
 }
 
 /**
@@ -166,4 +166,14 @@ void arch_mount_kernelfs() {
 			kernelfs_createEntry(dir, name, arch_cpu_kernelfs, &processor_data[i]);
 		}
 	}
+}
+
+/**
+ * @brief Set the usermode TLS base
+ * @param tls The TLS base to set
+ * 
+ * This should also reflect in the context when saved/restored
+ */
+void arch_set_tlsbase(uintptr_t tls) {
+	asm volatile ("wrmsr" : : "c"(0xc0000100), "d"((uint32_t)(tls >> 32)), "a"((uint32_t)(tls & 0xFFFFFFFF)));
 }
