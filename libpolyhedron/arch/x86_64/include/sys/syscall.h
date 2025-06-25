@@ -127,18 +127,21 @@ _Begin_C_Header
 #define DEFINE_SYSCALL4(name, num, p1_type, p2_type, p3_type, p4_type) \
     long __syscall_##name(p1_type p1, p2_type p2, p3_type p3, p4_type p4) { \
         long __return_value = num;\
+        register long _p4 __asm__("r10") = (long)p4; \
         asm volatile (SYSCALL_INSTRUCTION \
             : "=a"(__return_value) \
-            : "a"(__return_value), "D"((long)(p1)), "S"((long)(p2)), "d"((long)(p3)), "r"((long)(p4)) : SYSCALL_CLOBBERS); \
+            : "a"(__return_value), "D"((long)(p1)), "S"((long)(p2)), "d"((long)(p3)), "r"((long)(_p4)) : SYSCALL_CLOBBERS); \
         return __return_value;  \
     }
 
 #define DEFINE_SYSCALL5(name, num, p1_type, p2_type, p3_type, p4_type, p5_type) \
     long __syscall_##name(p1_type p1, p2_type p2, p3_type p3, p4_type p4, p5_type p5) { \
         long __return_value = num;\
+        register long _p4 __asm__("r10") = (long)p4; \
+        register long _p5 __asm__("r8") = (long)p5; \
         asm volatile (SYSCALL_INSTRUCTION \
             : "=a"(__return_value) \
-            : "a"(__return_value), "D"((long)(p1)), "S"((long)(p2)), "d"((long)(p3)), "r"((long)(p4)), "r"((long)(p5)) : SYSCALL_CLOBBERS); \
+            : "a"(__return_value), "D"((long)(p1)), "S"((long)(p2)), "d"((long)(p3)), "r"((long)(_p4)), "r"((long)(_p5)) : SYSCALL_CLOBBERS); \
         return __return_value;  \
     }
 
