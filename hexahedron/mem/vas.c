@@ -408,7 +408,6 @@ int vas_destroy(vas_t *vas) {
 
     vas_node_t *nn = vas->head;
     while (nn) {
-        // TODO: mem_destroyVAS already frees memory so we need to move that to here (for CoW and more)
         vas_node_t *next = nn->next;
         vas_free(vas, nn, 0);
         nn = next;
@@ -632,7 +631,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
     // Do we support CoW?
     // TODO: Perform CoW in thread stacks - this was bugging out for some reason
-    if (!(vas->flags & VAS_NO_COW) && !kargs_has("--disable-cow") && source->type != VAS_ALLOC_THREAD_STACK) {
+    if (!(vas->flags & VAS_NO_COW) && !kargs_has("--disable-cow") && source->type != VAS_ALLOC_EXECUTABLE && source->type != VAS_ALLOC_THREAD_STACK) {
         // Yes, do this to be copy on write
         alloc = source;
         
@@ -685,8 +684,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
     // Iterate through allocation pages
     for (uintptr_t i = 0; i < alloc->size; i += PAGE_SIZE) {
         page_t *src = mem_getPage(parent_vas->dir, alloc->base + i, MEM_DEFAULT);
-        if (!src || !PAGE_IS_PRESENT(src)) continue;  
-
+        if (!src || !PAGE_IS_PRESENT(src)) continue;
+        
         // Get a frame for a new page
         uintptr_t new_frame = 0x0;
 
@@ -718,6 +717,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
         LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }
+
+    LOG(DEBUG, "Copied allocation [%s] [%p] successfully (no CoW)\n", vas_typeToString(alloc->type), alloc);
 
 
 _add_allocation:

@@ -281,7 +281,7 @@ void video_clearScreen(color_t bg) {
  */
 void video_updateScreen() {
     if (video_ks) return;
-    if (current_driver != NULL && current_driver->update) {
+    if (video_framebuffer != current_driver->videoBuffer && current_driver && current_driver->update) {
         current_driver->update(current_driver, video_framebuffer);
     }
 }

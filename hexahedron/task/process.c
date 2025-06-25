@@ -437,7 +437,7 @@ process_t *process_spawnIdleTask() {
 void process_destroy(process_t *proc) {
     if (!proc || !(proc->flags & PROCESS_STOPPED)) return;
 
-    LOG(DEBUG, "Destroying process \"%s\"...\n", proc->name);
+    LOG(DEBUG, "Destroying process \"%s\" (%p)...\n", proc->name, proc);
 
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
@@ -458,7 +458,7 @@ void process_destroy(process_t *proc) {
             }
         }
 
-        // if (prev) process_removeMapping(proc, prev);
+        if (prev) process_removeMapping(proc, prev);
         list_destroy(proc->mmap, false);
     }
 
@@ -475,7 +475,6 @@ void process_destroy(process_t *proc) {
     if (proc->thread_list) list_destroy(proc->thread_list, false);
     if (proc->node) {
         tree_remove(process_tree, proc->node);
-        kfree(proc->node);
     }
 
     kfree(proc->wd_path);
