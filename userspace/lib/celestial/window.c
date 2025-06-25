@@ -54,6 +54,13 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
 
     wid_t wid = resp->id;
     free(resp);
+
+    // Get window object
+    window_t *win = celestial_getWindow(wid);
+
+    // Ready to start receiving events
+    celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
+
     return wid;
 }
 
@@ -101,7 +108,6 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
 
     // Now we need to create a window object
     window_t *win = celestial_getWindow(wid);
-    win->flags |= CELESTIAL_WINDOW_FLAG_DECORATED;
 
     // Setup real info
     win->info = malloc(sizeof(decor_window_info_t));
@@ -117,6 +123,12 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
     // Fix window width and height
     win->width = width;
     win->height = height;
+
+    // Now update flags so decoration functions start running
+    win->flags |= CELESTIAL_WINDOW_FLAG_DECORATED;
+
+    // Ready to start receiving events
+    celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
 
     return wid;
 }
@@ -307,4 +319,118 @@ gfx_context_t *celestial_initGraphics(window_t *win, int flags) {
 gfx_context_t *celestial_getGraphicsContext(window_t *win) {
     if (!win->ctx) return celestial_initGraphics(win, CTX_DEFAULT);
     return win->ctx;
+}
+
+/**
+ * @brief Set the position of a window
+ * @param win The window object to set position of
+ * @param x The X position to set for the window
+ * @param y The Y position to set for the window
+ * @returns 0 on success
+ */
+int celestial_setWindowPosition(window_t *win, int32_t x, int32_t y) {
+    int32_t x_adjusted = (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) ? x - win->decor->borders.left_width : x;
+    int32_t y_adjusted = (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) ? y - win->decor->borders.top_height : y;
+    
+    celestial_req_set_window_pos_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_set_window_pos_t),
+        .type = CELESTIAL_REQ_SET_WINDOW_POS,
+        .wid = win->wid,
+        .x = x_adjusted,
+        .y = y_adjusted,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1; 
+
+    // Wait for a response
+    celestial_resp_set_window_pos_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_WINDOW_POS);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    // Update window positioning
+    if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+        win->info->x = resp->x;
+        win->info->y = resp->y;
+
+        win->x = resp->x + win->decor->borders.left_width;
+        win->y = resp->y + win->decor->borders.top_height; 
+    } else {
+        win->x = resp->x;
+        win->y = resp->y;
+    }
+
+    free(resp);
+    return 0;
+}
+
+
+/**
+ * @brief Set the Z array of a window
+ * @param win The window to set the Z array of
+ * @param z The Z array to set
+ * @returns 0 on success
+ */
+int celestial_setZArray(window_t *win, int z) {
+    celestial_req_set_z_array_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_set_z_array_t),
+        .type = CELESTIAL_REQ_SET_Z_ARRAY,
+        .wid = win->wid,
+        .array = z,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1;
+
+    // Wait for a resonse
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_Z_ARRAY);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Flip a window (specific region)
+ * @param win The window to flip
+ * @param x The X-coordinate of start region
+ * @param y The Y-coordinate of start region
+ * @param width The width of the region
+ * @param heigth The height of the region
+ */
+void celestial_flipRegion(window_t *win, int32_t x, int32_t y, size_t width, size_t height) {
+    // if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) x += win->decor->borders.left_width;
+    // if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) y += win->decor->borders.top_height;
+    
+    celestial_req_flip_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_flip_t),
+        .type = CELESTIAL_REQ_FLIP,
+        .wid = win->wid,
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height
+    };
+
+    // Send the request
+    // For a flip request, we don't wait for a response
+    celestial_sendRequest(&req, req.size);
+}
+
+/**
+ * @brief Flip/update a window
+ * @param win The window to flip
+ */
+void celestial_flip(window_t *win) {
+    // Render everything
+    if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) celestial_flipRegion(win, 0, 0, win->info->width, win->info->height);
+    else celestial_flipRegion(win, 0, 0, win->width, win->height);
 }

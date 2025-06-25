@@ -83,8 +83,11 @@ void socket_accept() {
  * @returns 0 on success
  */
 int socket_send(int sock, size_t size, void *packet) {
+    uint64_t start = now();
     ssize_t r = send(sock, packet, size, 0);
     if (r < 0) return -1;
+    CELESTIAL_DEBUG("socket: Send response took %016llX ticks\n", now() - start);
+
     return 0;
 }
 
@@ -96,7 +99,8 @@ int socket_send(int sock, size_t size, void *packet) {
  */
 int socket_sendResponse(int sock, void *resp) {
     CELESTIAL_DEBUG("socket: Send response %d\n", ((celestial_req_header_t*)resp)->type);
-    return socket_send(sock, ((celestial_req_header_t*)resp)->size, resp);
+    int r = socket_send(sock, ((celestial_req_header_t*)resp)->size, resp);
+    return r;
 }
 
 /**
@@ -156,6 +160,10 @@ void socket_handle(int sock) {
         CELESTIAL_VALIDATE(celestial_req_create_window_t, CELESTIAL_REQ_CREATE_WINDOW);
         CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_CREATE_WINDOW\n");
         celestial_req_create_window_t *req = (celestial_req_create_window_t*)hdr;
+
+        if (req->width > GFX_WIDTH(WM_GFX)) req->width = GFX_WIDTH(WM_GFX);
+        if (req->height > GFX_HEIGHT(WM_GFX)) req->height = GFX_HEIGHT(WM_GFX); 
+
         wm_window_t *new_win = window_new(sock, req->flags, req->width, req->height);
         
         // Construct response
@@ -192,6 +200,34 @@ void socket_handle(int sock) {
 
         socket_sendResponse(sock, &resp);
         return;
+    } else if (hdr->type == CELESTIAL_REQ_SET_WINDOW_POS) {
+        // Get window info request
+        CELESTIAL_VALIDATE(celestial_req_set_window_pos_t, CELESTIAL_REQ_SET_WINDOW_POS);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_SET_WINDOW_POS\n");
+        celestial_req_set_window_pos_t *req = (celestial_req_set_window_pos_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_SET_WINDOW_POS, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_SET_WINDOW_POS, EPERM);
+
+        // Adjust bounds
+        wm_window_t *win = WID(req->wid);
+        if (req->x < 0) req->x = 0;
+        if (req->x + win->width > GFX_WIDTH(WM_GFX)) req->x = GFX_WIDTH(WM_GFX) - win->width;
+        if (req->y < 0) req->y = 0;
+        if (req->y + win->height > GFX_HEIGHT(WM_GFX)) req->y = GFX_HEIGHT(WM_GFX) - win->height;
+
+        win->x = req->x;
+        win->y = req->y;
+
+        celestial_resp_set_window_pos_t resp = {
+            .magic = CELESTIAL_MAGIC,
+            .size = sizeof(celestial_resp_set_window_pos_t),
+            .type = CELESTIAL_REQ_SET_WINDOW_POS,
+            .x = win->x,
+            .y = win->y
+        };
+
+        socket_sendResponse(sock, &resp);
+        return;
     } else if (hdr->type == CELESTIAL_REQ_SUBSCRIBE) {
         // Subscribe request
         CELESTIAL_VALIDATE(celestial_req_subscribe_t, CELESTIAL_REQ_SUBSCRIBE);
@@ -204,6 +240,17 @@ void socket_handle(int sock) {
         win->events |= req->events;
 
         return socket_ok(sock, CELESTIAL_REQ_SUBSCRIBE);
+    } else if (hdr->type == CELESTIAL_REQ_UNSUBSCRIBE) {
+        CELESTIAL_VALIDATE(celestial_req_unsubscribe_t, CELESTIAL_REQ_UNSUBSCRIBE);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_UNSUBSCRIBE\n");
+        celestial_req_unsubscribe_t *req = (celestial_req_unsubscribe_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_UNSUBSCRIBE, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_UNSUBSCRIBE, EPERM);
+
+        wm_window_t *win = WID(req->wid);
+        win->events &= ~(req->events);
+
+        return socket_ok(sock, CELESTIAL_REQ_UNSUBSCRIBE);
     } else if (hdr->type == CELESTIAL_REQ_DRAG_START) {
         // Start drag request
         CELESTIAL_VALIDATE(celestial_req_drag_start_t, CELESTIAL_REQ_DRAG_START);
@@ -228,6 +275,78 @@ void socket_handle(int sock) {
         win->state = WINDOW_STATE_NORMAL;
 
         return socket_ok(sock, CELESTIAL_REQ_DRAG_START);
+    } else if (hdr->type == CELESTIAL_REQ_GET_SERVER_INFO) {
+        // Get server info
+        CELESTIAL_VALIDATE(celestial_req_get_server_info_t, CELESTIAL_REQ_GET_SERVER_INFO);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_GET_SERVER_INFO\n");
+        
+        celestial_resp_get_server_info_t resp = {
+            .magic = CELESTIAL_MAGIC,
+            .size = sizeof(celestial_resp_get_server_info_t),
+            .type = CELESTIAL_REQ_GET_SERVER_INFO,
+            .screen_width = GFX_WIDTH(WM_GFX),
+            .screen_height = GFX_HEIGHT(WM_GFX)
+        };
+
+        socket_sendResponse(sock, &resp);
+        return;
+    } else if (hdr->type == CELESTIAL_REQ_SET_Z_ARRAY) {
+        // Set Z array
+        CELESTIAL_VALIDATE(celestial_req_set_z_array_t, CELESTIAL_REQ_SET_Z_ARRAY);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_SET_Z_ARRAY\n");
+        celestial_req_set_z_array_t *req = (celestial_req_set_z_array_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_SET_Z_ARRAY, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_SET_Z_ARRAY, EPERM);
+        if (req->array > CELESTIAL_Z_OVERLAY) return socket_error(sock, CELESTIAL_REQ_SET_Z_ARRAY, EINVAL);
+
+        // Drop the window from its previous queue
+        wm_window_t *win = WID(req->wid);
+
+        switch (win->z_array) {
+            case CELESTIAL_Z_BACKGROUND:
+                list_delete(WM_WINDOW_LIST_BG, list_find(WM_WINDOW_LIST_BG, win));
+                break;
+            case CELESTIAL_Z_DEFAULT:
+                list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, win));
+                break;
+            case CELESTIAL_Z_OVERLAY:
+                list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST, win));
+                break;
+        }
+
+        // Now add it to the new queue
+        switch (req->array) {
+            case CELESTIAL_Z_BACKGROUND:
+                list_append(WM_WINDOW_LIST_BG, win);
+                break;
+            case CELESTIAL_Z_DEFAULT:
+                list_append(WM_WINDOW_LIST, win);
+                break;
+            case CELESTIAL_Z_OVERLAY:
+                list_append(WM_WINDOW_LIST_OVERLAY, win);
+                break;
+        }
+        
+        win->z_array = req->array;
+        return socket_ok(sock, CELESTIAL_REQ_SET_Z_ARRAY);
+    } else if (hdr->type == CELESTIAL_REQ_FLIP) {
+        // Flip window
+        CELESTIAL_VALIDATE(celestial_req_flip_t, CELESTIAL_REQ_FLIP);
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_FLIP\n");
+        celestial_req_flip_t *req = (celestial_req_flip_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_FLIP, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_FLIP, EPERM);
+        
+        // Mark the window as requiring a flip
+        wm_window_t *win = WID(req->wid);
+        if (req->x < 0) req->x = 0;
+        if (req->y < 0) req->y = 0;
+        if (req->x + req->width > win->width) req->width = win->width - req->x;
+        if (req->y + req->height > win->height) req->height = win->height - req->y;
+    
+        gfx_rect_t upd_rect = { .x = req->x, .y = req->y, .width = req->width, .height = req->height };
+        window_update(win, upd_rect);
+        return; // NO RESPONSE FOR FLIP REQUEST
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);

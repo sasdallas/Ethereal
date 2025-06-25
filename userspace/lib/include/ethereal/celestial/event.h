@@ -31,6 +31,8 @@
 #define CELESTIAL_EVENT_MOUSE_BUTTON_UP         0x00000008
 #define CELESTIAL_EVENT_MOUSE_DRAG              0x00000010  // Sent when window server detects that the mouse is moving and holding left
 #define CELESTIAL_EVENT_MOUSE_EXIT              0x00000020
+#define CELESTIAL_EVENT_FOCUSED                 0x00000040
+#define CELESTIAL_EVENT_UNFOCUSED               0x00000080
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -80,6 +82,8 @@ typedef struct celestial_event_mouse_drag {
     CELESTIAL_EVENT_COMMON              // Common
     int32_t x;                          // Relative X position the mouse started dragging at
     int32_t y;                          // Relative Y position the mouse started dragging at
+    int32_t win_x;                      // New window X
+    int32_t win_y;                      // New window Y
 } celestial_event_mouse_drag_t;
 
 typedef struct celestial_event_mouse_exit {

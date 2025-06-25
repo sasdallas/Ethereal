@@ -13,6 +13,7 @@
 
 #include <ethereal/celestial.h>
 #include <stdlib.h>
+#include <errno.h>
 
 /**
  * @brief Main loop for a Celestial window
@@ -23,4 +24,33 @@ void celestial_mainLoop() {
         void *resp = celestial_getResponse(-1);
         free(resp);
     }
+}
+
+/**
+ * @brief Get Celestial window server information
+ * @returns Celestial server information
+ */
+celestial_info_t *celestial_getServerInformation() {
+    // Send request
+    celestial_req_get_server_info_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_get_server_info_t),
+        .type = CELESTIAL_REQ_GET_SERVER_INFO
+    };
+
+    if (celestial_sendRequest(&req, req.size) < 0) return NULL;
+
+    // Wait for a response
+    celestial_resp_get_server_info_t *resp = celestial_getResponse(CELESTIAL_REQ_GET_SERVER_INFO);
+    if (!resp) return NULL;
+
+    CELESTIAL_HANDLE_RESP_ERROR(resp, NULL);
+
+    // ???
+    celestial_info_t *info = malloc(sizeof(celestial_info_t));
+    info->screen_width = resp->screen_width;
+    info->screen_height = resp->screen_height;
+
+    free(resp);
+    return info;
 }

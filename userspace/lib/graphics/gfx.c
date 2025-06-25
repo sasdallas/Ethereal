@@ -113,7 +113,7 @@ void gfx_render(gfx_context_t *ctx) {
         gfx_clip_t *clip = ctx->clip;
         while (clip) {
             // Copy this clip
-            for (uint32_t y = clip->rect.y; y <= clip->rect.y + clip->rect.height; y++) {
+            for (uint32_t y = clip->rect.y; y < clip->rect.y + clip->rect.height; y++) {
                 memcpy(&((char*)ctx->buffer)[y * GFX_PITCH(ctx) + (clip->rect.x * 4)], &((char*)ctx->backbuffer)[y * GFX_PITCH(ctx) + (clip->rect.x * 4)], (clip->rect.width+1) * 4);
             }
 

@@ -36,6 +36,18 @@ typedef struct gfx_rect {
 
 #define GFX_RECT(rx, ry, rw, rh) ((gfx_rect_t){ .x = rx, .y = ry, .width = rw, .height = rh})
 
+// Yet another max/min declaration
+#define GFX_RECT_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define GFX_RECT_MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define GFX_RECT_LEFT(ctx, r) (GFX_RECT_MAX(r.x, 0))
+#define GFX_RECT_RIGHT(ctx, r) (GFX_RECT_MIN(r.x + r.width, GFX_WIDTH(ctx) - 1))
+#define GFX_RECT_TOP(ctx, r) (GFX_RECT_MAX(r.y, 0))
+#define GFX_RECT_BOTTOM(ctx, r) (GFX_RECT_MIN(r.y + r.height, GFX_HEIGHT(ctx) - 1))
+
+#define GFX_RECT_COLLIDES(ctx, r1, r2) ((GFX_RECT_LEFT(ctx, r1) < GFX_RECT_RIGHT(ctx, r2)) && (GFX_RECT_LEFT(ctx, r2) < GFX_RECT_RIGHT(ctx, r1)) && \
+                                            (GFX_RECT_TOP(ctx, r1) < GFX_RECT_BOTTOM(ctx, r2)) && (GFX_RECT_TOP(ctx, r2) < GFX_RECT_BOTTOM(ctx, r1)))
+
 /**** FUNCTIONS ****/
 
 struct gfx_context;

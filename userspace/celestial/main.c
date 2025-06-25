@@ -68,7 +68,7 @@ void celestial_redraw() {
     mouse_render();
 
 // extern void gfx_drawClips(gfx_context_t *ctx);
-//     gfx_drawClips(WM_GFX);
+    // gfx_drawClips(WM_GFX);
 
     // Render the grahics
     gfx_render(WM_GFX);
@@ -87,7 +87,7 @@ void celestial_main() {
 
         // Update the mouse cursor (to make clips)
         mouse_update();
-        
+
         // Redraw
         celestial_redraw();
 

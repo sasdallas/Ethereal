@@ -116,7 +116,6 @@ typedef struct decor {
     decor_in_bounds_t inbtn;    // Button bounds check
     decor_update_state_t state; // Update button state
 
-    
     gfx_font_t *font;           // Font
     void *d;                    // Specific to decoration handler
 } decor_t;
@@ -125,6 +124,8 @@ typedef struct decor {
 typedef struct decor_window_info {
     size_t width;               // Actual window width
     size_t height;              // Actual window height
+    int32_t x;                  // Actual window X
+    int32_t y;                  // Actual window Y
 } decor_window_info_t;
 
 
@@ -164,5 +165,16 @@ decor_borders_t celestial_getDecorationBorders(decor_handler_t *handler);
  */
 int celestial_handleDecorationEvent(struct window *win, void *event);
 
+/**
+ * @brief Adjust actual X/Y coordinates to be inner window X/Y coordinates
+ * Uses decoration bounds to adjust X/Y
+ * 
+ * @param win The window 
+ * @param x X that corresponds to the global window
+ * @param y Y that corresponds to the global window
+ * @param x_out Output X
+ * @param y_out Output Y
+ */
+void celestial_adjustCoordinates(struct window *win, int32_t x, int32_t y, int32_t *x_out, int32_t *y_out);
 
 #endif

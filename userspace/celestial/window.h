@@ -45,14 +45,22 @@ typedef struct wm_window {
     uint32_t events;            // Events the window subscribed to
     uint8_t state;              // Current window state
 
+    int z_array;                // Z array
+
     uint8_t *buffer;            // Buffer allocated to the window
     key_t bufkey;               // Buffer shared memory key
     int shmfd;                  // Buffer shared memory fd
 } wm_window_t;
 
+typedef struct wm_update_window {
+    wm_window_t *win;           // Window
+    gfx_rect_t rect;            // Rectangle to draw
+} wm_update_window_t;
+
 /**** VARIABLES ****/
 
 extern hashmap_t *__celestial_window_map;
+extern list_t *__celestial_window_update_queue;
 
 /**** MACROS ****/
 
@@ -84,7 +92,22 @@ void window_redraw();
 
 /**
  * @brief Get the topmost window the mouse is in
+ * @param x The X coordinate
+ * @param y The Y coordinate
  */
 wm_window_t *window_top(int32_t x, int32_t y);
+
+/**
+ * @brief Add a window to the global update queue
+ * @param win The window to add to the update queue
+ * @param rect The rectangle of the window to draw
+ */
+int window_update(wm_window_t *win, gfx_rect_t rect);
+
+/**
+ * @brief Update an entire damaged region
+ * @param rect Rectangle encompassing the damaged region
+ */
+void window_updateRegion(gfx_rect_t rect);
 
 #endif

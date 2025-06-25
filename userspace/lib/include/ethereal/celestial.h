@@ -20,11 +20,24 @@
 #include <ethereal/celestial/event.h>
 #include <ethereal/celestial/decor.h>
 
+/**** TYPES ****/
+
+typedef struct celestial_info {
+    size_t screen_width;            // Screen width
+    size_t screen_height;           // Screen height
+} celestial_info_t;
+
 /**** FUNCTIONS ****/
 
 /**
  * @brief Main loop for a Celestial window
  */
 void celestial_mainLoop();
+
+/**
+ * @brief Get Celestial window server information
+ * @returns Celestial server information
+ */
+celestial_info_t *celestial_getServerInformation();
 
 #endif

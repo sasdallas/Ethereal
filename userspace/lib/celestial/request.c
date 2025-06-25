@@ -122,13 +122,13 @@ void *celestial_getResponse(int type) {
 
         // Is it an event? Process those immediately
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
-            fprintf(stderr, "Received event from Celestial: %x\n", ((celestial_req_header_t*)m)->type);
+            // fprintf(stderr, "Received event from Celestial: %x\n", ((celestial_req_header_t*)m)->type);
             celestial_handleEvent(m);
             continue;
         }
 
         if (((celestial_req_header_t*)data)->type == type || type == -1) {
-            fprintf(stderr, "celestial: [lib] Received response\n");
+            // fprintf(stderr, "celestial: [lib] Received response\n");
             return m;
         }
 

@@ -31,6 +31,11 @@ typedef struct _sprite {
     uint32_t *bitmap;       // Bitmap
 } sprite_t;
 
+/**** MACROS ****/
+
+#define GFX_MIN(a, b) (((a) > (b) ? (b) : (a)))
+#define GFX_MAX(a, b) (((a) > (b) ? (a) : (b)))
+
 
 /**** FUNCTIONS ****/
 

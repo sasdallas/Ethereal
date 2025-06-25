@@ -28,6 +28,10 @@
 
 #define CELESTIAL_WINDOW_FLAG_DECORATED     0x1
 
+#define CELESTIAL_Z_BACKGROUND              0
+#define CELESTIAL_Z_DEFAULT                 1
+#define CELESTIAL_Z_OVERLAY                 2
+
 /**** TYPES ****/
 
 /**
@@ -134,5 +138,38 @@ gfx_context_t *celestial_initGraphics(window_t *win, int flags);
  * @returns Graphics context
  */
 gfx_context_t *celestial_getGraphicsContext(window_t *win);
+
+/**
+ * @brief Set the position of a window
+ * @param win The window object to set position of
+ * @param x The X position to set for the window
+ * @param y The Y position to set for the window
+ * @returns 0 on success
+ */
+int celestial_setWindowPosition(window_t *win, int32_t x, int32_t y);
+
+/**
+ * @brief Set the Z array of a window
+ * @param win The window to set the Z array of
+ * @param z The Z array to set
+ * @returns 0 on success
+ */
+int celestial_setZArray(window_t *win, int z);
+
+/**
+ * @brief Flip a window (specific region)
+ * @param win The window to flip
+ * @param x The X-coordinate of start region
+ * @param y The Y-coordinate of start region
+ * @param width The width of the region
+ * @param heigth The height of the region
+ */
+void celestial_flipRegion(window_t *win, int32_t x, int32_t y, size_t width, size_t height);
+
+/**
+ * @brief Flip/update a window
+ * @param win The window to flip
+ */
+void celestial_flip(window_t *win);
 
 #endif

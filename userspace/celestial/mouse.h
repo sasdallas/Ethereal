@@ -32,7 +32,7 @@ int mouse_init();
 /**
  * @brief Update the mouse (non-blocking)
  */
-void mouse_update();
+int mouse_update();
 
 /**
  * @brief Render the mouse

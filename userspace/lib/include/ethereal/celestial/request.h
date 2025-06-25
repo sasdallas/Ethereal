@@ -36,6 +36,13 @@
 #define CELESTIAL_REQ_UNSUBSCRIBE           0x1005
 #define CELESTIAL_REQ_DRAG_START            0x1006
 #define CELESTIAL_REQ_DRAG_STOP             0x1007
+#define CELESTIAL_REQ_GET_SERVER_INFO       0x1008
+#define CELESTIAL_REQ_CLOSE_WINDOW          0x1009
+#define CELESTIAL_REQ_MINIMIZE_WINDOW       0x100A
+#define CELESTIAL_REQ_MAXIMIZE_WINDOW       0x100B
+#define CELESTIAL_REQ_SET_FOCUSED           0x100C
+#define CELESTIAL_REQ_SET_Z_ARRAY           0x100D
+#define CELESTIAL_REQ_FLIP                  0x100E
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -90,6 +97,46 @@ typedef struct celestial_req_drag_stop {
     wid_t wid;                          // Window ID
 } celestial_req_drag_stop_t;
 
+typedef struct celestial_req_get_server_info {
+    CELESTIAL_REQ_COMMON                // Common
+} celestial_req_get_server_info_t;
+
+typedef struct celestial_req_close_window {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_close_window_t;
+
+typedef struct celestial_req_minimize_window {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_minimize_window_t;
+
+typedef struct celestial_req_maximize_window {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+} celestial_req_close_maximize_t;
+
+typedef struct celestial_req_set_focused {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint8_t focused;                    // State of focused
+} celestial_req_set_focused_t;
+
+typedef struct celestial_req_set_z_array {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint8_t array;                      // The Z array to set
+} celestial_req_set_z_array_t;
+
+typedef struct celestial_req_flip {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    int32_t x;                          // (window-relative) X coordinate start
+    int32_t y;                          // (window-relative) Y coordinate start
+    size_t width;                       // Width of region
+    size_t height;                      // Height of region
+} celestial_req_flip_t;
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -116,6 +163,18 @@ typedef struct celestial_resp_get_window_info {
     size_t height;                      // Height of the window
     key_t buffer_key;                   // Ethereal shared memory key
 } celestial_resp_get_window_info_t;
+
+typedef struct celestial_resp_get_server_info {
+    CELESTIAL_REQ_COMMON                // Common
+    size_t screen_width;                // Width of the screen
+    size_t screen_height;               // Height of the screen
+} celestial_resp_get_server_info_t;
+
+typedef struct celestial_resp_set_window_pos {
+    CELESTIAL_REQ_COMMON                // Common
+    int32_t x;                          // Window X position
+    int32_t y;                          // Window Y position
+} celestial_resp_set_window_pos_t;
 
 /**** MACROS ****/
 

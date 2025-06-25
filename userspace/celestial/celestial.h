@@ -43,6 +43,10 @@ extern int __celestial_socket;
 /* WINDOW GLOBALS */
 extern hashmap_t *__celestial_window_map;
 extern list_t *__celestial_window_list;
+extern list_t *__celestial_window_list_bg;
+extern list_t *__celestial_window_list_overlay;
+extern list_t *__celestial_window_update_queue;
+extern wm_window_t *__celestial_focused_window;
 
 /* CLIENT GLOBALS */
 extern hashmap_t *__celestial_map;
@@ -67,6 +71,10 @@ extern uint32_t __celestial_mouse_buttons;
 #define WM_SOCK __celestial_socket
 #define WM_WINDOW_MAP __celestial_window_map
 #define WM_WINDOW_LIST __celestial_window_list
+#define WM_WINDOW_LIST_BG __celestial_window_list_bg
+#define WM_WINDOW_LIST_OVERLAY __celestial_window_list_overlay
+#define WM_FOCUSED_WINDOW __celestial_focused_window
+#define WM_UPDATE_QUEUE __celestial_window_update_queue
 #define WM_SW_MAP __celestial_map
 #define WM_MOUSE __celestial_mouse_fd
 #define WM_MOUSEX __celestial_mouse_x
@@ -74,6 +82,17 @@ extern uint32_t __celestial_mouse_buttons;
 #define WM_MOUSE_SPRITE __celestial_mouse_sprite
 #define WM_MOUSE_WINDOW __celestial_mouse_window
 #define WM_MOUSE_BUTTONS __celestial_mouse_buttons
+
+
+#define PROFILE_START() struct timeval t; \
+                        gettimeofday(&t, NULL);
+
+#define PROFILE_END()   { struct timeval t_now; \
+                        gettimeofday(&t_now, NULL); \
+                        CELESTIAL_DEBUG("%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
+
+
+
 
 /**** FUNCTIONS ****/
 

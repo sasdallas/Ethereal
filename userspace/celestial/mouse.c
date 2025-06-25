@@ -41,6 +41,10 @@ uint32_t __celestial_previous_buttons = 0;
 static int mouse_window_off_x = 0;
 static int mouse_window_off_y = 0;
 
+/* Convert mouse x/y to window x/y */
+#define WM_MOUSE_REL_WINDOW_X (WM_MOUSEX - WM_MOUSE_WINDOW->x)
+#define WM_MOUSE_REL_WINDOW_Y (WM_MOUSEY - WM_MOUSE_WINDOW->y)
+
 /**
  * @brief Initialize the mouse system
  * @returns 0 on success
@@ -84,6 +88,8 @@ void mouse_events() {
     if (WM_MOUSE_WINDOW) {
         // Are we dragging the mouse window?
         if (WM_MOUSE_WINDOW->state == WINDOW_STATE_DRAGGING) {
+            gfx_rect_t old = { .x = WM_MOUSE_WINDOW->x, .y = WM_MOUSE_WINDOW->y, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
+        
             // Yes, calculate bounds and update position
             int32_t new_x = WM_MOUSEX + mouse_window_off_x;
             int32_t new_y = WM_MOUSEY + mouse_window_off_y;
@@ -99,6 +105,11 @@ void mouse_events() {
             // Remember to hold the mouse cursor in place if we're hitting the edge.
             WM_MOUSEX = WM_MOUSE_WINDOW->x - mouse_window_off_x;
             WM_MOUSEY = WM_MOUSE_WINDOW->y - mouse_window_off_y;
+            
+            window_updateRegion(old);
+
+            gfx_rect_t upd = { .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
+            window_update(WM_MOUSE_WINDOW, upd);
         }
         
         if (!(WM_MOUSE_WINDOW->x <= WM_MOUSEX) || !((int)(WM_MOUSE_WINDOW->x + WM_MOUSE_WINDOW->width) > WM_MOUSEX) ||
@@ -128,8 +139,8 @@ void mouse_events() {
                 .type = CELESTIAL_EVENT_MOUSE_ENTER,
                 .size = sizeof(celestial_event_mouse_enter_t),
                 .wid = WM_MOUSE_WINDOW->id,
-                .x = WM_MOUSEX,
-                .y = WM_MOUSEY
+                .x = WM_MOUSE_REL_WINDOW_X,
+                .y = WM_MOUSE_REL_WINDOW_Y,
             };
 
             event_send(WM_MOUSE_WINDOW, &enter);
@@ -153,8 +164,8 @@ void mouse_events() {
                         .type = CELESTIAL_EVENT_MOUSE_BUTTON_UP,
                         .size = sizeof(celestial_event_mouse_button_up_t),
                         .wid = WM_MOUSE_WINDOW->id,
-                        .x = WM_MOUSEX,
-                        .y = WM_MOUSEY,
+                        .x = WM_MOUSE_REL_WINDOW_X,
+                        .y = WM_MOUSE_REL_WINDOW_Y,
                         .released = btn_released
                     };
 
@@ -162,6 +173,17 @@ void mouse_events() {
                 }
             } else {
                 CELESTIAL_DEBUG("mouse: Button pressed\n");
+
+                // Focus window if it is not focused already
+                if (WM_FOCUSED_WINDOW != WM_MOUSE_WINDOW && WM_MOUSE_WINDOW->z_array == CELESTIAL_Z_DEFAULT) {
+                    // TODO: Tell other window it's not focused
+                    // Reorder
+                    WM_FOCUSED_WINDOW = WM_MOUSE_WINDOW;
+
+                    // TODO: Store node and send event
+                    list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, WM_MOUSE_WINDOW));
+                    list_append(WM_WINDOW_LIST, WM_MOUSE_WINDOW);
+                }
 
                 // Determine pressed button
                 uint32_t btn_pressed = WM_MOUSE_BUTTONS & ~(__celestial_previous_buttons);
@@ -181,14 +203,20 @@ void mouse_events() {
                         .type = CELESTIAL_EVENT_MOUSE_BUTTON_DOWN,
                         .size = sizeof(celestial_event_mouse_button_down_t),
                         .wid = WM_MOUSE_WINDOW->id,
-                        .x = WM_MOUSEX,
-                        .y = WM_MOUSEY,
+                        .x = WM_MOUSE_REL_WINDOW_X,
+                        .y = WM_MOUSE_REL_WINDOW_Y,
                         .held = btn_pressed,
                     };
 
                     event_send(WM_MOUSE_WINDOW, &down);
                 }
             }
+        }
+
+        if (WM_MOUSE_WINDOW->state == WINDOW_STATE_DRAGGING && !(WM_MOUSE_BUTTONS & CELESTIAL_MOUSE_BUTTON_LEFT)) {
+            // Release
+            // !!!: Maybe make usermode apps do this?
+            WM_MOUSE_WINDOW->state = WINDOW_STATE_NORMAL;
         }
 
         // Send motion event if there was any
@@ -202,8 +230,10 @@ void mouse_events() {
                     .type = CELESTIAL_EVENT_MOUSE_DRAG,
                     .size = sizeof(celestial_event_mouse_drag_t),
                     .wid = WM_MOUSE_WINDOW->id,
-                    .x = WM_MOUSEX,
-                    .y = WM_MOUSEY,
+                    .x = WM_MOUSE_REL_WINDOW_X,
+                    .y = WM_MOUSE_REL_WINDOW_Y,
+                    .win_x = WM_MOUSE_WINDOW->x,
+                    .win_y = WM_MOUSE_WINDOW->y,
                 };
 
                 event_send(WM_MOUSE_WINDOW, &drag);
@@ -213,8 +243,8 @@ void mouse_events() {
                     .type = CELESTIAL_EVENT_MOUSE_MOTION,
                     .size = sizeof(celestial_event_mouse_motion_t),
                     .wid = WM_MOUSE_WINDOW->id,
-                    .x = WM_MOUSEX,
-                    .y = WM_MOUSEY,
+                    .x = WM_MOUSE_REL_WINDOW_X,
+                    .y = WM_MOUSE_REL_WINDOW_Y,
                     .buttons = WM_MOUSE_BUTTONS,
                 };
 
@@ -227,7 +257,7 @@ void mouse_events() {
 /**
  * @brief Update and redraw the mouse (non-blocking)
  */
-void mouse_update() {
+int mouse_update() {
     // Read mouse event
     mouse_event_t event;
 
@@ -238,10 +268,10 @@ void mouse_update() {
         celestial_fatal();
     }
 
-    if (!r) return;
+    if (!r) return 0;
 
     // Parse the mouse event
-    if (event.event_type != EVENT_MOUSE_UPDATE) return;
+    if (event.event_type != EVENT_MOUSE_UPDATE) return 0;
 
     last_mouse_x = WM_MOUSEX;
     last_mouse_y = WM_MOUSEY;
@@ -272,11 +302,13 @@ void mouse_update() {
     // Did things change?
     if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY || WM_MOUSE_BUTTONS != __celestial_previous_buttons) {
         mouse_events();
-        gfx_createClip(WM_GFX, last_mouse_x, last_mouse_y, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
+        window_updateRegion((gfx_rect_t){ .x = last_mouse_x, .y = last_mouse_y, .width = WM_MOUSE_SPRITE->width, .height = WM_MOUSE_SPRITE->height });
     }
 
     // Make clips
     gfx_createClip(WM_GFX, WM_MOUSEX, WM_MOUSEY, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
+    if (WM_MOUSE_WINDOW == WM_FOCUSED_WINDOW && WM_MOUSE_WINDOW) window_update(WM_MOUSE_WINDOW, (gfx_rect_t){ .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height });
+    return 1;
 }
 
 /**

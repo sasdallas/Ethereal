@@ -159,6 +159,9 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
 
                 return 0;
             } else {
+                // Update motion X
+                motion->x -= win->decor->borders.left_width;
+                motion->y -= win->decor->borders.top_height;
                 return 1;
             }
 
@@ -172,10 +175,31 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 celestial_startDragging(win);
                 return 0;
             } else {
+                // Update coordinates
+                drag->x -= win->decor->borders.left_width;
+                drag->y -= win->decor->borders.top_height;
+                drag->win_x += win->decor->borders.left_width;
+                drag->win_y += win->decor->borders.top_height;
                 return 1;
             }
 
         default:
             return 1;
     }
+}
+
+/**
+ * @brief Adjust actual X/Y coordinates to be inner window X/Y coordinates
+ * Uses decoration bounds to adjust X/Y
+ * 
+ * @param win The window 
+ * @param x X that corresponds to the global window
+ * @param y Y that corresponds to the global window
+ * @param x_out Output X
+ * @param y_out Output Y
+ */
+void celestial_adjustCoordinates(struct window *win, int32_t x, int32_t y, int32_t *x_out, int32_t *y_out) {
+    // Adjust X and Y
+    *x_out = x - win->decor->borders.left_width;
+    *y_out = y - win->decor->borders.top_height;
 }

@@ -15,11 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-/* util macros */
-#define GFX_MIN(a, b) (((a) > (b) ? (b) : (a)))
-#define GFX_MAX(a, b) (((a) > (b) ? (a) : (b)))
-
 /**
  * @brief Create a new sprite object
  * @param width The width of the sprite
