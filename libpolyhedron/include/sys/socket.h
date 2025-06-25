@@ -79,6 +79,12 @@ _Begin_C_Header
 #define MSG_TRUNC           0x20
 #define MSG_WAITALL         0x40
 
+/* PF */
+#define PF_UNSPEC           AF_UNSPEC
+#define PF_INET             AF_INET
+#define PF_INET6            AF_INET6
+#define PF_UNIX             AF_UNIX
+
 /**** TYPES ****/
 typedef size_t socklen_t;
 typedef unsigned int sa_family_t;

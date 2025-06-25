@@ -61,6 +61,8 @@ div_t div(int x, int y);
 ldiv_t ldiv(long x, long y);
 lldiv_t lldiv(long long x, long long y);
 
+void *bsearch(const void *key, const void *base, size_t nel, size_t width, int (*compar)(const void *, const void *));
+
 char *getenv(const char *name);
 int putenv(char *string);
 int setenv(const char *name, const char *value, int overwrite);

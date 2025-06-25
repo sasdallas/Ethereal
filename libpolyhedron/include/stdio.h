@@ -115,6 +115,7 @@ int getchar();
 
 FILE *fopen(const char *pathname, const char *mode);
 FILE *fdopen(int fildes, const char *mode);
+FILE *freopen(const char *filename, const char *mode, FILE *stream);
 int fclose(FILE *stream);
 int fputc(int c, FILE *f);
 int fputs(const char *s, FILE *f);
