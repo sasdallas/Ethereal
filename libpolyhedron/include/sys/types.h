@@ -19,7 +19,7 @@ _Begin_C_Header
 #define _SYS_TYPES_H
 
 /**** INCLUDES ****/
-#include <stdint.h>
+#include <bits/pthread.h>
 
 /**** TYPES ****/
 
@@ -45,7 +45,7 @@ typedef long ssize_t;
 typedef unsigned short nlink_t;
 
 typedef unsigned long blkcnt_t;
-typedef unsigned long blksize_t;
+typedef unsigned long blksize_t; 
 
 #endif
 

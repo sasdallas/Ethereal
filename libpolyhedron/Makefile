@@ -9,7 +9,7 @@ OUT_OBJ_LIBK = $(OUT_OBJ)/libk
 
 # SOURCE DIRECTORIES
 SOURCE_DIRECTORIES = stdlib stdio string time net
-LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar
+LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread
 LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Include the architecture Make configuration to allow it to add to DIRECTORIES
@@ -49,7 +49,7 @@ $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a: $(LIBK_C_OBJECTS)
 # Build target for libc 
 $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS)
 	$(AR) rcs $@ $(LIBC_C_OBJECTS)
-	-ln -s $@ $(DESTDIR)$(LIB_DIRECTORY)/libc.a
+	-ln -sf $@ $(DESTDIR)$(LIB_DIRECTORY)/libc.a
 	cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crt0.o $(DESTDIR)$(LIB_DIRECTORY)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crti.o $(DESTDIR)$(LIB_DIRECTORY)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crtn.o $(DESTDIR)$(LIB_DIRECTORY)

@@ -80,6 +80,12 @@ _Begin_C_Header
 #define SYS_SHARED_NEW      62  // Ethereal API
 #define SYS_SHARED_KEY      63  // Ethereal API
 #define SYS_SHARED_OPEN     64  // Ethereal API
+#define SYS_CREATE_THREAD   65  // Ethereal API (pthread)
+#define SYS_GETTID          66  // Ethereal API (pthread)
+#define SYS_SETTLS          67  // Ethereal API (pthread)
+#define SYS_EXIT_THREAD     68  // Ethereal API (pthread)
+#define SYS_JOIN_THREAD     69  // Ethereal API (pthread)
+#define SYS_KILL_THREAD     70  // Ethereal API (pthread)
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \
