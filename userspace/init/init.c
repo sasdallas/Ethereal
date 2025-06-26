@@ -37,21 +37,13 @@ int main(int argc, char *argv[]) {
         open("/device/kconsole", O_RDWR);
     }
 
-
-
-
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
-    printf("Welcome to Ethereal\n");
-    if (!fork()) {
-        argv[0] = "/device/initrd/usr/bin/migrate";
-        execvpe("/device/initrd/usr/bin/migrate", (const char**)argv, environ);
-    } else {
-        waitpid(-1, NULL, 0);
-    }
+    printf("Welcome to the Ethereal Operating System\n");
+
 
     printf("Initializing shell...\n");
-    argv[0] = "/device/initrd/usr/bin/essence";
-    execvpe("/device/initrd/usr/bin/essence", (const char**)argv, environ);
+    char *nargv[3] = { "/device/initrd/usr/bin/essence", NULL, NULL };
+    execvpe("/device/initrd/usr/bin/essence", (const char**)nargv, environ);
     return 0;
 }

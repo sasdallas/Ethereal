@@ -29,6 +29,9 @@ LIBK_ASM_SOURCES = $(shell find $(LIBK_SOURCE_DIRECTORIES) -name "*.S")
 LIBC_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBC)/%.o, $(LIBC_C_SOURCES)) $(patsubst %.S, $(OUT_OBJ_LIBC)/%.o, $(LIBC_ASM_SOURCES))
 LIBK_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBK)/%.o, $(LIBK_C_SOURCES))
 
+CRT_SOURCES = $(ARCH_CRT_DIRECTORY)/crtn.S $(ARCH_CRT_DIRECTORY)/crti.S $(ARCH_CRT_DIRECTORY)/crt0.S
+CRT_OBJECTS = $(patsubst %.S, $(OUT_OBJ_LIBC)/%.o, $(CRT_SOURCES))
+CRT_OUTPUT_DIR = $(addprefix $(OUT_OBJ_LIBC)/,$(ARCH_CRT_DIRECTORY))
 
 $(OUT_OBJ_LIBC)/%.o: %.c Makefile
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
@@ -47,13 +50,16 @@ $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a: $(LIBK_C_OBJECTS)
 	$(AR) rcs $@ $(LIBK_C_OBJECTS)
 
 # Build target for libc 
-$(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS)
-	$(AR) rcs $@ $(LIBC_C_OBJECTS)
+$(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS) $(CRT_OBJECTS)
+	$(AR) rcs $@ $(LIBC_C_OBJECTS) $(CRT_OBJECTS)
 	-ln -sf $@ $(DESTDIR)$(LIB_DIRECTORY)/libc.a
 	cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crt0.o $(DESTDIR)$(LIB_DIRECTORY)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crti.o $(DESTDIR)$(LIB_DIRECTORY)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crtn.o $(DESTDIR)$(LIB_DIRECTORY)
 
+
+$(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_BJECTS)
+	$(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
 
 # Target disabled
 all:
@@ -68,6 +74,7 @@ CREATE_BUILD_DIRECTORIES:
 	@-mkdir -pv $(OUTPUT_DIRECTORIES_LIBC)
 	@-mkdir -pv $(OUTPUT_DIRECTORIES_LIBK)
 	@-mkdir -pv $(DESTDIR)$(LIB_DIRECTORY)
+	@-mkdir -pv $(CRT_OUTPUT_DIR)
 
 # Cosmetic
 PRINT_HEADER:
@@ -82,9 +89,10 @@ install-headers:
 	@-cp -R --preserve=timestamps include/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 	@-cp -R --preserve=timestamps $(ARCH_INCLUDE_DIRECTORY)/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so
 
 clean:
 	@-rm -r $(OUT_OBJ)
 	@-rm -r $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a
 	@-rm -r $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a
+	@-rm -r $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so

@@ -173,13 +173,14 @@ process_t *process_createKernel(char *name, unsigned int flags, unsigned int pri
 
 /**
  * @brief Execute a new ELF binary for the current process (execve)
+ * @param path The path of the file being executed
  * @param file The file to execute
  * @param argc The argument count
  * @param argv The argument list
  * @param envp The environment variables pointer
  * @returns Error code
  */
-int process_execute(fs_node_t *file, int argc, char **argv, char **envp);
+int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **envp);
 
 /**
  * @brief Exiting from a process

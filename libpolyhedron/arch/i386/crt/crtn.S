@@ -1,7 +1,7 @@
 .section .init
-	pop %rbp
+	pop %ebp
 	ret
 
 .section .fini
-	pop %rbp
+	pop %ebp
 	ret

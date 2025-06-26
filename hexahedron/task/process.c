@@ -564,6 +564,7 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
 
 /**
  * @brief Execute a new ELF binary for the current process (execve)
+* @param path Full path of the file
  * @param file The file to execute
  * @param argc The argument count
  * @param argv The argument list
@@ -572,9 +573,41 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
  * 
  * @todo There's a lot of pointless directory switching for some reason - need to fix
  */
-int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
+int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
     if (!file) return -EINVAL;
     if (!current_cpu->current_process) return -EINVAL; // TODO: Handle this better
+
+    // First, check if the file is a dynamic object
+    if (elf_check(file, ELF_DYNAMIC)) {
+        // Yes, it is, run the process with ld.so
+        // TODO: Get PT_INTERP value
+
+        // TODO: Maybe we can mount the initial ramdisk as / and /device/initrd?
+        LOG(DEBUG, "Launching new dynamic ELF process\n");
+
+        char **nargv = kmalloc((argc + 3) * sizeof(char*));
+
+        // Copy argv elements
+        nargv[0] = "ld.so";
+        nargv[1] = strdup(path);
+        for (int i = 0; i < argc; i++) {
+            nargv[i+2] = argv[i];
+        }
+        nargv[argc+2] = NULL;
+    
+        // Figure out which one we want
+        char *interp_path = "/lib/ld.so";
+        fs_node_t *interp = kopen(interp_path, 0);
+        if (!interp) {
+            // Use backup interpreter in initrd
+            interp = kopen("/device/initrd/lib/ld.so", 0);
+            interp_path = "/device/initrd/lib/ld.so";
+        }
+
+        if (!interp) return -ENOENT;
+
+        return process_execute(path, interp, argc+2, nargv, envp);
+    }
 
     // Check the ELF binary
     if (elf_check(file, ELF_EXEC) == 0) {
@@ -584,6 +617,7 @@ int process_execute(fs_node_t *file, int argc, char **argv, char **envp) {
     }
 
     // Setup new name
+    // TODO: This should be a *pointer* to argv[0], not a duplicate.
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 

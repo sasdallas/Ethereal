@@ -2,6 +2,7 @@
  * @file libpolyhedron/libc/main.c
  * @brief libc startup code
  * 
+ * @ref https://github.com/klange/toaruos/blob/1a551db5cf47aa8ae895983b2819d5ca19be53a3/libc/main.c for idea of using __get_argv and __get_environ
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
@@ -14,12 +15,29 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 /* Environment */
 char **environ = NULL;
 int envc = 0;
 
-// TODO: Init array support, mark as constructor - got a lot to do
+/* argv */
+char **__argv = NULL;
+char **__envp = NULL;
+
+// linker will override this, so we will know if we are statically linked
+extern __attribute__((noinline)) char ** __get_argv() {
+    return __argv;
+}
+
+// linker will override this, so we will know if we are statically linked
+extern __attribute__((noinline)) char ** __get_environ() {
+    return __envp;
+}
+
+// crtn/crti
+extern void _init();
+extern void _fini();
 
 void __create_environ(char **envp) {
     // First calculate envc
@@ -40,9 +58,18 @@ void __create_environ(char **envp) {
     envc--;
 }
 
-__attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, char **argv, char **envp) {
-    // TODO: Call constructors 
+__attribute__((constructor)) void __libc_init() {
+    char **envp = __get_environ();
     __create_environ(envp);
+    __argv = __get_argv();
+}
+
+__attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, char **argv, char **envp) {
+    if (!__get_argv()) {
+        __argv = argv;
+        __create_environ(envp);
+    }
+    
     exit(main(argc, argv));
     __builtin_unreachable();
 }

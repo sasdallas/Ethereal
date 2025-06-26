@@ -594,6 +594,16 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         LOG(ERR, "The fault occurred @ IP %04x:%016llX SP %016llX\n", regs->cs, regs->rip, regs->rsp);
         vas_dump(current_cpu->current_process->vas);
         
+        // Perform traceback
+        LOG(ERR, "STACK BACKTRACE:\n");
+        LOG(ERR, "Starting @ IP: %016llX\n", regs->rip);
+        stack_frame_t *stk = (stack_frame_t*)regs->rbp;
+        while (stk) {
+            LOG(ERR, "FRAME 0x%016llX: 0x%016llX\n", stk, stk->ip);
+            stk = stk->nextframe;
+        }
+
+
         process_exit(current_cpu->current_process, 1);
         return 0;
     }

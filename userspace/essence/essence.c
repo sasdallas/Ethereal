@@ -100,6 +100,7 @@ int essence_executeScript(FILE *f) {
  * @brief Main command
  */
 int main(int argc, char *argv[]) {
+    if (argc == 1) goto __noargs;
 
     struct option options[] = {
         { .flag = NULL, .name = "command", .has_arg = required_argument, .val = 'c'},
@@ -158,6 +159,8 @@ int main(int argc, char *argv[]) {
         return essence_executeScript(f);
     }
 
+
+__noargs:
     printf("Essence v1.0\n");
     while (1) {
         printf("%s", essence_getPrompt());

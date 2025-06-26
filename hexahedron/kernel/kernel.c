@@ -201,7 +201,7 @@ void kmain() {
     arch_mount_kernelfs();
 
     // TEMPORARY
-    vfs_mountFilesystemType("tmpfs", "rootfs", "/");
+    // vfs_mountFilesystemType("tmpfs", "rootfs", "/");
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm");
     vfs_dump();
@@ -222,7 +222,8 @@ void kmain() {
 
     // Now we need to mount the initial ramdisk
     kernel_mountRamdisk(parameters);
-
+    vfs_mountFilesystemType("tarfs", "/device/ram0", "/"); // And mount to root
+    
     // Load the INI file
     ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
     if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
@@ -308,7 +309,7 @@ void kmain() {
     const char *path = "/device/initrd/usr/bin/init";
 
     fs_node_t *file;
-    char *argv[] = { "init", NULL, NULL };
+    char *argv[] = { "/device/initrd/usr/bin/init", NULL, NULL };
     int argc = 1;
 
     if (kargs_has("exec")) {
@@ -327,7 +328,7 @@ void kmain() {
 
     if (file) {
         char *envp[] = { "TEST_ENV=test1", "FOO=bar", NULL };
-        process_execute(file, argc, argv, envp);
+        process_execute(argv[0], file, argc, argv, envp);
     } else {
         LOG(WARN, "Init process not found, destroying init and switching\n");
         current_cpu->current_process = NULL;

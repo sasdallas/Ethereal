@@ -167,10 +167,9 @@ uintptr_t tmpfs_getNewBlock(tmpfs_file_t *file, size_t blknum) {
     if (exist) return exist;
 
     // Allocate a new block
-    if (blknum >= file->blk_size) {
+    while (blknum >= file->blk_size) {
         file->blk_size *= 2;
         file->blocks = krealloc(file->blocks, file->blk_size * sizeof(uintptr_t));
-        memset(&file->blocks[file->blk_size/2], 0, file->blk_size/2 * sizeof(uintptr_t));
     }
 
     
@@ -201,7 +200,7 @@ ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
         spinlock_release(entry->file->lock);
         return 0;
     }
-
+    
     if (off+size > available_size) {
         size = available_size - off;
     }
@@ -211,6 +210,8 @@ ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
     uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
     if (end_block > entry->file->blk_count) return 0;
+
+    // LOG(DEBUG, "Read from offset %d size %d -> start block %d end block %d overhang %d\n", off, size, start_block, end_block, overhang);
 
     // If the start block is the same, handle
     if (start_block == end_block) {
@@ -256,10 +257,12 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
     uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
 
+    // LOG(DEBUG, "Write to offset %d size %d -> start block %d end block %d overhang %d\n", off, size, start_block, end_block, overhang);
+
     // If we have the same start and end block, then just write to it
     if (start_block == end_block) {
         uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, start_block), TMPFS_BLOCK_SIZE);
-        memcpy((void*)(blk + (off % TMPFS_BLOCK_SIZE)), buffer, size);
+        memcpy((void*)(blk + ((uintptr_t)off % TMPFS_BLOCK_SIZE)), buffer, size);
         mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
     } else {
         // Write normally
@@ -283,10 +286,6 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
             memcpy((void*)blk, buffer + TMPFS_BLOCK_SIZE * blocks_written - (off % TMPFS_BLOCK_SIZE), overhang);
             mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
         }
-    }
-
-    if (!entry->file) {
-        LOG(WARN, "Oh shit, entry %p is now corrupt.\n", entry);
     }
 
     entry->file->length = off + size;

@@ -80,6 +80,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         // See if the VAS already has an allocation
         // TODO: MAP_FIXED_NOREPLACE (?)
         if (vas_get(vas, (uintptr_t)addr)) {
+            // TODO: Clobber this allocation
             LOG(ERR, "mmap allocation for %p - %p failed - region already present in process VAS\n", addr, addr + len);
             kfree(map);
             return (void*)-EINVAL;

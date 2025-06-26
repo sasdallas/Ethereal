@@ -29,7 +29,8 @@
 // The type of file we're trying to load
 #define ELF_EXEC        0   // Executable object files
 #define ELF_RELOC       1   // Relocatable object files
-#define ELF_ANY         2   // It doesn't matter what file we're looking for
+#define ELF_DYNAMIC     2   // Dynamically linked object files
+#define ELF_ANY         3   // It doesn't matter what file we're looking for
 
 /**** FUNCTIONS ****/
 

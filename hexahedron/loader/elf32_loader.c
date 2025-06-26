@@ -503,6 +503,24 @@ int elf_check(fs_node_t *file, int type) {
     // Does it match the class?
     if (type == ELF_EXEC && ehdrtmp.e_type != ET_EXEC) return 0;
     if (type == ELF_RELOC && ehdrtmp.e_type != ET_REL) return 0;
+
+    if (type == ELF_DYNAMIC) {
+        if (ehdrtmp.e_type != ET_EXEC) return 0;
+
+        // !!!: Load PHDR sections into memory
+        for (int i = 0; i < ehdrtmp.e_phnum; i++) {
+            Elf64_Phdr phdr;
+            if (fs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (uint8_t*)&phdr) != sizeof(Elf64_Phdr)) {
+                LOG(ERR, "Error reading PHDR %d into memory\n", ehdrtmp.e_phnum);
+                return 0;
+            }
+
+            if (phdr.p_type == PT_DYNAMIC) return 1;
+        }
+
+        return 0;
+    }
+
     return 1;
 }
 

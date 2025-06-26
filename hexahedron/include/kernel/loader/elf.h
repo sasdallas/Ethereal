@@ -261,20 +261,25 @@
 #define R_386_32                    1       // S + A
 #define R_386_PC32                  2       // S + A - P
 
-/* Taken from ToaruOS elf.h */
-#define R_X86_64_NONE             0  /**< @brief @p none none */
-#define R_X86_64_64               1  /**< @brief @p word64 S + A */
-#define R_X86_64_PC32             2  /**< @brief @p word32 S + A - P */
-#define R_X86_64_GOT32            3  /**< @brief @p word32 G + A */
-#define R_X86_64_PLT32            4  /**< @brief @p word32 L + A - P */
-#define R_X86_64_COPY             5  /**< @brief @p none none */
-#define R_X86_64_GLOB_DAT         6  /**< @brief @p word64 S */
-#define R_X86_64_JUMP_SLOT        7  /**< @brief @p word64 S */
-#define R_X86_64_RELATIVE         8  /**< @brief @p word64 B + A */
-#define R_X86_64_GOTPCREL         9  /**< @brief @p word32 G + GOT + A - P */
-#define R_X86_64_32               10 /**< @brief @p word32 S + A */
-#define R_X86_64_32S              11 /**< @brief @p word32 S + A */
+/* Relocation types for x86_64 */
+#define R_X86_64_NONE             	0		// N/A
+#define R_X86_64_64               	1 	// S + A
+#define R_X86_64_PC32             	2  	// S + A - P
+#define R_X86_64_GOT32            	3  	// G + A
+#define R_X86_64_PLT32            	4  	// L + A - P
+#define R_X86_64_COPY             	5 	// N/A 
+#define R_X86_64_GLOB_DAT         	6  	// S
+#define R_X86_64_JUMP_SLOT        	7  	// S
+#define R_X86_64_RELATIVE         	8  	// B + A
+#define R_X86_64_GOTPCREL         	9 	// G + GOT + A - P
+#define R_X86_64_32               	10 	// S + A (32)
+#define R_X86_64_32S              	11 	// S + A (32)
 
+/* Dynamic flags (DT_FLAGS) */
+#define DF_ORIGIN					0x1
+#define DF_SYMBOLIC					0x2
+#define DF_TEXTREL					0x4
+#define DF_BIND_NOW					0x8
 
 /**** TYPES ****/
 
@@ -393,6 +398,15 @@ typedef struct {
 	Elf32_Sword	r_addend;
 } Elf32_Rela;
 
+typedef struct {
+	Elf32_Sword d_tag;
+	union {
+			Elf32_Word      d_val;
+			Elf32_Addr      d_ptr;
+			Elf32_Off       d_off;
+	} d_un;
+} Elf32_Dyn;
+
 /* Relocation entry (64-bit) */
 typedef struct {
 	Elf64_Addr	r_offset;
@@ -431,6 +445,13 @@ typedef struct {
 	Elf64_Xword	p_align;
 } Elf64_Phdr;
 
+typedef struct {
+	Elf64_Xword d_tag;
+	union {
+			Elf64_Xword     d_val;
+			Elf64_Addr      d_ptr;
+	} d_un;
+} Elf64_Dyn;
 
 /**** MACROS ****/
 

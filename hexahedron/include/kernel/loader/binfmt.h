@@ -31,13 +31,14 @@
 
 /**
  * @brief binfmt execution
+ * @param path Full path of the file
  * @param file The file to execute
  * @param argc The argument count
  * @param argv The argument list
  * @param envp The environment variables pointer
  * @returns Error code (jump to process if successful)
  */
-typedef int (*binfmt_load_t)(fs_node_t *file, int argc, char **argv, char **envp);
+typedef int (*binfmt_load_t)(char *path, fs_node_t *file, int argc, char **argv, char **envp);
 
 typedef struct binfmt_entry {
     char *name;                     // Optional name
@@ -56,12 +57,13 @@ int binfmt_register(binfmt_entry_t entry);
 
 /**
  * @brief Start execution of a process or return an error code
+ * @param path Full path of the file
  * @param file The file to execute
  * @param argc The argument count
  * @param argv The argument list
  * @param envp The environment variables pointer
  * @returns Error code
  */
-int binfmt_exec(fs_node_t *file, int argc, char **argv, char **envp);
+int binfmt_exec(char *path, fs_node_t *file, int argc, char **argv, char **envp);
 
 #endif

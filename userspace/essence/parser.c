@@ -135,7 +135,11 @@ int essence_parse(char *in_command, int *out_argc, char ***out_argv) {
                 if (backslash || quoted_single) ESSENCE_ONLY_PUSH(*p);
                 quoted = (quoted ? 0 : 1);
                 ESSENCE_NEXT_CHARACTER();
-                break;
+                
+            case '\\':
+                if (backslash || quoted_single) ESSENCE_ONLY_PUSH(*p);
+                backslash = 1;
+                ESSENCE_NEXT_CHARACTER();
 
             case '#':
                 if (!buffer_len) {
@@ -160,6 +164,12 @@ int essence_parse(char *in_command, int *out_argc, char ***out_argv) {
 
     _finished:
         break;
+    }
+
+    if (quoted) {
+        // TODO: Either implement a solution or not leak memory
+        fprintf(stderr, "essence: Unterminated quoted argument and support for continuing quotes isn't implemented\n");
+        return 1;
     }
 
     // Push final argument
