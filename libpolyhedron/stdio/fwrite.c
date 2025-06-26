@@ -22,7 +22,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f) {
     // fwrite writes nmemb objects of size size to f
     char *p = (char*)ptr; // lol, screw const
     for (size_t i = 0; i < nmemb; i++) {
-        ssize_t r = __fileio_write_bytes(f, ptr, size);
+        ssize_t r = __fileio_write_bytes(f, p, size);
         if (r < (ssize_t)size) return i; // Out of objects
         p += r;
     }
