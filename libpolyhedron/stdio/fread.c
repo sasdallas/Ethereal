@@ -19,7 +19,8 @@ extern ssize_t __fileio_read_bytes(FILE *f, char *buf, size_t size);
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     if (!size || !nmemb || !stream) return 0;
 
-    ssize_t r = __fileio_read_bytes(stream, ptr, nmemb*size);
+    char *p = (char*)ptr;
+    ssize_t r = __fileio_read_bytes(stream, p, nmemb*size);
     if (r == -1) {
         return -1;
     }

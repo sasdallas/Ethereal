@@ -9,7 +9,7 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2024 Samuel Stuart,
- * Copyright (C) 2025 Stanislas Orsola,
+* Copyright (C) 2025 Stanislas Orsola,
  */
 
 #include <stdio.h>

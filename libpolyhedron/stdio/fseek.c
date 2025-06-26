@@ -21,6 +21,7 @@ int fseek(FILE *stream, long offset, int whence) {
 
     // Reset EOF
     stream->eof = 0;
+    stream->ungetc = EOF;
 
     // This should handle errno
     int return_value = lseek(stream->fd, offset, whence);

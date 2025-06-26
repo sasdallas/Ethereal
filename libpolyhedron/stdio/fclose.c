@@ -16,6 +16,8 @@
 #include <unistd.h>
 
 int fclose(FILE *stream) {
+    fflush(stream);
+
     // Close the file descriptor stream
     if (close(stream->fd) < 0) return EOF;
     if (stream->rbuf) free(stream->rbuf);
