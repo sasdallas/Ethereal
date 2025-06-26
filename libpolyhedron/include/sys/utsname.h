@@ -11,6 +11,10 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
+#include <sys/cheader.h>
+
+_Begin_C_Header
+
 #ifndef _SYS_UTSNAME_H
 #define _SYS_UTSNAME_H
 
@@ -37,3 +41,5 @@ struct utsname {
 int uname(struct utsname *buf);
 
 #endif
+
+_End_C_Header

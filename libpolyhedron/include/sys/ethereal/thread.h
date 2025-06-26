@@ -73,3 +73,5 @@ int ethereal_killThread(pid_t tid, int sig);
 
 
 #endif
+
+_End_C_Header

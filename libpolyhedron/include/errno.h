@@ -86,7 +86,7 @@
 #define EPROTONOSUPPORT 123	/* Unknown protocol */
 #define EADDRNOTAVAIL 125	/* Address not available */
 #define ENETRESET 126		/* Connection aborted by network */
-#define EISCONN 127		/* Socket is already connected */
+#define EISCONN 127		    /* Socket is already connected */
 #define ENOTCONN 128		/* Socket is not connected */
 #define ETOOMANYREFS 129
 #define EDQUOT 132
@@ -99,13 +99,11 @@
 #define EOWNERDEAD 142	    /* Previous owner died */
 #define EWOULDBLOCK EAGAIN	/* Operation would block */
 #define ERESTARTSYS 512     /* Restart system call*/
+#define EFAULT      513     /* Bad address */
 
 #ifndef __LIBK
 #define __sets_errno(fn) {long _ret = fn; if ((int)_ret < 0) { errno = -_ret; _ret = -1; } return _ret; }
-
 extern int errno;
-
-char *strerror(int errnum);
 #endif
 
 #endif

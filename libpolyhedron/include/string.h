@@ -54,6 +54,11 @@ char *strdup(const char*);
 
 char *strsignal(int);
 
+int strcoll(const char *, const char *);
+size_t strxfrm(char *dest, const char *src, size_t n);
+
+char *strerror(int errnum);
+
 #endif
 
 _End_C_Header

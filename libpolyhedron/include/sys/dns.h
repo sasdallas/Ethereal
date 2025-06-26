@@ -13,6 +13,10 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
+#include <sys/cheader.h>
+
+_Begin_C_Header
+
 #ifndef _SYS_DNS_H
 #define _SYS_DNS_H
 
@@ -35,3 +39,5 @@ typedef struct dns_header {
 } __attribute__((packed)) dns_header_t;
 
 #endif
+
+_End_C_Header

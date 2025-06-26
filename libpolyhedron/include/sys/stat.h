@@ -90,3 +90,5 @@ int fstat(int fd, struct stat *statbuf);
 int lstat(const char *pathname, struct stat *statbuf);
 
 #endif
+
+_End_C_Header

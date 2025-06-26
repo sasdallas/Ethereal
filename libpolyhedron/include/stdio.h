@@ -102,7 +102,7 @@ int snprintf(char * str, size_t size, const char * format, ...);
 int sprintf(char * str, const char * format, ...);
 
 /* libiberty likes to provide their own xvasprintf */
-#if !defined(_XVASPRINTF) && !defined(_GNU_SOURCE)
+#if !defined(_XVASPRINTF) && !defined(_GNU_SOURCE) && !defined(IN_GLIBCPP_V3)
 size_t xvasprintf(xvas_callback callback, void * userData, const char * fmt, va_list args);
 #endif
 
@@ -151,6 +151,8 @@ int sscanf(const char *str, const char *format, ...);
 
 int remove(const char *pathname);
 FILE *tmpfile();
+
+int rename(const char *oldpath, const char *newpath);
 
 #endif
 

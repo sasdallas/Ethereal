@@ -98,3 +98,5 @@ int               wscanf(const wchar_t *, ...);
 
 
 #endif
+
+_End_C_Header

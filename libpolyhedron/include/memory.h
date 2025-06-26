@@ -23,3 +23,5 @@ _Begin_C_Header
 #include <string.h>
 
 #endif
+
+_End_C_Header

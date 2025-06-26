@@ -108,3 +108,5 @@ int   pthread_setspecific(pthread_key_t, const void *);
 void  pthread_testcancel(void);
 
 #endif
+
+_End_C_Header

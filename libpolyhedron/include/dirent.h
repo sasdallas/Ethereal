@@ -11,6 +11,10 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
+#include <sys/cheader.h>
+
+_Begin_C_Header
+
 #ifndef _DIRENT_H
 #define _DIRENT_H
 
@@ -48,3 +52,5 @@ void seekdir(DIR *dirp, long int loc);
 long int telldir(DIR *dirp);
 
 #endif
+
+_End_C_Header

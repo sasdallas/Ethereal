@@ -12,21 +12,17 @@
  */
 
 #include <sys/cheader.h>
+
 _Begin_C_Header
 
 #ifndef _UNISTD_H
 #define _UNISTD_H
 
 /**** INCLUDES ****/
-#include <sys/syscall.h>
-#include <sys/syscall_defs.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <stdint.h>
-#include <fcntl.h>
 #include <stddef.h>
 #include <sys/times.h>
-#include <errno.h>
 #include <time.h>
 
 /**** VARIABLES ****/

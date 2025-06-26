@@ -20,7 +20,6 @@ _Begin_C_Header
 #define _BITS_PTHREAD_H
 
 /**** INCLUDES ****/
-#include <stdatomic.h>
 #include <stddef.h>
 
 /**** TYPES ****/
@@ -46,7 +45,7 @@ typedef struct __pthread_mutexattr {
 
 /* LOCKS */
 
-typedef atomic_flag pthread_spinlock_t;
+typedef volatile int pthread_spinlock_t;
 
 typedef struct __pthread_rwlock {
     pthread_rwlockattr_t attr;      // Attribute

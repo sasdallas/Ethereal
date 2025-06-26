@@ -47,6 +47,8 @@ __define_div_structure(lldiv_t, long long);
 __attribute__((__noreturn__)) void abort(void);
 void exit(int status);
 int abs(int x);
+long labs(long j);
+long long llabs(long long j);
 int atoi(const char*);
 double atof(const char *nptr);
 long atol(const char *nptr);
@@ -79,9 +81,9 @@ void srand(unsigned int seed);
 void qsort(void * base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
 void qsort_r(void * base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void * arg);
 
-char *mktemp(char *template);
-
 int system(const char *command);
+
+int atexit(void (*func)());
 
 int mbtowc(wchar_t *pwcs,const char *str,size_t n);
 size_t mbstowcs(wchar_t *pwcs,const char *str,size_t n);

@@ -11,6 +11,10 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
+#include <sys/cheader.h>
+
+_Begin_C_Header
+
 #ifndef _GETOPT_H
 #define _GETOPT_H
 
@@ -47,3 +51,5 @@ int getopt_long_only(int argc, char *argv[],
 
 
 #endif
+
+_End_C_Header

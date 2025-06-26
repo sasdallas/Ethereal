@@ -62,3 +62,5 @@ _Begin_C_Header
 int  fcntl(int, int, ...);
 
 #endif
+
+_End_C_Header

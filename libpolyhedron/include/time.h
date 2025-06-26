@@ -66,6 +66,8 @@ extern double difftime(time_t a, time_t b);
 extern char *asctime(const struct tm *tm);
 extern char *ctime(const time_t *ptr);
 
+clock_t clock();
+
 #endif
 
 _End_C_Header

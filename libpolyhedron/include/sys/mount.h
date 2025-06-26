@@ -25,3 +25,5 @@ _Begin_C_Header
 int mount(const char *source, const char *target, const char *filesystemtype, unsigned long mountflags, const void *data);
 
 #endif
+
+_End_C_Header

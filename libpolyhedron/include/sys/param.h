@@ -21,3 +21,5 @@ _Begin_C_Header
 /* STUB */
 
 #endif
+
+_End_C_Header
