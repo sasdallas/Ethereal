@@ -180,17 +180,17 @@ static int elf_relocateSymbolAddend(elf_obj_t *obj, Elf64_Ehdr *ehdr, Elf64_Rela
             break;
 
         case R_X86_64_COPY:
-            // Recalculate the symbol value from other libraries
-            symbol_value = 0x0;
-            foreach(lib, __linker_libraries) {
-                if (lib->value != obj) {
-                    Elf64_Sym *sym = elf_lookupFromLibrary((elf_obj_t*)lib->value, name);
-                    if (sym) {
-                        symbol_value = (uintptr_t)sym->st_value + (uintptr_t)((elf_obj_t*)lib->value)->base;
-                        break;
-                    }
-                }
-            }
+            // // Recalculate the symbol value from other libraries
+            // symbol_value = 0x0;
+            // foreach(lib, __linker_libraries) {
+            //     if (lib->value != obj) {
+            //         Elf64_Sym *sym = elf_lookupFromLibrary((elf_obj_t*)lib->value, name);
+            //         if (sym) {
+            //             symbol_value = (uintptr_t)sym->st_value + (uintptr_t)((elf_obj_t*)lib->value)->base;
+            //             break;
+            //         }
+            //     }
+            // }
 
             if (!symbol_value) {
                 fprintf(stderr, "[%s] R_X86_64_COPY: No copy found for symbol %s!\n", obj->filename, name);

@@ -23,8 +23,8 @@ MAKE_OUTPUT:
 
 $(OBJ_DIR)/%: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@.o
-	$(LD) $@.o $(LDFLAGS) -o $@
-	cp -r $@ $(DESTDIR)$(EXEC_PREFIX)
+	$(CC) $@.o $(LDFLAGS) -o $@
+	cp -r $@ $(DESTDIR)$(BINARY_DIR)
 	cp -r $@ $(INITRD)/bin
 
 install: MAKE_OUTPUT $(C_OUTPUTS)

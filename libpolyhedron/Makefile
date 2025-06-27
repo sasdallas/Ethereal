@@ -58,8 +58,8 @@ $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS) $(CRT_OBJECTS)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crtn.o $(DESTDIR)$(LIB_DIRECTORY)
 
 
-# $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_BJECTS)
-# $(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
+$(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_BJECTS)
+	$(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
 
 # Target disabled
 all:
@@ -89,7 +89,7 @@ install-headers:
 	@-cp -R --preserve=timestamps include/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 	@-cp -R --preserve=timestamps $(ARCH_INCLUDE_DIRECTORY)/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a
 
 clean:
 	@-rm -r $(OUT_OBJ)

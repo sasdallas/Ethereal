@@ -309,17 +309,22 @@ int main(int argc, char *argv[]) {
     }
 
     // Now go!
-    void (*entry)(int, char **) = (void*)((Elf64_Ehdr*)obj->buffer)->e_entry;
+    void (*entry)(int, char **, char **) = (void*)((Elf64_Ehdr*)obj->buffer)->e_entry;
     LD_DEBUG("Setup completed, executing app at %p\n", entry);
-
-    char **arg = argv+2;
-    while (*arg) {
-        fprintf(stderr, "%s\n", *arg);
-        arg++;
-    }
-
-    fprintf(stderr, "argc: %d\n", argc);
-    entry(argc-2, argv+2);
+    
+#ifdef __ARCH_X86_64__
+    // Since _start from x86_64 libc pops from the stack, this is to be extra safe.
+    // __libc_main handles this correctly by adjusting for __argv, __argc, __envp
+    // TODO: NOT??
+    asm volatile (
+        "push $0\n"
+        "push $0\n"
+        "push $0\n"
+        "jmp * %0\n" :: "r"(entry));
+#else
+    // TODO: Probably need to also push on ARM
+    entry(argc-2, argv+2, environ);
+#endif
 
 
     return 0;

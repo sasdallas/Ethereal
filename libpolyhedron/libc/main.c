@@ -19,11 +19,12 @@
 
 /* Environment */
 char **environ = NULL;
+char **__envp = NULL;
 int envc = 0;
 
 /* argv */
 char **__argv = NULL;
-char **__envp = NULL;
+int __argc = 0;
 
 // linker will override this, so we will know if we are statically linked
 extern __attribute__((noinline)) char ** __get_argv() {
@@ -58,29 +59,42 @@ void __create_environ(char **envp) {
     envc--;
 }
 
+/* Stupid utility function to calculate __argc */
+int __get_argc() {
+    int i = 0;
+    char **p = __argv;
+    while (*p) { i++; p++; }
+    return i;
+}
+
 __attribute__((constructor)) void __libc_init() {
-    if (!environ) {
-        char **envp = __get_environ();
-        __create_environ(envp);
-    }
-    
+    __create_environ(__get_environ());
     __argv = __get_argv();
+    __argc = __get_argc();
 }
 
 __attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, char **argv, char **envp) {
     if (!__get_argv()) {
+        // This returned NULL, so thus __libc_init hasn't been called yet.
+        // This indicates that we were loaded from static library
+        
+        // Set the following variables so __get_environ and __get_argv work
         __argv = argv;
-        __create_environ(envp);
+        __envp = envp;
 
+        // Now call all the constructors to run __libc_init
 extern uintptr_t __init_array_start;
 extern uintptr_t __init_array_end;
-
         for (uintptr_t *i = &__init_array_start; i < &__init_array_end; i++) {
             void (*constructor)() = (void*)*i;
             constructor();
         }
     }
-    
-    exit(main(argc, argv));
+
+    // Initialize default constructors
+    _init();
+
+    // Go!
+    exit(main(__argc, __argv));
     __builtin_unreachable();
 }

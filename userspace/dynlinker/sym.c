@@ -25,7 +25,6 @@ const elf_symbol_t __linker_symbols[] = {
 };
 
 static char **__get_environ_ld(void) {
-    printf("__get_environ_ld\n");
     return environ;
 }
 
