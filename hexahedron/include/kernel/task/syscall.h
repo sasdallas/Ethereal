@@ -25,6 +25,7 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
+#include <sys/epoll.h>
 #include <dirent.h>
 #include <poll.h>
 
@@ -145,6 +146,10 @@ long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
 long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data);
 long sys_umount(const char *mountpoint);
 long sys_pipe(int fildes[2]);
+long sys_epoll_create(int size);
+long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask);
+
 
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 long sys_exit_thread(void *retval);

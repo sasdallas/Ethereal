@@ -86,6 +86,9 @@ _Begin_C_Header
 #define SYS_EXIT_THREAD     68  // Ethereal API (pthread)
 #define SYS_JOIN_THREAD     69  // Ethereal API (pthread)
 #define SYS_KILL_THREAD     70  // Ethereal API (pthread)
+#define SYS_EPOLL_CREATE    71
+#define SYS_EPOLL_CTL       72
+#define SYS_EPOLL_PWAIT     73
 
 /* Syscall macros */
 #define DEFINE_SYSCALL0(name, num) \

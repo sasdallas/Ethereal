@@ -86,7 +86,10 @@ static syscall_func_t syscall_table[] = {
     [SYS_SETTLS]            = (syscall_func_t)(uintptr_t)sys_settls,
     [SYS_EXIT_THREAD]       = (syscall_func_t)(uintptr_t)sys_exit_thread,
     [SYS_JOIN_THREAD]       = (syscall_func_t)(uintptr_t)sys_join_thread,
-    [SYS_KILL_THREAD]       = (syscall_func_t)(uintptr_t)sys_kill_thread
+    [SYS_KILL_THREAD]       = (syscall_func_t)(uintptr_t)sys_kill_thread,
+    [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)sys_epoll_create,
+    [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)sys_epoll_ctl,
+    [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)sys_epoll_pwait,
 }; 
 
 
@@ -876,4 +879,18 @@ long sys_pipe(int fildes[2]) {
     SYSCALL_VALIDATE_PTR(fildes);
 
     return pipe_create(current_cpu->current_process, fildes);
+}
+
+/**** EPOLL ****/
+
+long sys_epoll_create(int size) {
+    return -ENOTSUP;
+}
+
+long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
+    return -ENOTSUP;
+}
+
+long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask) {
+    return -ENOTSUP;
 }
