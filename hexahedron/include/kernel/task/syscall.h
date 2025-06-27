@@ -25,6 +25,7 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
+#include <dirent.h>
 #include <poll.h>
 
 /**** DEFINITIONS ****/

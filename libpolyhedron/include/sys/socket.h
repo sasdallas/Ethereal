@@ -25,10 +25,10 @@ _Begin_C_Header
 /**** DEFINITIONS ****/
 
 /* Types of sockets */
-#define SOCK_DGRAM          0       // Datagram socket
-#define SOCK_RAW            1       // Raw protocol interface
-#define SOCK_SEQPACKET      2       // Sequenced-packet stream
-#define SOCK_STREAM         3       // Byte-stream socket
+#define SOCK_DGRAM          1       // Datagram socket
+#define SOCK_RAW            2       // Raw protocol interface
+#define SOCK_SEQPACKET      3       // Sequenced-packet stream
+#define SOCK_STREAM         4       // Byte-stream socket
 
 #define SOL_SOCKET          1
 

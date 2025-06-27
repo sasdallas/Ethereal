@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <poll.h>
+#include <fcntl.h>
 
 /* Verbose mode enabled */
 static int verbose = 0;

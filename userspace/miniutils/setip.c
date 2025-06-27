@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 void help() {
     printf("Usage: setip [-g] [-s] [-c] [NIC] [IPv4]\n");

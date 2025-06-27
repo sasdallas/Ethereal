@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <kernel/fs/periphfs.h>
+#include <fcntl.h>
 
 /* Mouse file descriptor */
 int __celestial_mouse_fd = 0;
@@ -176,11 +177,10 @@ void mouse_events() {
 
                 // Focus window if it is not focused already
                 if (WM_FOCUSED_WINDOW != WM_MOUSE_WINDOW && WM_MOUSE_WINDOW->z_array == CELESTIAL_Z_DEFAULT) {
-                    // TODO: Tell other window it's not focused
                     // Reorder
                     WM_FOCUSED_WINDOW = WM_MOUSE_WINDOW;
 
-                    // TODO: Store node and send event
+                    // TODO: Store node
                     list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, WM_MOUSE_WINDOW));
                     list_append(WM_WINDOW_LIST, WM_MOUSE_WINDOW);
                 }

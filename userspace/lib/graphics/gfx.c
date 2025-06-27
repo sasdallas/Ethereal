@@ -18,6 +18,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <stdio.h>
+#include <fcntl.h>
 
 /**
  * @brief Initialize fullscreen graphics

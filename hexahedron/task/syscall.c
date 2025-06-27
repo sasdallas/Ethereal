@@ -29,6 +29,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <dirent.h>
 
 /* System call table */
 static syscall_func_t syscall_table[] = {

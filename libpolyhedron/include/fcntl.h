@@ -19,7 +19,9 @@ _Begin_C_Header
 #define _FCNTL_H
 
 /**** INCLUDES ****/
-#include <stdint.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 /**** DEFINITIONS ****/
 
@@ -57,9 +59,21 @@ _Begin_C_Header
 
 #define FD_CLOEXEC          0x1
 
+/**** TYPES ****/
+
+struct flock {
+    short l_type;
+    short l_whence;
+    off_t l_start;
+    off_t l_len;
+    pid_t l_pid;
+};
+
 /**** FUNCTIONS ****/
 
+int  creat(const char *, mode_t);
 int  fcntl(int, int, ...);
+int  open(const char *, int, ...);
 
 #endif
 

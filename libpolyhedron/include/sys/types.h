@@ -47,6 +47,19 @@ typedef unsigned short nlink_t;
 typedef unsigned long blkcnt_t;
 typedef unsigned long blksize_t; 
 
+/* Integer definitions */
+typedef unsigned char u_char;
+typedef unsigned short u_short;
+typedef unsigned int u_int;
+typedef unsigned long u_long;
+typedef unsigned long long u_quad;
+
+/* TODO: Validate */
+typedef unsigned char u_int8_t;
+typedef unsigned short u_int16_t;
+typedef unsigned long u_int32_t;
+typedef unsigned long long u_int64_t;
+
 #endif
 
 _End_C_Header

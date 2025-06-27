@@ -21,6 +21,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 
 /* Enable linker debug */

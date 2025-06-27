@@ -26,6 +26,7 @@ _Begin_C_Header
 
 #define INADDR_ANY              0
 #define INADDR_NONE             0xFFFFFFFF
+#define INADDR_BROADCAST        0xFFFFFFFF
 #define INADDR_LOOPBACK         0x7F000001
 
 /**** TYPES ****/

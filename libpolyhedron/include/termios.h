@@ -37,6 +37,7 @@ _Begin_C_Header
 #define VSTART      8   // (^Q) START character
 #define VSTOP       9   // (^S) STOP character
 #define VSUSP       10  // (^Z) SUSP character
+#define VTIME       11  // TIME value
 
 /* c_iflag */
 #define BRKINT      0x0001  // Signal interrupt on break
