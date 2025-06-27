@@ -215,10 +215,11 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
     }
 
     fd_t *proc_fd = FD(current_cpu->current_process, fd);
+
+    // LOG(DEBUG, "sys_read fd %d buffer %p count %d offset %d\n", fd, buffer, count, proc_fd->offset);
     ssize_t i = fs_read(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
     proc_fd->offset += i;
 
-    // LOG(DEBUG, "sys_read fd %d buffer %p count %d\n", fd, buffer, count);
     return i;
 }
 
@@ -235,7 +236,6 @@ extern int video_ks;
         char *buf = (char*)buffer;
         for (size_t i = 0; i < count; i++) terminal_putchar(buf[i]);
         video_updateScreen();
-        return count;
     }
     
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
@@ -521,7 +521,7 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     new_envp[envc] = NULL;
 
     // process_execute(f, argc, new_argv, new_envp);
-    return binfmt_exec(f, argc, new_argv, new_envp);
+    return binfmt_exec((char*)pathname, f, argc, new_argv, new_envp);
 }
 
 /**
