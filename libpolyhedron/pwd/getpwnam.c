@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct passwd *getpwname(const char *name) {
+struct passwd *getpwnam(const char *name) {
     // STUB UNTIL FORMAT IS DECIDED
     struct passwd *ent = malloc(sizeof(struct passwd));
     ent->pw_name = (char*)name;
