@@ -89,7 +89,7 @@ install-headers:
 	@-cp -R --preserve=timestamps include/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 	@-cp -R --preserve=timestamps $(ARCH_INCLUDE_DIRECTORY)/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
 
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkpolyhedron.a $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a
 
 clean:
 	@-rm -r $(OUT_OBJ)
