@@ -208,7 +208,8 @@ static void* liballoc_memcpy(void* s1, const void* s2, size_t n)
   
   return s1;
 }
- 
+
+
 
 #if defined DEBUG || defined INFO
 static void liballoc_dump()
@@ -320,6 +321,10 @@ void *PREFIX(malloc)(size_t req_size)
 	struct liballoc_minor *min;
 	struct liballoc_minor *new_min;
 	unsigned long size = req_size;
+
+	if (req_size == 0) {
+		return NULL;
+	}
 
 	// For alignment, we adjust size so there's enough space to align.
 	if ( ALIGNMENT > 1 )
@@ -669,12 +674,12 @@ void PREFIX(free)(void *ptr)
 
 	if ( ptr == NULL ) 
 	{
-		l_warningCount += 1;
-		#if defined DEBUG || defined INFO
-		printf( "liballoc: WARNING: PREFIX(free)( NULL ) called from %x\n",
-							__builtin_return_address(0) );
-		FLUSH();
-		#endif
+		// l_warningCount += 1;
+		// #if defined DEBUG || defined INFO
+		// printf( "liballoc: WARNING: PREFIX(free)( NULL ) called from %x\n",
+		// 					__builtin_return_address(0) );
+		// FLUSH();
+		// #endif
 		return;
 	}
 
@@ -793,6 +798,8 @@ void PREFIX(free)(void *ptr)
 
 void* PREFIX(calloc)(size_t nobj, size_t size)
 {
+	   if (!nobj || !size) return NULL;
+
        int real_size;
        void *p;
 

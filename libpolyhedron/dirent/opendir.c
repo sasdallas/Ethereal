@@ -14,6 +14,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 DIR *fdopendir(int fd) {
     DIR *dirp = malloc(sizeof(DIR));

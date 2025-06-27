@@ -9,7 +9,7 @@ OUT_OBJ_LIBK = $(OUT_OBJ)/libk
 
 # SOURCE DIRECTORIES
 SOURCE_DIRECTORIES = stdlib stdio string time net
-LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread
+LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread pwd
 LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Include the architecture Make configuration to allow it to add to DIRECTORIES
@@ -58,8 +58,8 @@ $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS) $(CRT_OBJECTS)
 	-cp $(OUT_OBJ_LIBC)/arch/$(BUILD_ARCH)/crt/crtn.o $(DESTDIR)$(LIB_DIRECTORY)
 
 
-$(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_BJECTS)
-	$(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
+# $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_BJECTS)
+# $(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
 
 # Target disabled
 all:

@@ -59,8 +59,11 @@ void __create_environ(char **envp) {
 }
 
 __attribute__((constructor)) void __libc_init() {
-    char **envp = __get_environ();
-    __create_environ(envp);
+    if (!environ) {
+        char **envp = __get_environ();
+        __create_environ(envp);
+    }
+    
     __argv = __get_argv();
 }
 
@@ -68,6 +71,14 @@ __attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, c
     if (!__get_argv()) {
         __argv = argv;
         __create_environ(envp);
+
+extern uintptr_t __init_array_start;
+extern uintptr_t __init_array_end;
+
+        for (uintptr_t *i = &__init_array_start; i < &__init_array_end; i++) {
+            void (*constructor)() = (void*)*i;
+            constructor();
+        }
     }
     
     exit(main(argc, argv));
