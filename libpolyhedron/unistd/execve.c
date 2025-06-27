@@ -13,6 +13,7 @@
 
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <errno.h>
 
 DEFINE_SYSCALL3(execve, SYS_EXECVE, const char*, const char**, char**);
 

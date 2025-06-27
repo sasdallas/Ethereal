@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/perror.c
- * @brief perror
+ * @file libpolyhedron/unistd/access.c
+ * @brief access
  * 
  * 
  * @copyright
@@ -11,14 +11,12 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#include <stdio.h>
+#include <unistd.h>
 #include <errno.h>
-#include <string.h>
+#include <stdio.h>
 
-void perror(const char *s) {
-#ifndef __LIBK
-    if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
-    }
-#endif
+int access(const char *path, int amode) {
+    printf("access %s\n", path);
+    errno = EACCES;
+    return -1;
 }

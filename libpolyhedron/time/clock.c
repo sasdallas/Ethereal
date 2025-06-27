@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/perror.c
- * @brief perror
+ * @file libpolyhedron/time/clock.c
+ * @brief clock() function
  * 
  * 
  * @copyright
@@ -8,17 +8,13 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
+#include <time.h>
 #include <stdio.h>
-#include <errno.h>
-#include <string.h>
 
-void perror(const char *s) {
-#ifndef __LIBK
-    if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
-    }
-#endif
+clock_t clock() {
+    fprintf(stderr, "clock: stub\n");
+    return (clock_t)0;
 }

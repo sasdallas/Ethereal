@@ -15,6 +15,7 @@
 #include <sys/times.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 
 /* Call into the kernel if we're linked to it. Else use a system call */

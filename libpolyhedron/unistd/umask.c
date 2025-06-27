@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/perror.c
- * @brief perror
+ * @file libpolyhedron/unistd/umask.c
+ * @brief umask
  * 
  * 
  * @copyright
@@ -8,17 +8,14 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
+#include <stdlib.h>
 #include <stdio.h>
-#include <errno.h>
-#include <string.h>
+#include <sys/stat.h>
 
-void perror(const char *s) {
-#ifndef __LIBK
-    if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
-    }
-#endif
+mode_t umask(mode_t cmask) {
+    fprintf(stderr, "umask: stub\n");
+    return 0;
 }

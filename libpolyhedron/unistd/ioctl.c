@@ -14,6 +14,7 @@
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <stdarg.h>
+#include <errno.h>
 
 DEFINE_SYSCALL3(ioctl, SYS_IOCTL, int, unsigned long, void*);
 

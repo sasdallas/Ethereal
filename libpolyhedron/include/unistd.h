@@ -19,6 +19,10 @@ _Begin_C_Header
 #define _UNISTD_H
 
 /**** INCLUDES ****/
+// !!!: Convenience definitions
+#include <sys/syscall.h>    
+#include <errno.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stddef.h>
@@ -74,8 +78,6 @@ int dup(int fd);
 int getopt(int argc, char * const argv[], const char * optstring);
 int pipe(int fildes[2]);
 int mkdir(const char *pathname, mode_t mode);
-
-/* STUBS */
 int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);
 int system(const char *command);
@@ -84,6 +86,14 @@ int access(const char *path, int amode);
 int isatty(int fd);
 long pathconf(const char *path, int name);
 long fpathconf(int fd, int name);
+pid_t getppid();
+gid_t getegid();
+uid_t geteuid();
+gid_t getgid();
+pid_t getppid();
+uid_t getuid();
+char *ttyname(int fd);
+int rmdir(const char *pathname);
 
 #endif
 

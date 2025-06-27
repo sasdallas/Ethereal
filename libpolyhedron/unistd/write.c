@@ -13,6 +13,7 @@
 
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 DEFINE_SYSCALL3(write, SYS_WRITE, int, const void*, size_t);
 

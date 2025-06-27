@@ -13,6 +13,7 @@
 
 #include <unistd.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 DEFINE_SYSCALL3(open, SYS_OPEN, const char*, int, mode_t);
 

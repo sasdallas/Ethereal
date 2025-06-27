@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 
 int execvpe(const char *file, const char *argv[], char *envp[]) {
     // Does file contain a "/" anywhere?

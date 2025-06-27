@@ -12,6 +12,8 @@
  */
 
 #include <unistd.h>
+#include <sys/syscall.h>
+#include <errno.h>
 
 DEFINE_SYSCALL1(chdir, SYS_CHDIR, const char*)
 DEFINE_SYSCALL1(fchdir, SYS_FCHDIR, int);

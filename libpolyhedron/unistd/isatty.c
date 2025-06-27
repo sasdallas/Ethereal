@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/perror.c
- * @brief perror
+ * @file libpolyhedron/unistd/isatty.c
+ * @brief isatty
  * 
  * 
  * @copyright
@@ -11,14 +11,10 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
+#include <unistd.h>
 #include <stdio.h>
-#include <errno.h>
-#include <string.h>
 
-void perror(const char *s) {
-#ifndef __LIBK
-    if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
-    }
-#endif
+int isatty(int fd) {
+    fprintf(stderr, "isatty: %d\n", fd);
+    return 1;
 }

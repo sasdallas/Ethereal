@@ -12,6 +12,7 @@
  */
 
 #include <unistd.h>
+#include <sys/syscall.h>
 
 DEFINE_SYSCALL1(exit, SYS_EXIT, int);
 

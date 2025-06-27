@@ -14,6 +14,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 DEFINE_SYSCALL1(brk, SYS_BRK, void*);
 

@@ -14,6 +14,7 @@
  */
 
 #include <unistd.h>
+#include <sys/syscall.h>
 
 DEFINE_SYSCALL0(getpid, SYS_GETPID);
 

@@ -20,12 +20,12 @@ int system(const char *command) {
     pid_t cpid = fork();
     if (!cpid) {
         const char *args[] = {
-            "/device/initrd/usr/bin/essence",
+            "/usr/bin/essence",
             "-c",
             command,
             NULL
         };
-        execvpe("/device/initrd/usr/bin/essence", args, environ);
+        execvpe("/usr/bin/essence", args, environ);
         exit(EXIT_FAILURE);
     }
 

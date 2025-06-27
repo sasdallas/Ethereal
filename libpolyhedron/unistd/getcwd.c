@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/syscall.h>
 
 DEFINE_SYSCALL2(getcwd, SYS_GETCWD, char*, size_t);
 

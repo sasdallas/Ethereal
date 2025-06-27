@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/perror.c
- * @brief perror
+ * @file libpolyhedron/unistd/rmdir.c
+ * @brief rmdir
  * 
  * 
  * @copyright
@@ -8,17 +8,14 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
+#include <unistd.h>
 #include <stdio.h>
-#include <errno.h>
-#include <string.h>
+#include <stdlib.h>
 
-void perror(const char *s) {
-#ifndef __LIBK
-    if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
-    }
-#endif
+int rmdir(const char *path) {
+    fprintf(stderr, "rmdir: stub\n");
+    abort();
 }

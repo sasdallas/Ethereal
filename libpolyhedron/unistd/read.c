@@ -13,6 +13,7 @@
 
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 DEFINE_SYSCALL3(read, SYS_READ, int, void*, size_t);
  

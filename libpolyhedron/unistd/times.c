@@ -13,6 +13,7 @@
 
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <errno.h>
 
 DEFINE_SYSCALL1(times, SYS_TIMES, struct tms*);
 

@@ -14,6 +14,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
 
 DEFINE_SYSCALL1(usleep, SYS_USLEEP, useconds_t);
 

@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 DEFINE_SYSCALL3(wait, SYS_WAIT, pid_t, int*, int);
 
