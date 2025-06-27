@@ -152,6 +152,7 @@ void socket_handle(int sock) {
     char data[4096];
 
     if (recv(sock, data, 4096, 0) < 0) {
+        if (errno == EWOULDBLOCK) return;
         CELESTIAL_PERROR("recv");
         celestial_fatal();
     }
@@ -340,7 +341,7 @@ void socket_handle(int sock) {
     } else if (hdr->type == CELESTIAL_REQ_FLIP) {
         // Flip window
         CELESTIAL_VALIDATE(celestial_req_flip_t, CELESTIAL_REQ_FLIP);
-        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_FLIP\n");
+        CELESTIAL_LOG("socket: Received CELESTIAL_REQ_FLIP\n");
         celestial_req_flip_t *req = (celestial_req_flip_t*)hdr;
         if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_FLIP, EINVAL);
         if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_FLIP, EPERM);
@@ -354,6 +355,9 @@ void socket_handle(int sock) {
     
         gfx_rect_t upd_rect = { .x = req->x, .y = req->y, .width = req->width, .height = req->height };
         window_update(win, upd_rect);
+
+        // TODO: This will repeatedly draw (can be slow)
+        // window_updateRegion(upd_rect);
         return; // NO RESPONSE FOR FLIP REQUEST
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);

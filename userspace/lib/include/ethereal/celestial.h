@@ -31,6 +31,9 @@ typedef struct celestial_info {
 
 /**
  * @brief Main loop for a Celestial window
+ * 
+ * You are not required to enter this. This is if you have async threads running and don't want to care.
+ * Most likely, you want @c celestial_poll that will handle updates on your window.
  */
 void celestial_mainLoop();
 

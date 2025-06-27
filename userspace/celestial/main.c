@@ -67,10 +67,7 @@ void celestial_redraw() {
     // Render the mouse
     mouse_render();
 
-// extern void gfx_drawClips(gfx_context_t *ctx);
-    // gfx_drawClips(WM_GFX);
-
-    // Render the grahics
+    // Render the graphics
     gfx_render(WM_GFX);
 }
 
@@ -91,41 +88,47 @@ void celestial_main() {
         // Redraw
         celestial_redraw();
 
-
-        // !!!: Sorta slow, but probably the easiest way with the client map
-        struct pollfd p[__celestial_client_count];
-        if (!__celestial_client_count) continue;
-        int i = 0;
-
         list_t *keys = hashmap_keys(WM_SW_MAP);
-
-        foreach (kn, keys) {
-            p[i].fd = (int)(uintptr_t)kn->value;
-            p[i].events = POLLIN;
-            i++;
-        } 
-
-        list_destroy(keys, false);
-
-        if (!i) continue;
-
-        // Wait for events
-        int r = poll(p, __celestial_client_count, 0);
-        if (r < 0) {
-            CELESTIAL_PERROR("poll");
-            celestial_fatal();
+        foreach(kn, keys) {
+            socket_handle((int)(uintptr_t)kn->value);
         }
+        list_destroy(keys,false);
 
 
-        if (!r) continue;
+        // // !!!: Sorta slow, but probably the easiest way with the client map
+        // struct pollfd p[__celestial_client_count];
+        // if (!__celestial_client_count) continue;
+        // int i = 0;
 
-        for (int i = 0; i < __celestial_client_count; i++) {
-            if (p[i].revents & POLLIN) {
-                // INPUT available
-                CELESTIAL_DEBUG("Input available on fd %d\n", p[i].fd);
-                socket_handle(p[i].fd);
-            }
-        }
+        // list_t *keys = hashmap_keys(WM_SW_MAP);
+
+        // foreach (kn, keys) {
+        //     p[i].fd = (int)(uintptr_t)kn->value;
+        //     p[i].events = POLLIN;
+        //     i++;
+        // } 
+
+        // list_destroy(keys, false);
+
+        // if (!i) continue;
+
+        // // Wait for events
+        // int r = poll(p, __celestial_client_count, 0);
+        // if (r < 0) {
+        //     CELESTIAL_PERROR("poll");
+        //     celestial_fatal();
+        // }
+
+
+        // if (!r) continue;
+
+        // for (int i = 0; i < __celestial_client_count; i++) {
+        //     if (p[i].revents & POLLIN) {
+        //         // INPUT available
+        //         CELESTIAL_DEBUG("Input available on fd %d\n", p[i].fd);
+        //         socket_handle(p[i].fd);
+        //     }
+        // }
     }
 }
 
@@ -213,6 +216,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    char *launch = "wmtest";
+    if (argc-optind) {
+        launch = argv[optind];
+    }
+
     // If there wasn't a log device, open one.
     if (!__celestial_log_device) __celestial_log_device = fopen("/device/kconsole", "w");
     CELESTIAL_LOG("celestial v %d.%d.%d\n", CELESTIAL_VERSION_MAJOR, CELESTIAL_VERSION_MINOR, CELESTIAL_VERSION_LOWER);
@@ -246,8 +254,8 @@ int main(int argc, char *argv[]) {
     CELESTIAL_DEBUG("Created mouse successfully\n");
 
     if (!fork()) {
-        const char *a[] = { "wmtest", NULL };
-        execvp("wmtest", a);
+        const char *a[] = { launch, NULL };
+        execvp(launch, a);
         exit(1);
     }
 

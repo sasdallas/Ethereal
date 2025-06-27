@@ -211,4 +211,16 @@ int celestial_sendRequest(void *req, size_t size);
  */
 void *celestial_getResponse(int type);
 
+/**
+ * @brief Poll for events
+ * If events are available, the corresponding event handler will be called.
+ */
+void celestial_poll();
+
+/**
+ * @brief Query to see if anything is available on the socket (or in queued)
+ * @returns 1 if content is available
+ */
+int celestial_query();
+
 #endif

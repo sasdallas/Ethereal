@@ -22,7 +22,7 @@
 #include <string.h>
 
 /* Celestial socket */
-static int __celestial_socket = -1;
+int __celestial_socket = -1;
 
 /* Celestial queued responses */
 static list_t *celestial_resp_queue = NULL;
@@ -136,4 +136,67 @@ void *celestial_getResponse(int type) {
         if (!celestial_resp_queue) celestial_resp_queue = list_create("celestial resp queue");
         list_append(celestial_resp_queue, m);
     }
+}
+
+/**
+ * @brief Poll for events
+ * If events are available, the corresponding event handler will be called.
+ */
+void celestial_poll() {
+    // Anything in queue?
+    if (celestial_resp_queue && celestial_resp_queue->length) {
+        foreach(resp_node, celestial_resp_queue) {
+            celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
+            list_delete(celestial_resp_queue, resp_node);
+            free(resp_node);
+
+            if (h->magic == CELESTIAL_MAGIC_EVENT) {
+                celestial_handleEvent(h);
+                return;
+            }
+        }
+    }
+
+    // Nope, check the sockets
+    struct pollfd fds[1];
+    fds[0].fd = __celestial_socket;
+    fds[0].events = POLLIN;
+
+    int p = poll(fds, 1, 0);
+    if (p <= 0 || !(fds[0].revents & POLLIN)) return;
+
+    // New data available
+    fprintf(stderr, "celestial: [lib] Receiving event from Celestial\n");
+    char data[4096];
+    ssize_t r = recv(__celestial_socket, data, 4096, 0);
+    if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return;
+
+    // Malloc and move it
+    void *m = malloc(((celestial_req_header_t*)data)->size);
+    memcpy(m, data, ((celestial_req_header_t*)data)->size);
+
+    // Is it an event? Process those immediately
+    if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
+        // fprintf(stderr, "Received event from Celestial: %x\n", ((celestial_req_header_t*)m)->type);
+        celestial_handleEvent(m);
+    } else {
+        fprintf(stderr, "celestial: [lib] Discarding unknown event/request (if you get this and system stalls, this is a bug)\n");
+        free(m);
+    }
+}
+
+/**
+ * @brief Query to see if anything is available on the socket (or in queued)
+ * @returns 1 if content is available
+ */
+int celestial_query() {
+    if (celestial_resp_queue->length) return 1;
+
+    struct pollfd fds[1];
+    fds[0].fd = __celestial_socket;
+    fds[0].events = POLLIN;
+
+    int p = poll(fds, 1, 0);
+    if (p <= 0 || !(fds[0].revents & POLLIN)) return 0;
+    return 1;
 }

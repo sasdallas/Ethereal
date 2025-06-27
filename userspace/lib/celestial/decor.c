@@ -52,8 +52,8 @@ int celestial_initDecorations(struct window *win, decor_handler_t *decor) {
     win->height = CELESTIAL_REAL_HEIGHT(win);
 
     // Setup the window's graphics context
-    win->ctx = celestial_getGraphicsContext(win);
-    win->decor->ctx = win->ctx;
+    win->decor->ctx = celestial_getGraphicsContext(win);
+    win->ctx = NULL;
 
     // Setup titlebar too
     win->decor->titlebar = "Celestial Window";
@@ -64,11 +64,17 @@ int celestial_initDecorations(struct window *win, decor_handler_t *decor) {
 
     // Create new graphics context for the window
     win->ctx = malloc(sizeof(gfx_context_t));
-    memcpy(win->ctx, win->decor->ctx, sizeof(gfx_context_t));
+    // memcpy(win->ctx, win->decor->ctx, sizeof(gfx_context_t));
+    memset(win->ctx, 0, sizeof(gfx_context_t));
+    win->ctx->width = win->decor->ctx->width;
+    win->ctx->pitch = win->decor->ctx->pitch;
+    win->ctx->height = win->decor->ctx->height;
+    win->ctx->bpp = win->decor->ctx->bpp;
+    win->ctx->flags = win->decor->ctx->flags;
 
     // Move window graphics context
     win->ctx->buffer = &GFX_PIXEL_REAL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
-    if (win->ctx->backbuffer) win->ctx->backbuffer = &GFX_PIXEL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
+    if (win->decor->ctx->backbuffer) win->ctx->backbuffer = &GFX_PIXEL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
     win->ctx->width -= win->decor->borders.right_width + win->decor->borders.left_width;
     win->ctx->height -= win->decor->borders.bottom_height + win->decor->borders.top_height;
     
@@ -151,8 +157,6 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 if (b == DECOR_BTN_MINIMIZE) win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_HOVER);
                 else win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_NORMAL);
 
-                win->decor->render(win);
-
                 // Fix hack
                 if (!in_borders) decor_was_last_in_borders = 0;
                 else decor_was_last_in_borders = 1;
@@ -182,6 +186,16 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 drag->win_y += win->decor->borders.top_height;
                 return 1;
             }
+
+        case CELESTIAL_EVENT_FOCUSED:
+            win->decor->focused = 1;
+            win->decor->render(win);
+            return 1; // Pass this event along
+
+        case CELESTIAL_EVENT_UNFOCUSED:
+            win->decor->focused = 0;
+            win->decor->render(win);
+            return 1; // Pass this event along
 
         default:
             return 1;

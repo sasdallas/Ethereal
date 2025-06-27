@@ -90,6 +90,15 @@ typedef struct celestial_event_mouse_exit {
     CELESTIAL_EVENT_COMMON              // Common
 } celestial_event_mouse_exit_t;
 
+typedef struct celestial_event_focused {
+    CELESTIAL_EVENT_COMMON              // Common
+} celestial_event_focused_t;
+
+typedef struct celestial_event_unfocused {
+    CELESTIAL_EVENT_COMMON              // Common
+} celestial_event_unfocused_t;
+
+
 /**
  * @brief Celestial event handler
  * @param win The window the event occurred on

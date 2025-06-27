@@ -107,7 +107,64 @@ void mouse_events() {
             WM_MOUSEX = WM_MOUSE_WINDOW->x - mouse_window_off_x;
             WM_MOUSEY = WM_MOUSE_WINDOW->y - mouse_window_off_y;
             
-            window_updateRegion(old);
+            // Do we collide with our rectangles?
+            gfx_rect_t collide = { .x = WM_MOUSE_WINDOW->x, .y = WM_MOUSE_WINDOW->y, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
+            if (GFX_RECT_COLLIDES(WM_GFX, old, collide)) {
+                // Yes, both rectangles collide.
+                // Let's get the rectangles at which we need to redraw them
+                if (GFX_RECT_TOP(WM_GFX, old) < GFX_RECT_TOP(WM_GFX, collide)) {
+                    // We dragged downward
+                    gfx_rect_t top = { .x = old.x, .y = old.y, .width = old.width, .height = collide.y - old.y };
+                    
+                #ifdef GFX_DEBUG_DRAGS
+                    gfx_createClip(WM_GFX, top.x, top.y, top.width, top.height);
+                    gfx_drawRectangleFilled(WM_GFX, &top, GFX_RGB(0,255,0));
+                #endif
+
+                    window_updateRegion(top);
+                }
+
+                if (GFX_RECT_BOTTOM(WM_GFX, old) > GFX_RECT_BOTTOM(WM_GFX, collide)) {
+                    // We dragged up
+                    gfx_rect_t bottom = { .x = old.x, .y = collide.y + collide.height, .width = old.width, .height = GFX_RECT_BOTTOM(WM_GFX, old) - GFX_RECT_BOTTOM(WM_GFX, collide) };
+
+                #ifdef GFX_DEBUG_DRAGS
+                    gfx_createClip(WM_GFX, bottom.x, bottom.y, bottom.width, bottom.height);
+                    gfx_drawRectangleFilled(WM_GFX, &bottom, GFX_RGB(255,0,0));
+                #endif
+
+                    window_updateRegion(bottom);
+                }
+
+                if (GFX_RECT_LEFT(WM_GFX, old) < GFX_RECT_LEFT(WM_GFX, collide)) {
+                    // We dragged to the right
+                    gfx_rect_t left  = { .x = old.x, .y = old.y, .width = collide.x - old.x, .height = old.height };
+                    
+                #ifdef GFX_DEBUG_DRAGS
+                    gfx_createClip(WM_GFX, left.x, left.y, left.width, left.height);
+                    gfx_drawRectangleFilled(WM_GFX, &left, GFX_RGB(255,0xa5,0));
+                #endif
+
+                    window_updateRegion(left);
+                }
+
+                if (GFX_RECT_RIGHT(WM_GFX, old) > GFX_RECT_RIGHT(WM_GFX, collide)) {
+                    // We dragged to the left
+                    gfx_rect_t right = { .x = GFX_RECT_RIGHT(WM_GFX, collide), .y = old.y, .width = GFX_RECT_RIGHT(WM_GFX, old) - GFX_RECT_RIGHT(WM_GFX, collide), .height = old.height };
+                    
+                #ifdef GFX_DEBUG_DRAGS
+                    gfx_createClip(WM_GFX, right.x, right.y, right.width, right.height);
+                    gfx_drawRectangleFilled(WM_GFX, &right, GFX_RGB(0,0,255));
+                #endif
+
+                    window_updateRegion(right);
+                }
+            } else {
+                // Nah, update the whole region
+                window_updateRegion(old);
+            }
+
+            // window_updateRegion(old);
 
             gfx_rect_t upd = { .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
             window_update(WM_MOUSE_WINDOW, upd);
@@ -217,6 +274,8 @@ void mouse_events() {
             // Release
             // !!!: Maybe make usermode apps do this?
             WM_MOUSE_WINDOW->state = WINDOW_STATE_NORMAL;
+        } else if (WM_MOUSE_WINDOW->state == WINDOW_STATE_DRAGGING) {
+            return; // Only stop dragging when button released
         }
 
         // Send motion event if there was any
@@ -307,7 +366,6 @@ int mouse_update() {
 
     // Make clips
     gfx_createClip(WM_GFX, WM_MOUSEX, WM_MOUSEY, WM_MOUSE_SPRITE->width, WM_MOUSE_SPRITE->height);
-    if (WM_MOUSE_WINDOW == WM_FOCUSED_WINDOW && WM_MOUSE_WINDOW) window_update(WM_MOUSE_WINDOW, (gfx_rect_t){ .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height });
     return 1;
 }
 

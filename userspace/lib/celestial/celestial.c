@@ -13,7 +13,12 @@
 
 #include <ethereal/celestial.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <errno.h>
+#include <poll.h>
+
+/* Socket for poll */
+extern int __celestial_socket;
 
 /**
  * @brief Main loop for a Celestial window

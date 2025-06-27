@@ -28,13 +28,14 @@
 
 #define DECOR_FLAG_DEFAULT      0x0     // Default
 
-#define DECOR_BTN_NONE          0
-#define DECOR_BTN_CLOSE         1
-#define DECOR_BTN_MAXIMIZE      2
-#define DECOR_BTN_MINIMIZE      3
+/* Button IDs */
+#define DECOR_BTN_NONE                  0
+#define DECOR_BTN_CLOSE                 1
+#define DECOR_BTN_MAXIMIZE              2
+#define DECOR_BTN_MINIMIZE              3
 
-#define DECOR_BTN_STATE_NORMAL  0
-#define DECOR_BTN_STATE_HOVER   1
+#define DECOR_BTN_STATE_NORMAL          0
+#define DECOR_BTN_STATE_HOVER           1
 
 
 /**** TYPES ****/
@@ -108,13 +109,14 @@ typedef struct decor {
     char *titlebar;             // Titlebar
     uint8_t flags;              // Flags of decoration
     gfx_context_t *ctx;         // Graphics context of the decorations
+    uint8_t focused;            // Window is focused?
 
     decor_borders_t borders;    // Borders
 
     decor_init_t init;          // Initialize decorations
     decor_render_t render;      // Render decorations
     decor_in_bounds_t inbtn;    // Button bounds check
-    decor_update_state_t state; // Update button state
+    decor_update_state_t state; // Update state
 
     gfx_font_t *font;           // Font
     void *d;                    // Specific to decoration handler

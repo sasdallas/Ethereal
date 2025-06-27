@@ -32,15 +32,16 @@ sprite_t *minimize_sprite = NULL;
 #define WIN_WIDTH(win) (win->info->width)
 #define WIN_HEIGHT(win) (win->info->height)
 
+#define MERCURY_COLOR_TEXT_FOCUSED      (GFX_RGB(255, 255, 255))
+#define MERCURY_COLOR_TEXT_UNFOCUSED    (GFX_RGB(0xcc, 0xcc, 0xcc))
+
 /**
  * @brief Initialize the Mercury theme
  * @param win The window to initialize Mercury on
  */
 int celestial_initMercury(window_t *win) {
-    win->decor->ctx = celestial_getGraphicsContext(win);
     gfx_clear(win->decor->ctx, GFX_RGB(255,255,255));
     gfx_render(win->decor->ctx);
-
 
     // Load font object
     win->decor->font = gfx_loadFont(win->decor->ctx, "/usr/share/UbuntuMono-Regular.ttf");
@@ -110,8 +111,10 @@ int celestial_renderMercury(window_t *win) {
     gfx_renderSprite(win->decor->ctx, close_sprite, win->decor->ctx->width - close_sprite->width - 4, 2);
     gfx_renderSprite(win->decor->ctx, maximize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 5, 2);
     gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - 6, 2);
-    gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 6, win->decor->borders.top_height - 6, GFX_RGB(255,255,255));
+    gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 6, win->decor->borders.top_height - 6, (win->decor->focused ? MERCURY_COLOR_TEXT_FOCUSED : MERCURY_COLOR_TEXT_UNFOCUSED));
     gfx_render(win->decor->ctx);
+    celestial_flip(win); // TODO: Only flip decorations
+
     return 0;
 }
 
@@ -174,7 +177,6 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
             close_sprite = close_sprite_unhovered;
         }
 
-        // TODO: Hover textures
         f = fopen("/usr/share/mercury/close.bmp", "r");
         if (f) {
             close_sprite_hovered = gfx_createSprite(0,0);

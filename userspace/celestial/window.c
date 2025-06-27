@@ -204,7 +204,6 @@ void window_updateRegion(gfx_rect_t rect) {
     }
     
     // Next, handle the other window updates
-
     foreach(win_node, WM_WINDOW_LIST) {
         wm_window_t *win = (wm_window_t*)win_node->value;
 
