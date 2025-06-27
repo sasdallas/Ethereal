@@ -480,7 +480,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
                 // Allocate corresponding to prot flags
                 int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | MEM_PAGE_NOALLOC;
-                if (pg) mem_allocatePage(pg, flags);
+                if (pg && PAGE_IS_PRESENT(pg)) mem_allocatePage(pg, flags);
             } 
         
             // LOG(DEBUG, "CoW released for %p - %p\n", alloc->base, alloc->base + alloc->size);
@@ -525,14 +525,17 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
                 int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | MEM_PAGE_NOALLOC;
                 mem_allocatePage(pg, flags);
 
+                uintptr_t rm = mem_remapPhys(new_frame, PAGE_SIZE);
+
                 // Copy the data
-                memcpy((void*)i, (void*)remapped, PAGE_SIZE); 
+                memcpy((void*)rm, (void*)remapped, PAGE_SIZE); 
 
                 mem_unmapPhys(remapped, PAGE_SIZE);
+                mem_unmapPhys(rm, PAGE_SIZE);
             }
         }
 
-        LOG(INFO, "Performed full CoW for %p - %p (now %d references remaining on this previous allocation)\n", alloc->base, alloc->base + alloc->size, old->references);
+        // LOG(INFO, "Performed full CoW for %p - %p (now %d references remaining on this previous allocation)\n", alloc->base, alloc->base + alloc->size, old->references);
         spinlock_release(&old->ref_lck);
         return 1;
     }
@@ -629,7 +632,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
     // Do we support CoW?
     // TODO: Perform CoW in thread stacks - this was bugging out for some reason
-    if (!(vas->flags & VAS_NO_COW) && !kargs_has("--disable-cow") && source->type != VAS_ALLOC_EXECUTABLE && source->type != VAS_ALLOC_THREAD_STACK) {
+    if (!(vas->flags & VAS_NO_COW) && !kargs_has("--disable-cow")) {
         // Yes, do this to be copy on write
         alloc = source;
         
