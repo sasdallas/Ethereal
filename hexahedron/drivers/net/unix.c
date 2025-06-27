@@ -260,7 +260,12 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
-        
+ 
+        // Avoid blocking if we are non blocking
+        if (sock->flags & SOCKET_FLAG_NONBLOCKING && circbuf_remaining_write(usock_target->packet_buffer) <= 0) {
+            return -EWOULDBLOCK;
+        }
+
         // Create packet data
         unix_datagram_data_t *data = kmalloc(sizeof(unix_datagram_data_t));
         data->packet_size = msg->msg_iov[0].iov_len;
@@ -288,6 +293,11 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
+
+        // Avoid blocking if we are non blocking
+        if (sock->flags & SOCKET_FLAG_NONBLOCKING && circbuf_remaining_write(usock_target->packet_buffer) <= 0) {
+            return -EWOULDBLOCK;
+        }
 
         // Streamed sockets are even easier, just write the packet for them.
         ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
@@ -562,6 +572,8 @@ int unix_close(sock_t *sock) {
         unix_sock_t *other_sock = (unix_sock_t*)usock->connected_socket->driver;
         circbuf_stop(other_sock->packet_buffer);
     }
+
+    if (sock->type != SOCK_DGRAM) circbuf_stop(usock->packet_buffer);
 
     // Drop from hashmap
     spinlock_acquire(&unix_mount_lock);

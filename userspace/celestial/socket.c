@@ -71,6 +71,14 @@ void socket_accept() {
         if (errno == EWOULDBLOCK) return;
     }
 
+    // Mark this socket as nonblocking
+    int i = 1;
+    if (ioctl(fd, FIONBIO, &i) < 0) {
+        CELESTIAL_PERROR("FIONBIO");
+        CELESTIAL_ERR("socket: Could not set socket as nonblocking\n");
+        celestial_fatal();
+    }
+
     CELESTIAL_DEBUG("socket: New connection on fd %d\n", fd);
     celestial_addClient(fd, -1);
 }
