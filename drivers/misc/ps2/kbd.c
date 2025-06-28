@@ -31,26 +31,25 @@
 static int held_shift_key = 0;
 
 /* Scancode (lower) */
-static char ps2_keyboard_scancodes_lower[128] = {
+static key_scancode_t ps2_keyboard_scancodes_lower[128] = {
 	0, 27,
 	'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
 	'-', '=', '\b', '\t',
-	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,
+	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', SCANCODE_LEFT_CTRL,
 	'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', SCANCODE_LEFT_SHIFT,
 	'\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', SCANCODE_RIGHT_SHIFT,
 	'*', 0, ' ', 0,
 	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
 	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
 	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
-	0, /* delete */
+	SCANCODE_DEL,
 	0, 0, 0,
-	0, /* F11 */
-	0, /* F12 */
+	SCANCODE_F11, SCANCODE_F12,
 	0, /* everything else */
 };
 
 /* Scancode (upper) */
-static char ps2_keyboard_scancodes_upper[128] = {
+static key_scancode_t ps2_keyboard_scancodes_upper[128] = {
 	0, 27,
 	'!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
 	'_', '+', '\b', '\t',

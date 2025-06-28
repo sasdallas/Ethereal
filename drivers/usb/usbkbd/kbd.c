@@ -27,12 +27,12 @@
 #define SCANCODE_INVALID -1
 
 /* Scancode conversion */
-static char usbkbd_scancode_table_lower[] = {
+static key_scancode_t usbkbd_scancode_table_lower[] = {
     SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
     'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
     '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
-    '\n', SCANCODE_ESC, '\b', '\t', ' ', '-', '=', '[', ']',
+    '\n', 27, '\b', '\t', ' ', '-', '=', '[', ']',
     '\\', SCANCODE_INVALID, ';', '\'', '`', ',', '.', '/', SCANCODE_INVALID, // "..." and Caps Lock ???
     SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5,
     SCANCODE_F6, SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
@@ -43,12 +43,12 @@ static char usbkbd_scancode_table_lower[] = {
 };
 
 /* Scancode conversion */
-static char usbkbd_scancode_table_upper[] = {
+static key_scancode_t usbkbd_scancode_table_upper[] = {
     SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID, SCANCODE_INVALID,
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
     'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
     '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
-    '\n', SCANCODE_ESC, '\b', '\t', ' ', '_', '+', '{', '}',
+    '\n', 27, '\b', '\t', ' ', '_', '+', '{', '}',
     '|', SCANCODE_INVALID, ':', '\"', '~', '<', '>', '?', SCANCODE_INVALID, // "..." and Caps Lock ???
     SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5,
     SCANCODE_F6, SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,

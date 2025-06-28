@@ -21,22 +21,34 @@
 
 /**** DEFINITIONS ****/
 
-#define SCANCODE_F1                     0x01
-#define SCANCODE_F2                     0x02
-#define SCANCODE_F3                     0x03
-#define SCANCODE_F4                     0x04
-#define SCANCODE_F5                     0x05
-#define SCANCODE_F6                     0x06
-#define SCANCODE_F7                     0x07
-#define SCANCODE_F8                     0x08
-#define SCANCODE_F9                     0x09
-#define SCANCODE_F10                    0x10
-#define SCANCODE_F11                    0x11
-#define SCANCODE_F12                    0x12
+#define SCANCODE_F1                     0x4000
+#define SCANCODE_F2                     0x4001
+#define SCANCODE_F3                     0x4002
+#define SCANCODE_F4                     0x4003
+#define SCANCODE_F5                     0x4004
+#define SCANCODE_F6                     0x4005
+#define SCANCODE_F7                     0x4006
+#define SCANCODE_F8                     0x4007
+#define SCANCODE_F9                     0x4008
+#define SCANCODE_F10                    0x4009
+#define SCANCODE_F11                    0x400A
+#define SCANCODE_F12                    0x400B
 
-#define SCANCODE_LEFT_SHIFT             0x13
-#define SCANCODE_RIGHT_SHIFT            0x14
-#define SCANCODE_ESC                    0x15
+#define SCANCODE_LEFT_SHIFT             0x400C
+#define SCANCODE_RIGHT_SHIFT            0x400D
+#define SCANCODE_LEFT_CTRL              0x400E
+#define SCANCODE_RIGHT_CTRL             0x400F
+
+#define SCANCODE_PGUP                   0x4010
+#define SCANCODE_PGDOWN                 0x4011
+#define SCANCODE_HOME                   0x4012
+#define SCANCODE_DEL                    0x4013
+
+#define SCANCODE_LEFT_ARROW             0x4014
+#define SCANCODE_RIGHT_ARROW            0x4015
+#define SCANCODE_DOWN_ARROW             0x4016
+#define SCANCODE_UP_ARROW               0x4017
+
 
 /* Key event types */
 #define EVENT_KEY_RELEASE               0x00
@@ -59,12 +71,15 @@
 
 /**** TYPES ****/
 
+/* Scancode */
+typedef int key_scancode_t;
+
 /**
  * @brief Keyboard event
  */
 typedef struct key_event {
-    int event_type;         // Type of event
-    uint8_t scancode;       // Scancode
+    int event_type;             // Type of event
+    key_scancode_t scancode;    // Scancode
 } key_event_t;
 
 /**
