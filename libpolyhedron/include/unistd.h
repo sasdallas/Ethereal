@@ -94,6 +94,7 @@ pid_t getppid();
 uid_t getuid();
 char *ttyname(int fd);
 int rmdir(const char *pathname);
+char *getlogin(void);
 
 #endif
 

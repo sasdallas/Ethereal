@@ -75,6 +75,61 @@ _Begin_C_Header;
 #define SA_RESTART          0x8     // Causes certain functions to become restartable
 #define SA_SIGINFO          0x10    // Causes extra information to be passed to signal handlers at the time of receipt of a signal
 
+/* SIGILL codes */
+#define ILL_ILLOPC          1
+#define ILL_ILLOPN          2
+#define ILL_ILLADR          3
+#define ILL_ILLTRP          4
+#define ILL_PRVOPC          5
+#define ILL_PRVREG          6
+#define ILL_COPROC          7
+#define ILL_BADSTK          8
+
+/* SIGFPE codes */
+#define FPE_INTDIV          1
+#define FPE_INTOVF          2
+#define FPE_FLTDIV          3
+#define FPE_FLTOVF          4
+#define FPE_FLTUND          5
+#define FPE_FLTRES          6
+#define FPE_FLTINV          7
+#define FPE_FLTSUB          8
+
+/* SEGV codes */
+#define SEGV_MAPERR         1
+#define SEGV_ACCERR         2
+
+/* SIGBUS codes */
+#define BUS_ADRALN          1
+#define BUS_ADRERR          2
+#define BUS_OBJERR          3
+
+/* SIGTRAP codes */
+#define TRAP_BRKPT          1
+#define TRAP_TRACE          2
+
+/* SIGCHLD codes */
+#define CLD_EXITED          1
+#define CLD_KILLED          2
+#define CLD_DUMPED          3
+#define CLD_TRAPPED         4
+#define CLD_STOPPED         5
+#define CLD_CONTINUED       6
+
+/* SIGPOLL codes */
+#define POLL_IN             1
+#define POLL_OUT            2
+#define POLL_MSG            3
+#define POLL_ERR            4
+#define POLL_PRI            5
+#define POLL_HUP            6
+
+/* Signal info */
+#define SI_USER             9
+#define SI_QUEUE            10
+#define SI_TIMER            11
+#define SI_ASYNCIO          12
+#define SI_MESGQ            13
 
 
 /**** TYPES ****/

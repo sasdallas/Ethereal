@@ -24,7 +24,50 @@ _Begin_C_Header
 
 /**** TYPES ****/
 
-typedef void *mcontext_t; // Does not hold anything
+/* Registers */
+/* For info on compiler target macros: https://sourceforge.net/p/predef/wiki/Architectures/ */
+enum {
+#ifdef __ARCH_I386__ || defined(__i686__) || defined(__i386__)
+    REG_EAX,
+    REG_EBX,
+    REG_ECX,
+    REG_EDX,
+    REG_EDI,
+    REG_ESI,
+    REG_ESP,
+    REG_EBP,
+    REG_EIP
+#elif defined(__ARCH_X86_64__) || defined(__x86_64__) || defined(__amd64__) || defined(__amd64) || defined(__x86_64)
+    REG_RAX,
+    REG_RBX,
+    REG_RCX,
+    REG_RDX,
+    REG_RDI,
+    REG_RSI,
+    REG_RSP,
+    REG_RBP,
+    REG_RIP,
+    REG_R8,
+    REG_R9,
+    REG_R10,
+    REG_R11,
+    REG_R12,
+    REG_R13,
+    REG_R14,
+    REG_R15,
+#elif defined(__ARCH_AARCH64__) || defined(__aarch64__)
+    __TODO_LAZY,
+#else
+    #error "Please add architecture symbols to ucontext.h"
+#endif
+
+    __MCONTEXT_NUM_REGISTERS
+};
+
+
+typedef struct mcontext {
+    long gregs[__MCONTEXT_NUM_REGISTERS];
+} mcontext_t; 
 
 typedef struct ucontext {
     struct ucontext *uc_link;       // Pointer to the context that will be resumed when this context returns
