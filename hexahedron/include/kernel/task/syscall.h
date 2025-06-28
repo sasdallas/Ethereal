@@ -23,6 +23,7 @@
 #include <sys/times.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
 #include <sys/epoll.h>
@@ -149,7 +150,20 @@ long sys_pipe(int fildes[2]);
 long sys_epoll_create(int size);
 long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
 long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask);
-
+long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *termp, const struct winsize *winp);
+uid_t sys_getuid();
+int sys_setuid(uid_t uid);
+gid_t sys_getgid();
+int sys_setgid(gid_t gid);
+pid_t sys_getppid();
+pid_t sys_getpgid(pid_t pid);
+int sys_setpgid(pid_t pid, pid_t pgid);
+pid_t sys_getsid();
+pid_t sys_setsid();
+uid_t sys_geteuid();
+int sys_seteuid(uid_t uid);
+gid_t sys_getegid();
+int sys_setegid(gid_t gid);
 
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 long sys_exit_thread(void *retval);

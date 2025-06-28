@@ -57,11 +57,20 @@ typedef void (*kthread_t)(void *data);
 typedef struct process {
     // GENERAL INFORMATION
     struct process *parent;             // Parent process
-    pid_t pid;                          // Process ID
     char *name;                         // Name of the process
-    uid_t uid;                          // User ID of the process
-    gid_t gid;                          // Group ID of the process
     int exit_status;                    // Exit statuscode
+
+    // IDs
+    pid_t pid;                          // Process ID
+    pid_t pgid;                         // Process group/job
+    pid_t sid;                          // Session ID
+
+    uid_t uid;                          // Real user ID of the process
+    uid_t euid;                         // Effective user ID of the process
+    gid_t gid;                          // Real group ID of the process
+    gid_t egid;                         // Effective group ID of the process
+
+    gid_t *group_list;                  // Group list
 
     // SCHEDULER INFORMATION
     unsigned int flags;                 // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
@@ -99,6 +108,10 @@ typedef struct process {
     arch_context_t sigctx;              // Signal handler context
     pid_t tid_next;                     // Next TID to use
 } process_t;
+
+/**** MACROS ****/
+
+#define PROC_IS_ROOT(proc) ((proc)->euid == 0)
 
 /**** FUNCTIONS ****/
 

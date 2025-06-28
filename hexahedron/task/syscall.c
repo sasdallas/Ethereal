@@ -17,6 +17,7 @@
 #include <kernel/drivers/net/socket.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/pipe.h>
+#include <kernel/fs/pty.h>
 #include <kernel/misc/args.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
@@ -90,6 +91,20 @@ static syscall_func_t syscall_table[] = {
     [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)sys_epoll_create,
     [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)sys_epoll_ctl,
     [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)sys_epoll_pwait,
+    [SYS_OPENPTY]           = (syscall_func_t)(uintptr_t)sys_openpty,
+    [SYS_GETUID]            = (syscall_func_t)(uintptr_t)sys_getuid,
+    [SYS_SETUID]            = (syscall_func_t)(uintptr_t)sys_setuid,
+    [SYS_GETGID]            = (syscall_func_t)(uintptr_t)sys_getgid,
+    [SYS_SETGID]            = (syscall_func_t)(uintptr_t)sys_setgid,
+    [SYS_GETPPID]           = (syscall_func_t)(uintptr_t)sys_getppid,
+    [SYS_GETPGID]           = (syscall_func_t)(uintptr_t)sys_getpgid,
+    [SYS_SETPGID]           = (syscall_func_t)(uintptr_t)sys_setpgid,
+    [SYS_GETSID]            = (syscall_func_t)(uintptr_t)sys_getsid,
+    [SYS_SETSID]            = (syscall_func_t)(uintptr_t)sys_setsid,
+    [SYS_GETEUID]           = (syscall_func_t)(uintptr_t)sys_geteuid,
+    [SYS_SETEUID]           = (syscall_func_t)(uintptr_t)sys_seteuid,
+    [SYS_GETEGID]           = (syscall_func_t)(uintptr_t)sys_getegid,
+    [SYS_SETEGID]           = (syscall_func_t)(uintptr_t)sys_setegid
 }; 
 
 
@@ -893,4 +908,142 @@ long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
 
 long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask) {
     return -ENOTSUP;
+}
+
+/**** PTY ****/
+
+long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *termp, const struct winsize *winp) {
+    if (termp) SYSCALL_VALIDATE_PTR(termp);
+    if (winp) SYSCALL_VALIDATE_PTR(winp);
+    SYSCALL_VALIDATE_PTR(amaster);
+    SYSCALL_VALIDATE_PTR(aslave);
+
+    // Make a PTY
+    pty_t *pty = pty_create((struct termios*)termp, (struct winsize*)winp, -1);
+    
+    // Create file descriptors
+    fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
+    fd_t *slave_fd = fd_add(current_cpu->current_process, pty->slave);
+    
+    // Set values
+    *amaster = master_fd->fd_number;
+    *aslave = slave_fd->fd_number;
+
+    // Open the file descriptors too
+    fs_open(pty->master, 0);
+    fs_open(pty->slave, 0);
+
+    return 0;
+}
+
+/**** IDS ****/
+
+uid_t sys_getuid() {
+    return current_cpu->current_process->uid;
+}
+
+int sys_setuid(uid_t uid) {
+    if (PROC_IS_ROOT(current_cpu->current_process)) {
+        current_cpu->current_process->uid = uid;
+        current_cpu->current_process->euid = uid;
+        return 0;
+    } 
+
+    return -EPERM;
+}
+
+gid_t sys_getgid() {
+    return current_cpu->current_process->gid;
+}
+
+int sys_setgid(gid_t gid) {
+    if (PROC_IS_ROOT(current_cpu->current_process)) {
+        current_cpu->current_process->gid = gid;
+        current_cpu->current_process->egid = gid;
+        return 0;
+    }
+
+    return -EPERM;
+}
+
+pid_t sys_getppid() {
+    if (current_cpu->current_process->parent) {
+        return current_cpu->current_process->parent->pid;
+    }
+
+    return 0;
+}
+
+pid_t sys_getpgid(pid_t pid) {
+    if (pid < 0) return -EINVAL;
+    if (!pid) return current_cpu->current_process->pgid;
+    
+    process_t *p = process_getFromPID(pid);
+    if (!p) return -ESRCH;
+
+    return p->pgid;
+}
+
+int sys_setpgid(pid_t pid, pid_t pgid) {
+    if (pid < 0) return -EINVAL;
+    
+    process_t *p = current_cpu->current_process;
+
+    if (pid) {
+        p = process_getFromPID(pid);
+        if (!p) return -ESRCH;
+    }
+
+    if (p->sid != current_cpu->current_process->sid || p->sid == p->pid) {
+        return -EPERM; // Attempt to change process in a different session or session leader
+    }
+
+    if (!pgid) {
+        p->pgid = p->pid;
+    } else {
+        // Validate PGID
+        process_t *valid = process_getFromPID(pgid);
+        if (!valid || valid->sid != p->sid) return -EPERM;
+        
+        p->pgid = pgid;
+    }
+
+    return 0;
+}
+
+pid_t sys_getsid() {
+    return current_cpu->current_process->sid;
+}
+
+pid_t sys_setsid() {
+    if (current_cpu->current_process->sid == current_cpu->current_process->pid) return -EPERM;
+    current_cpu->current_process->sid = current_cpu->current_process->pid;
+    return 0;
+}
+
+uid_t sys_geteuid() {
+    return current_cpu->current_process->euid;
+}
+
+int sys_seteuid(uid_t uid) {
+    if (!PROC_IS_ROOT(current_cpu->current_process) && uid != current_cpu->current_process->uid) {
+        // Nope
+        return -EPERM;
+    }
+
+    current_cpu->current_process->euid = uid;
+    return 0;
+}
+
+gid_t sys_getegid() {
+    return current_cpu->current_process->egid;
+}
+
+int sys_setegid(gid_t gid) {
+    if (!PROC_IS_ROOT(current_cpu->current_process) && gid != current_cpu->current_process->gid) {
+        return -EPERM;
+    }
+
+    current_cpu->current_process->egid = gid;
+    return 0;
 }

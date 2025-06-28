@@ -148,8 +148,8 @@ _Begin_C_Header
 
 /* Live control */
 #define TCIFLUSH    1       // Flush pending input
-#define TCIOFLUSH   2       // Flush both pending input and untransmitted output
-#define TCOFLUSH    3       // Flush untransmitted output
+#define TCOFLUSH    2       // Flush untransmitted output
+#define TCIOFLUSH   3       // Flush both pending input and untransmitted output
 
 #define TCIOFF      0       // Transmit a STOP character, intended to suspend input data
 #define TCION       1       // Transmit a START character, intended to restart input data
@@ -169,7 +169,7 @@ _Begin_C_Header
 #define TIOCSLCKTRMIOS      0x2103  // Set whether termios is locked
 #define TIOCSBRK            0x2104  // Turn break on
 #define TIOCCBRK            0x2105  // Turn break off
-#define FIONREAD            0x2106  // Get number of bytes in the output buffer
+#define FIONREAD            0x2106  // Get number of bytes in the input buffer
 #define TIOCINQ             FIONREAD
 #define TCFLSH              0x2107  // Flush
 #define TIOCSERGETLSR       0x2108  // Get line status register
@@ -195,6 +195,7 @@ _Begin_C_Header
 #define TIOCMBIC            0x211C  // Get status of modem bits
 #define TIOCMBIS            0x211D  // Set indicated modem bits
 #define TCXONC              0x211E  // Software flow control
+#define TIOCOUTQ            0x211F  // Get number of bytes in the output queue
 
 /**** TYPES ****/
 

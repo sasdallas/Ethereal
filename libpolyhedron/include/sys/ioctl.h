@@ -27,6 +27,11 @@ _Begin_C_Header;
 
 #define FIONBIO         0x8001      // Set to nonblocking mode
 
+/* TTY ioctls */
+#define IOCTLTTYIS          0x8002      // isatty
+#define IOCTLTTYNAME        0x8003      // TTY name
+#define IOCTLTTYLOGIN       0x8004      // Login to TTY
+
 /**** FUNCTIONS ****/
 
 int ioctl(int fd, unsigned long request, ...);
