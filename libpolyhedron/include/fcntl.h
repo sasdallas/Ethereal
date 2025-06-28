@@ -57,6 +57,12 @@ _Begin_C_Header
 #define F_GETOWN            8
 #define F_SETOWN            9
 
+/* Record locking values */
+#define F_RDLCK             1
+#define F_UNLCK             2
+#define F_WRLCK             3
+
+/* File descriptor flags */
 #define FD_CLOEXEC          0x1
 
 /**** TYPES ****/
