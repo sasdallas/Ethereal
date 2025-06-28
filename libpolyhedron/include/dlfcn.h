@@ -19,7 +19,12 @@ _Begin_C_Header;
 #define _DLFCN_H
 
 /**** DEFINITIONS ****/
+#define RTLD_LAZY       0
 #define RTLD_NOW        1
+#define RTLD_GLOBAL     2
+#define RTLD_LOCAL      3
+
+#define RTLD_DEFAULT    RTLD_NOW
 
 /**** FUNCTIONS ****/
 

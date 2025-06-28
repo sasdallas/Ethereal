@@ -80,7 +80,7 @@ _Begin_C_Header;
 /**** TYPES ****/
 
 typedef volatile int sig_atomic_t;
-typedef unsigned long sigset_t;
+typedef unsigned long long sigset_t;
 
 union sigval {
     int     sival_int;
@@ -116,12 +116,40 @@ struct sigaction {
     int sa_flags;                   // Special flags
 };
 
+typedef struct {
+    void *ss_sp;                    // Stack base or pointer
+    size_t ss_size;                 // Stack size
+    int ss_flags;                   // Flags
+} stack_t;
+
+struct sigstack {
+    int ss_onstack;                 // In-use
+    void *ss_sp;                    // Signal stack pointer
+};
+
 /**** FUNCTIONS ****/
 
-sighandler_t signal(int signum, sighandler_t handler);
-int raise(int sig);
-int kill(pid_t pid, int sig);
-int sigaction(int sig, const struct sigaction *act, struct sigaction *oact);
+int    kill(pid_t, int);
+int    killpg(pid_t, int);
+int    pthread_kill(pthread_t, int);
+int    pthread_sigmask(int, const sigset_t *, sigset_t *);
+int    raise(int);
+int    sigaction(int, const struct sigaction *, struct sigaction *);
+int    sigaddset(sigset_t *, int);
+int    sigaltstack(const stack_t *, stack_t *);
+int    sigdelset(sigset_t *, int);
+int    sigemptyset(sigset_t *);
+int    sigfillset(sigset_t *);
+int    siginterrupt(int, int);
+int    sigismember(const sigset_t *, int);
+void	(*signal(int sig, void (*func)(int)))(int);
+int    sigpause(int);
+int    sigpending(sigset_t *);
+int    sigprocmask(int, const sigset_t *, sigset_t *);
+int    sigqueue(pid_t, int, const union sigval);
+int    sigsuspend(const sigset_t *);
+int    sigwait(const sigset_t *set, int *sig);
+int    sigwaitinfo(const sigset_t *, siginfo_t *);
 
 #endif
 
