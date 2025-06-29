@@ -234,12 +234,32 @@ void mouse_events() {
 
                 // Focus window if it is not focused already
                 if (WM_FOCUSED_WINDOW != WM_MOUSE_WINDOW && WM_MOUSE_WINDOW->z_array == CELESTIAL_Z_DEFAULT) {
+                    // Notify that we have unfocused the previous window
+                    if (WM_FOCUSED_WINDOW) {
+                        celestial_event_unfocused_t unfocus = {
+                            .magic = CELESTIAL_MAGIC_EVENT,
+                            .size = sizeof(celestial_event_unfocused_t),
+                            .type = CELESTIAL_EVENT_UNFOCUSED,
+                            .wid = WM_FOCUSED_WINDOW->id,
+                        };
+
+                        event_send(WM_FOCUSED_WINDOW, &unfocus);
+                    }
                     // Reorder
                     WM_FOCUSED_WINDOW = WM_MOUSE_WINDOW;
 
                     // TODO: Store node
                     list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, WM_MOUSE_WINDOW));
                     list_append(WM_WINDOW_LIST, WM_MOUSE_WINDOW);
+
+                    celestial_event_focused_t focus = {
+                        .magic = CELESTIAL_MAGIC_EVENT,
+                        .size = sizeof(celestial_event_focused_t),
+                        .type = CELESTIAL_EVENT_FOCUSED,
+                        .wid = WM_FOCUSED_WINDOW->id,
+                    };
+
+                    event_send(WM_FOCUSED_WINDOW, &focus);
                 }
 
                 // Determine pressed button

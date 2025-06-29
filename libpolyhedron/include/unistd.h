@@ -104,6 +104,8 @@ int setpgid(pid_t pid, pid_t pgid);
 char *ttyname(int fd);
 int rmdir(const char *pathname);
 char *getlogin(void);
+pid_t tcgetpgrp(int);
+int tcsetpgrp(int, pid_t);
 
 #endif
 
