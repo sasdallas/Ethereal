@@ -73,7 +73,7 @@ __attribute__((constructor)) void __libc_init() {
     __argc = __get_argc();
 }
 
-__attribute__((noreturn)) void __libc_main(int (*main)(int, char**), int argc, char **argv, char **envp) {
+__attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int argc, char **argv, char **envp) {
     if (!__get_argv()) {
         // This returned NULL, so thus __libc_init hasn't been called yet.
         // This indicates that we were loaded from static library
@@ -95,6 +95,6 @@ extern uintptr_t __init_array_end;
     _init();
 
     // Go!
-    exit(main(__argc, __argv));
+    exit(main(__argc, __argv, environ));
     __builtin_unreachable();
 }
