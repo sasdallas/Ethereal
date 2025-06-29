@@ -139,6 +139,7 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
  * @param title The title to set
  */
 void celestial_setTitle(window_t *win, char *title) {
+    if (!(win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) return;
     win->decor->titlebar = title;
     win->decor->render(win);
 }
@@ -189,6 +190,7 @@ window_t *celestial_getWindow(wid_t wid) {
     win->decor = NULL;
     win->decor_buffer = NULL;
     win->info = NULL;
+    win->flags = 0;
 
     hashmap_set(celestial_window_map, (void*)(uintptr_t)wid, win);
 
