@@ -63,6 +63,8 @@ div_t div(int x, int y);
 ldiv_t ldiv(long x, long y);
 lldiv_t lldiv(long long x, long long y);
 
+char *mktemp(char *template);
+
 void *bsearch(const void *key, const void *base, size_t nel, size_t width, int (*compar)(const void *, const void *));
 
 char *getenv(const char *name);
@@ -88,6 +90,7 @@ int atexit(void (*func)());
 
 int mbtowc(wchar_t *pwcs,const char *str,size_t n);
 size_t mbstowcs(wchar_t *pwcs,const char *str,size_t n);
+
 
 #endif
 

@@ -59,10 +59,12 @@ typedef int (*xvas_callback)(void *, char);
 /* EOF */
 #define EOF (-1)
 
-
 #define BUFSIZ                  READ_BUFFER_SIZE
 #define FILENAME_MAX            4096
+
+/* Temporary stuff */
 #define L_tmpnam                20
+#define P_tmpdir                "/tmp/"
 
 
 /**** TYPES ****/
@@ -150,9 +152,11 @@ int fscanf(FILE *stream, const char *format, ...);
 int sscanf(const char *str, const char *format, ...);
 
 int remove(const char *pathname);
-FILE *tmpfile();
-
 int rename(const char *oldpath, const char *newpath);
+
+FILE *tmpfile();
+char *tmpnam_r(char *s);
+char *tmpnam(char *s);
 
 #endif
 
