@@ -440,22 +440,19 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         // HACK: Additional thread stack allocation
         // Check address bounds
         if (address >= MEM_USERMODE_STACK_REGION && address < MEM_USERMODE_STACK_REGION + MEM_USERMODE_STACK_SIZE) {
-            // Yes we can resolve the stack allocation. Stack grows downward so the stack position should be a page ahead
-            uintptr_t stack_position = address + PAGE_SIZE; // This seems unsafe
-
-            alloc_node = vas_get(vas, stack_position);
+            // Yes we can resolve the stack allocation.
+            alloc_node = vas_get(vas, MEM_USERMODE_STACK_REGION + MEM_USERMODE_STACK_SIZE - PAGE_SIZE);
             if (!alloc_node) return 0; // Nuh uh
             vas_allocation_t *alloc = ALLOC(alloc_node);
 
-            LOG(DEBUG, "Expanding thread stack from %p - %p to %p - %p\n", alloc_node->alloc->base, alloc_node->alloc->base + alloc_node->alloc->size, alloc_node->alloc->base - PAGE_SIZE, alloc_node->alloc->base - PAGE_SIZE + alloc_node->alloc->size);
+            alloc_node->alloc->base = MEM_ALIGN_PAGE_DESTRUCTIVE(address);
+            alloc_node->alloc->size = (MEM_USERMODE_STACK_REGION+MEM_USERMODE_STACK_SIZE)-alloc_node->alloc->base;
 
-            // Expand alloc node and reroute it
-            alloc_node->alloc->base -= PAGE_SIZE;
-            alloc_node->alloc->size += PAGE_SIZE;
-
+            // Now give them a page at the address. Since the thread's stack allocation has been expanded the rest of the gaps can be filled in.
             page_t *pg = mem_getPage(NULL, address, MEM_CREATE);
             int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL);
             mem_allocatePage(pg, flags);
+        
 
             return 1;
         }   
