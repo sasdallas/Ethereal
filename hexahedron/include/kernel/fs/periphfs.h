@@ -21,6 +21,8 @@
 
 /**** DEFINITIONS ****/
 
+#define SCANCODE_ESCAPE                 27
+
 #define SCANCODE_F1                     0x4000
 #define SCANCODE_F2                     0x4001
 #define SCANCODE_F3                     0x4002
@@ -38,23 +40,24 @@
 #define SCANCODE_RIGHT_SHIFT            0x400D
 #define SCANCODE_LEFT_CTRL              0x400E
 #define SCANCODE_RIGHT_CTRL             0x400F
-
-#define SCANCODE_PGUP                   0x4010
-#define SCANCODE_PGDOWN                 0x4011
-#define SCANCODE_HOME                   0x4012
-#define SCANCODE_DEL                    0x4013
+#define SCANCODE_LEFT_ALT               0x4010
+#define SCANCODE_RIGHT_ALT              0x4011
+#define SCANCODE_LEFT_SUPER             0x4012
+#define SCANCODE_RIGHT_SUPER            0x4013
 
 #define SCANCODE_LEFT_ARROW             0x4014
 #define SCANCODE_RIGHT_ARROW            0x4015
 #define SCANCODE_DOWN_ARROW             0x4016
 #define SCANCODE_UP_ARROW               0x4017
 
+#define SCANCODE_PGUP                   0x4018
+#define SCANCODE_PGDOWN                 0x4019
+#define SCANCODE_HOME                   0x401A
+#define SCANCODE_DEL                    0x401B
 
 /* Key event types */
 #define EVENT_KEY_RELEASE               0x00
 #define EVENT_KEY_PRESS                 0x01
-#define EVENT_KEY_MODIFIER_RELEASE      0x02
-#define EVENT_KEY_MODIFIER_PRESS        0x03
 
 /* Mouse event types */
 #define EVENT_MOUSE_UPDATE              0x04    // We really only have one event for this system.

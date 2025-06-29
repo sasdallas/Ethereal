@@ -23,6 +23,7 @@
 #include <kernel/fs/periphfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/fs/pipe.h>
 #include <kernel/debug.h>
 #include <structs/circbuf.h>
 #include <string.h>
@@ -110,6 +111,14 @@ static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t
 }
 
 /**
+ * @brief Keyboard device ready method
+ */
+static int keyboard_ready(fs_node_t *node, int events) {
+    key_buffer_t *buf = (key_buffer_t*)node->dev;
+    return KEY_CONTENT_AVAILABLE(buf) ? events : 0;
+}
+
+/**
  * @brief Generic stdin device read
  */
 static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
@@ -122,7 +131,9 @@ static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *b
     
     for (size_t i = 0; i < size; i++) { 
         // Wait for content
-        while (!KEY_CONTENT_AVAILABLE(buf)) arch_pause(); // !!!
+        while (!KEY_CONTENT_AVAILABLE(buf)) {
+            process_yield(1);
+        } // !!!
         periphfs_getKeyboardEvent(buf, &event);
 
         if (event.scancode == '\n') {
@@ -146,29 +157,6 @@ static int stdin_ready(fs_node_t *node, int events) {
     return KEY_CONTENT_AVAILABLE(buf) ? VFS_EVENT_READ : 0;
 }
 
-/**
- * @brief Generic mouse device read
- */
-static ssize_t mouse_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (!size || !buffer) return 0;
-    
-    // This will cause havoc if allowed
-    if (size % sizeof(mouse_event_t)) {
-        LOG(WARN, "Read from /device/mouse denied - size must be multiple of mouse_event_t\n");
-        return 0;
-    }
-
-    // Get buffer
-    mouse_buffer_t *buf = (mouse_buffer_t*)node->dev;
-
-    // TODO: This is really really bad..
-    for (size_t i = 0; i < size; i += sizeof(mouse_event_t)) {
-        if (!MOUSE_CONTENT_AVAILABLE(buf)) return i;
-        periphfs_getMouseEvent((mouse_event_t*)(buffer + i));
-    }
-
-    return size;
-}
 
 /**
  * @brief Initialize the peripheral filesystem interface
@@ -178,9 +166,6 @@ void periphfs_init() {
     key_buffer_t *kbdbuf = kzalloc(sizeof(key_buffer_t));
     key_buffer_t *stdbuf = kzalloc(sizeof(key_buffer_t));
 
-    // Create mouse circular buffer
-    mouse_buffer_t *mousebuf = kzalloc(sizeof(mouse_buffer_t));
-
     // Create and mount keyboard node
     kbd_node = kmalloc(sizeof(fs_node_t));
     memset(kbd_node, 0, sizeof(fs_node_t));
@@ -188,6 +173,7 @@ void periphfs_init() {
     kbd_node->flags = VFS_CHARDEVICE;
     kbd_node->dev = (void*)kbdbuf;
     kbd_node->read = keyboard_read;
+    kbd_node->ready = keyboard_ready;
     vfs_mount(kbd_node, "/device/keyboard");
 
     // Create and mount stdin node
@@ -200,14 +186,10 @@ void periphfs_init() {
     stdin_node->ready = stdin_ready;
     vfs_mount(stdin_node, "/device/stdin");
 
-    // Create and mount mouse node 
-    mouse_node = kmalloc(sizeof(fs_node_t));
-    memset(mouse_node, 0, sizeof(fs_node_t));
-    strcpy(mouse_node->name, "mouse");
-    mouse_node->flags = VFS_CHARDEVICE;
-    mouse_node->dev = (void*)mousebuf;
-    mouse_node->read = mouse_read;
-    vfs_mount(mouse_node, "/device/mouse");
+    // Use pipes for the mouse because why not
+    fs_pipe_t *mouse_pipes = pipe_createPipe();
+    vfs_mount(mouse_pipes->read, "/device/mouse");
+    mouse_node = mouse_pipes->write;
 }
 
 /**
@@ -253,7 +235,8 @@ int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode) {
         spinlock_release(&buffer->lock);
     }
 
-    LOG(DEBUG, "SEND key event type=%d\n", event_type);
+    // If needed, alert node
+    fs_alert(kbd_node, VFS_EVENT_READ | VFS_EVENT_WRITE);
     return 0;
 }
 
@@ -272,20 +255,7 @@ int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_
         .y_difference = y_diff
     };
 
-    // Push!
-    mouse_buffer_t *buffer = (mouse_buffer_t*)mouse_node->dev;
-    spinlock_acquire(&buffer->lock);
+    fs_write(mouse_node, 0, sizeof(mouse_event_t), (uint8_t*)&event);
 
-    // Reset tail if needed
-    buffer->tail++;
-    if (buffer->tail > MOUSE_QUEUE_EVENTS) buffer->tail = 0;
-
-    // Set event
-    buffer->event[buffer->tail] = event;
-
-    // Release
-    spinlock_release(&buffer->lock);
-
-    LOG(DEBUG, "SEND mouse event type=%d\n", event_type);
     return 0;
 }
