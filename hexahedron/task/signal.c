@@ -46,7 +46,8 @@ const sa_handler signal_default_action[] = {
     [SIGURG]            = SIGNAL_ACTION_IGNORE,
     [SIGVTALRM]         = SIGNAL_ACTION_TERMINATE,
     [SIGXCPU]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGXFSZ]           = SIGNAL_ACTION_TERMINATE_CORE
+    [SIGXFSZ]           = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGWINCH]          = SIGNAL_ACTION_IGNORE
 };
 
 /* Pending signal set */
@@ -203,5 +204,23 @@ int signal_handle(struct thread *thr, registers_t *regs) {
 
 _done:
     spinlock_release(&proc->siglock);
+    return 0;
+}
+
+/**
+ * @brief Send a signal to a group of processes
+ * @param pgid The process group ID of the processes to send to
+ * @param signal The signal to send to the group
+ * @returns 0 on success, otherwise error code 
+ */
+int signal_sendGroup(pid_t pgid, int signal) {
+    // TODO: Stupidity
+
+extern list_t *process_list;
+    foreach(node, process_list) {
+        process_t *proc = node->value;
+        if (proc->pgid == pgid) signal_send(proc, signal);
+    }
+
     return 0;
 }

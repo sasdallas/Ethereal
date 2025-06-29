@@ -176,7 +176,7 @@ _Begin_C_Header
 #define TIOCSTI             0x2109  // Insert given byte into the output queue
 #define TIOCCONS            0x210A  // Redirect output from /device/tty0 to a given terminal
 #define TIOCSCTTY           0x210B  // Make the given terminal the controlling terminal of the calling process
-#define TIOCNOTTY           0x210C  // Give up this controlling terminal (sends SIGHUP and SIGCONT to the foreground process grou)
+#define TIOCNOTTY           0x210C  // Give up this controlling terminal (sends SIGHUP and SIGCONT to the foreground process group)
 #define TIOCGPGRP           0x210D  // Get process group ID
 #define TIOCSPGRP           0x210E  // Set process group ID
 #define TIOCGSID            0x210F  // Get session ID

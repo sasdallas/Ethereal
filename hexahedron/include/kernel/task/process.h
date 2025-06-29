@@ -112,6 +112,7 @@ typedef struct process {
 /**** MACROS ****/
 
 #define PROC_IS_ROOT(proc) ((proc)->euid == 0)
+#define PROC_IS_LEADER(proc) ((proc)->pgid == (proc)->pid)
 
 /**** FUNCTIONS ****/
 

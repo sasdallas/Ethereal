@@ -63,12 +63,21 @@ typedef int (*pty_write_t)(struct pty *pty, char ch);
 typedef void (*pty_flush_t)(struct pty *pty);
 
 /**
+ * @brief Fill name of a PTY in
+ * @param pty The PTY to fill the name of
+ * @param name The name to fill in
+ */
+typedef void (*pty_name_t)(struct pty *pty, char *name);
+
+/**
  * @brief PTY structure
  */
 typedef struct pty {
     int number;                 // PTY number (/device/pts/XX)
     struct termios tios;        // Termios
-    struct winsize size;        // Widnow size
+    struct winsize size;        // Window size
+    pid_t control_proc;         // Controlling process group
+    pid_t fg_proc;              // Foreground process group
 
     fs_node_t *master;          // Master device
     fs_node_t *slave;           // Slave device
@@ -87,6 +96,7 @@ typedef struct pty {
     pty_write_t write_out;      // Output write method
     pty_flush_t flush_in;       // Input flush method
     pty_flush_t flush_out;      // Output flush method
+    pty_name_t name;            // Name method
 
     void *_impl;                // Implementation-defined
 } pty_t;

@@ -17,8 +17,11 @@
 #include <kernel/fs/pty.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/processor_data.h>
+#include <kernel/task/syscall.h>
 #include <kernel/debug.h>
 #include <ctype.h>
+#include <sys/ioctl.h>
+#include <sys/signal.h>
 #include <string.h>
 #include <termios.h>
 
@@ -285,6 +288,196 @@ void pty_init() {
 }
 
 /**
+ * @brief IOCTL method for a PTY
+ * @param node The node to do the ioctl on
+ * @param request The IOCTL request
+ * @param argp The argument
+ */
+int pty_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+    pty_t *pty = (pty_t*)node->dev;
+
+    switch (request) {
+        case IOCTLTTYIS:
+            SYSCALL_VALIDATE_PTR(argp);
+            *(int*)argp = 1;
+            return 0;
+
+        case IOCTLTTYNAME:
+            SYSCALL_VALIDATE_PTR(argp);
+            pty->name(pty, argp);
+            return 0;
+
+        case IOCTLTTYLOGIN:
+            // Set the user ID of the user
+            SYSCALL_VALIDATE_PTR(argp);
+            if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+            pty->slave->uid = *(uid_t*)argp;
+            pty->master->uid = *(uid_t*)argp;
+            return 0;
+
+        case TIOCGWINSZ:
+            SYSCALL_VALIDATE_PTR(argp);
+            memcpy(argp, &pty->size, sizeof(struct winsize));
+            return 0;
+
+        case TIOCSWINSZ:
+            SYSCALL_VALIDATE_PTR(argp);
+            memcpy(&pty->size, argp, sizeof(struct winsize));
+            if (pty->fg_proc) signal_sendGroup(pty->fg_proc, SIGWINCH);
+            return 0;
+
+        case TIOCGLCKTRMIOS:
+        case TIOCSLCKTRMIOS:
+            LOG(WARN, "TIOCGLCKTERMIOS/TIOCSLCKTERMIOS not implemented\n");
+            return -EINVAL;
+
+        case TIOCCBRK:
+        case TIOCSBRK:
+            LOG(WARN, "TIOCCBRK/TIOCSBRK is unimplemented\n");
+            return -ENOTSUP;
+        
+        case TIOCINQ:
+            // idk how to do this
+            SYSCALL_VALIDATE_PTR(argp);
+            *(int*)argp = circbuf_remaining_read(pty->in);
+            return 0;
+
+        case TIOCSERGETLSR:
+            return -ENOTSUP;
+
+        case TCFLSH:
+            if ((uintptr_t)argp & TCIFLUSH) {
+                // Flush pending input
+                spinlock_acquire(pty->in->lock);
+                pty->in->tail = pty->in->head;
+                spinlock_release(pty->in->lock);
+            }
+            
+            if ((uintptr_t)argp & TCOFLUSH) {
+                // Flush pending output
+                spinlock_acquire(pty->out->lock);
+                pty->out->tail = pty->out->head;
+                spinlock_release(pty->out->lock);
+            }
+
+            return 0;
+
+        case TIOCSTI:
+            SYSCALL_VALIDATE_PTR(argp);
+            WRITE_OUTPUT(*(char*)argp);
+            return 0;
+        
+        case TIOCCONS:
+            // TODO
+            LOG(DEBUG, "WARNING: Need to redirect /device/tty0\n");
+            return -ENOTSUP;
+
+        case TIOCSCTTY:
+            // Set controlling process of this TTY
+            if (PROC_IS_LEADER(current_cpu->current_process) && pty->control_proc == current_cpu->current_process->pid) {
+                return 0; // Already the controlling process
+            } 
+
+            if (!PROC_IS_LEADER(current_cpu->current_process)) return -EPERM;
+
+            // We can't steal control away from a TTY already with a session
+            if (pty->control_proc) {
+                // Unless we're root and argp is 1
+                if (!((uintptr_t)argp == 1 && PROC_IS_ROOT(current_cpu->current_process))) {
+                    return -EPERM;
+                }
+            }
+
+            pty->control_proc = current_cpu->current_process->pid;
+            return 0;
+
+        case TIOCNOTTY:
+            // Release TTY
+            if (pty->control_proc != current_cpu->current_process->pid) return -EPERM;
+
+            // We need to send SIGHUP and SIGCONT to the foreground process group
+            signal_sendGroup(pty->fg_proc, SIGHUP);
+            signal_sendGroup(pty->fg_proc, SIGCONT);
+
+            pty->control_proc = 0;
+            return 0;
+
+        case TIOCGPGRP:
+            SYSCALL_VALIDATE_PTR(argp);
+            *(int*)argp = pty->fg_proc;
+            return 0;
+
+        case TIOCSPGRP:
+            SYSCALL_VALIDATE_PTR(argp);
+            pty->fg_proc = *(int*)argp;
+            return 0;
+
+        /* TODO: TIOCGSID */
+
+        case TCGETS:
+            SYSCALL_VALIDATE_PTR(argp);
+            memcpy(argp, &pty->tios, sizeof(struct termios));
+            return 0;
+
+        case TCSETS:
+        case TCSETSW:
+            SYSCALL_VALIDATE_PTR(argp);
+
+            // Are we switching out of ICANON?
+            if (!(((struct termios*)argp)->c_lflag & ICANON) && pty->tios.c_lflag & ICANON) {
+                // Yes, dump input buffer
+                for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
+                
+                // Reset
+                pty->canonical_idx = 0;
+                pty->canonical_buffer[pty->canonical_idx] = 0;
+                kfree(pty->canonical_buffer);
+            }
+
+            // Are we switching *into* canonical?
+            if ((((struct termios*)argp)->c_lflag & ICANON) && !(pty->tios.c_lflag & ICANON)) {
+                pty->canonical_buffer = kmalloc(PTY_BUFFER_SIZE);
+                memset(pty->canonical_buffer, 0, PTY_BUFFER_SIZE);
+                pty->canonical_idx = 0;
+                pty->canonical_bufsz = PTY_BUFFER_SIZE;
+            }
+
+            // TODO: Anything else to flush?
+            memcpy(&pty->tios, argp, sizeof(struct termios));
+            return 0;
+
+        case TCSETSF:
+            // Flush pending input
+            spinlock_acquire(pty->in->lock);
+            pty->in->tail = pty->in->head;
+            spinlock_release(pty->in->lock);
+
+            // TODO: Anything else to flush?
+            memcpy(&pty->tios, argp, sizeof(struct termios));
+            return 0;
+
+        case TIOCOUTQ:
+            SYSCALL_VALIDATE_PTR(argp);
+            *(int*)argp = circbuf_remaining_read(pty->out);
+            return 0;    
+        
+        default:
+            LOG(ERR, "Unrecognized TTY ioctl: 0x%x\n", request);
+            return -EINVAL;
+    }
+}
+
+/**
+ * @brief PTY name
+ * @param pty The PTY to use to fill the name in
+ * @param name The name pointer
+ */
+void pty_name(pty_t *pty, char *name) {
+    *name = 0;
+    snprintf(name, 256, "/device/pts/%zd", pty->number);
+}
+
+/**
  * @brief Create a new PTY device
  * @param tios Optional presetup termios. Leave as NULL to use defaults
  * @param size TTY window size
@@ -307,6 +500,7 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
     // Configure methods
     pty->write_in = pty_writeIn;
     pty->write_out = pty_writeOut;
+    pty->name = pty_name;
 
     // Configure master device
     // Master should have its writes sent to stdin with reads coming from stdout
@@ -322,7 +516,8 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
 
     pty->master->write = pty_writeMaster;
     pty->master->read = pty_readMaster;
-
+    pty->master->ioctl = pty_ioctl;
+    
     // Configure slave device
     // Slave should have its writes send to stdout with reads coming from stdin
     pty->slave = kmalloc(sizeof(fs_node_t));
@@ -337,6 +532,7 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
 
     pty->slave->write = pty_writeSlave;
     pty->slave->read = pty_readSlave;
+    pty->slave->ioctl = pty_ioctl;
 
     // Configure termios
     if (tios) {

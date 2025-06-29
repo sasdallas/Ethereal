@@ -58,15 +58,15 @@ int signal_send(struct process *proc, int signal);
  * @param regs The current registers for the frame (this is called on IRQ)
  * @returns 0 on success
  */
-int signal_handle(struct thread *thr, registers_t *regs);
+int signal_handle(struct thread *thr, struct _registers *regs);
 
 /**
  * @brief Send a signal to a group of processes
- * @param gid The group ID of the processes to send to
+ * @param pgid The process group ID of the processes to send to
  * @param signal The signal to send to the group
  * @returns 0 on success, otherwise error code 
  */
-int signal_sendGroup(gid_t gid, int signal);
+int signal_sendGroup(pid_t pgid, int signal);
 
 
 #endif

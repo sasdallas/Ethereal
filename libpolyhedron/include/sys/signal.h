@@ -65,8 +65,9 @@ _Begin_C_Header;
 #define SIGVTALRM           25  // (T) Virtual timer expired
 #define SIGXCPU             26  // (A) CPU time limit exceeded
 #define SIGXFSZ             27  // (A) File size limit exceeded
+#define SIGWINCH            28  // (I) Window size changed
 
-#define NUMSIGNALS          28
+#define NUMSIGNALS          29
 
 /* sigaction flags */
 #define SA_NOCLDSTOP        0x1     // Do not generate SIGCHLD when children stop
