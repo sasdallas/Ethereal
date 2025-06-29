@@ -437,7 +437,6 @@ fs_node_t *fs_copy(fs_node_t *node) {
  */
 fs_node_t *fs_node() {
     fs_node_t *node = kzalloc(sizeof(fs_node_t));
-    // We don't set refcount because you should open the node after creation
     return node;
 }
 
@@ -1059,18 +1058,20 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
 fs_node_t *kopen(const char *path, unsigned int flags) {
     if (!path) return NULL;
     
-    // !!!: TEMPORARY
     char *p = strdup(path);
 
     // First get the mountpoint of path.
     char *path_offset = (char*)p;
     fs_node_t *node = vfs_getMountpoint(p, &path_offset);
-
+    
     if (!node) {
         kfree(p);
         return NULL; // No mountpoint
     }
     
+    // !!!
+    fs_node_t *mnt = node; // For protecting against freeing the mountpoint node
+
     if (!(*path_offset)) {
         // Usually this means the user got what they want, the mountpoint, so I guess just open that and call it a da.
         goto _finish_node;
@@ -1083,7 +1084,9 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
 
     while (pch) {
         if (!node) break;
-        node = kopen_relative(node, pch, flags);
+        fs_node_t *next = kopen_relative(node, pch, flags);
+        if (node != mnt) kfree(node);
+        node = next;
 
         if (node && node->flags == VFS_FILE) {
             // TODO: What if the user has a REALLY weird filesystem?
@@ -1100,12 +1103,11 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
     }
 
 _finish_node: ;
-    // Always clone the node to prevent mucking around with datastructures.
-    fs_node_t *retnode = kmalloc(sizeof(fs_node_t));
-    memcpy(retnode, node, sizeof(fs_node_t));
-    fs_open(retnode, flags);
+    // Open the node
+    fs_open(node, flags);
     kfree(p);
-    return retnode;
+
+    return node;
 }
 
 /**

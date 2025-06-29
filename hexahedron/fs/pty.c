@@ -258,6 +258,14 @@ ssize_t pty_readMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
 }
 
 /**
+ * @brief PTY ready method for master
+ */
+int pty_readyMaster(fs_node_t *node, int events) {
+    pty_t *pty = (pty_t*)node->dev;
+    return VFS_EVENT_WRITE | ((circbuf_remaining_read(pty->out) ? VFS_EVENT_READ : 0));
+}
+
+/**
  * @brief PTY read method for slave
  */
 ssize_t pty_readSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
@@ -280,6 +288,13 @@ ssize_t pty_readSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) 
     return size;
 }
 
+/**
+ * @brief PTY ready method for slave
+ */
+int pty_readySlave(fs_node_t *node, int events) {
+    pty_t *pty = (pty_t*)node->dev;
+    return VFS_EVENT_WRITE | ((circbuf_remaining_read(pty->in) ? VFS_EVENT_READ : 0));
+}
 
 /**
  * @brief Initialize the PTY system
@@ -518,6 +533,7 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
     pty->master->write = pty_writeMaster;
     pty->master->read = pty_readMaster;
     pty->master->ioctl = pty_ioctl;
+    pty->master->ready = pty_readyMaster;
     
     // Configure slave device
     // Slave should have its writes send to stdout with reads coming from stdin
@@ -534,6 +550,7 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
     pty->slave->write = pty_writeSlave;
     pty->slave->read = pty_readSlave;
     pty->slave->ioctl = pty_ioctl;
+    pty->slave->ready = pty_readySlave;
 
     // Configure termios
     if (tios) {
