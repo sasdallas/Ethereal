@@ -253,7 +253,8 @@ ssize_t pty_writeSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
  * @brief PTY read method for master
  */
 ssize_t pty_readMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    return 0; // UNIMPL
+    pty_t *pty = (pty_t*)node->dev;
+    return circbuf_read(pty->out, size, buffer);
 }
 
 /**
