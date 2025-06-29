@@ -32,7 +32,7 @@ spinlock_t sleep_queue_lock = { 0 };
  * @brief Wakeup sleepers callback
  * @param ticks Current clock ticks
  */
-static void sleep_callback(uint64_t ticks) {
+void sleep_callback(uint64_t ticks) {
     if (!sleep_queue) return;
 
     // Get time for any threads that need it
@@ -51,7 +51,9 @@ static void sleep_callback(uint64_t ticks) {
 
         int wakeup = 0;
 
-        if (sleep->thread->parent->pending_signals) {
+        if (sleep->sleep_state >= WAKEUP_SIGNAL) {
+            wakeup = sleep->sleep_state; // Some other thread already marked this one as time to wakey wakey
+        } else if (sleep->thread->parent->pending_signals) {
             // Yes, get out!
             wakeup = WAKEUP_SIGNAL;
         } else if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {
@@ -218,6 +220,8 @@ int sleep_wakeup(struct thread *thread) {
     
     thread_sleep_t *sleep = thread->sleep;
     sleep->sleep_state = SLEEP_FLAG_WAKEUP;
+    sleep_callback(0); // Syncronously do sleep callback
+
     return 0;
 }
 
@@ -229,6 +233,11 @@ int sleep_enter() {
     if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
         kfree(current_cpu->current_thread->sleep);
         return WAKEUP_ANOTHER_THREAD;
+    } else if (current_cpu->current_thread->sleep->sleep_state >= WAKEUP_SIGNAL) {
+        // A thread already marked this one as needing to wakeup
+        int state = current_cpu->current_thread->sleep->sleep_state;
+        kfree(current_cpu->current_thread->sleep);
+        return state;
     }
 
     process_yield(0);
