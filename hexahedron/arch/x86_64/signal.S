@@ -43,8 +43,15 @@ arch_signal_trampoline:
     movq %rsp, %rbp
     and $0xFFFFFFFFFFFFFFF0, %rsp
 
+    // Save FPU registers
+    subq $512, %rsp
+    fxsave64 (%rsp)
+
     // Leap of faith!
     call *%rax
+
+    fxrstor64 (%rsp)
+    addq $512, %rsp
 
     // We're back, restore.
     movq %rbp, %rsp
@@ -66,5 +73,6 @@ arch_signal_trampoline:
 
     // Update RSP
     addq $16, %rsp
+    popfq
 
     ret

@@ -163,6 +163,14 @@ extern uintptr_t __userspace_start, __userspace_end;
 
     // Push onto the stack the variables
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));
+
+    // !!!: Stupid hack to push flags
+#if defined(__ARCH_I386__)
+    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, regs->eflags);
+#elif defined(__ARCH_X86_64__)
+    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, regs->rflags);
+#endif
+    
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, handler);
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, signum);
 

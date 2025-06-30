@@ -57,12 +57,6 @@ struct pty;
 typedef int (*pty_write_t)(struct pty *pty, char ch);
 
 /**
- * @brief PTY flush method
- * @param pty The PTY to flush
- */
-typedef void (*pty_flush_t)(struct pty *pty);
-
-/**
  * @brief Fill name of a PTY in
  * @param pty The PTY to fill the name of
  * @param name The name to fill in
@@ -94,8 +88,6 @@ typedef struct pty {
     // Functions
     pty_write_t write_in;       // Input write method
     pty_write_t write_out;      // Output write method
-    pty_flush_t flush_in;       // Input flush method
-    pty_flush_t flush_out;      // Output flush method
     pty_name_t name;            // Name method
 
     void *_impl;                // Implementation-defined
