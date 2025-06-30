@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+extern char **environ;
+
 int cd(int argc, char *argv[]) {
     char *cd_path = getenv("HOME");
     if (argc > 1) cd_path = argv[1];

@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <assert.h>
 
 /* Maximum supported argv */
 #define MAX_ARGV        1024

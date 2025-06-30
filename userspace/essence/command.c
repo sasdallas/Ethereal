@@ -15,7 +15,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 
 /* Prototype */
 int essence_command(int argc, char *argv[]);
@@ -101,8 +103,12 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
     // It's not a builtin, try to fork and execute it
     cpid = fork();
     if (!cpid) {
+        // Let's set our pgid and pgrp
+        setpgid(0, 0);
+        tcsetpgrp(STDIN_FILENO, getpid());
+
         // We are the child process, so try to run.
-        execvpe(cmd, (const char**)argv, environ);
+        execvp(cmd, (const char **)argv);
 
         // Execution failed.. what happened?
         if (errno == ENOENT) {

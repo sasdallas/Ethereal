@@ -18,6 +18,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <errno.h>
 
 /* Essence prompt */
 static char __essence_prompt[128];

@@ -32,55 +32,10 @@ char *essence_getInput() {
     char *buffer = malloc(bufsz);
     memset(buffer, 0, bufsz);
 
-
-    int i = 0;  
-    int c;
-
-    while (1) {
-        CSR_SHOW();
-        c = getchar();
-        if (!c) {
-            putchar('\b');
-            PUTCHAR_FLUSH(c);
-            continue;
-        }
-
-        switch (c) {
-            case '\b':
-                // Backspace character
-                CSR_HIDE();
-                if (i > 0) {
-                    // Have space, go ahead
-                    i--;
-                    printf("\b");
-                    fflush(stdout);
-                }
-                break;
-
-            case '\n':
-                // Newline, flush
-                buffer[i] = 0;
-                CSR_HIDE();
-                PUTCHAR_FLUSH('\n');
-                return buffer;
-
-            default:
-                putchar('\b');
-                PUTCHAR_FLUSH(c);
-                
-
-                // Write char to buffer
-                buffer[i] = c;
-                i++;
-                if ((size_t)i >= bufsz) {
-                    bufsz = bufsz + DEFAULT_BUFSIZE;
-                    buffer = realloc(buffer, bufsz);
-                }
-                break;
-        }
-
-
-    }
+    // Read from buffer
+    ssize_t r = 0;
+    while ((r = read(STDIN_FILENO, buffer, BUFSIZ)) <= 0);
+    buffer[r-1] = 0;
 
     return buffer;
 }

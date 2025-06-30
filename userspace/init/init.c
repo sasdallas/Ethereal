@@ -26,16 +26,10 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // Check to see if argv[1] == "headless"
-    if (argc > 1 && !strcmp(argv[1], "headless")) {
-        open("/device/ttyS0", O_RDONLY);
-        open("/device/ttyS0", O_RDWR);
-        open("/device/ttyS0", O_RDWR);
-    } else {
-        open("/device/stdin", O_RDONLY);
-        open("/device/kconsole", O_RDWR);
-        open("/device/kconsole", O_RDWR);
-    }
+    // Open files
+    open("/device/stdin", O_RDONLY);
+    open("/device/console", O_RDWR);
+    open("/device/console", O_RDWR);
 
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
@@ -43,7 +37,7 @@ int main(int argc, char *argv[]) {
 
 
     printf("Initializing shell...\n");
-    char *nargv[3] = { "/device/initrd/usr/bin/essence", NULL, NULL };
-    execvpe("/device/initrd/usr/bin/essence", (const char**)nargv, environ);
+    char *nargv[3] = { "/device/initrd/usr/bin/terminal", NULL, NULL };
+    execvpe("/device/initrd/usr/bin/terminal", (const char**)nargv, environ);
     return 0;
 }
