@@ -167,21 +167,15 @@ void pty_input(pty_t *pty, uint8_t ch) {
         if ((CC(VEOL) && ch == CC(VEOL)) || ch == '\n') {
             // If ECHONL is set (and NOT ECHO) we can output the character
             if (!LFLAG(ECHO) && LFLAG(ECHONL)) WRITE_OUTPUT(ch);
-
-            // // Dump the buffer
-            LOG(DEBUG, "Flushing canonical buffer\n");
-            // for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
             
-            // // Reset
-            // pty->canonical_idx = 0;
-            // pty->canonical_buffer[pty->canonical_idx] = 0;
+            // Dump the buffer
+            LOG(DEBUG, "Flushing canonical buffer\n");
+            for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
+            
+            // Reset
+            pty->canonical_idx = 0;
+            pty->canonical_buffer[pty->canonical_idx] = 0;
 
-            char *c = pty->canonical_buffer;
-            while (pty->canonical_idx) {
-                WRITE_IN(*c);
-                c++;
-                pty->canonical_idx--;
-            }
 
             return;
         }
@@ -203,6 +197,8 @@ ssize_t pty_writeMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer
     for (size_t i = 0; i < size; i++) {
         pty_input(pty, buffer[i]);
     }
+
+    if (circbuf_remaining_read(pty->in)) fs_alert(pty->slave, VFS_EVENT_READ | VFS_EVENT_WRITE);
 
     return size;
 }
@@ -251,8 +247,7 @@ ssize_t pty_writeSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
         WRITE_OUTPUT(ch);
     }
 
-    if (size && pty->flush_out) pty->flush_out(pty);
- 
+    fs_alert(pty->master, VFS_EVENT_READ | VFS_EVENT_WRITE); // Always able to alert
     return size;
 }
 
