@@ -14,7 +14,7 @@
 
 #include <sys/cheader.h>
 
-_Begin_C_Header;
+_Begin_C_Header
 
 #ifndef _SYS_SELECT_H
 #define _SYS_SELECT_H
@@ -50,4 +50,4 @@ int select(int nfds, fd_set* readfds, fd_set* writefds, fd_set* errorfds, struct
 
 #endif
 
-_End_C_Header;
+_End_C_Header

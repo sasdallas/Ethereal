@@ -30,6 +30,7 @@ _Begin_C_Header
 
 #define RAND_MAX        32767
 #define PATH_MAX        512     // !!!: This should be in limits.h
+#define MB_CUR_MAX      ((size_t)4)
 
 /**** TYPES ****/
 

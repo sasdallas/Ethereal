@@ -51,7 +51,7 @@ struct rusage {
 #define RLIMIT_STACK    5
 #define RLIMIT_AS       6
 
-#define RLIM_INFINITY   ((rlim_t))-1;
+#define RLIM_INFINITY   ((rlim_t)-1)
 #define RLIM_SAVED_MAX  RLIM_INFINITY
 #define RLIM_SAVED_CUR  RLIM_INFINITY
 

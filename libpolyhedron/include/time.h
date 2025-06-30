@@ -61,7 +61,7 @@ struct itimerspec {
 #define TIMER_ABSTIME           0x1
 
 #define CLOCKS_PER_SEC          ((clock_t)1000000)
-
+#define USEC_PER_SEC            ((useconds_t)1000000)
 
 /**** VARIABLES ****/
 

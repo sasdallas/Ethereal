@@ -53,6 +53,11 @@ _Begin_C_Header
 #define PRIo32    "lo"
 #define PRIo64    "llo"
 
+/**** FUNCTIONS ****/
+
+intmax_t strtoimax(const char *, char **, int base);
+uintmax_t strtoumax(const char *, char **, int base);
+
 #endif
 
 _End_C_Header
