@@ -134,7 +134,7 @@ void periphfs_init();
  * @param scancode The scancode relating to the event
  * @returns 0 on success
  */
-int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode);
+int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode);
 
 /**
  * @brief Write a new event to the mouse interface

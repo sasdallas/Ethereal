@@ -32,7 +32,7 @@ static int held_shift_key = 0;
 
 /* Scancode (lower) */
 static key_scancode_t ps2_keyboard_scancodes_lower[128] = {
-	0, 27,
+	0, SCANCODE_ESCAPE,
 	'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
 	'-', '=', '\b', '\t',
 	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', SCANCODE_LEFT_CTRL,
@@ -50,7 +50,7 @@ static key_scancode_t ps2_keyboard_scancodes_lower[128] = {
 
 /* Scancode (upper) */
 static key_scancode_t ps2_keyboard_scancodes_upper[128] = {
-	0, 27,
+	0, SCANCODE_ESCAPE,
 	'!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
 	'_', '+', '\b', '\t',
 	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,
@@ -103,14 +103,14 @@ int ps2_keyboardIRQ(void *context) {
 	if (ch >= 0x80) ch -= 0x80;
 
     // Determine the scancode we should print
-    char ascii = 0;
+    key_scancode_t sc = 0;
     if (held_shift_key) {
-        ascii = ps2_keyboard_scancodes_upper[ch];
+        sc = ps2_keyboard_scancodes_upper[ch];
     } else {
-        ascii = ps2_keyboard_scancodes_lower[ch];
+        sc = ps2_keyboard_scancodes_lower[ch];
     }
 
-	periphfs_sendKeyboardEvent(event_type, ascii);
+	periphfs_sendKeyboardEvent(event_type, sc);
     return 0;
 }
 

@@ -174,6 +174,7 @@ void periphfs_init() {
     kbd_node->dev = (void*)kbdbuf;
     kbd_node->read = keyboard_read;
     kbd_node->ready = keyboard_ready;
+    kbd_node->waiting_nodes = list_create("vfs waiting nodes");
     vfs_mount(kbd_node, "/device/keyboard");
 
     // Create and mount stdin node
@@ -198,7 +199,7 @@ void periphfs_init() {
  * @param scancode The scancode relating to the event
  * @returns 0 on success
  */
-int periphfs_sendKeyboardEvent(int event_type, uint8_t scancode) {
+int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
     key_event_t event = {
         .event_type = event_type,
         .scancode = scancode
