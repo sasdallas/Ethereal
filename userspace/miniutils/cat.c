@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
 
             if (!r) break; // Done
 
-            write(STDOUT_FILENO, buf, 4096);
+            write(STDOUT_FILENO, buf, r);
         }
     }
 

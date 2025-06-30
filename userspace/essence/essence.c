@@ -158,6 +158,7 @@ __noargs:
         essence_parsed_command_t *parse = essence_parseCommand(buf);
         if (!parse) continue;
 
+#ifdef ESSENCE_DEBUG_COMMAND_PARSER
         int i = 0;
         foreach(parse_node, parse->commands) {
             essence_command_t *cmd = (essence_command_t*)parse_node->value;
@@ -179,6 +180,7 @@ __noargs:
             printf("\n");
             i++;
         }
+#endif
 
         // Execute the parsed input
         essence_execute(parse);

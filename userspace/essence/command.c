@@ -85,7 +85,6 @@ int essence_waitForExecution(pid_t cpid) {
  */
 void essence_executeCommand(essence_command_t *cmd) {
     pid_t cpid = -1;
-    int wait_for_child = !(cmd->argc > 1 && !strcmp(cmd->argv[cmd->argc-1], "&"));
 
     // First, check if the command is a builtin
     for (size_t i = 0; i < sizeof(command_list) / sizeof(builtin_command_t); i++) {
@@ -117,10 +116,10 @@ void essence_executeCommand(essence_command_t *cmd) {
         // Execution failed.. what happened?
         if (errno == ENOENT) {
             // Not found
-            printf("essence: %s: command not found\n", cmd);
+            printf("essence: %s: command not found\n", cmd->argv[0]);
             exit(127); 
         } else {
-            printf("essence: %s: %s\n", cmd, strerror(errno));
+            printf("essence: %s: %s\n", cmd->argv[0], strerror(errno));
             exit(1);
         }
     }
@@ -128,7 +127,7 @@ void essence_executeCommand(essence_command_t *cmd) {
     if (cpid < 0) return;
 
     // Wait on execution?
-    if (wait_for_child) {
+    if (!cmd->nowait) {
         essence_last_exit_status = essence_waitForExecution(cpid);
     } else {
         printf("essence: PID %d spawned in the background\n", cpid);

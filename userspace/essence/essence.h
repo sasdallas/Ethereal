@@ -48,6 +48,7 @@ typedef struct essence_command {
     char **argv;            // argv
     char **environ;         // environ
     list_t *redirs;         // Redirections (source fd -> destination fd)
+    int nowait;             // Do not wait on this command
 } essence_command_t;
 
 typedef struct essence_parsed_command {

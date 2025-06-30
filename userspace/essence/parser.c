@@ -73,6 +73,11 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
         essence_fd_redir_t *waiting_redir = NULL;
 
         char *p = cmd;
+
+        // First, get rid of starting spaces
+        while (*p == ' ') p++;
+
+        // Now parse
         while (*p) {
             switch (*p) {
                 case '$':
@@ -162,6 +167,21 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
                     if (backslash || quoted_single) ESSENCE_ONLY_PUSH(*p);
                     backslash = 1;
                     ESSENCE_NEXT_CHARACTER();
+
+                case '&':
+                    if (backslash || quoted) ESSENCE_ONLY_PUSH(*p);
+
+                    // Is the next character also an &?
+                    p++;
+                    if (*p == '&') {
+                        // Yes, so we'll wait on these. Go next.
+                        p++;
+                        goto _finished;
+                    } else {
+                        // No, we won't wait on it.
+                        cmdobj->nowait = 1;
+                        goto _finished;
+                    }
 
                 case '>':
                     // Redirection character
