@@ -23,7 +23,7 @@
 int essence_command(int argc, char *argv[]);
 
 /* Command list */
-command_t command_list[] = {
+builtin_command_t command_list[] = {
     ESSENCE_REGISTER_COMMAND("version", 1, NULL, essence_command),
     ESSENCE_REGISTER_COMMAND("cd", 1, NULL, cd),
     ESSENCE_REGISTER_COMMAND("env", 1, NULL, env),
@@ -41,7 +41,7 @@ int essence_last_exit_status = 0;
  * @param argv The argument pointer
  * @returns The exit status of the child process created
  */
-int essence_executeBuiltinCommand(command_t cmd, int argc, char *argv[]) {
+int essence_executeBuiltinCommand(builtin_command_t cmd, int argc, char *argv[]) {
     // First validate that argc is enough
     if (argc < cmd.minimum_argc) {
         // Do usage
@@ -80,35 +80,39 @@ int essence_waitForExecution(pid_t cpid) {
 }
 
 /**
- * @brief Try to run a command and wait on it to execute
- * @param cmd The command to run (argv[0])
- * @param argc Argument count to the command
- * @param argv The argument pointer
+ * @brief Execute a command in Essence
+ * @param cmd The command to execute
  */
-void essence_executeCommand(char *cmd, int argc, char *argv[]) {
-    if (!cmd || !(*cmd)) return;
-
+void essence_executeCommand(essence_command_t *cmd) {
     pid_t cpid = -1;
-    int wait_for_child = !(argc > 1 && !strcmp(argv[argc-1], "&"));
+    int wait_for_child = !(cmd->argc > 1 && !strcmp(cmd->argv[cmd->argc-1], "&"));
 
     // First, check if the command is a builtin
-    for (size_t i = 0; i < sizeof(command_list) / sizeof(command_t); i++) {
-        if (!strcmp(command_list[i].name, cmd)) {
+    for (size_t i = 0; i < sizeof(command_list) / sizeof(builtin_command_t); i++) {
+        if (!strcmp(command_list[i].name, cmd->argv[0])) {
             // We have a builtin command, try executing that
-            essence_last_exit_status = essence_executeBuiltinCommand(command_list[i], argc, argv);
+            essence_last_exit_status = essence_executeBuiltinCommand(command_list[i], cmd->argc, cmd->argv);
             return;
         }
     }
 
-    // It's not a builtin, try to fork and execute it
+    // Nope, fork off
     cpid = fork();
     if (!cpid) {
-        // Let's set our pgid and pgrp
+        // Prepare TTY
         setpgid(0, 0);
         tcsetpgrp(STDIN_FILENO, getpid());
 
-        // We are the child process, so try to run.
-        execvp(cmd, (const char **)argv);
+        // Prepare file descriptors
+        if (cmd->redirs) {
+            foreach(rdnode, cmd->redirs) {
+                essence_fd_redir_t *rd = (essence_fd_redir_t*)rdnode->value;
+                dup2(rd->srcfd, rd->dstfd);
+            }
+        }
+
+        // Duplications performed, now execute
+        execvpe(cmd->argv[0], (const char **)cmd->argv, cmd->environ);
 
         // Execution failed.. what happened?
         if (errno == ENOENT) {
@@ -123,11 +127,21 @@ void essence_executeCommand(char *cmd, int argc, char *argv[]) {
 
     if (cpid < 0) return;
 
-
     // Wait on execution?
     if (wait_for_child) {
         essence_last_exit_status = essence_waitForExecution(cpid);
     } else {
         printf("essence: PID %d spawned in the background\n", cpid);
+    }
+}
+
+/**
+ * @brief Execute a parser frame
+ * @param parse The parsed data returned by @c essence_parseCommand
+ */
+void essence_execute(essence_parsed_command_t *parse) {
+    foreach(cmd_node, parse->commands) {
+        essence_command_t *cmd = (essence_command_t*)cmd_node->value;
+        essence_executeCommand(cmd);
     }
 }

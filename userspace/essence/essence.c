@@ -75,23 +75,14 @@ int essence_executeScript(FILE *f) {
         // Clear newline
         *(strchrnul(buf, '\n')) = 0;
 
-        // Parse
-        int cmd_argc;
-        char **cmd_argv;
-        int r = essence_parse(buf, &cmd_argc, &cmd_argv);
+        essence_parsed_command_t *parse = essence_parseCommand(buf);
+        if (!parse) continue;
 
-        // Check error
-        if (r) {
-            printf("essence: error parsing %s\n", buf);
-            continue;
-        }
+        // Execute
+        essence_execute(parse);
 
-        if (!cmd_argc) continue;
-    
-        // Execute command
-        essence_executeCommand(cmd_argv[0], cmd_argc, cmd_argv);
-
-        free(cmd_argv);
+        // Cleanup
+        essence_cleanupParsed(parse);
     }
 
     return essence_last_exit_status;
@@ -122,19 +113,11 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
 
-                // They want us to execute a command
-                int new_argc;
-                char **new_argv;
-                
-                int r = essence_parse(optarg, &new_argc, &new_argv);
-                if (r) {
-                    printf("essence: error parsing %s\n", optarg);
-                    return 125;
-                }
 
-                if (!new_argc) return 0;
-
-                essence_executeCommand(new_argv[0], new_argc, new_argv);
+                // Parse and run
+                essence_parsed_command_t *parse = essence_parseCommand(optarg);
+                essence_execute(parse);
+                essence_cleanupParsed(parse);
                 return essence_last_exit_status;
 
             case 'v':
@@ -166,26 +149,42 @@ __noargs:
     while (1) {
         printf("%s", essence_getPrompt());
         fflush(stdout);
+
+        // Get a line of input
         char *buf = essence_getInput();
+        if (!strlen(buf)) continue;
 
-        int cmd_argc;
-        char **cmd_argv;
-        int r = essence_parse(buf, &cmd_argc, &cmd_argv);
+        // Parse the input
+        essence_parsed_command_t *parse = essence_parseCommand(buf);
+        if (!parse) continue;
 
-        // Check error
-        if (r) {
-            printf("essence: error parsing %s\n", buf);
-            free(buf);
-            continue;
-        }
+        int i = 0;
+        foreach(parse_node, parse->commands) {
+            essence_command_t *cmd = (essence_command_t*)parse_node->value;
+            printf("essence: cmd %d: ", i);
+
+            for (int i = 0; i < cmd->argc; i++) {
+                printf("%s ", cmd->argv[i]);
+            }
+
+            printf("\n\targc=%d\n\tfds: ", cmd->argc);
         
-        free(buf);
+            if (cmd->redirs) {
+                foreach(kn, cmd->redirs) {
+                    essence_fd_redir_t *rd = (essence_fd_redir_t*)kn->value;
+                    printf("%d = %d", rd->srcfd, rd->dstfd);
+                }
+            }
 
-        // Execute command
-        essence_executeCommand(cmd_argv[0], cmd_argc, cmd_argv);
+            printf("\n");
+            i++;
+        }
 
-        for (int i = 0; i < cmd_argc; i++) free(cmd_argv[i]);
-        free(cmd_argv);
+        // Execute the parsed input
+        essence_execute(parse);
+
+        // Cleanup
+        essence_cleanupParsed(parse);
     }
     return 0;
 }

@@ -16,6 +16,8 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <structs/list.h>
+#include <structs/hashmap.h>
 
 /**** DEFINITIONS ****/
 
@@ -27,21 +29,37 @@
 
 typedef void (*usage_t)();
 
-typedef int (*command_func_t)(int argc, char *argv[]);
+typedef int (*builtin_command_func_t)(int argc, char *argv[]);
 
-typedef struct command {
+typedef struct builtin_command {
     char name[64];
     int minimum_argc;
     usage_t usage;
-    command_func_t cmd;
-} command_t;
+    builtin_command_func_t cmd;
+} builtin_command_t;
+
+typedef struct essence_fd_redir {
+    int srcfd;
+    int dstfd;
+} essence_fd_redir_t;
+
+typedef struct essence_command {
+    int argc;               // argc
+    char **argv;            // argv
+    char **environ;         // environ
+    list_t *redirs;         // Redirections (source fd -> destination fd)
+} essence_command_t;
+
+typedef struct essence_parsed_command {
+    list_t *commands;       // Command list
+} essence_parsed_command_t;
 
 /**** MACROS ****/
 
 #define ESSENCE_REGISTER_COMMAND(n, min, us, c) \
-    (command_t){ .name = n, .minimum_argc = min, .usage = us, .cmd = c}
+    (builtin_command_t){ .name = n, .minimum_argc = min, .usage = us, .cmd = c}
 
-extern command_t command_list[];
+extern builtin_command_t command_list[];
 extern int essence_last_exit_status;
 
 /**** FUNCTIONS ****/
@@ -65,15 +83,31 @@ char *essence_getInput();
  */
 char *essence_getPrompt();
 
+
 /**
- * @brief Try to run a command and wait on it to execute
- * @param cmd The command to run (argv[0])
- * @param argc Argument count to the command
- * @param argv The argument pointer
+ * @brief Execute a command in Essence
+ * @param cmd The command to execute
  */
-void essence_executeCommand(char *cmd, int argc, char *argv[]);
+void essence_executeCommand(essence_command_t *cmd);
 
+/**
+ * @brief Parse a command into @c essence_parsed_command_t
+ * @param cmd The input command string to parse
+ * @returns Essence parsed command
+ */
+essence_parsed_command_t *essence_parseCommand(char *cmd);
 
+/**
+ * @brief Cleanup the parsed data
+ * @param parse The parsed data that you received
+ */
+void essence_cleanupParsed(essence_parsed_command_t *cmd);
+
+/**
+ * @brief Execute a parser frame
+ * @param parse The parsed data returned by @c essence_parseCommand
+ */
+void essence_execute(essence_parsed_command_t *parse);
 
 /**** COMMANDS ****/
 
