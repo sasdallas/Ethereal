@@ -40,6 +40,7 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/fs/shared.h>
+#include <kernel/fs/console.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -199,9 +200,9 @@ void kmain() {
     shared_init();
     pci_mount();
     arch_mount_kernelfs();
+    console_mount();
 
     // TEMPORARY
-    // vfs_mountFilesystemType("tmpfs", "rootfs", "/");
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm");
     vfs_dump();

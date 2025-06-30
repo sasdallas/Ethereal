@@ -68,17 +68,20 @@ void pty_input(pty_t *pty, uint8_t ch) {
     if (LFLAG(ISIG)) {
         // Process signals if ch
         if (ch == CC(VINTR)) {
-            LOG(ERR, "UNIMPL: Send SIGINTR\n");
+            if (LFLAG(ECHO)) WRITE_CONTROL(ch);
+            if (pty->fg_proc) signal_sendGroup(pty->fg_proc, SIGINT);
             return;
         }
 
         if (ch == CC(VQUIT)) {
-            LOG(ERR, "UNIMPL: Send SIGQUIT\n");
+            if (LFLAG(ECHO)) WRITE_CONTROL(ch);
+            if (pty->fg_proc) signal_sendGroup(pty->fg_proc, SIGQUIT);
             return;
         } 
 
         if (ch == CC(VSUSP)) {
-            LOG(ERR, "UNIMPL: Send SIGSUSP\n");
+            if (LFLAG(ECHO)) WRITE_CONTROL(ch);
+            if (pty->fg_proc) signal_sendGroup(pty->fg_proc, SIGTSTP);
             return;
         }
     }
@@ -127,6 +130,7 @@ void pty_input(pty_t *pty, uint8_t ch) {
         if (ch == CC(VEOF)) {
             // Dump it right now
             if (pty->canonical_idx) {
+                LOG(ERR, "VEOF: Dumping content\n");
                 for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
                 pty->canonical_idx = 0;
             } else {
@@ -164,12 +168,20 @@ void pty_input(pty_t *pty, uint8_t ch) {
             // If ECHONL is set (and NOT ECHO) we can output the character
             if (!LFLAG(ECHO) && LFLAG(ECHONL)) WRITE_OUTPUT(ch);
 
-            // Dump the buffer
-            for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
+            // // Dump the buffer
+            LOG(DEBUG, "Flushing canonical buffer\n");
+            // for (int i = 0; i < pty->canonical_idx; i++) WRITE_IN(pty->canonical_buffer[i]);
             
-            // Reset
-            pty->canonical_idx = 0;
-            pty->canonical_buffer[pty->canonical_idx] = 0;
+            // // Reset
+            // pty->canonical_idx = 0;
+            // pty->canonical_buffer[pty->canonical_idx] = 0;
+
+            char *c = pty->canonical_buffer;
+            while (pty->canonical_idx) {
+                WRITE_IN(*c);
+                c++;
+                pty->canonical_idx--;
+            }
 
             return;
         }
@@ -192,12 +204,6 @@ ssize_t pty_writeMaster(fs_node_t *node, off_t off, size_t size, uint8_t *buffer
         pty_input(pty, buffer[i]);
     }
 
-    // Flush input because we wrote to slave input
-    if (size && pty->flush_in) pty->flush_in(pty);
-
-    // !!!: Also flush output because of ECHO
-    if (size && pty->flush_out) pty->flush_out(pty);
-
     return size;
 }
 
@@ -214,8 +220,9 @@ ssize_t pty_writeSlave(fs_node_t *node, off_t off, size_t size, uint8_t *buffer)
         // Handle the character
 
         // OPOST
-        if (OFLAG(OPOST)) {
-            // TODO: Implementation defined
+        if (!OFLAG(OPOST)) {
+            WRITE_OUTPUT(ch);
+            continue;
         }
 
         // ONLCR

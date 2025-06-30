@@ -248,15 +248,7 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
  */
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
-
-    // stdout?
-    // !!!: lol
-extern int video_ks;
-    if ((fd == STDOUT_FILE_DESCRIPTOR || fd == STDERR_FILE_DESCRIPTOR) && !video_ks) {
-        char *buf = (char*)buffer;
-        for (size_t i = 0; i < count; i++) terminal_putchar(buf[i]);
-        video_updateScreen();
-    }
+    
     
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
