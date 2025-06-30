@@ -21,6 +21,7 @@
 #include <string.h>
 #include <poll.h>
 #include <fcntl.h>
+#include <time.h>
 
 /* Verbose mode enabled */
 static int verbose = 0;
@@ -334,7 +335,7 @@ int main(int argc, char *argv[]) {
     DHCP_LOG("bound to port 68 completed successfully\n");
 
     // Randomly generate a transaction ID
-    srand(now());
+    srand(time(NULL));
     xid = rand();
     DHCP_LOG("transaction ID: 0x%x\n", xid);
 

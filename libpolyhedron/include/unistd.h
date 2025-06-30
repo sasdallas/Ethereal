@@ -24,10 +24,8 @@ _Begin_C_Header
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <stddef.h>
-#include <sys/times.h>
-#include <time.h>
+#include <stdint.h> // intptr_t in sbrk
 
 /**** VARIABLES ****/
 
@@ -35,6 +33,68 @@ extern char **environ;
 
 /**** DEFINITIONS ****/
 
+/* POSIX/XOPEN version */
+#define _POSIX_VERSION      200809L     // POSIX.1-2017
+#define _POSIX2_VERSION     200809L     // POSIX.1-2017
+#define _XOPEN_VERSION      700
+
+/* POSIX features */
+
+/**
+ * This is the Ethereal POSIX feature set
+ * A value of -1 means that the feature is unsupported.
+ * A value of 0 means the feature might be supported.
+ * A value greater than 0 means the feature is always supported
+ */
+
+#define _POSIX_ADVISORY_INFO                    -1              // posix_fadvice, posix_fallocate, posix_memalign, posix_madvice
+#define _POSIX_ASYNCRONOUS_IO                   -1              // aio_ functions
+#define _POSIX_BARRIERS                         _POSIX_VERSION
+#define _POSIX_CHOWN_RESTRICTED                 _POSIX_VERSION 
+#define _POSIX_CLOCK_SELECTION                  0               // pthread_attr_*clock, clock_nanosleep
+#define _POSIX_CPUTIME                          -1              // CLOCK_CPUTIME
+#define _POSIX_FSYNC                            -1
+#define _POSIX_IPV6                             0               // IPv6
+#define _POSIX_JOB_CONTROL                      _POSIX_VERSION  // tcdrain, tcsendbreak
+#define _POSIX_MAPPED_FILES                     _POSIX_VERSION  // mmap files
+#define _POSIX_MEMLOCK                          -1              // mlockall, munlockall
+#define _POSIX_MEMLOCK_RANGE                    -1              // mlock, munlock
+#define _POSIX_MEMORY_PROTECTION                _POSIX_VERSION  // mprotect
+#define _POSIX_MESSAGE_PASSING                  -1              // mq functions
+#define _POSIX_MONOTONIC_CLOCK                  -1              // Monotonic Clock
+#define _POSIX_NO_TRUNC                         _POSIX_VERSION  // PATH_MAX check support
+#define _POSIX_PRIORITIZED_IO                   -1              // aio_ functions
+#define _POSIX_PRIORITY_SCHEDUING               -1              // Functions not provided yet
+#define _POSIX_RAW_SOCKETS                      _POSIX_VERSION  // Raw sockets are supported
+#define _POSIX_READER_WRITER_LOCKS              _POSIX_VERSION  // rwlock
+#define _POSIX_REALTIME_SIGNALS                 _POSIX_VERSION
+#define _POSIX_REGEXP                           0
+#define _POSIX_SAVED_IDS                        _POSIX_VERSION  // Saved SUID and SGID
+#define _POSIX_SEMAPHORES                       0               // sem_
+#define _POSIX_SHARED_MEMORY_OBJECTS            -1              // shm_
+#define _POSIX_SHELL                            _POSIX_VERSION
+#define _POSIX_SPAWN                            -1              // posixspawn
+#define _POSIX_SPIN_LOCKS                       -1
+#define _POSIX_SPORADIC_SERVER                  -1              // sched_setparam, schedsetscheduler
+#define _POSIX_SYNCRONIZED_IO                   _POSIX_VERSION  
+#define _POSIX_THREAD_ATTR_STACKATTR            0               // pthread_attr_getstack*, pthread_attr_setstack
+#define _POSIX_THREAD_ATTR_STACKSIZE            0               // pthread_attr_getstacksize, pthread_attr_setstacksize
+#define _POSIX_THREAD_CPUTIME                   -1
+#define _POSIX_THREAD_PRIO_INHERIT              _POSIX_VERSION
+#define _POSIX_THREAD_PRIO_PROTECT              0
+#define _POSIX_THREAD_PRIORITY_SCHEDULING       _POSIX_VERSION
+#define _POSIX_THREAD_ROBUST_PRIO_INHERIT       0
+#define _POSIX_THREAD_SAFE_FUNCTIONS            _POSIX_VERSION  // _r functions
+#define _POSIX_THREAD_SPORADIC_SERVER           -1
+#define _POSIX_THREADS                          _POSIX_VERSION
+#define _POSIX_TIMEOUTS                         -1              // mq_timed*
+#define _POSIX_TIMERS                           -1              // timer_*
+#define _POSIX_TRACE                            -1              // posix_trace_*
+#define _POSIX_TRACE_EVENT_FILTER               -1
+#define _POSIX_TRACE_LOG                        -1
+#define _POSIX_TYPED_MEMORY_OBJECTS             -1              // posix_mem_offset
+
+/* access flags */
 #define F_OK    0
 #define R_OK    4
 #define W_OK    2
@@ -72,7 +132,6 @@ char *getcwd(char *buf, size_t size);
 int chdir(const char *path);
 int fchdir(int fd);
 pid_t getpid();
-clock_t times(struct tms *buf);
 int dup2(int oldfd, int newfd);
 int dup(int fd);
 int getopt(int argc, char * const argv[], const char * optstring);

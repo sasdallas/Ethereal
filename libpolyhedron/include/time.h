@@ -19,11 +19,9 @@ _Begin_C_Header
 #define _TIME_H
 
 /**** INCLUDES ****/
-#include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
 #include <sys/time.h>
-#include <sys/times.h>
 
 /**** TYPES ****/
 
@@ -38,15 +36,32 @@ struct tm {
     int tm_yday;
     int tm_isdst;
 
-    // incompliant
     const char* _tm_zone_name;
     int _tm_zone_offset;
     long int tm_gmtoff;
 };
 
+struct timespec {
+    time_t tv_sec;
+    long tv_nsec;
+};
+
+struct itimerspec {
+    struct timespec it_interval;
+    struct timespec it_value;
+};
+
 /**** DEFINITIONS ****/
 
-#define CLOCKS_PER_SEC 1000000
+#define CLOCK_MONOTONIC             0
+#define CLOCK_PROCESS_CPUTIME_ID    1
+#define CLOCK_REALTIME              2
+#define CLOCK_THREAD_CPUTIME_ID     3
+
+#define TIMER_ABSTIME           0x1
+
+#define CLOCKS_PER_SEC          ((clock_t)1000000)
+
 
 /**** VARIABLES ****/
 

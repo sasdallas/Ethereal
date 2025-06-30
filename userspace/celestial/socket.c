@@ -91,10 +91,8 @@ void socket_accept() {
  * @returns 0 on success
  */
 int socket_send(int sock, size_t size, void *packet) {
-    uint64_t start = now();
     ssize_t r = send(sock, packet, size, 0);
     if (r < 0) return -1;
-    CELESTIAL_DEBUG("socket: Send response took %016llX ticks\n", now() - start);
 
     return 0;
 }

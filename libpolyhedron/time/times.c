@@ -11,7 +11,9 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#include <unistd.h>
+#ifndef __LIBK
+
+#include <sys/times.h>
 #include <sys/syscall.h>
 #include <errno.h>
 
@@ -20,3 +22,5 @@ DEFINE_SYSCALL1(times, SYS_TIMES, struct tms*);
 clock_t times(struct tms *buf) {
     __sets_errno(__syscall_times(buf));
 }
+
+#endif

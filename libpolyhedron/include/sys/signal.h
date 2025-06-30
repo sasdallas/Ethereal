@@ -69,6 +69,11 @@ _Begin_C_Header;
 
 #define NUMSIGNALS          29
 
+/* sigprocmask */
+#define SIG_BLOCK           0
+#define SIG_UNBLOCK         1
+#define SIG_SETMASK         2
+
 /* sigaction flags */
 #define SA_NOCLDSTOP        0x1     // Do not generate SIGCHLD when children stop
 #define SA_ONSTACK          0x2     // Causes signal delivery to occur on another stack
