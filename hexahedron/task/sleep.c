@@ -44,7 +44,7 @@ void sleep_callback(uint64_t ticks) {
         if (!node) continue;
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;
         if (!sleep || !sleep->thread) {
-            LOG(WARN, "Corrupt node in sleep queue %p\n", node);
+            LOG(WARN, "Corrupt node in sleep queue %p (sleep: %p)\n", node, sleep);
             continue;
         }
 
@@ -220,7 +220,7 @@ int sleep_wakeup(struct thread *thread) {
     
     thread_sleep_t *sleep = thread->sleep;
     sleep->sleep_state = SLEEP_FLAG_WAKEUP;
-    sleep_callback(0); // Syncronously do sleep callback
+    // sleep_callback(0); // Syncronously do sleep callback
 
     return 0;
 }

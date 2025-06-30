@@ -2,7 +2,7 @@
 include ./make.config
 
 # List of apps to compile
-APPS = init miniutils essence dhcpcli celestial wmtest dynlinker
+APPS = init miniutils essence dhcpcli celestial wmtest dynlinker terminal
 
 APPS_TARGETS_INSTALL := $(patsubst %, install-%, $(APPS))
 APPS_TARGETS_CLEAN := $(patsubst %, clean-%, $(APPS))
