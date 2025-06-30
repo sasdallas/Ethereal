@@ -975,7 +975,7 @@ fs_node_t *vfs_mountFilesystemType(char *name, char *argp, char *mountpoint) {
  * 
  * @param path The path to get the mountpoint of
  * @param remainder An output of the remaining path left to search
- * @returns A pointer to the mountpoint or NULL if it could not be found.
+ * @returns A duplicate of the mountpoint or NULL if it could not be found.
  */
 static fs_node_t *vfs_getMountpoint(const char *path, char **remainder) {
     // Last node in the tree
@@ -1018,7 +1018,11 @@ static fs_node_t *vfs_getMountpoint(const char *path, char **remainder) {
     vfs_tree_node_t *vnode = (vfs_tree_node_t*)last_node->value;
     kfree(path_clone);
 
-    return vnode->node;
+    // Clone the node and return it
+    fs_node_t *rnode = kmalloc(sizeof(fs_node_t));
+    memcpy(rnode, vnode->node, sizeof(fs_node_t));
+    rnode->refcount = 1;
+    return rnode;
 }
 
 
@@ -1044,7 +1048,16 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
     }
 
     // TODO: Symlinks, main bulk part of this
-    return fs_finddir(current_node, path);
+    fs_node_t *node = fs_finddir(current_node, path);
+    
+    if (node) {
+        fs_open(node, 0);
+    }
+
+    // Close the previous node
+    fs_close(current_node);
+
+    return node;
 }
 
 
@@ -1099,13 +1112,11 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
     }
 
 _finish_node: ;
-    // Always clone the node to prevent mucking around with datastructures.
-    fs_node_t *retnode = kmalloc(sizeof(fs_node_t));
-    memcpy(retnode, node, sizeof(fs_node_t));
-    fs_open(retnode, flags);
+    // Open the node
+    fs_open(node, flags);
     kfree(p);
 
-    return retnode;
+    return node;
 }
 
 /**
