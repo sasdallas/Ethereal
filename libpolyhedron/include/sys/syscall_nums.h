@@ -31,6 +31,7 @@ _Begin_C_Header
 #define SYS_READDIR         10
 #define SYS_POLL            11
 #define SYS_MKDIR           12
+#define SYS_PSELECT         13
 /* reserved */
 #define SYS_BRK             20
 #define SYS_FORK            21

@@ -46,6 +46,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_IOCTL]             = (syscall_func_t)(uintptr_t)sys_ioctl,
     [SYS_READDIR]           = (syscall_func_t)(uintptr_t)sys_readdir,
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
+    [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
     [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
@@ -67,6 +68,11 @@ static syscall_func_t syscall_table[] = {
     [SYS_MPROTECT]          = (syscall_func_t)(uintptr_t)sys_mprotect,
     [SYS_DUP2]              = (syscall_func_t)(uintptr_t)sys_dup2,
     [SYS_SIGNAL]            = (syscall_func_t)(uintptr_t)sys_signal,
+    [SYS_SIGACTION]         = (syscall_func_t)(uintptr_t)sys_sigaction,
+    [SYS_SIGPENDING]        = (syscall_func_t)(uintptr_t)sys_sigpending,
+    [SYS_SIGPROCMASK]       = (syscall_func_t)(uintptr_t)sys_sigprocmask,
+    [SYS_SIGSUSPEND]        = (syscall_func_t)(uintptr_t)sys_sigsuspend,
+    [SYS_SIGWAIT]           = (syscall_func_t)(uintptr_t)sys_sigwait,
     [SYS_KILL]              = (syscall_func_t)(uintptr_t)sys_kill,
     [SYS_SOCKET]            = (syscall_func_t)(uintptr_t)sys_socket,
     [SYS_SENDMSG]           = (syscall_func_t)(uintptr_t)sys_sendmsg,
@@ -248,7 +254,7 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
  */
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
-    
+
     
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
@@ -679,6 +685,11 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     return 1;   // At least one thread woke us up
 }
 
+long sys_pselect(sys_pselect_context_t *ctx) {
+    LOG(ERR, "pselect is unimplemented\n");
+    return -ENOSYS;
+}
+
 long sys_mkdir(const char *pathname, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
     return vfs_mkdir((char*)pathname, mode);
@@ -803,6 +814,81 @@ long sys_kill(pid_t pid, int sig) {
 
     // Unreachable
     return -EINVAL;
+}
+
+long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oact) {
+    if (act) SYSCALL_VALIDATE_PTR(act);
+    if (oact) SYSCALL_VALIDATE_PTR(oact);
+
+    if (signum < 0 || signum >= NUMSIGNALS) return -EINVAL;
+    if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL;
+
+    // First, assign the old action
+    if (oact) {
+        oact->sa_handler = current_cpu->current_process->signals[signum].handler;
+        oact->sa_mask = current_cpu->current_process->signals[signum].mask;
+        oact->sa_flags = current_cpu->current_process->signals[signum].flags;
+    }
+
+    // Now, assign the new one
+    if (act) {
+        current_cpu->current_process->signals[signum].handler = act->sa_handler;
+        current_cpu->current_process->signals[signum].mask = act->sa_mask;
+        current_cpu->current_process->signals[signum].flags = act->sa_flags;
+        LOG(DEBUG, "Changed signal %s to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), act->sa_handler, act->sa_mask, act->sa_flags);
+    }
+
+    return 0;
+}
+
+long sys_sigpending(sigset_t *set) {
+    LOG(ERR, "sigpending is unimplemented\n");
+    return -ENOSYS;
+
+}
+
+long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
+    if (oset) {
+        SYSCALL_VALIDATE_PTR(oset);
+        *oset = current_cpu->current_process->blocked_signals; // TODO: thread?
+    }
+
+    if (set) {
+        SYSCALL_VALIDATE_PTR(set);
+
+        // How do they want us to do this?
+        switch (how) {
+            case SIG_BLOCK:
+                // Block a signal
+                current_cpu->current_process->blocked_signals |= *set;
+                break;
+
+            case SIG_UNBLOCK:
+                // Unblock a signal 
+                current_cpu->current_process->blocked_signals &= ~(*set);
+                break;
+
+            case SIG_SETMASK:
+                // Set mask
+                current_cpu->current_process->blocked_signals = *set;
+                break;
+            
+            default:
+                return -EINVAL;
+        }
+    }
+
+    return 0;
+}
+
+long sys_sigsuspend(const sigset_t *sigmask) {
+    LOG(ERR, "sigsuspend is unimplemented\n");
+    return -ENOSYS;
+}
+
+long sys_sigwait(const sigset_t *set, int *sig) {
+    LOG(ERR, "sigwait is unimplemented\n");
+    return -ENOSYS;
 }
 
 /* SOCKETS */

@@ -165,6 +165,8 @@ int rmdir(const char *pathname);
 char *getlogin(void);
 pid_t tcgetpgrp(int);
 int tcsetpgrp(int, pid_t);
+int symlink(const char *path1, const char *path2);
+int link(const char *oldpath, const char *newpath);
 
 #endif
 

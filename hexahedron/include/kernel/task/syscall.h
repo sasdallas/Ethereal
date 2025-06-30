@@ -25,9 +25,11 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/utsname.h>
 #include <sys/epoll.h>
 #include <dirent.h>
+#include <signal.h>
 #include <poll.h>
 
 /**** DEFINITIONS ****/
@@ -74,6 +76,15 @@ typedef struct sys_setopt_context {
     socklen_t option_len;
 } sys_setopt_context_t;
 
+typedef struct sys_pselect_context {
+    int nfds;
+    fd_set *readfds;
+    fd_set *writefds;
+    fd_set *errorfds;
+    const struct timespec *timeout;
+    const sigset_t *sigmask;
+} sys_pselect_context_t;
+
 /**** MACROS ****/
 
 /* Pointer validation */
@@ -114,6 +125,7 @@ long sys_lstat(const char *pathname, struct stat *statbuf);
 long sys_ioctl(int fd, unsigned long request, void *argp);
 long sys_readdir(struct dirent *ent, int fd, unsigned long index);
 long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout);
+long sys_pselect(sys_pselect_context_t *ctx);
 long sys_mkdir(const char *pathname, mode_t mode);
 void *sys_brk(void *addr);
 pid_t sys_fork();
@@ -135,6 +147,11 @@ long sys_munmap(void *addr, size_t len);
 long sys_msync(void *addr, size_t len, int flags);
 long sys_dup2(int oldfd, int newfd);
 long sys_signal(int signum, sa_handler handler);
+long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oact);
+long sys_sigpending(sigset_t *set);
+long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset);
+long sys_sigsuspend(const sigset_t *sigmask);
+long sys_sigwait(const sigset_t *set, int *sig);
 long sys_kill(pid_t pid, int sig);
 long sys_socket(int domain, int type, int protocol);
 ssize_t sys_sendmsg(int socket, struct msghdr *message, int flags);
