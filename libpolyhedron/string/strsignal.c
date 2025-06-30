@@ -42,7 +42,8 @@ static const char *sys_siglist[] = {
     [SIGURG]            = "High bandwidth data available",
     [SIGVTALRM]         = "Virtual timer expired",
     [SIGXCPU]           = "CPU time limit exceeded",
-    [SIGXFSZ]           = "File size limit exceeded"
+    [SIGXFSZ]           = "File size limit exceeded",
+    [SIGWINCH]          = "Window size changed",
 };
 
 /* Signal description */

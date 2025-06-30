@@ -787,15 +787,19 @@ void process_exit(process_t *process, int status_code) {
     //      2. The parent process waiting for this process to exit (POSIX - should only happen during waitpid)
     
     // If our parent is waiting, wake them up
-    if (process->parent && process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
-        // TODO: Locking?
-        foreach(thr_node, process->parent->waitpid_queue) {
-            thread_t *thr = (thread_t*)thr_node->value;
-            sleep_wakeup(thr);
-        }
+    if (process->parent) {
+        if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
+        if (process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
+            spinlock_acquire(&reap_queue_lock); // !!!
+            foreach(thr_node, process->parent->waitpid_queue) {
+                thread_t *thr = (thread_t*)thr_node->value;
+                sleep_wakeup(thr);
+            }
+            spinlock_release(&reap_queue_lock);
 
-        // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-        process_switchNextThread(); // !!!: Hopefully that works and they free us..
+            // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
+            process_switchNextThread(); // !!!: Hopefully that works and they free us..
+        } 
     } 
 
     // Put ourselves in the wait queue
@@ -876,6 +880,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         if (!current_cpu->current_process->node->children || !current_cpu->current_process->node->children->length) {
             // There are no children available
             spinlock_release(&reap_queue_lock);
+
             list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
             return -ECHILD;
         }
@@ -909,29 +914,29 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 if (wstatus) *wstatus = WSTATUS_EXITED | (child->exit_status << WSTATUS_EXITCODE);
 
                 if (!PROCESS_IN_USE(child)) {
-                    list_append(reap_queue, child);
-                    sleep_wakeup(reaper_proc->main_thread);
+                    process_destroy(child);
                 }
-
-                spinlock_release(&reap_queue_lock);
 
                 // Take us out and return
                 list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
-                return child->pid;
+                spinlock_release(&reap_queue_lock);
+
+                return ret_pid;
             }
 
             // TODO: Look for continued, interrupted, etc
         }
 
-        spinlock_release(&reap_queue_lock);
-
         // There were children available but they didn't seem important
         if (options & WNOHANG) {
             // Return immediately, we didn't get anything.
             list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
+            
+            spinlock_release(&reap_queue_lock);
             return 0;
         } else {
             // Sleep until we get woken up
+            spinlock_release(&reap_queue_lock);
             sleep_untilNever(current_cpu->current_thread);
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }

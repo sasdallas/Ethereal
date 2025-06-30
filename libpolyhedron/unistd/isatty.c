@@ -12,9 +12,16 @@
  */
 
 #include <unistd.h>
-#include <stdio.h>
+#include <sys/ioctl.h>
+#include <errno.h>
 
 int isatty(int fd) {
-    fprintf(stderr, "isatty: %d\n", fd);
-    return 1;
+    int tty = 0;
+    int r = ioctl(fd, IOCTLTTYIS, &tty); 
+    if (r < 0) {
+        if (errno != EBADF) errno = ENOTTY;
+        return 0;
+    }
+
+    return tty;
 }

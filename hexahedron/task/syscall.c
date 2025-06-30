@@ -686,8 +686,130 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 }
 
 long sys_pselect(sys_pselect_context_t *ctx) {
-    LOG(ERR, "pselect is unimplemented\n");
-    return -ENOSYS;
+    if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
+    if (ctx->writefds) SYSCALL_VALIDATE_PTR(ctx->writefds);
+    if (ctx->errorfds) SYSCALL_VALIDATE_PTR(ctx->errorfds);
+    if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
+    if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
+
+    if (ctx->sigmask) {
+        LOG(WARN, "sigmask is unsupported in pselect\n");
+    }
+
+    // Create the return sets
+    fd_set rfds, wfds, efds;
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    FD_ZERO(&efds);
+
+    size_t ret = 0;
+
+    // Depending on our timeval, prepare the thread for sleeping
+    if (ctx->timeout) {
+        sleep_untilTime(current_cpu->current_thread, ctx->timeout->tv_sec, ctx->timeout->tv_nsec / 1000); // TODO: tv_nsec
+    } else {
+        sleep_untilNever(current_cpu->current_thread);
+    }
+
+    // First check if anything is reaady
+    for (int fd = 0; fd < ctx->nfds; fd++) {
+        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+            continue; // No need to care, it isn't a wanted file descriptor
+        }
+
+        // Validate file descriptor
+        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+
+        // Get events
+        int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
+
+        // Check
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
+            // Read 
+            FD_SET(fd, &rfds);
+            ret++;
+        }
+
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
+            // Write
+            FD_SET(fd, &wfds);
+            ret++;
+        }
+
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
+            // Error
+            FD_SET(fd, &efds);
+            ret++;
+        } 
+    }
+
+    // Did we get anything?
+    if (ret) {
+        sleep_exit(current_cpu->current_thread);
+        return ret;
+    }
+
+    // Nope, looks like we have to go on an adventure.
+
+    // Now that we're prepped, go through each file descriptor one more time to wait in the queue
+    for (int fd = 0; fd < ctx->nfds; fd++) {
+        int wanted_evs = 0;
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
+        
+        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+        // Now wait in the node
+        fs_wait(FD(current_cpu->current_process, fd)->node, wanted_evs);
+    }
+
+    // Enter sleep
+    int w = sleep_enter();
+    if (w == WAKEUP_SIGNAL) return -EINTR; // TODO: SA_RESTART
+    if (w == WAKEUP_TIME) return 0;
+
+
+
+    // Another thread must have woken us up
+    for (int fd = 0; fd < ctx->nfds; fd++) {
+        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+            continue; // No need to care, it isn't a wanted file descriptor
+        }
+
+        // Validate file descriptor
+        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+        // Get events
+        int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
+
+        // Check
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
+            // Read 
+            FD_SET(fd, &rfds);
+            ret++;
+        }
+
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
+            // Write
+            FD_SET(fd, &wfds);
+            ret++;
+        }
+
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
+            // Error
+            FD_SET(fd, &efds);
+            ret++;
+        } 
+    }
+
+    if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
+    if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
+    if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
+
+    // Ready!
+    return ret; 
 }
 
 long sys_mkdir(const char *pathname, mode_t mode) {
@@ -825,16 +947,26 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
 
     // First, assign the old action
     if (oact) {
-        oact->sa_handler = current_cpu->current_process->signals[signum].handler;
-        oact->sa_mask = current_cpu->current_process->signals[signum].mask;
-        oact->sa_flags = current_cpu->current_process->signals[signum].flags;
+        oact->sa_handler = PROCESS_SIGNAL(current_cpu->current_process, signum).handler;
+        oact->sa_mask = PROCESS_SIGNAL(current_cpu->current_process, signum).mask;
+        oact->sa_flags = PROCESS_SIGNAL(current_cpu->current_process, signum).flags;
+
+        if (oact->sa_handler == SIGNAL_ACTION_IGNORE) oact->sa_handler = SIG_IGN;
+        if (oact->sa_handler == SIGNAL_ACTION_DEFAULT) oact->sa_handler = SIG_DFL;
     }
 
     // Now, assign the new one
     if (act) {
-        current_cpu->current_process->signals[signum].handler = act->sa_handler;
-        current_cpu->current_process->signals[signum].mask = act->sa_mask;
-        current_cpu->current_process->signals[signum].flags = act->sa_flags;
+        if (act->sa_handler == SIG_IGN) {
+            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_IGNORE;
+        } else if (act->sa_handler == SIG_DFL) {
+            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_DEFAULT;
+        } else {
+            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = act->sa_handler;
+        }
+
+        PROCESS_SIGNAL(current_cpu->current_process, signum).mask = act->sa_mask;
+        PROCESS_SIGNAL(current_cpu->current_process, signum).flags = act->sa_flags;
         LOG(DEBUG, "Changed signal %s to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), act->sa_handler, act->sa_mask, act->sa_flags);
     }
 
