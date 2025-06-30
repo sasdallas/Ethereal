@@ -61,17 +61,17 @@ int pmm_init(uintptr_t memsize, uintptr_t *frames_bitmap) {
 
 // Set a frame/bit in the frames array
 void pmm_setFrame(int frame) {
-    frames[PMM_INDEX_BIT(frame)] |= (1 << PMM_OFFSET_BIT(frame));
+    frames[PMM_INDEX_BIT(frame)] |= ((unsigned)1 << PMM_OFFSET_BIT(frame));
 }
 
 // Clear a frame/bit in the frames array
 void pmm_clearFrame(int frame) {
-    frames[PMM_INDEX_BIT(frame)] &= ~(1 << PMM_OFFSET_BIT(frame));
+    frames[PMM_INDEX_BIT(frame)] &= ~((unsigned)1 << PMM_OFFSET_BIT(frame));
 }
 
 // Test whether a frame is set
 int pmm_testFrame(int frame) {
-    return frames[PMM_INDEX_BIT(frame)] & (1 << PMM_OFFSET_BIT(frame));
+    return frames[PMM_INDEX_BIT(frame)] & ((unsigned)1 << PMM_OFFSET_BIT(frame));
 }
 
 // Find the first free frame
@@ -80,7 +80,7 @@ uint32_t pmm_findFirstFrame() {
         if (frames[i] != 0xFFFFFFFF) {
             // At least one bit is free. Which one?
             for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(frames[i] & (1 << bit))) {
+                if (!(frames[i] & ((unsigned)1 << bit))) {
                     return i * 4 * 8 + bit;
                 }
             }
@@ -100,7 +100,7 @@ int pmm_findFirstFrames(size_t n) {
         if (frames[i] != 0xFFFFFFFF) {
             // At least one bit is free. Which one?
             for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(frames[i] & (1 << bit))) {
+                if (!(frames[i] & ((unsigned)1 << bit))) {
                     // Found it! But are there enough?
 
                     int starting_bit = i * 32 + bit;

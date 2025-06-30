@@ -33,7 +33,10 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
     "DRIVER_LOAD_FAILED",
     "TASK_SCHEDULER_ERROR",
     "CRITICAL_PROCESS_DIED",
-    "UNKNOWN_CORRUPTION_DETECTED"
+    "UNKNOWN_CORRUPTION_DETECTED",
+    "UBSAN_TYPE_MISMATCH",
+    "UBSAN_SHIFT_OUT_OF_BOUNDS",
+    "UBSAN_POINTER_OVERFLOW"
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
@@ -52,5 +55,8 @@ char *kernel_panic_messages[KERNEL_STOP_CODES] = {
     "A critical driver failed to load correctly.\n",
     "The task scheduler encountered an error.\n",
     "A process critical to the system has died and could not be respawned.\n",
-    "A kernel data structure was corrupted in a way that makes continuing impossible.\n"
+    "A kernel data structure was corrupted in a way that makes continuing impossible.\n",
+    "Undefined behavior sanitizer detected a type match.\n",
+    "Undefined behavior sanitizer detected a shift out of bounds.\n",
+    "Undefined behavior sanitizer detected a pointer overflow.\n"
 };

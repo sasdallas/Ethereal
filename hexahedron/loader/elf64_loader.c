@@ -230,7 +230,7 @@ static uintptr_t elf_relocateSymbolAddend(Elf64_Ehdr *ehdr, Elf64_Rela *rel, Elf
     // Calculate offset
     Elf64_Shdr *target_section = ELF_SECTION(ehdr, reltab->sh_info);
     uintptr_t addr = (uintptr_t)ehdr + target_section->sh_offset;
-    uintptr_t *reference = (uintptr_t*)(addr + rel->r_offset); 
+    uint64_t *reference = (uint64_t*)(addr + rel->r_offset); 
 
     
     // Resolve the symbol if needed
@@ -250,12 +250,14 @@ static uintptr_t elf_relocateSymbolAddend(Elf64_Ehdr *ehdr, Elf64_Rela *rel, Elf
 
         case R_X86_64_64:
             // Symbol + Offset
-            *((uint64_t*)reference) = RELOCATE_X86_64_3264(symval, (int)rel->r_addend);
+            uint64_t r64 = RELOCATE_X86_64_3264(symval, (int)rel->r_addend);
+            memcpy(reference, &r64, sizeof(uint64_t));
             break;
         
         case R_X86_64_32:
             // Symbol + Offset
-            *((uint32_t*)reference) = RELOCATE_X86_64_3264(symval, (int)rel->r_addend);
+            uint32_t r32 = (uint32_t)RELOCATE_X86_64_3264(symval, (int)rel->r_addend);
+            memcpy(reference, &r32, sizeof(uint32_t));
             break;
 
         case R_X86_64_PLT32:
@@ -264,7 +266,8 @@ static uintptr_t elf_relocateSymbolAddend(Elf64_Ehdr *ehdr, Elf64_Rela *rel, Elf
 
         case R_X86_64_PC32:
             // Symbol + Offset - Section Offset
-            *((uint32_t*)reference) = RELOCATE_X86_64_PC32(symval, (int)rel->r_addend, (uintptr_t)reference);
+            uint32_t pc32 = RELOCATE_X86_64_PC32(symval, (int)rel->r_addend, (uintptr_t)reference);
+            memcpy(reference, &pc32, sizeof(uint32_t));
             break;
 
 #elif defined(__ARCH_AARCH64__)

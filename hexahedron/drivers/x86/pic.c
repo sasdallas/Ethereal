@@ -81,8 +81,12 @@ static int pic8259_mask(uintptr_t interrupt) {
  * @param interrupt The interrupt to unmask
  */
 static int pic8259_unmask(uintptr_t interrupt) {
-    uint16_t port = (interrupt < 8 ? PIC1_DATA : PIC2_DATA);
-    uint8_t mask = inportb(port) & ~(1 << ((port == PIC2_DATA) ? interrupt-8 : interrupt));
+    if (interrupt > 31) return 0;     
+
+
+    uint8_t irq = (uint8_t)interrupt;
+    uint16_t port = (irq < 8 ? PIC1_DATA : PIC2_DATA);
+    uint8_t mask = inportb(port) & ~((unsigned)1 << ((port == PIC2_DATA) ? irq-8 : irq));
     outportb(port, mask);
     return 0;
 }

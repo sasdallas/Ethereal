@@ -790,12 +790,11 @@ void process_exit(process_t *process, int status_code) {
     if (process->parent) {
         if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
         if (process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
-            spinlock_acquire(&reap_queue_lock); // !!!
+            // TODO: Locking?
             foreach(thr_node, process->parent->waitpid_queue) {
                 thread_t *thr = (thread_t*)thr_node->value;
                 sleep_wakeup(thr);
             }
-            spinlock_release(&reap_queue_lock);
 
             // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
             process_switchNextThread(); // !!!: Hopefully that works and they free us..

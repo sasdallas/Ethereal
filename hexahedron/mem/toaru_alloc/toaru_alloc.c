@@ -69,7 +69,6 @@ allocator_info_t *alloc_getInfo() {
         allocator_information->version_major = ALLOC_VERSION_MAJOR;
         allocator_information->version_minor = ALLOC_VERSION_MINOR;
 
-        allocator_information->support_profile = 1; 
         allocator_information->support_valloc = 1;
     }
     

@@ -68,17 +68,17 @@ pool_t *pool_create(char *name, uintptr_t chunk_size, uintptr_t size, uintptr_t 
 
 // Set a frame/bit in the pool array
 void pool_setFrame(pool_t *pool, int frame) {
-    pool->bitmap[POOL_INDEX_BIT(frame)] |= (1 << POOL_OFFSET_BIT(frame)); 
+    pool->bitmap[POOL_INDEX_BIT(frame)] |= ((unsigned)1 << POOL_OFFSET_BIT(frame)); 
 }
 
 // Clear a frame/bit in the pool array
 void pool_clearFrame(pool_t *pool, int frame) {
-    pool->bitmap[POOL_INDEX_BIT(frame)] &= ~(1 << POOL_OFFSET_BIT(frame));
+    pool->bitmap[POOL_INDEX_BIT(frame)] &= ~((unsigned)1 << POOL_OFFSET_BIT(frame));
 }
 
 // Test whether a frame is set
 int pool_testFrame(pool_t *pool, int frame) {
-    return pool->bitmap[POOL_INDEX_BIT(frame)] & (1 << POOL_OFFSET_BIT(frame));
+    return pool->bitmap[POOL_INDEX_BIT(frame)] & ((unsigned)1 << POOL_OFFSET_BIT(frame));
 }
 
 // Find the first free frame
@@ -87,7 +87,7 @@ uint32_t pool_findFirstFrame(pool_t *pool) {
         if (pool->bitmap[i] != 0xFFFFFFFF) {
             // At least one bit is free. Which one?
             for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(pool->bitmap[i] & (1 << bit))) {
+                if (!(pool->bitmap[i] & ((unsigned)1 << bit))) {
                     return i * 4 * 8 + bit;
                 }
             }
@@ -107,7 +107,7 @@ int pool_findFirstFrames(pool_t *pool, size_t n) {
         if (pool->bitmap[i] != 0xFFFFFFFF) {
             // At least one bit is free. Which one?
             for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(pool->bitmap[i] & (1 << bit))) {
+                if (!(pool->bitmap[i] & ((unsigned)1 << bit))) {
                     // Found it! But are there enough?
                     int starting_bit = i * 32 + bit;
 

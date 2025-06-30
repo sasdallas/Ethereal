@@ -113,6 +113,11 @@ void sleep_init() {
 int sleep_untilNever(struct thread *thread) {
     if (!thread) return 1;
 
+    if (thread->sleep) {
+        LOG(ERR, "This thread sleeping already..?\n");
+        return 1;
+    }
+
     // Construct a sleep node
     thread_sleep_t *sleep = kmalloc(sizeof(thread_sleep_t));
     memset(sleep, 0, sizeof(thread_sleep_t));
@@ -218,9 +223,10 @@ int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, voi
 int sleep_wakeup(struct thread *thread) {
     if (!thread || !thread->sleep) return 1;
     
+    spinlock_acquire(&sleep_queue_lock);
     thread_sleep_t *sleep = thread->sleep;
     sleep->sleep_state = SLEEP_FLAG_WAKEUP;
-    // sleep_callback(0); // Syncronously do sleep callback
+    spinlock_release(&sleep_queue_lock);
 
     return 0;
 }
@@ -232,17 +238,20 @@ int sleep_wakeup(struct thread *thread) {
 int sleep_enter() {
     if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
         kfree(current_cpu->current_thread->sleep);
+        current_cpu->current_thread->sleep = NULL;
         return WAKEUP_ANOTHER_THREAD;
     } else if (current_cpu->current_thread->sleep->sleep_state >= WAKEUP_SIGNAL) {
         // A thread already marked this one as needing to wakeup
         int state = current_cpu->current_thread->sleep->sleep_state;
         kfree(current_cpu->current_thread->sleep);
+        current_cpu->current_thread->sleep = NULL;
         return state;
     }
 
     process_yield(0);
     int state = current_cpu->current_thread->sleep->sleep_state;
     kfree(current_cpu->current_thread->sleep);
+    current_cpu->current_thread->sleep = NULL;
     return state;
 }
 
@@ -266,6 +275,10 @@ sleep_queue_t *sleep_createQueue(char *name) {
  */
 int sleep_inQueue(sleep_queue_t *queue) {
     if (!queue) return 1;
+    if (current_cpu->current_thread->sleep) {
+        LOG(ERR, "This thread sleeping already..?\n");
+        return 1;
+    }
 
     spinlock_acquire(&queue->lock);
     list_append(&queue->queue, (void*)current_cpu->current_thread);

@@ -21,7 +21,7 @@
 
 /**** STOP CODES ****/
 
-#define     KERNEL_STOP_CODES               16
+#define     KERNEL_STOP_CODES               19
 
 #define     KERNEL_DEBUG_TRAP               0x00000000 // Debugging trap
 #define     MEMORY_MANAGEMENT_ERROR         0x00000001 // Memory management failure
@@ -39,6 +39,9 @@
 #define     SCHEDULER_ERROR                 0x0000000D // The task scheduler encountered an error
 #define     CRITICAL_PROCESS_DIED           0x0000000E // A process critical to system execution has died unexpectedly and could not be respawned
 #define     UNKNOWN_CORRUPTION_DETECTED     0x0000000F // A kernel data structure was corrupted in a way that makes continuing impossible
+#define     UBSAN_TYPE_MISMATCH             0x00000010 // UBsan type mismatch
+#define     UBSAN_SHIFT_OUT_OF_BOUNDS       0x00000011 // UBsan shift out of bounds
+#define     UBSAN_POINTER_OVERFLOW          0x00000012 // UBsan pointer overflow
 
 /**** MESSAGES ****/
 

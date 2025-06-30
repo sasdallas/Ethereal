@@ -115,11 +115,11 @@ static void font_putCharacterPSF(int c, int _x, int _y, color_t fg, color_t bg) 
     // Display the pixels according to the bitmap
     for (uint32_t h = 0; h < current_font->height; h++) {
         // Calculate a mask
-        uint32_t mask = 1 << (current_font->width + 1);
+        uint8_t mask = 1 << (current_font->width + 1);
         
         // Display a row
         for (uint32_t w = 0; w < current_font->width+1; w++) {
-            if (*((unsigned int*)glyph) & mask) {
+            if (*(glyph) & mask) {
                 // video_plotPixel(x + w, y + h, fg);
                 *((uint32_t*)(fb + (w*4))) = fg.rgb;
             } else {

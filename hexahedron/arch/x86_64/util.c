@@ -26,7 +26,7 @@ extern generic_parameters_t *parameters;
  * @brief Returns the current CPU active in the system
  */
 int arch_current_cpu() {
-    return current_cpu->cpu_id;
+    return smp_getCurrentCPU();
 }
 
 /**
