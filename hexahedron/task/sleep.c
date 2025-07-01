@@ -221,9 +221,14 @@ int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, voi
  * @returns 0 on success
  */
 int sleep_wakeup(struct thread *thread) {
-    if (!thread || !thread->sleep) return 1;
-    
     spinlock_acquire(&sleep_queue_lock);
+    
+    if (!thread || !thread->sleep) {
+        // This thread isn't sleeping
+        spinlock_release(&sleep_queue_lock);
+        return 1;
+    }
+    
     thread_sleep_t *sleep = thread->sleep;
     sleep->sleep_state = SLEEP_FLAG_WAKEUP;
     spinlock_release(&sleep_queue_lock);
