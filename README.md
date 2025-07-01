@@ -26,16 +26,18 @@ Currently, the project is developing its usermode stages.
 *Ethereal running a neofetch clone made for it (whatarewe)*
 
 ## Features
-- Advanced driver system with a well-documented kernel API
-- Strong support for x86_64 mode
-- USB support for UHCI/EHCI controllers
+
+- Full SMP-enabled kernel
+- Custom window manager (Celestial)
+- USB support for UHCI/EHCI/xHCI controllers
 - AHCI/IDE support
-- Networking stack with E1000 network card driver
+- Networking stack with E1000 and RTL8139 network card driver
 - Priority-based round-robin scheduler with a well-tested API
 - Custom C library with support for many functions
 - Full ACPI support with the ACPICA library
 
 ## Project structure
+
 - `base`: Contains the base filesystem. Files in `base/initrd` go in the initial ramdisk (for non LiveCD boots) and files in `base/sysroot` go in sysroot.
 - `buildscripts`: Contains buildscripts for the build system
 - `conf`: Contains misc. configuration files, such as architecture files, GRUB configs, extra boot files, etc.
@@ -46,6 +48,7 @@ Currently, the project is developing its usermode stages.
 - `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
 
 ## Building
+
 To build Ethereal, you will need an Ethereal toolchain for your target architecture.\
 The Ethereal toolchain can be found at [the repository](https://github.com/sasdallas/Ethereal-Toolchain)
 
@@ -56,6 +59,24 @@ Running `make all` will build an ISO in `build-output/ethereal.iso`
 
 Currently, Ethereal's lack of filesystem drivers means that LiveCD boots are usually the best option.\
 The initial ramdisk in a LiveCD is the sysroot, and if the OS detects the boot it will copy the initial ramdisk into RAM.
+
+## Kernel arguments
+
+A lot of times, Ethereal fails to load. This is expected. Please start a GitHub issue.
+
+You can solve some problems by using 'e' to open a GRUB configuration and adding some kernel arguments to the end of the `multiboot entry`.\
+Here is a small list:
+
+- `--enable-ioapic`: Enable a prototype I/O APIC driver. Use this if you keyboard isn't working! (and you support PS/2)
+- `--debug=`: Options are `console` and `none`. If `console`, will redirect kernel debug output to the screen. Useful for debugging
+- `--noload=`: Comma-separated list of driver (.sys) files to not load. Problematic drivers: usb_xhci.sys, ahci.sys, ps2.sys (if you don't support PS/2),
+- `--no-acpica`: Disable the ACPICA library and fallback to MinACPI implementation. Only useful in extreme cases.
+- `--no-acpi`: Disable all ACPI implementations. Disables SMP as well.
+- `--disable-smp`: Enable ACPI, but disable SMP
+- `--no-secondary-fb`: Disables the secondary framebuffer. **RECOMMENDED** for real hardware, since double buffering is slow (**warning: scrolling will be extremely slow**)
+- `--disable-cow`: Disable copy-on-write. Not recommended, but can be useful in extreme cases.
+- `--xhci-fix-pci`: Enable xHCI PCI fix. Useful for Bochs.
+- `--no-psf-font`: Don't load the PSF font from initrd
 
 ## External components
 Certain external components are available in `external`. Here is a list of them and their versions:
