@@ -82,7 +82,6 @@ void sleep_callback(uint64_t ticks) {
         }
 
         if (wakeup) {
-            // Ready to wake up
             sleep->sleep_state = wakeup;
             list_delete(sleep_queue, node);
             __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
@@ -129,13 +128,14 @@ int sleep_untilNever(struct thread *thread) {
     node_t *node = kmalloc(sizeof(node_t));
     node->value = (void*)sleep;
 
+    // Mark thread as sleeping. If process_yield finds this thread to be trying to reschedule,
+    // it will disallow it and just switch away
+    __sync_or_and_fetch(&thread->status, THREAD_STATUS_SLEEPING);
+
     spinlock_acquire(&sleep_queue_lock);
     list_append_node(sleep_queue, node);
     spinlock_release(&sleep_queue_lock);
 
-    // Mark thread as sleeping. If process_yield finds this thread to be trying to reschedule,
-    // it will disallow it and just switch away
-    __sync_or_and_fetch(&thread->status, THREAD_STATUS_SLEEPING);
     return 0;
 }
 
@@ -236,17 +236,7 @@ int sleep_wakeup(struct thread *thread) {
  * @returns A sleep wakeup reason
  */
 int sleep_enter() {
-    if (current_cpu->current_thread->sleep->sleep_state == SLEEP_FLAG_WAKEUP) {
-        kfree(current_cpu->current_thread->sleep);
-        current_cpu->current_thread->sleep = NULL;
-        return WAKEUP_ANOTHER_THREAD;
-    } else if (current_cpu->current_thread->sleep->sleep_state >= WAKEUP_SIGNAL) {
-        // A thread already marked this one as needing to wakeup
-        int state = current_cpu->current_thread->sleep->sleep_state;
-        kfree(current_cpu->current_thread->sleep);
-        current_cpu->current_thread->sleep = NULL;
-        return state;
-    }
+    // TODO: Maybe don't yield if thread is already supposed to wakeup? This would mean sleep_callback can't NULL it
 
     process_yield(0);
     int state = current_cpu->current_thread->sleep->sleep_state;

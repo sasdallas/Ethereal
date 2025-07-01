@@ -229,7 +229,7 @@ int fs_alert(fs_node_t *node, int events) {
                 // Hacky deletion
                 kfree(waiter);
                 node_t *next = n->next;
-                list_delete(node->waiting_nodes, (node_t*)n);
+                list_delete(node->waiting_nodes, n);
                 n = next;
                 continue;
             }

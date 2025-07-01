@@ -442,28 +442,28 @@ void process_destroy(process_t *proc) {
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
 
-    if (proc->mmap) {
-        process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
+    // if (proc->mmap) {
+    //     process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
 
-        foreach(mmap_node, proc->mmap) {
-            if (prev) {
-                LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-                process_removeMapping(proc, prev);
-                prev = NULL;
-            }
+    //     foreach(mmap_node, proc->mmap) {
+    //         if (prev) {
+    //             LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
+    //             process_removeMapping(proc, prev);
+    //             prev = NULL;
+    //         }
 
-            if (mmap_node && mmap_node->value) {
-                process_mapping_t *map = (process_mapping_t*)mmap_node->value;
-                prev = map;
-            }
-        }
+    //         if (mmap_node && mmap_node->value) {
+    //             process_mapping_t *map = (process_mapping_t*)mmap_node->value;
+    //             prev = map;
+    //         }
+    //     }
 
-        if (prev) process_removeMapping(proc, prev);
-        list_destroy(proc->mmap, false);
-    }
+    //     if (prev) process_removeMapping(proc, prev);
+    //     list_destroy(proc->mmap, false);
+    // }
 
     // Drop main thread in process (?)
-    thread_destroy(proc->main_thread);
+    // thread_destroy(proc->main_thread);
 
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
@@ -750,7 +750,7 @@ void process_exit(process_t *process, int status_code) {
 
     // Now we need to mark all threads of this process as stopping. This will ensure that memory is fully separate
     if (process->main_thread) __sync_or_and_fetch(&process->main_thread->status, THREAD_STATUS_STOPPING);
-    
+
     if (process->thread_list && process->thread_list->length) {
         foreach(thread_node, process->thread_list) {
             if (thread_node->value) {
@@ -788,7 +788,7 @@ void process_exit(process_t *process, int status_code) {
     
     // If our parent is waiting, wake them up
     if (process->parent) {
-        if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
+        // if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
         if (process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
             // TODO: Locking?
             foreach(thr_node, process->parent->waitpid_queue) {
@@ -803,11 +803,11 @@ void process_exit(process_t *process, int status_code) {
 
     // Put ourselves in the wait queue
     spinlock_acquire(&reap_queue_lock);
-    list_append(reap_queue, (void*)process);  
-    spinlock_release(&reap_queue_lock);
+    list_append(reap_queue, (void*)process);
 
     // Wakeup the reaper thread
     sleep_wakeup(reaper_proc->main_thread);
+    spinlock_release(&reap_queue_lock);
 
     // To the next process we go
     process_switchNextThread();
@@ -869,9 +869,11 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
 
     // Put ourselves in our wait queue
     if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
-    list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
 
     for (;;) {
+        node_t *n = list_find(current_cpu->current_process->waitpid_queue, current_cpu->current_thread);
+        if (n) list_delete(current_cpu->current_process->waitpid_queue, n);
+
         // We need this to stop interferance from other threads also trying to waitpid
         spinlock_acquire(&reap_queue_lock);
 
@@ -879,8 +881,6 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         if (!current_cpu->current_process->node->children || !current_cpu->current_process->node->children->length) {
             // There are no children available
             spinlock_release(&reap_queue_lock);
-
-            list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
             return -ECHILD;
         }
    
@@ -917,7 +917,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 }
 
                 // Take us out and return
-                list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
+                // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
                 spinlock_release(&reap_queue_lock);
 
                 return ret_pid;
@@ -929,14 +929,15 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         // There were children available but they didn't seem important
         if (options & WNOHANG) {
             // Return immediately, we didn't get anything.
-            list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
+            // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
             
             spinlock_release(&reap_queue_lock);
             return 0;
         } else {
             // Sleep until we get woken up
             spinlock_release(&reap_queue_lock);
-            sleep_untilNever(current_cpu->current_thread);
+            sleep_untilNever(current_cpu->current_thread);    
+            list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }
