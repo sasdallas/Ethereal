@@ -75,11 +75,13 @@ static void sharedfs_close(fs_node_t *node) {
  * @returns Error code
  */
 static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
+    shared_object_t *obj = (shared_object_t*)node->dev;
+
     // Align size to page size
     if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
-    
+    if (size > obj->size) size = obj->size;
+
     // Start mapping
-    shared_object_t *obj = (shared_object_t*)node->dev;
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocateBlock();
         mem_mapAddress(NULL, obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i, (obj->flags & SHARED_READ_ONLY ? MEM_PAGE_READONLY : 0));
