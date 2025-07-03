@@ -442,25 +442,25 @@ void process_destroy(process_t *proc) {
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
 
-    // if (proc->mmap) {
-    //     process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
+    if (proc->mmap) {
+        process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
 
-    //     foreach(mmap_node, proc->mmap) {
-    //         if (prev) {
-    //             LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-    //             process_removeMapping(proc, prev);
-    //             prev = NULL;
-    //         }
+        foreach(mmap_node, proc->mmap) {
+            if (prev) {
+                LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
+                process_removeMapping(proc, prev);
+                prev = NULL;
+            }
 
-    //         if (mmap_node && mmap_node->value) {
-    //             process_mapping_t *map = (process_mapping_t*)mmap_node->value;
-    //             prev = map;
-    //         }
-    //     }
+            if (mmap_node && mmap_node->value) {
+                process_mapping_t *map = (process_mapping_t*)mmap_node->value;
+                prev = map;
+            }
+        }
 
-    //     if (prev) process_removeMapping(proc, prev);
-    //     list_destroy(proc->mmap, false);
-    // }
+        if (prev) process_removeMapping(proc, prev);
+        list_destroy(proc->mmap, false);
+    }
 
     // Drop main thread in process (?)
     // thread_destroy(proc->main_thread);
