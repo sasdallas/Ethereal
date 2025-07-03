@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
 
 
 __noargs:
-    printf("Essence v1.0\n");
+    printf("Essence v%d.%d.%d\n", ESSENCE_VERSION_MAJOR, ESSENCE_VERSION_MINOR, ESSENCE_VERSION_LOWER);
     while (1) {
         printf("%s", essence_getPrompt());
         fflush(stdout);

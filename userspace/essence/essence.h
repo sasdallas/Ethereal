@@ -22,7 +22,7 @@
 /**** DEFINITIONS ****/
 
 #define ESSENCE_VERSION_MAJOR       1
-#define ESSENCE_VERSION_MINOR       0
+#define ESSENCE_VERSION_MINOR       2
 #define ESSENCE_VERSION_LOWER       0
 
 /**** TYPES ****/
