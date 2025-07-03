@@ -28,7 +28,6 @@ typedef int uid_t;
 typedef int dev_t;
 typedef int ino_t;
 typedef int mode_t;
-typedef int caddr_t;
 typedef int pid_t;
 typedef int id_t;
 typedef int key_t;

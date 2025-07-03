@@ -13,7 +13,7 @@
 
  #include <sys/cheader.h>
 
-_Begin_C_Header;
+_Begin_C_Header
 
 #ifndef _SYS_SIGNAL_H
 #define _SYS_SIGNAL_H
@@ -24,12 +24,13 @@ _Begin_C_Header;
 
 /**** DEFINITIONS ****/
 
-/* Signal handling types */
-#define SIG_DFL             (sa_handler)0
-#define SIG_IGN             (sa_handler)1
 
-/* Signal handler return */
-#define SIG_ERR             (sa_handler)-1
+/* Signal handler types */
+#define SIG_DFL             ((void (*)(int))0)
+#define SIG_IGN             ((void (*)(int))1)
+
+/* Signal error */
+#define SIG_ERR             ((void (*)(int))-1)
 
 /* sigev_notify values */
 #define SIGEV_NONE          0
@@ -164,6 +165,21 @@ typedef struct {
 typedef void (*sighandler_t)(int);
 
 // Signal-catching functions
+#ifdef __cplusplus
+
+/* hack for C++... */
+
+struct sigaction {
+    union {
+        void (*sa_handler)(int);
+        void (*sa_sigaction)(int, siginfo_t*, void*);
+    };
+
+    sigset_t sa_mask;               // Set of signals to be blocked during execution
+    int sa_flags;                   // Special flags
+};
+
+#else
 typedef void (*sa_handler)(int);
 typedef void (*sa_sigaction)(int, siginfo_t*, void*);
 
@@ -176,6 +192,7 @@ struct sigaction {
     sigset_t sa_mask;               // Set of signals to be blocked during execution
     int sa_flags;                   // Special flags
 };
+#endif
 
 typedef struct {
     void *ss_sp;                    // Stack base or pointer
@@ -214,4 +231,4 @@ int    sigwaitinfo(const sigset_t *, siginfo_t *);
 
 #endif
 
-_End_C_Header;
+_End_C_Header

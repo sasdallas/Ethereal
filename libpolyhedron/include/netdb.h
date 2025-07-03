@@ -48,6 +48,17 @@ _Begin_C_Header
 #define NI_MAXHOST          1025
 #define NI_MAXSERV          32
 
+#define EAI_AGAIN           1
+#define EAI_BADFLAGS        2
+#define EAI_FAIL            3
+#define EAI_FAMILY          4
+#define EAI_MEMORY          5
+#define EAI_NONAME          6
+#define EAI_SERVICE         7
+#define EAI_SOCKTYPE        8
+#define EAI_SYSTEM          9
+#define EAI_OVERFLOW        10
+
 /**** TYPES ****/
 
 struct addrinfo {
@@ -95,28 +106,31 @@ extern int h_errno;
 
 /**** FUNCTIONS ****/
 
-void             endhostent(void);
-void             endnetent(void);
-void             endprotoent(void);
-void             endservent(void);
-struct hostent  *gethostbyaddr(const void *addr, size_t len, int type);
-struct hostent  *gethostbyname(const char *name);
-struct hostent  *gethostent(void);
-struct netent   *getnetbyaddr(uint32_t net, int type);
-struct netent   *getnetbyname(const char *name);
-struct netent   *getnetent(void);
-struct protoent *getprotobyname(const char *name);
-struct protoent *getprotobynumber(int proto);
-struct protoent *getprotoent(void);
-struct servent  *getservbyname(const char *name, const char *proto);
-struct servent  *getservbyport(int port, const char *proto);
-struct servent  *getservent(void);
-void             sethostent(int stayopen);
-void             setnetent(int stayopen);
-void             setprotoent(int stayopen);
-void             setservent(int stayopen);
-void             herror(const char *s);
-const char      *hstrerror(int err);
+
+void				endhostent(void);
+void				endnetent(void);
+void				endprotoent(void);
+void				endservent(void);
+void				freeaddrinfo(struct addrinfo* ai);
+const char*			gai_strerror(int ecode);
+int					getaddrinfo(const char* nodename, const char* servname, const struct addrinfo* hints, struct addrinfo** res);
+struct hostent*		gethostbyaddr(const void* addr, socklen_t size, int type);
+struct hostent*		gethostbyname(const char* name);
+struct hostent*		gethostent(void);
+int					getnameinfo(const struct sockaddr* sa, socklen_t salen, char* node, socklen_t nodelen, char* service, socklen_t servicelen, int flags);
+struct netent*		getnetbyaddr(uint32_t net, int type);
+struct netent*		getnetbyname(const char* name);
+struct netent*		getnetent(void);
+struct protoent*	getprotobyname(const char* name);
+struct protoent*	getprotobynumber(int proto);
+struct protoent*	getprotoent(void);
+struct servent*		getservbyname(const char* name, const char* proto);
+struct servent*		getservbyport(int port, const char* proto);
+struct servent*		getservent(void);
+void				sethostent(int stayopen);
+void				setnetent(int stayopen);
+void				setprotoent(int stayopen);
+void				setservent(int stayopen);
 
 
 #endif

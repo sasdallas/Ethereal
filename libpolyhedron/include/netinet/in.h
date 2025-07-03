@@ -21,6 +21,7 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <sys/socket.h>
 
 /**** DEFINITIONS ****/
 
@@ -34,21 +35,29 @@ _Begin_C_Header
 typedef uint16_t in_port_t;
 typedef uint32_t in_addr_t;
 
-/**
- * @brief Internet address
- */
 struct in_addr {
     in_addr_t s_addr;
 };
 
-/**
- * @brief Socket address
- */
 struct sockaddr_in {
     unsigned int    sin_family;
     in_port_t       sin_port;
     struct in_addr  sin_addr;
 };
+
+struct in6_addr {
+    uint8_t s6_addr[16];
+};
+
+struct sockaddr_in6 {
+    sa_family_t     sin6_family;
+    in_port_t       sin6_port;
+    uint32_t        sin6_flowinfo;
+    struct in6_addr sin6_addr;
+    uint32_t        sin6_scope_id;
+};
+
+
 
 #endif
 
