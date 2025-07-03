@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <ethereal/celestial/types.h>
 #include <ethereal/celestial/window.h>
+#include <kernel/fs/periphfs.h> // I hate myself
 
 /**** DEFINITIONS ****/
 
@@ -33,6 +34,7 @@
 #define CELESTIAL_EVENT_MOUSE_EXIT              0x00000020
 #define CELESTIAL_EVENT_FOCUSED                 0x00000040
 #define CELESTIAL_EVENT_UNFOCUSED               0x00000080
+#define CELESTIAL_EVENT_KEY_EVENT               0x00000100
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -97,6 +99,11 @@ typedef struct celestial_event_focused {
 typedef struct celestial_event_unfocused {
     CELESTIAL_EVENT_COMMON              // Common
 } celestial_event_unfocused_t;
+
+typedef struct celestial_event_key {
+    CELESTIAL_EVENT_COMMON              // Common
+    key_event_t ev;                     // Key event
+} celestial_event_key_t;
 
 
 /**

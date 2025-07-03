@@ -85,6 +85,9 @@ void celestial_main() {
         // Update the mouse cursor (to make clips)
         mouse_update();
 
+        // Update keyboard
+        kbd_update();
+
         // Redraw
         celestial_redraw();
 
@@ -252,6 +255,10 @@ int main(int argc, char *argv[]) {
     // Initialize mouse
     mouse_init();
     CELESTIAL_DEBUG("Created mouse successfully\n");
+
+    // Initialize keyboard
+    kbd_init();
+    CELESTIAL_DEBUG("Created keyboard successfully\n");
 
     if (!fork()) {
         const char *a[] = { launch, NULL };

@@ -27,6 +27,7 @@
 #include "socket.h"
 #include "mouse.h"
 #include "event.h"
+#include "kbd.h"
 
 /**** VARIABLES ****/
 
@@ -59,6 +60,9 @@ extern int __celestial_mouse_y;
 extern sprite_t *__celestial_mouse_sprite;
 extern wm_window_t *__celestial_mouse_window;
 extern uint32_t __celestial_mouse_buttons;
+
+/* KEYBOARD GLOBALS */
+extern int __celestial_keyboard_fd;
 
 /**** MACROS ****/
 
