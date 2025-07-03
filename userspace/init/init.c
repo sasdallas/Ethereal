@@ -35,9 +35,24 @@ int main(int argc, char *argv[]) {
 
     printf("Welcome to the Ethereal Operating System\n");
 
+    system("/etc/init.d/01_welcome.sh");
 
     printf("Initializing shell...\n");
-    char *nargv[3] = { "/device/initrd/usr/bin/terminal", NULL, NULL };
-    execvpe("/device/initrd/usr/bin/terminal", (const char**)nargv, environ);
+    
+    pid_t cpid = fork();
+
+    if (!cpid) {
+        char *nargv[3] = { "/device/initrd/usr/bin/terminal", NULL, NULL };
+        execvpe("/device/initrd/usr/bin/terminal", (const char**)nargv, environ);
+    
+        printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
+        return 1;
+    }
+
+
+    while (1) {
+        waitpid(-1, NULL, 0);
+    }
+
     return 0;
 }
