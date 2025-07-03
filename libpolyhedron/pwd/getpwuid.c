@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/pwd/getpwnam.c
- * @brief getpwname
+ * @file libpolyhedron/pwd/getpwuid.c
+ * @brief getpwuid
  * 
  * 
  * @copyright
@@ -12,16 +12,16 @@
  */
 
 #include <pwd.h>
-#include <stdlib.h>
-#include <string.h>
 
-struct passwd *getpwnam(const char *name) {
-    // Rewind stream
+struct passwd *getpwuid(uid_t uid) {
     setpwent();
 
     struct passwd *p = getpwent();
     while (p) {
-        if (!strcmp(p->pw_name, name)) return p;
+        if (p->pw_uid == uid) {
+            return p;
+        }
+
         p = getpwent();
     }
 

@@ -158,6 +158,8 @@ FILE *tmpfile();
 char *tmpnam_r(char *s);
 char *tmpnam(char *s);
 
+struct passwd *fgetpwent(FILE *stream);
+
 #endif
 
 _End_C_Header
