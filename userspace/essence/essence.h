@@ -116,5 +116,6 @@ int cd(int argc, char *argv[]);
 int env(int argc, char *argv[]);
 int export(int argc, char *argv[]);
 int exit_cmd(int argc, char *argv[]);
+int unset(int argc, char *argv[]);
 
 #endif

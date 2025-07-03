@@ -47,3 +47,9 @@ int exit_cmd(int argc, char *argv[]) {
     exit(0);
     __builtin_unreachable();
 }
+
+int unset(int argc, char *argv[]) {
+    if (argc < 2) return 0;
+    unsetenv(argv[1]);
+    return 0;
+}

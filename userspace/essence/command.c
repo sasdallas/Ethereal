@@ -29,6 +29,7 @@ builtin_command_t command_list[] = {
     ESSENCE_REGISTER_COMMAND("env", 1, NULL, env),
     ESSENCE_REGISTER_COMMAND("export", 1, NULL, export),
     ESSENCE_REGISTER_COMMAND("exit", 1, NULL, exit_cmd),
+    ESSENCE_REGISTER_COMMAND("unset", 2, NULL, unset)
 };
 
 /* Last exit status */
@@ -84,6 +85,7 @@ int essence_waitForExecution(pid_t cpid) {
  * @param cmd The command to execute
  */
 void essence_executeCommand(essence_command_t *cmd) {
+    if (!cmd->argc) return;
     pid_t cpid = -1;
 
     // First, check if the command is a builtin

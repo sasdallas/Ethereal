@@ -225,7 +225,9 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
                             // Ignore everything else from here
                             // Consume this argv
                             free(buffer);
-                            goto _finished;
+
+                            p = p + strlen(p);
+                            goto _really_finished;
                         }
                     }
 
@@ -285,6 +287,8 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
             argc++;
         }
 
+
+_really_finished:
         // Clean up
         argv[argc] = NULL;
 
