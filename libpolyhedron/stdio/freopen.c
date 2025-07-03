@@ -49,7 +49,7 @@ FILE *freopen(const char *pathname, const char *mode, FILE *stream) {
     p++;
     if (*p == '+') {
         // + detected, use O_RDWR and clear any bits that arent used
-        flags &= ~(O_RDWR | O_APPEND | O_TRUNC | O_CREAT);
+        flags &= ~(O_CREAT);
 		flags |= O_RDWR;
     }
 

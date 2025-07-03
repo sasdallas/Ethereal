@@ -482,14 +482,14 @@ static int cb_sprintf(void * user, char c) {
 
 int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 	struct CBData data = {str,size,0};
-	int out = xvasprintf(cb_sprintf, &data, format, ap);
+	int out = __xvasprintf(cb_sprintf, &data, format, ap);
 	cb_sprintf(&data, '\0');
 	return out;
 }
 
 int vsprintf(char *str, const char *fmt, va_list ap) {
 	struct CBData data = {str, 0, 0};
-	int out = xvasprintf(cb_sprintf, &data, fmt, ap);
+	int out = __xvasprintf(cb_sprintf, &data, fmt, ap);
 	cb_sprintf(&data, '\0');
 	return out;
 }
@@ -499,7 +499,7 @@ int snprintf(char * str, size_t size, const char * format, ...) {
 	struct CBData data = {str,size,0};
 	va_list args;
 	va_start(args, format);
-	int out = xvasprintf(cb_sprintf, &data, format, args);
+	int out = __xvasprintf(cb_sprintf, &data, format, args);
 	va_end(args);
 	cb_sprintf(&data, '\0');
 	return out;
@@ -517,7 +517,7 @@ int sprintf(char * str, const char * format, ...) {
 	struct CBData data = {str,0,0};
 	va_list args;
 	va_start(args, format);
-	int out = xvasprintf(cb_sxprintf, &data, format, args);
+	int out = __xvasprintf(cb_sxprintf, &data, format, args);
 	va_end(args);
 	cb_sxprintf(&data, '\0');
 	return out;
@@ -538,7 +538,7 @@ int printf(const char * fmt, ...) {
 	va_start(args, fmt);
 
 #ifdef __LIBK
-	int out = xvasprintf(cb_printf, (void*)NULL, fmt, args);
+	int out = __xvasprintf(cb_printf, (void*)NULL, fmt, args);
 #else
 	int out = vprintf(fmt, args);
 #endif	

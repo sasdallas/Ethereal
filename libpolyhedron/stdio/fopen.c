@@ -56,7 +56,7 @@ FILE *fopen(const char *pathname, const char *mode) {
     p++;
     if (*p == '+') {
         // + detected, use O_RDWR and clear any bits that arent used
-        flags &= ~(O_RDWR | O_APPEND | O_CREAT | O_TRUNC);
+        flags &= ~(O_APPEND);
 		flags |= O_RDWR;
     }
 

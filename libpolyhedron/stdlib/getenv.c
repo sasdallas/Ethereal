@@ -20,6 +20,7 @@ extern char **environ;
 char *getenv(const char *name) {
     char **envp = environ;
     size_t namelen = strlen(name);
+    if (!namelen) return NULL;
     while (*envp) {
         // Does the key environment variable contain name?
         char *key = strstr(*envp, name);
