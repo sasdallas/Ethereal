@@ -80,6 +80,7 @@ uint32_t fat_nextCluster(fat_t *fat, uint32_t cluster) {
         // Read in FAT table
         if (fs_read(fat->dev, fat_sector * fat->bpb.bytes_per_sector, fat->bpb.bytes_per_sector * 2, (uint8_t*)fat_table) != fat->bpb.bytes_per_sector * 2) {
             LOG(ERR, "Failed to read FAT table from drive\n");
+            kfree(fat_table);
             return FAT_CLUSTER_CORRUPT;
         } 
 
@@ -98,9 +99,62 @@ uint32_t fat_nextCluster(fat_t *fat, uint32_t cluster) {
 
         return table_value; 
     } else if (fat->type == FAT_TYPE_FAT16) {
-        LOG(ERR, "FAT16 unimplemented\n");
+        // Create the FAT table
+        uint8_t *fat_table = kmalloc(fat->bpb.bytes_per_sector);
+
+        // Calculate the FAT offset, sector, and entry offset
+        uint32_t fat_offset = cluster * 2;
+        uint32_t fat_sector = FAT_FIRST_FAT_SECTOR(fat->bpb) + (fat_offset / fat->bpb.bytes_per_sector);
+        uint32_t entry_offset = fat_offset % fat->bpb.bytes_per_sector;
+
+        // Read in FAT table
+        if (fs_read(fat->dev, fat_sector * fat->bpb.bytes_per_sector, fat->bpb.bytes_per_sector , (uint8_t*)fat_table) != fat->bpb.bytes_per_sector) {
+            LOG(ERR, "Failed to read FAT table from drive\n");
+            kfree(fat_table);
+            return FAT_CLUSTER_CORRUPT;
+        }
+
+        // Calculate table value
+        unsigned short table_value = *(unsigned short*)&fat_table[entry_offset];
+
+        kfree(fat_table);
+
+        if (table_value >= 0xFFF8) {
+            return FAT_CLUSTER_END;
+        } else if (table_value == 0xFFF7) {
+            return FAT_CLUSTER_CORRUPT;
+        }
+
+        return table_value;
     } else if (fat->type == FAT_TYPE_FAT32) {
-        LOG(ERR, "FAT32 unimplemented\n");
+        // Create the FAT table
+        uint8_t *fat_table = kmalloc(fat->bpb.bytes_per_sector);
+
+        // Calculate the FAT offset, sector, and entry offset
+        uint32_t fat_offset = cluster * 4;
+        uint32_t fat_sector = FAT_FIRST_FAT_SECTOR(fat->bpb) + (fat_offset / fat->bpb.bytes_per_sector);
+        uint32_t entry_offset = fat_offset % fat->bpb.bytes_per_sector;
+
+        // Read in FAT table
+        if (fs_read(fat->dev, fat_sector * fat->bpb.bytes_per_sector, fat->bpb.bytes_per_sector , (uint8_t*)fat_table) != fat->bpb.bytes_per_sector) {
+            LOG(ERR, "Failed to read FAT table from drive\n");
+            kfree(fat_table);
+            return FAT_CLUSTER_CORRUPT;
+        }
+
+        // Calculate table value
+        unsigned int table_value = *(unsigned int*)&fat_table[entry_offset];
+        table_value &= 0x0FFFFFFF;
+
+        kfree(fat_table);
+
+        if (table_value >= 0x0FFFFFF8) {
+            return FAT_CLUSTER_END;
+        } else if (table_value == 0x0FFFFFF7) {
+            return FAT_CLUSTER_CORRUPT;
+        }
+
+        return table_value;
     }
 
     LOG(ERR, "fat_nextCluster does not have support for FAT filesystem");
@@ -109,8 +163,8 @@ uint32_t fat_nextCluster(fat_t *fat, uint32_t cluster) {
 
 /**
  * @brief Read a cluster into a buffer
- * @param fat The FAT filesystem
- * @param cluster The cluster number to read
+ * @param fat The FAT 
+ * @param cluster The cluster number to readfilesystem
  * @param buffer The buffer to read into
  * @returns 0 on success
  */
@@ -418,7 +472,7 @@ fs_node_t *fat_mount(char *argp, char *mountpoint) {
     LOG(INFO, "Root directory size: %d sectors\n", FAT_ROOTDIR_SIZE(bpb));
     LOG(INFO, "Data sectors: %d\n", FAT_DATA_SECTORS(bpb));
     LOG(INFO, "Total clusters: %d\n", FAT_TOTAL_CLUSTERS(bpb));
-
+    LOG(INFO, "Bytes per cluster: %d\n", FAT_BYTES_PER_CLUSTER(bpb));
 
     // Figure out the FAT type
     uint8_t fat_type = FAT_TYPE_UNKNOWN;
