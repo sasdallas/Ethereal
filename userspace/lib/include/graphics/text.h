@@ -69,4 +69,12 @@ int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, char ch, int 
  */
 int gfx_renderString(struct gfx_context *ctx, gfx_font_t *font, char *str, int x, int y, gfx_color_t color);
 
+/**
+ * @brief Get X advance of a specific glyph
+ * @param ctx The context to use
+ * @param font The font to use
+ * @param ch The character
+ */
+int gfx_getAdvanceX(struct gfx_context *ctx, gfx_font_t *font, char ch);
+
 #endif

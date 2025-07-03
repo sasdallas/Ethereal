@@ -90,6 +90,9 @@ int gfx_renderCharacter(gfx_context_t *ctx, gfx_font_t *font, char ch, int _x, i
 
     FT_GlyphSlot slot = font->face->glyph;
 
+    _y -= slot->bitmap_top;
+    _x += slot->bitmap_left;
+
     for (int y = _y; y < _y + slot->bitmap.rows; y++) {
         for (int x = _x; x < _x + slot->bitmap.width; x++) {
             if (ctx->flags & CTX_NO_BACKBUFFER) {
@@ -120,7 +123,7 @@ int gfx_renderString(gfx_context_t *ctx, gfx_font_t *font, char *str, int _x, in
         // Load the glyph
         FT_UInt idx = FT_Get_Char_Index(font->face, str[i]);
 
-        if (FT_Load_Glyph(font->face, idx, FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT)) return 1;
+        if (FT_Load_Glyph(font->face, idx, FT_LOAD_DEFAULT)) return 1;
         if (FT_Render_Glyph(font->face->glyph, FT_RENDER_MODE_NORMAL)) return 1;
 
         FT_GlyphSlot slot = font->face->glyph;
@@ -142,4 +145,21 @@ int gfx_renderString(gfx_context_t *ctx, gfx_font_t *font, char *str, int _x, in
     }
 
     return 0;
+}
+
+/**
+ * @brief Get X advance of a specific glyph
+ * @param ctx The context to use
+ * @param font The font to use
+ * @param ch The character
+ */
+int gfx_getAdvanceX(gfx_context_t *ctx, gfx_font_t *font, char ch) {
+    FT_UInt idx = FT_Get_Char_Index(font->face, ch);
+    
+    if (FT_Load_Glyph(font->face, idx, FT_LOAD_DEFAULT)) return 0;
+    if (FT_Render_Glyph(font->face->glyph, FT_RENDER_MODE_NORMAL)) return 0;
+
+    FT_GlyphSlot slot = font->face->glyph;
+
+    return (slot->advance.x >> 6);
 }
