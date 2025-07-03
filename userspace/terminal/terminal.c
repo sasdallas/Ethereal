@@ -83,6 +83,7 @@ int main(int argc, char *argv[]) {
                 keyboard_event_t *ev = keyboard_event(kbd, &evp);
                 
                 if (ev->type == KEYBOARD_EVENT_PRESS && ev->ascii) {
+                    if (ev->ascii == '\b') ev->ascii = 0x7F;
                     char b[] = { ev->ascii };
                     write(amaster, b, 1);
                 }
