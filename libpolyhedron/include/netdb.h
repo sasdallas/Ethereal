@@ -131,7 +131,7 @@ void				sethostent(int stayopen);
 void				setnetent(int stayopen);
 void				setprotoent(int stayopen);
 void				setservent(int stayopen);
-
+void                herror(const char *s);
 
 #endif
 
