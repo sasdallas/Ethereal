@@ -403,14 +403,16 @@ void *sys_brk(void *addr) {
         mem_free((uintptr_t)addr, free_size, MEM_DEFAULT);
         current_cpu->current_process->heap = (uintptr_t)addr;
         return addr;
+    } else if ((uintptr_t)addr == current_cpu->current_process->heap) {
+        return addr;
     }
 
 
     // Else, "handle"
+    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VAS_ALLOC_PROG_BRK);
+    
     current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
                                                             // (page fault handler will map this on a critical failure)
-
-    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VAS_ALLOC_PROG_BRK);
 
 
     return addr;
