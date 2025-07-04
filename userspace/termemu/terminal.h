@@ -34,13 +34,14 @@
 
 typedef struct term_cell {
     char ch;                // The character in the cell
+    uint8_t highlighted;    // Cell is highlighted
     gfx_color_t fg;         // Foreground
     gfx_color_t bg;         // Background
 } term_cell_t;
 
 /**** MACROS ****/
 
-#define HIGHLIGHT(cell) { cell->fg = CELL_FG_HIGHLIGHTED; cell->bg = CELL_BG_HIGHLIGHTED; }
-#define UNHIGHLIGHT(cell) { cell->fg = CELL_FG_UNHIGHLIGHTED; cell->bg = CELL_BG_UNHIGHLIGHTED; }
+#define HIGHLIGHT(cell) { cell->highlighted = 1; }
+#define UNHIGHLIGHT(cell) { cell->highlighted = 0; }
 
 #endif

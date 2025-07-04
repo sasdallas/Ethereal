@@ -23,11 +23,28 @@
 
 #define GFX_TEXT_DEFAULT_FONT_SIZE      12
 
+#define GFX_FONT_TYPE_TTF               1
+#define GFX_FONT_TYPE_PSF               2
+
 /**** TYPES ****/
 
 typedef struct gfx_font {
-    FT_Face face;
+    int type;                   // Type of font
+    FT_Face face;               // FreeType font face
+    uint8_t *psf;               // PSF data
 } gfx_font_t;
+
+typedef struct gfx_psf2_header {
+    uint32_t magic;             // Magic bytes
+    uint32_t version;           // Version
+    uint32_t headersize;        // Offset of bitmaps in file
+    uint32_t flags;             // 0 if no unicode table
+    uint32_t glyphs;            // Amount of glyphs
+    uint32_t glyph_bytes;       // Bytes per glyph
+    uint32_t height;            // Height in pixels
+    uint32_t width;             // Width in pixels
+} gfx_psf2_header_t;
+
 
 /**** FUNCTIONS ****/
 

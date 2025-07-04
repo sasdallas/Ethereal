@@ -19,9 +19,14 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <errno.h>
+#include <pwd.h>
 
 /* Essence prompt */
-static char __essence_prompt[128];
+static char __essence_prompt[512];
+
+static char __current_hostname[256];
+static char __current_user[256];
+
 
 /**
  * @brief Essence command
@@ -36,8 +41,20 @@ int essence_command(int argc, char *argv[]) {
  * @brief Get the essence prompt
  */
 char *essence_getPrompt() {
+    // Get the current user
+    struct passwd *pwd = getpwuid(geteuid());
+    if (!pwd) {
+        snprintf(__current_user, 256, "unknown");
+    } else {
+        snprintf(__current_user, 256, "%s", pwd->pw_name);
+    }
+
+    // Get the hostname
+    // TODO
+    snprintf(__current_hostname, 256, "ethereal");
+
     char *cwd = getcwd(NULL, 512);
-    snprintf(__essence_prompt, 128, "%s$ ", cwd);
+    snprintf(__essence_prompt, 128, "\033[0;32m%s\033[0m@\033[0;32m%s\033[0m:\033[0;34m%s\033[0m$ ", __current_user, __current_hostname, cwd);
     free(cwd);
     return __essence_prompt;
 }

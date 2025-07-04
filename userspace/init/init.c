@@ -42,8 +42,8 @@ int main(int argc, char *argv[]) {
     pid_t cpid = fork();
 
     if (!cpid) {
-        char *nargv[3] = { "/device/initrd/usr/bin/terminal", NULL, NULL };
-        execvpe("/device/initrd/usr/bin/terminal", (const char**)nargv, environ);
+        char *nargv[3] = { "/device/initrd/usr/bin/termemu", NULL, NULL };
+        execvpe("/device/initrd/usr/bin/termemu", (const char**)nargv, environ);
     
         printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         return 1;

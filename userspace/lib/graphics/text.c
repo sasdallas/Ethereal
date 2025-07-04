@@ -20,6 +20,7 @@
  * @returns A handle to the new font or NULL
  */
 gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
+    // TODO: Better checks..
     if (!ctx->ft_initialized) {
         if (FT_Init_FreeType(&ctx->ftlib)) {
             fprintf(stderr, "graphics: FT_Init_FreeType failed\n");
@@ -39,6 +40,7 @@ gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
         return NULL;
     }
 
+    font->type = GFX_FONT_TYPE_TTF;
     gfx_setFontSize(font, GFX_TEXT_DEFAULT_FONT_SIZE);
     return font;
 }
@@ -72,7 +74,6 @@ static gfx_color_t gfx_freetypeBlend(gfx_color_t bottom, gfx_color_t top, uint8_
 
 
 /**
- * 
  * @brief Render a character at specific coordinates
  * @param ctx The context to render with
  * @param font The font character to render
@@ -90,15 +91,15 @@ int gfx_renderCharacter(gfx_context_t *ctx, gfx_font_t *font, char ch, int _x, i
 
     FT_GlyphSlot slot = font->face->glyph;
 
-    _y -= slot->bitmap_top;
-    _x += slot->bitmap_left;
+    int cur_y = _y - slot->bitmap_top;
+    int cur_x = _x + slot->bitmap_left;
 
-    for (int y = _y; y < _y + slot->bitmap.rows; y++) {
-        for (int x = _x; x < _x + slot->bitmap.width; x++) {
+    for (int y = cur_y; y < cur_y + slot->bitmap.rows; y++) {
+        for (int x = cur_x; x < cur_x + slot->bitmap.width; x++) {
             if (ctx->flags & CTX_NO_BACKBUFFER) {
-                GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-_y) * slot->bitmap.width + (x-_x)]);
+                GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
             } else {
-                GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-_y) * slot->bitmap.width + (x-_x)]);
+                GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
             }
         }
     }
