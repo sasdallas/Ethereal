@@ -281,7 +281,7 @@ void socket_handle(int sock) {
         wm_window_t *win = WID(req->wid);
         win->state = WINDOW_STATE_NORMAL;
 
-        return socket_ok(sock, CELESTIAL_REQ_DRAG_START);
+        return socket_ok(sock, CELESTIAL_REQ_DRAG_STOP);
     } else if (hdr->type == CELESTIAL_REQ_GET_SERVER_INFO) {
         // Get server info
         CELESTIAL_VALIDATE(celestial_req_get_server_info_t, CELESTIAL_REQ_GET_SERVER_INFO);
