@@ -88,3 +88,8 @@ Certain external components are available in `external`. Here is a list of them 
 
 Hexahedron, libpolyhedron, and all other components of Ethereal fall under the terms of the BSD 3-clause license (available in LICENSE).\
 All files, unless specified, fall under this license.
+
+
+## Credits
+
+The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
