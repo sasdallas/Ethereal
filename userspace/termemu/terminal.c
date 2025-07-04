@@ -26,6 +26,7 @@
 /* Graphics context */
 static gfx_context_t *ctx = NULL;
 static gfx_font_t *terminal_font = NULL;
+static gfx_font_t *terminal_font_bold = NULL;
 
 /* Font information */
 const int16_t terminal_font_scaling = 13;
@@ -73,9 +74,11 @@ static void draw_cell(uint16_t x, uint16_t y) {
     gfx_color_t fg = (cell->highlighted ? CELL_FG_HIGHLIGHTED : cell->fg);
     gfx_color_t bg = (cell->highlighted ? CELL_BG_HIGHLIGHTED : cell->bg);
     
+    gfx_font_t *f = (terminal_ansi->flags & ANSI_FLAG_BOLD) ? terminal_font_bold : terminal_font;
+
     gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
     gfx_drawRectangleFilled(ctx, &r, bg);
-    gfx_renderCharacter(ctx, terminal_font, cell->ch, r.x, r.y + 13, fg);
+    gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y + 13, fg);
     
     // TODO: not
     gfx_createClip(ctx, r.x, r.y, r.width, r.height);
@@ -226,9 +229,18 @@ int main(int argc, char *argv[]) {
     gfx_clear(ctx, GFX_RGB(0,0,0));
     gfx_render(ctx);
 
-    // Load the font
+    // Load the fonts
     terminal_font = gfx_loadFont(ctx, "/usr/share/DejaVuSansMono.ttf");
     gfx_setFontSize(terminal_font, 13);
+    terminal_font_bold = gfx_loadFont(ctx, "/usr/share/DejaVuSansMono-Bold.ttf");
+    gfx_setFontSize(terminal_font_bold, 13);
+
+    // Create ANSI
+    terminal_ansi = ansi_create();
+    terminal_ansi->write = terminal_write;
+    terminal_ansi->backspace = terminal_backspace;
+    terminal_ansi->setfg = terminal_setfg;
+    terminal_ansi->setbg = terminal_setbg;
 
     // Calculate width and height
     terminal_width = GFX_WIDTH(ctx) / CELL_WIDTH;
@@ -266,12 +278,8 @@ int main(int argc, char *argv[]) {
     // Create the PTY
     terminal_createPTY("essence");
 
-    // Create ANSI
-    terminal_ansi = ansi_create();
-    terminal_ansi->write = terminal_write;
-    terminal_ansi->backspace = terminal_backspace;
-    terminal_ansi->setfg = terminal_setfg;
-    terminal_ansi->setbg = terminal_setbg;
+    dup2(pty_master, STDIN_FILENO);
+    dup2(pty_master, STDOUT_FILENO);
 
     // Enter main loop
     for (;;) {

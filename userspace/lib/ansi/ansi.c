@@ -13,7 +13,6 @@
 
 #include <ethereal/ansi.h>
 #include <ethereal/ansi_defs.h>
-#include <ethereal/ansi_pallete.h>
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -22,7 +21,27 @@
 #define ANSI_EXPAND() { if (ansi->bufidx + 1 >= ansi->bufsz) { ansi->buf = realloc(ansi->buf, ansi->bufsz*2); ansi->bufsz *= 2; }}
 #define ANSI_PUSH(ch) { ansi->buf[ansi->bufidx] = ch; ansi->bufidx++; ANSI_EXPAND(); }
 #define ANSI_DEFAULT(a) (a == 9)
-#define ANSI_TO_RGB(arg) ((ansi->ansi_pallete[arg]))
+#define ANSI_TO_RGB(arg) (ansi_convert(ansi, arg))
+#define ANSI_SET_OR_CLEAR(arg, flag) (arg > 9) ? (ansi->flags &= ~(flag)) : (ansi->flags |= (flag))
+
+uint32_t ansi_default_pallete[] = {
+    GFX_RGB(0, 0, 0),               // Black
+    GFX_RGB(255, 0, 0),             // Red
+    GFX_RGB(62, 154, 6),            // Green
+    GFX_RGB(0xc4, 0xa0, 0x00),          // Yellow
+    GFX_RGB(52, 101, 164),          // Blue
+    GFX_RGB(170, 0, 170),           // Purple
+    GFX_RGB(0, 170, 170),           // Cyan
+    GFX_RGB(0xee, 0xee, 0xec),         // White
+    GFX_RGB(85, 85, 85),            // Dark gray
+    GFX_RGB(255, 85, 85),           // Light red
+    GFX_RGB(85, 255, 85),           // Light green
+    GFX_RGB(0xfc, 0xe9, 0xf4),      // Yellow
+    GFX_RGB(0x72, 0x9f, 0xcf),      // Light blue
+    GFX_RGB(255, 85, 255),          // Light purple
+    GFX_RGB(0x34, 0xe2, 0xe2),      // Light cyan
+    GFX_RGB(255, 255, 255)          // White
+};
 
 /**
  * @brief Create ANSI object
@@ -30,15 +49,39 @@
 ansi_t *ansi_create() {
     ansi_t *a = malloc(sizeof(ansi_t));
     a->state = ANSI_STATE_NONE;
+    a->flags = 0;
     
     a->buf = malloc(ANSI_DEFAULT_BUFFER_SIZE);
     a->bufidx = 0;
     a->bufsz = ANSI_DEFAULT_BUFFER_SIZE;
 
-    a->ansi_pallete = term_colors;
+    a->ansi_pallete = ansi_default_pallete;
     a->ansi_fg = 9;
     a->ansi_bg = 9;
     return a;
+}
+
+/**
+ * @brief Convert an ANSI ID to a color
+ * @param ansi ANSI
+ * @param id The ID to convert
+ */
+uint32_t ansi_convert(ansi_t *ansi, int id) {
+    if (id < 16) {
+        return ansi->ansi_pallete[id];
+    } else if (id <= 231) {
+        // In-between
+        uint8_t r = (id - 16) / 36 % 6 * 40 + 55;
+        uint8_t g = (id - 16) / 6 % 6 * 40 + 55;
+        uint8_t b = (id - 16) / 1 % 6 * 40 + 55;
+        return GFX_RGB(r, g, b);
+    } else if (id <= 255) {
+        // Grayscale
+        uint8_t gray = (id - 232) * 10 + 8;
+        return GFX_RGB(gray, gray, gray);
+    } else {
+        return GFX_RGB(255, 255, 255);
+    }
 }
 
 /**
@@ -78,6 +121,7 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
     // ESCAPE code parsing might transition us to FUNCTION
     if (ansi->state == ANSI_STATE_FUNCTION) {
         // We need to start parsing into arguments
+        ansi->buf[ansi->bufidx] = 0;
         char *argv[32] = { 0 };
         int argc = 0;
         
@@ -92,27 +136,74 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
 
         // What function do we have?
         switch (ch) {
+            case ED:
+
             case SGR:
                 for (int i = 0; i < argc; i++) {
                     int arg = strtol(argv[i], NULL, 10);
 
                     if (!arg) {
                         // Zero signifies a reset on everything
-                        ansi->ansi_fg = 9;
-                        ansi->ansi_bg = 9;
-                    } else if (arg >= 30 && arg <= 39) {
+                        ansi->ansi_fg = 15; // TODO: Customize
+                        ansi->ansi_bg = 0;
+                        ansi->flags = 0;
+                    } else if (arg == 1 || arg == 22) {
+                        (arg == 22) ? (ansi->flags &= ~(ANSI_FLAG_BOLD | ANSI_FLAG_FAINT)) : (ansi->flags |= ANSI_FLAG_BOLD);
+                    } else if (arg == 2) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_FAINT);
+                    } else if (arg == 3 || arg == 23) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_ITALIC);
+                    } else if (arg == 4 || arg == 24) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_UNDERLINE);
+                    } else if (arg == 5 || arg == 25) {
+                        if (arg == 5) {
+                            if (i < argc) {
+                                if (strtol(argv[i-1], NULL, 10) == 38) {
+                                    // 38 signals foreground
+                                    ansi->ansi_fg = strtol(argv[i+1], NULL, 10);
+                                    i++;
+                                } else if (strtol(argv[i-1], NULL, 10) == 48) {
+                                    // 48 signals background
+                                    ansi->ansi_bg = strtol(argv[i+1], NULL, 10);
+                                    i++;
+                                }
+                            } else {
+                                ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
+                            }
+                        } else {
+                            ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
+                        }
+                    } else if (arg == 7 || arg == 27) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_INVERSE);
+                    } else if (arg == 8 || arg == 28) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_HIDDEN);
+                    } else if (arg == 9 || arg == 29) {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_STRIKETHROUGH);
+                    }
+                    
+                    // Color code parsing
+                    if (arg >= 30 && arg < 39) {
                         // Set foreground color code
                         ansi->ansi_fg = arg - 30;
-                    } else if (arg >= 40 && arg <= 49) {
+                    } else if (arg >= 40 && arg < 49) {
                         // Set background color code
-                        ansi->ansi_bg = arg - 30;
+                        ansi->ansi_bg = arg - 40;
+                    } else if (arg >= 90 && arg <= 97) {
+                        // Set foreground bright color code
+                        ansi->ansi_fg = arg - 82;
+                    } else if (arg >= 100 && arg <= 107) {
+                        ansi->ansi_bg = arg - 92;
+                    } else if (arg == 39) {
+                        ansi->ansi_fg = 15; // TODO: customize
+                    } else if (arg == 49) {
+                        ansi->ansi_bg = 0;
                     }
                 }
 
 
                 // Set colors
-                gfx_color_t fg = (ANSI_DEFAULT(ansi->ansi_fg) ? GFX_RGB(255, 255, 255) : ANSI_TO_RGB(ansi->ansi_fg));
-                gfx_color_t bg = (ANSI_DEFAULT(ansi->ansi_bg) ? GFX_RGB(0, 0, 0) : ANSI_TO_RGB(ansi->ansi_bg));
+                gfx_color_t fg = (ANSI_TO_RGB(ansi->ansi_fg));
+                gfx_color_t bg = (ANSI_TO_RGB(ansi->ansi_bg));
                 ansi->setfg(fg);
                 ansi->setbg(bg);
         }
