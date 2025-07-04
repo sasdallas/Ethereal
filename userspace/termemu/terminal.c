@@ -22,6 +22,8 @@
 #include <poll.h>
 #include <graphics/gfx.h>
 #include <ethereal/ansi.h>
+#include <getopt.h>
+#include <ethereal/celestial.h>
 
 /* Graphics context */
 static gfx_context_t *ctx = NULL;
@@ -56,12 +58,68 @@ ansi_t *terminal_ansi = NULL;
 /* Keyboard structure */
 keyboard_t *kbd = NULL;
 
+/* Window if we launched in graphical mode */
+window_t *win = NULL;
+
 /* Cell macro */
 #define CELL(x, y) (&(cell_array[(y)][(x)]))
 #define CURSOR CELL(cursor_x, cursor_y)
 
 /* Flush macro */
-#define FLUSH() { gfx_render(ctx); gfx_resetClips(ctx); }
+#define FLUSH() { gfx_render(ctx); gfx_resetClips(ctx); if (win) { celestial_flip(win); }}
+
+static void draw_cell(uint16_t x, uint16_t y);
+
+/**
+ * @brief Help function
+ */
+void usage() {
+    printf("Usage: termemu [-f] [-v]\n");
+    printf("Terminal emulator with ANSI support\n\n");
+    printf(" -h, --help         Display this help message\n");
+    printf(" -f, --fullscreen   Enable fullscreen mode\n");
+    printf(" -v, --version      Print the version of termemu\n\n");
+    exit(1);
+}
+
+/**
+ * @brief Version function
+ */
+void version() {
+    printf("termemu version 1.2.0\n");
+    printf("Copyright (C) 2025 The Ethereal Development Team\n");
+    exit(1);
+}
+
+/**
+ * @brief Set cursor position
+ * @param x X pos of the cursor
+ * @param y Y position of the cursor
+ */
+void terminal_setCursor(int16_t x, int16_t y) {
+    if (y < 0) y = 0;
+    if (x < 0) x = 0;
+    if (y > terminal_height) y = terminal_height;
+    if (x > terminal_width) x= terminal_width;
+
+    UNHIGHLIGHT(CURSOR);
+    draw_cell(cursor_x, cursor_y);
+    cursor_x = x;
+    cursor_y = y;
+    HIGHLIGHT(CURSOR);
+    draw_cell(cursor_x, cursor_y);
+    FLUSH();
+}
+
+/**
+ * @brief Get cursor position
+ * @param x Output X
+ * @param y Output Y
+ */
+void terminal_getCursor(int16_t *x, int16_t *y) {
+    *x = cursor_x;
+    *y = cursor_y;
+}
 
 /**
  * @brief Redraw a cell 
@@ -123,18 +181,19 @@ void terminal_scroll() {
         }
     }
 
+    // vmem
+    memcpy(ctx->backbuffer, ctx->backbuffer + GFX_PITCH(ctx) * CELL_HEIGHT, (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_PITCH(ctx));
+
     for (int x = 0; x < terminal_width; x++) {
         CELL(x, terminal_height-1)->ch = ' ';
         CELL(x, terminal_height-1)->highlighted = 0;
+        draw_cell(x, terminal_height-1);
     }
-
-    // vmem
-    memcpy(ctx->backbuffer, ctx->backbuffer + sizeof(uint32_t) * GFX_WIDTH(ctx) * CELL_HEIGHT, (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_WIDTH(ctx) * (GFX_BPP(ctx)/8));
-    memset(ctx->backbuffer + sizeof(uint32_t) * (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_WIDTH(ctx), 0, GFX_WIDTH(ctx) * CELL_HEIGHT * 4);
 
     // Flush
     gfx_resetClips(ctx);
     gfx_render(ctx);
+    celestial_flip(win);
 
     // Now zero out the bottom ones
 }
@@ -221,13 +280,118 @@ void terminal_createPTY(char *startup_program) {
 }
 
 /**
+ * @brief Send input to slave
+ * @param input The input to send
+ */
+static void terminal_sendInput(char *input) {
+    write(pty_master, input, strlen(input));
+}
+
+/**
+ * @brief Process keyboard input
+ * @param event The key event
+ */
+static void terminal_process(keyboard_event_t *event) {
+    // TODO: Send keyboard strings?
+    switch (event->scancode) {
+        case SCANCODE_LEFT_ARROW:
+            if (event->mods & KEYBOARD_MOD_LEFT_SHIFT || event->mods & KEYBOARD_MOD_RIGHT_SHIFT) {
+                terminal_sendInput("\033[2D");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_CTRL || event->mods & KEYBOARD_MOD_RIGHT_CTRL) {
+                terminal_sendInput("\033[5D");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_ALT || event->mods & KEYBOARD_MOD_RIGHT_ALT) {
+                terminal_sendInput("\033[3D");
+            } else {
+                terminal_sendInput("\033[D");
+            }
+            break;
+
+        case SCANCODE_RIGHT_ARROW:
+            if (event->mods & KEYBOARD_MOD_LEFT_SHIFT || event->mods & KEYBOARD_MOD_RIGHT_SHIFT) {
+                terminal_sendInput("\033[2C");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_CTRL || event->mods & KEYBOARD_MOD_RIGHT_CTRL) {
+                terminal_sendInput("\033[2C");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_ALT || event->mods & KEYBOARD_MOD_RIGHT_ALT) {
+                terminal_sendInput("\033[3C");
+            } else {
+                terminal_sendInput("\033[C");
+            }
+            break;
+
+        default:
+            if (!event->ascii) return;
+            char b[] = {event->ascii};
+            write(pty_master, b, 1);
+            break;
+    }
+}
+
+/**
+ * @brief Celestial keyboard event handler
+ * @param win The window the event happened in
+ * @param event_type The type of evbent
+ * @param event The event
+ */
+void kbd_handler(window_t *win, uint32_t event_type, void *event) {
+    celestial_event_key_t *key = (celestial_event_key_t*)event;
+    keyboard_event_t *ev = keyboard_event(kbd, &key->ev);
+                
+    if (ev->type == KEYBOARD_EVENT_PRESS) {
+        if (ev->ascii == '\b') ev->ascii = 0x7F;
+        terminal_process(ev);
+    }
+}
+
+/**
  * @brief Main method
  */
 int main(int argc, char *argv[]) {
-    // Initialize the graphics context
-    ctx = gfx_createFullscreen(CTX_DEFAULT);
+    int fullscreen = 0;
+
+    int c;
+    int index;
+    struct option options[] = {
+        { .name = "fullscreen", .has_arg = no_argument, .flag = NULL, .val = 'f' },
+        { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
+        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h'}
+    };
+
+    while ((c = getopt_long(argc, argv, "fvh", (const struct option*)options, &index)) != -1) {
+        if (!c && options[index].flag == NULL) {
+            c = options[index].val;
+        }
+
+        switch (c) {
+            case 'f':
+                fullscreen = 1;
+                break;
+            case 'v':
+                version();
+                break;
+            case 'h':
+            default:
+                usage();
+                break;
+        }
+    }
+
+
+    if (fullscreen) {
+        // Initialize the graphics context
+        ctx = gfx_createFullscreen(CTX_DEFAULT);
+    } else {
+        // Initialize the graphics context for celestial
+        wid_t wid = celestial_createWindow(0, 512, 256);
+        win = celestial_getWindow(wid);
+        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT);
+        celestial_setTitle(win, "Terminal");
+        celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
+        ctx = celestial_getGraphicsContext(win);
+    }
+
     gfx_clear(ctx, GFX_RGB(0,0,0));
     gfx_render(ctx);
+    if (win) celestial_flip(win);
 
     // Load the fonts
     terminal_font = gfx_loadFont(ctx, "/usr/share/DejaVuSansMono.ttf");
@@ -241,6 +405,8 @@ int main(int argc, char *argv[]) {
     terminal_ansi->backspace = terminal_backspace;
     terminal_ansi->setfg = terminal_setfg;
     terminal_ansi->setbg = terminal_setbg;
+    terminal_ansi->get_cursor = terminal_getCursor;
+    terminal_ansi->move_cursor = terminal_setCursor;
 
     // Calculate width and height
     terminal_width = GFX_WIDTH(ctx) / CELL_WIDTH;
@@ -283,23 +449,25 @@ int main(int argc, char *argv[]) {
 
     // Enter main loop
     for (;;) {
+        if (win) celestial_poll();
+
         // Get events
         struct pollfd fds[] = { { .fd = keyboard_fd, .events = POLLIN }, { .fd = pty_master, .events = POLLIN}};
-        int p = poll(fds, 2, -1);
+        int p = poll(fds, 2, fullscreen ? -1 : 0);
         if (p < 0) return 1;
+        if (!p) continue;
 
         // Keyboard events?
-        if (fds[0].revents & POLLIN) {
+        if (fds[0].revents & POLLIN && fullscreen) {
             key_event_t evp;
             ssize_t r = read(keyboard_fd, &evp, sizeof(key_event_t));
             if (r != sizeof(key_event_t)) continue;
 
             keyboard_event_t *ev = keyboard_event(kbd, &evp);
             
-            if (ev->type == KEYBOARD_EVENT_PRESS && ev->ascii) {
+            if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
                 if (ev->ascii == '\b') ev->ascii = 0x7F;
-                char b[] = { ev->ascii };
-                write(pty_master, b, 1);
+                terminal_process(ev);
             }
                 
             free(ev);

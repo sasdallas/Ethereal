@@ -134,6 +134,10 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             pch = strtok_r(NULL, ";", &save);
         }
 
+        // Get cursor
+        int16_t cx, cy;
+        ansi->get_cursor(&cx, &cy);
+
         // What function do we have?
         switch (ch) {
             case ED:
@@ -206,6 +210,49 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
                 gfx_color_t bg = (ANSI_TO_RGB(ansi->ansi_bg));
                 ansi->setfg(fg);
                 ansi->setbg(bg);
+                break;
+            
+            case CUU:
+                // Cursor up
+                int lines_up = 1;
+                if (argc) {
+                    lines_up = strtol(argv[0], NULL, 10);
+                }
+
+                ansi->move_cursor(cx, cy-lines_up);
+                break;
+    
+            case CUD:
+                // Cursor down
+                int lines_down = 1;
+                if (argc) {
+                    lines_down = strtol(argv[0], NULL, 10);
+                }
+
+                ansi->move_cursor(cx, cy+lines_down);
+                break;
+
+            case CUF:
+                // Cursor forward
+                int cols_fwd = 1;
+                if (argc) {
+                    cols_fwd = strtol(argv[0], NULL, 10);
+                }
+
+                ansi->move_cursor(cx+cols_fwd, cy);
+                break;
+                
+            case CUB:
+                // Cursor backwards
+                int cols_backward = 1;
+                if (argc) {
+                    cols_backward = strtol(argv[0], NULL, 10);
+                }
+
+                ansi->move_cursor(cx-cols_backward, cy);
+                break;
+                
+
         }
 
         ansi->bufidx = 0;

@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
     pid_t cpid = fork();
 
     if (!cpid) {
-        char *nargv[3] = { "/device/initrd/usr/bin/termemu", NULL, NULL };
+        char *nargv[3] = { "/device/initrd/usr/bin/termemu", "--fullscreen", NULL };
         execvpe("/device/initrd/usr/bin/termemu", (const char**)nargv, environ);
     
         printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
