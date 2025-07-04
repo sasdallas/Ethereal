@@ -28,44 +28,7 @@
 #include <string.h>
 
 /* Holding shift key */
-static int held_shift_key = 0;
-
-/* Scancode (lower) */
-static key_scancode_t ps2_keyboard_scancodes_lower[128] = {
-	0, SCANCODE_ESCAPE,
-	'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
-	'-', '=', '\b', '\t',
-	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', SCANCODE_LEFT_CTRL,
-	'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', SCANCODE_LEFT_SHIFT,
-	'\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', SCANCODE_RIGHT_SHIFT,
-	'*', 0, ' ', 0,
-	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
-	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
-	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
-	SCANCODE_DEL,
-	0, 0, 0,
-	SCANCODE_F11, SCANCODE_F12,
-	0, /* everything else */
-};
-
-/* Scancode (upper) */
-static key_scancode_t ps2_keyboard_scancodes_upper[128] = {
-	0, SCANCODE_ESCAPE,
-	'!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
-	'_', '+', '\b', '\t',
-	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,
-	'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '\"', '~', SCANCODE_LEFT_SHIFT,
-	'|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', SCANCODE_RIGHT_SHIFT,
-	'*', 0, ' ', 0,
-	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
-	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
-	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
-	0, /* delete */
-	0, 0, 0,
-	0, /* F11 */
-	0, /* F12 */
-	0, /* everything else */
-};
+// static int held_shift_key = 0;
 
 
 /**
@@ -90,26 +53,10 @@ int ps2_keyboardIRQ(void *context) {
 	uint8_t ch = inportb(PS2_DATA); 
 	hal_endInterrupt(PS2_KEYBOARD_IRQ); // End IRQ so more can come in
 
-	// TODO: TEMPORARY
-    if (ch == 0x2A || ch == 0x36) {
-        held_shift_key = 1;
-        return 0;
-    } else if (ch == 0xAA || ch == 0xB6) {
-        held_shift_key = 0;
-        return 0;
-    }
-
 	int event_type = (ch >= 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
-	if (ch >= 0x80) ch -= 0x80;
 
     // Determine the scancode we should print
-    key_scancode_t sc = 0;
-    if (held_shift_key) {
-        sc = ps2_keyboard_scancodes_upper[ch];
-    } else {
-        sc = ps2_keyboard_scancodes_lower[ch];
-    }
-
+    key_scancode_t sc = ch;
 	periphfs_sendKeyboardEvent(event_type, sc);
     return 0;
 }

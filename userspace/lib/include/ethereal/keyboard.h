@@ -48,6 +48,7 @@ typedef struct keyboard_event {
 
 typedef struct keyboard {
     key_modifiers_t mods;               // Modifiers
+    uint8_t extension;                  // Waiting for PS/2 extension (0xE0)
 } keyboard_t;
 
 /**** FUNCTIONS ****/

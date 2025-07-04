@@ -45,10 +45,10 @@
 #define SCANCODE_LEFT_SUPER             0x4012
 #define SCANCODE_RIGHT_SUPER            0x4013
 
-#define SCANCODE_LEFT_ARROW             0x4014
-#define SCANCODE_RIGHT_ARROW            0x4015
-#define SCANCODE_DOWN_ARROW             0x4016
-#define SCANCODE_UP_ARROW               0x4017
+#define SCANCODE_LEFT_ARROW             260
+#define SCANCODE_RIGHT_ARROW            259
+#define SCANCODE_DOWN_ARROW             258
+#define SCANCODE_UP_ARROW               257
 
 #define SCANCODE_PGUP                   0x4018
 #define SCANCODE_PGDOWN                 0x4019
