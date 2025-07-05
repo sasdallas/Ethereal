@@ -283,8 +283,8 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
         
         if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
-        
-        if (r) {
+    
+        if (r && !usock_target->packet_buffer->stop) {
             // Acquire lock to push packet data
             spinlock_acquire(usock_target->packet_buffer->lock);
             list_append(usock_target->dgram_data, data);
@@ -580,6 +580,10 @@ int unix_close(sock_t *sock) {
     if (usock->connected_socket && sock->type != SOCK_DGRAM) {
         unix_sock_t *other_sock = (unix_sock_t*)usock->connected_socket->driver;
         circbuf_stop(other_sock->packet_buffer);
+
+        if (sock->type == SOCK_SEQPACKET && other_sock->thr) {
+            sleep_wakeup(other_sock->thr);
+        }
     }
 
     if (sock->type != SOCK_DGRAM) circbuf_stop(usock->packet_buffer);
