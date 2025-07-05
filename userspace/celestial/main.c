@@ -219,7 +219,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    char *launch = "termemu";
+    char *launch = "desktop";
     if (argc-optind) {
         launch = argv[optind];
     }

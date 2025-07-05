@@ -401,7 +401,10 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
                 // don't uninitialize anything below 0x10000 
                 if (entry->addr > 0x100000 && entry->addr + entry->len < mem_size) {
                     dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as unavailable memory\n", entry->addr, entry->addr + entry->len, entry->len / 1024); 
-                    pmm_deinitializeRegion((uintptr_t)entry->addr, (uintptr_t)entry->len);
+                    
+                    // Don't deinitialize this region, since the PMM starts out with everything deinitialized
+                    // pmm_deinitializeRegion((uintptr_t)entry->addr, (uintptr_t)entry->len);
+
              
                 }
             }
@@ -429,7 +432,9 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
                 // !!!: Hack
                 if (mmap->addr >= 0x100000 && mmap->addr + mmap->len < mem_size) {
                     dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as unavailable memory\n", mmap->addr, mmap->addr + mmap->len, mmap->len / 1024); 
-                    pmm_deinitializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
+                    
+                    // Don't deinitialize this region, since the PMM starts out with everything deinitialized
+                    // pmm_deinitializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
                 }
             }
 

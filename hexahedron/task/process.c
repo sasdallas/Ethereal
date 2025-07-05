@@ -468,7 +468,6 @@ void process_destroy(process_t *proc) {
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);
-    // if (proc->dir) mem_destroyVAS(proc->dir);
     if (proc->vas) vas_destroy(proc->vas);
     // mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
     

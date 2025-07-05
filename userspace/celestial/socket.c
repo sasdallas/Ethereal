@@ -355,7 +355,9 @@ void socket_handle(int sock) {
         window_update(win, upd_rect);
 
         // TODO: This will repeatedly draw (can be slow)
-        // window_updateRegion(upd_rect);
+        upd_rect.x += win->x;
+        upd_rect.y += win->y;
+        window_updateRegion(upd_rect);
         return; // NO RESPONSE FOR FLIP REQUEST
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);

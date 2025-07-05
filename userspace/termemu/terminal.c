@@ -343,6 +343,33 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
 }
 
 /**
+ * @brief Clear screen method
+ */
+void terminal_clear() {
+    cursor_x = 0;
+    cursor_y = 0;
+
+    // Clear all cells
+    for (int32_t y = 0; y < terminal_height; y++) {
+        for (int32_t x = 0; x < terminal_width; x++) {
+            CELL(x, y)->ch = ' ';
+            CELL(x, y)->highlighted = 0;
+        }
+    }
+
+    // Clear framebuffer
+    gfx_resetClips(ctx);
+    gfx_clear(ctx, GFX_RGB(0,0,0));
+
+    // Redraw cursor
+    CURSOR->highlighted = 1;
+    draw_cell(cursor_x, cursor_y);
+    
+    gfx_render(ctx);
+    if (win) celestial_flip(win);
+}
+
+/**
  * @brief Main method
  */
 int main(int argc, char *argv[]) {
@@ -407,6 +434,7 @@ int main(int argc, char *argv[]) {
     terminal_ansi->setbg = terminal_setbg;
     terminal_ansi->get_cursor = terminal_getCursor;
     terminal_ansi->move_cursor = terminal_setCursor;
+    terminal_ansi->clear = terminal_clear;
 
     // Calculate width and height
     terminal_width = GFX_WIDTH(ctx) / CELL_WIDTH;
@@ -444,8 +472,8 @@ int main(int argc, char *argv[]) {
     // Create the PTY
     terminal_createPTY("essence");
 
-    dup2(pty_master, STDIN_FILENO);
-    dup2(pty_master, STDOUT_FILENO);
+    // dup2(pty_master, STDIN_FILENO);
+    // dup2(pty_master, STDOUT_FILENO);
 
     // Enter main loop
     for (;;) {

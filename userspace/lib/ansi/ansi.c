@@ -141,6 +141,9 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
         // What function do we have?
         switch (ch) {
             case ED:
+                // Erase display
+                if (ansi->clear) ansi->clear();
+                break;
 
             case SGR:
                 for (int i = 0; i < argc; i++) {

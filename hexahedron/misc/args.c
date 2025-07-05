@@ -15,6 +15,7 @@
  */
 
 #include <kernel/misc/args.h>
+#include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
 #include <string.h>
@@ -31,7 +32,8 @@ void kargs_init(char *args) {
 
     // Create hashmap
     kargs = hashmap_create("kargs", 10);
-    char *x = args;
+    char *a2 = strdup(args);
+    char *x = a2;
 
     // Start iterating
     while (x) {
@@ -115,6 +117,8 @@ void kargs_init(char *args) {
         hashmap_set(kargs, arg, (arg_value == NULL) ? NULL : strdup(arg_value));
         dprintf(DEBUG, "Finished parsing argument '%s' with value '%s'\n", arg, (arg_value == NULL) ? "NULL" : arg_value);
     }
+
+    kfree(a2);
 
 _done:
     return;

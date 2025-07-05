@@ -615,12 +615,14 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         }
     }
 
-    // Page fault, get the address
-    kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
-    
     uintptr_t page_fault_addr = 0x0;
     asm volatile ("movq %%cr2, %0" : "=a"(page_fault_addr));
 
+    LOG(ERR, "#PF (%016llX): IP %04x:%016llX SP %016llX\n", page_fault_addr, regs->cs, regs->rip, regs->rsp);
+
+    // Page fault, get the address
+    kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
+    
     // Print it out
     LOG(NOHEADER, "*** ISR detected exception: Page fault at address 0x%016llX\n\n", page_fault_addr);
     printf("*** Page fault at address 0x%016llX detected in kernel.\n", page_fault_addr);

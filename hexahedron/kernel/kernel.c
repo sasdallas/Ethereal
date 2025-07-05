@@ -39,6 +39,7 @@
 #include <kernel/fs/pty.h>
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
+#include <kernel/fs/log.h>
 #include <kernel/fs/shared.h>
 #include <kernel/fs/console.h>
 
@@ -201,6 +202,7 @@ void kmain() {
     pci_mount();
     arch_mount_kernelfs();
     console_mount();
+    log_mount();
 
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");

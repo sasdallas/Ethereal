@@ -68,6 +68,11 @@ typedef void (*ansi_move_cursor_t)(int16_t cur_x, int16_t cur_y);
  */
 typedef void (*ansi_get_cursor_t)(int16_t *x, int16_t *y);
 
+/**
+ * @brief Clear screen
+ */
+typedef void (*ansi_clear_t)();
+
 typedef struct ansi {
     int state;                          // Current state of the ANSI state machine
     int flags;                          // ANSI flags
@@ -87,6 +92,7 @@ typedef struct ansi {
     ansi_backspace_t backspace;         // Backspace
     ansi_move_cursor_t move_cursor;     // Move cursor
     ansi_get_cursor_t get_cursor;       // Get cursor
+    ansi_clear_t clear;                 // Clear screen
 } ansi_t;
 
 /**** FUNCTIONS ****/

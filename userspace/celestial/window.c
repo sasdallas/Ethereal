@@ -218,8 +218,8 @@ void window_updateRegion(gfx_rect_t rect) {
                 .height = GFX_RECT_MIN(collider.height, rect.height)
             };
 
-            redraw_rect.width = GFX_RECT_MIN(GFX_RECT_RIGHT(WM_GFX, rect), GFX_RECT_RIGHT(WM_GFX, redraw_rect)) - redraw_rect.x;
-            redraw_rect.height = GFX_RECT_MIN(GFX_RECT_BOTTOM(WM_GFX, rect), GFX_RECT_BOTTOM(WM_GFX, redraw_rect)) - redraw_rect.y;
+            redraw_rect.width = GFX_RECT_MIN(GFX_RECT_RIGHT(WM_GFX, rect), GFX_RECT_RIGHT(WM_GFX, redraw_rect)) - redraw_rect.x + 1;
+            redraw_rect.height = GFX_RECT_MIN(GFX_RECT_BOTTOM(WM_GFX, rect), GFX_RECT_BOTTOM(WM_GFX, redraw_rect)) - redraw_rect.y + 1;
 
             redraw_rect.x -= win->x;
             redraw_rect.y -= win->y;

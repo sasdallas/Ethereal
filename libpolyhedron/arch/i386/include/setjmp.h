@@ -27,11 +27,15 @@ _Begin_C_Header;
 /**** TYPES ****/
 
 typedef long long jmp_buf[_JBLEN];
+typedef long long sigjmp_buf[_JBLEN + 1 + (sizeof(long long) / sizeof(long))];
 
 /**** FUNCTIONS ****/
 
-void   longjmp(jmp_buf j, int r);
-int    setjmp(jmp_buf j);
+void    longjmp(jmp_buf j, int r);
+int     setjmp(jmp_buf j);
+
+int     sigsetjmp(sigjmp_buf env, int savemask);
+void    siglongjmp(sigjmp_buf env, int val);
 
 #endif
 

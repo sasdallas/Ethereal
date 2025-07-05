@@ -28,8 +28,8 @@ int main(int argc, char *argv[]) {
 
     // Open files
     open("/device/stdin", O_RDONLY);
-    open("/device/console", O_RDWR);
-    open("/device/console", O_RDWR);
+    open("/device/log", O_RDWR);
+    open("/device/log", O_RDWR);
 
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
@@ -42,8 +42,8 @@ int main(int argc, char *argv[]) {
     pid_t cpid = fork();
 
     if (!cpid) {
-        char *nargv[3] = { "/device/initrd/usr/bin/termemu", "--fullscreen", NULL };
-        execvpe("/device/initrd/usr/bin/termemu", (const char**)nargv, environ);
+        char *nargv[3] = { "/device/initrd/usr/bin/celestial",  "-d", NULL };
+        execvpe("/device/initrd/usr/bin/celestial", (const char**)nargv, environ);
     
         printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         return 1;

@@ -49,7 +49,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     vas_t *vas = current_cpu->current_process->vas;
 
     // If protection flags were provided - we don't care.
-    if (prot) {
+    if (!(prot & PROT_WRITE)) {
         LOG(WARN, "Protection flags are not implemented\n");
     }
 
@@ -172,6 +172,14 @@ int process_munmap(void *addr, size_t len) {
         process_mapping_t *map = (process_mapping_t*)(map_node->value);
         if (RANGE_IN_RANGE((uintptr_t)addr, (uintptr_t)addr+len, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
             // TODO: "Close enough" system? 
+
+            if ((uintptr_t)map->addr != (uintptr_t)addr || map->size != len) {
+                LOG(ERR, "Partial munmap (%p - %p) of mapping %p - %p\n", addr, (uintptr_t)addr + len, map->addr, (uintptr_t)map->addr + map->size);
+                return -ENOSYS;
+            }
+
+
+
             return process_removeMapping(current_cpu->current_process, map);
         }
     }

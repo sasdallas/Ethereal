@@ -170,7 +170,7 @@ void arch_panic_prepare() {
  */
 void arch_panic_finalize() {
     // Perform a traceback
-    arch_panic_traceback(10, NULL);
+    arch_panic_traceback(30, NULL);
 
     // Display message
     dprintf(NOHEADER, COLOR_CODE_RED "\nThe kernel will now permanently halt. Connect a debugger for more information.\n");

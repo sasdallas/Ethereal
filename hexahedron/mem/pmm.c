@@ -180,6 +180,7 @@ void pmm_deinitializeRegion(uintptr_t base, uintptr_t size) {
     }
 
     for (; blocks > 0; blocks--) {
+        if (pmm_testFrame(align)) { align++; continue; } // Block already marked
         pmm_setFrame(align++);
         pmm_usedBlocks++;
     }

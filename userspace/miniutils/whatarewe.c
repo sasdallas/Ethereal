@@ -16,8 +16,9 @@
 #include <string.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <stdlib.h>
 
-char *ascii_small[] = {"\n",
+char *ascii_small[] = {"\033[1m\n",
 "                       :::::       ",
 "                    :        .     ",
 "                 :           ..    ",
