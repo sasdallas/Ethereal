@@ -67,14 +67,6 @@ static int kernel_panic_putchar(void *user, char ch) {
  * @brief Send panic packet to debugger
  */
 void kernel_panic_sendPacket(uint32_t bugcode, char *module, char *additional) {
-    if (!debugger_isConnected()) return;
-
-    json_value *data = json_object_new(3);
-    if (bugcode) json_object_push(data, "bugcode", json_integer_new(bugcode));
-    if (module) json_object_push(data, "module", json_string_new(module));
-    if (additional) json_object_push(data, "additional", json_string_new(additional));
-
-    debugger_sendPacket(PACKET_TYPE_PANIC, data);
 }
 
 /**

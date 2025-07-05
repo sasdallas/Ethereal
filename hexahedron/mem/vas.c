@@ -540,11 +540,13 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
     // Release lock
     spinlock_release(&alloc->ref_lck);
 
+    // TODO: Check this math more thouroughly?
+
     // There's an allocation here - its probably lazy. How much can we map in?
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
 
     // Too much?
-    if (address + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - address;
+    if (address + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - MEM_ALIGN_PAGE_DESTRUCTIVE(address);
 
     for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + actual_map_size; i += PAGE_SIZE) {
         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
@@ -554,7 +556,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         if (pg) mem_allocatePage(pg, flags);
     }
 
-    // LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), address+actual_map_size);
+    // LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size);
     return 1;
 }
 

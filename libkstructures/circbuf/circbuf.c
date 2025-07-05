@@ -197,8 +197,8 @@ ssize_t circbuf_remaining_write(circbuf_t *circbuf) {
 int circbuf_stop(circbuf_t *circbuf) {
     spinlock_acquire(circbuf->lock);
     circbuf->stop = 1;
-    sleep_wakeupQueue(circbuf->readers, -1);
-    sleep_wakeupQueue(circbuf->writers, -1);
+    sleep_wakeupQueue(circbuf->readers, 0);
+    sleep_wakeupQueue(circbuf->writers, 0);
     spinlock_release(circbuf->lock);
 
     return 0;
