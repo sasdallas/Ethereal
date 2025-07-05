@@ -115,9 +115,17 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             LOG(ERR, "Multiple iovecs are not supported right now\n");
             return -ENOTSUP;
         }
+        
         // Sequenced packet sockets are easy enough, we just need to also pop from the datagram data queue
         // Reuse the lock from the ringbuffer
         spinlock_acquire(usock->packet_buffer->lock);
+        
+        // We really don't want to enter a loop forever...
+        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) {
+            spinlock_release(usock->packet_buffer->lock);
+            return -ECONNRESET;
+        }
+
         if (!usock->dgram_data->length) {
             if (sock->flags & SOCKET_FLAG_NONBLOCKING) {
                 spinlock_release(usock->packet_buffer->lock);
@@ -137,6 +145,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             spinlock_acquire(usock->packet_buffer->lock);
         }
 
+        // Double-check
         if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) {
             spinlock_release(usock->packet_buffer->lock);
             return -ECONNRESET;
