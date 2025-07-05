@@ -27,6 +27,7 @@
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <structs/list.h>
+#include <kernel/drivers/clock.h>
 #include <structs/hashmap.h>
 #include <kernel/config.h>
 #include <string.h>
@@ -581,6 +582,19 @@ int kernelfs_cmdlineRead(kernelfs_entry_t *entry, void *data) {
     return 0;
 }
 
+/**
+ * @brief Read kernel uptime
+ * @param entry The entry to read
+ * @param data NULL
+ */
+int kernelfs_uptimeRead(kernelfs_entry_t *entry, void *data) {
+    unsigned long seconds, subseconds;
+    clock_relative(0, 0, &seconds, &subseconds);
+
+    kernelfs_writeData(entry,
+        "%lu.%016lu\n", seconds, subseconds);
+    return 0;
+}
 
 /**
  * @brief Recursive VFS dump method
@@ -673,4 +687,7 @@ void kernelfs_init() {
 
     // Create filesystems
     kernelfs_createEntry(NULL, "filesystems", kernelfs_filesystemsRead, NULL);
+
+    // Create uptime
+    kernelfs_createEntry(NULL, "uptime", kernelfs_uptimeRead, NULL);
 }

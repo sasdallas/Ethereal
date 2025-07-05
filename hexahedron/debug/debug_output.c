@@ -67,7 +67,10 @@ int debug_print(void *user, char ch) {
  * @param buffer The buffer
  */
 ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    return debug_write_buffer(size, (char*)buffer);
+    spinlock_acquire(&debug_lock);
+    ssize_t r = debug_write_buffer(size, (char*)buffer);
+    spinlock_release(&debug_lock);
+    return r;
 }
 
 
