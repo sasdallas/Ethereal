@@ -546,17 +546,20 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
 
     // Too much?
-    if (address + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - MEM_ALIGN_PAGE_DESTRUCTIVE(address);
+    if (MEM_ALIGN_PAGE_DESTRUCTIVE(address) + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - MEM_ALIGN_PAGE_DESTRUCTIVE(address);
 
-    for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < address + actual_map_size; i += PAGE_SIZE) {
+    for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < MEM_ALIGN_PAGE_DESTRUCTIVE(address) + actual_map_size; i += PAGE_SIZE) {
         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
         
         // Allocate corresponding to prot flags
         int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL);
-        if (pg) mem_allocatePage(pg, flags);
+        if (pg && !PAGE_IS_PRESENT(pg)) {
+            mem_allocatePage(pg, flags);
+        }
     }
 
-    // LOG(DEBUG, "Created allocation for %p - %p\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size);
+    // LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
+
     return 1;
 }
 
