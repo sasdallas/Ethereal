@@ -110,4 +110,10 @@ int window_update(wm_window_t *win, gfx_rect_t rect);
  */
 void window_updateRegion(gfx_rect_t rect);
 
+/**
+ * @brief Close a window
+ * @param win The window to close
+ */
+void window_close(wm_window_t *win);
+
 #endif

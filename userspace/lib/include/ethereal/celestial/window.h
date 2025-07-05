@@ -172,4 +172,12 @@ void celestial_flipRegion(window_t *win, int32_t x, int32_t y, size_t width, siz
  */
 void celestial_flip(window_t *win);
 
+/**
+ * @brief Close a window
+ * @param win The window to close
+ * 
+ * @warning Any attempts to update the window from here might crash.
+ */
+void celestial_closeWindow(window_t *win);
+
 #endif

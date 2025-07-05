@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <structs/hashmap.h>
+#include <unistd.h>
 
 /* Global celestial window map (WID -> Window object) */
 hashmap_t *celestial_window_map = NULL;
@@ -435,4 +436,27 @@ void celestial_flip(window_t *win) {
     // Render everything
     if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) celestial_flipRegion(win, 0, 0, win->info->width, win->info->height);
     else celestial_flipRegion(win, 0, 0, win->width, win->height);
+}
+
+/**
+ * @brief Close a window
+ * @param win The window to close
+ * 
+ * @warning Any attempts to update the window from here might crash.
+ */
+void celestial_closeWindow(window_t *win) {
+    celestial_req_close_window_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_close_window_t),
+        .type = CELESTIAL_REQ_CLOSE_WINDOW,
+        .wid = win->wid,
+    };
+
+    celestial_sendRequest(&req, req.size);
+
+    // Close the window shm
+    close(win->shmfd);
+    
+    // TODO: Free other resources
+    free(win);
 }

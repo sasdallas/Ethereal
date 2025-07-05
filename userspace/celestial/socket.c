@@ -151,8 +151,40 @@ void socket_handle(int sock) {
 
     if (recv(sock, data, 4096, 0) < 0) {
         if (errno == EWOULDBLOCK) return;
-        CELESTIAL_PERROR("recv");
-        celestial_fatal();
+        
+        // Was the error ECONNRESET? We should catch that
+        if (errno == ECONNRESET) {
+            CELESTIAL_LOG("socket: Connection with socket %d was closed by remote peer.\n", sock);
+            
+            // Free all resources allocated by the socket
+            celestial_removeClient(sock);
+            close(sock);
+
+            // Find any windows used by the socket
+            // TODO: (really TODO) WM_SW_MAP should also have a list of windows..
+            foreach(winn, WM_WINDOW_LIST) {
+                wm_window_t *win = (wm_window_t*)winn->value;
+                if (win && win->sock == sock) {
+                    window_close(win);
+                }
+            }
+
+            foreach(winn, WM_WINDOW_LIST_BG) {
+                wm_window_t *win = (wm_window_t*)winn->value;
+                if (win && win->sock == sock) {
+                    window_close(win);
+                }
+            }
+
+            foreach(winn, WM_WINDOW_LIST_OVERLAY) {
+                wm_window_t *win = (wm_window_t*)winn->value;
+                if (win && win->sock == sock) {
+                    window_close(win);
+                }
+            }
+
+            return;
+        }
     }
 
     // Is this a valid request?
@@ -359,6 +391,17 @@ void socket_handle(int sock) {
         upd_rect.y += win->y;
         window_updateRegion(upd_rect);
         return; // NO RESPONSE FOR FLIP REQUEST
+    } else if (hdr->type == CELESTIAL_REQ_CLOSE_WINDOW) {
+        // Close window
+        CELESTIAL_VALIDATE(celestial_req_close_window_t, CELESTIAL_REQ_CLOSE_WINDOW);
+        CELESTIAL_LOG("socket: Received CELESTIAL_REQ_CLOSE_WINDOW\n");
+        celestial_req_close_window_t *req = (celestial_req_close_window_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EPERM);
+        
+        window_close(WID(req->wid));
+
+        return; // NO RESPONSE FOR CLOSE REQUEST
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);

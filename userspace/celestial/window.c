@@ -18,6 +18,7 @@
 #include <sys/mman.h>
 #include <kernel/misc/util.h>
 #include "event.h"
+#include <unistd.h>
 
 /* Window map */
 hashmap_t *__celestial_window_map = NULL;
@@ -133,7 +134,6 @@ void window_redraw() {
 
         // CELESTIAL_DEBUG("window: Redraw window %d (X: %d, Y: %d, W: %d, H: %d)\n", upd->win->id, upd->rect.x, upd->rect.y, upd->rect.width, upd->rect.height);
 
-
         // Now we have a rectangle and a window to draw in that rectangle. The rectangle coordinates are relative to the window's
         // Basically replicate the sprite redraw function
         gfx_createClip(WM_GFX, upd->rect.x + upd->win->x, upd->rect.y + upd->win->y, upd->rect.width, upd->rect.height);
@@ -231,4 +231,38 @@ void window_updateRegion(gfx_rect_t rect) {
             window_update(win, redraw_rect);
         }
     }
+
+    // TODO: Overlay
 } 
+
+/**
+ * @brief Close a window
+ * @param win The window to close
+ */
+void window_close(wm_window_t *win) {
+    win->state = WINDOW_STATE_CLOSING;
+
+    // TODO: Animation
+    switch (win->z_array) {
+        case CELESTIAL_Z_BACKGROUND:
+            list_delete(WM_WINDOW_LIST_BG, list_find(WM_WINDOW_LIST_BG, win));
+            break;
+
+        case CELESTIAL_Z_OVERLAY:
+            list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST_OVERLAY, win));
+            break;
+
+        case CELESTIAL_Z_DEFAULT:
+        default:
+            list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, win));
+            break;    
+    }
+
+    // Window is removed from, flip it now
+    window_updateRegion((gfx_rect_t){ .x = win->x, .y = win->y, .width = win->width, .height = win->height });
+
+    // Close the shared memory object
+    // TODO: This bugging?
+    // close(win->shmfd);
+    // free(win);
+}
