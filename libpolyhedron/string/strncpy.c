@@ -14,16 +14,24 @@
 #include <string.h>
 
 char* strncpy(char* destination_str, const char* source_str, size_t length) {
-    char *destination_ptr = destination_str; // Keep a pointer for return
-    
-    while (length--) {
-        *destination_str = *source_str;
+    char *dest = destination_str;
 
-        destination_str++;
+    size_t rem = length;
+    while (rem) {
+        if (!(*source_str)) break;
+        *dest = *source_str;
+        dest++;
         source_str++;
+        rem--;
     }
 
-    return destination_ptr;
+    while (rem) {
+        *dest = 0;
+        rem--;
+        dest++;
+    }
+
+    return dest;
 }
 
 char* strcpy(char* destination_str, const char* source_str) {
