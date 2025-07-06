@@ -337,7 +337,7 @@ ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *b
         }
     }
 
-    if (off > (off_t)node->length) return 0;
+    if (off >= (off_t)node->length) return 0;
     if (off + size > node->length) {
         size = node->length - off;
     }
@@ -354,13 +354,16 @@ ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *b
  * This is kinda annoying... make it stop..
  */
 void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
+    // Reset length
+    kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
+    entry->buflen = 0;
+    
     // !!!: kill me, it's too late here.
     // This will update node->length
     LOG(INFO, "Opened: Updating node->length\n");
     kernelfs_genericRead(node, 0, 0, NULL);
 
     // !!!: Because vfs_open creates a copy of the node, update this copies length from the original
-    kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
     node->length = entry->node->length;
 
     return;
@@ -642,7 +645,6 @@ extern tree_t *vfs_tree;
  */
 int kernelfs_filesystemsRead(kernelfs_entry_t *entry, void *data) {
 extern hashmap_t *vfs_filesystems;
-
     foreach(key, hashmap_keys(vfs_filesystems)) {
         kernelfs_appendData(entry, "%s\n", key->value);
     }
