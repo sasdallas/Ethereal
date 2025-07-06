@@ -30,6 +30,7 @@ typedef unsigned long pthread_t;
 
 typedef struct __pthread_attr {
     size_t stack_size;              // By default PTHREAD_STACK_SIZE
+    unsigned char sched;            // Scheduler param
     int temp;                       // TODO
 } pthread_attr_t;
 
@@ -42,6 +43,11 @@ typedef struct __pthread_mutexattr {
     int pshared;                    // Process shared
     int kind;                       // Kind
 } pthread_mutexattr_t;
+
+typedef struct __pthread_condattr {
+    int clock;                      // Clock
+    int shared;                     // Shared
+} pthread_condattr_t;
 
 /* LOCKS */
 
@@ -57,6 +63,18 @@ typedef struct __pthread_mutex {
     pthread_mutexattr_t attr;       // Attribute
     pthread_spinlock_t lock;        // Lock
 } pthread_mutex_t;
+
+/* Thank you Bananymous :D */
+typedef struct __pthread_condblocker {
+    struct __pthread_condblocker *next;
+    unsigned char signalled;
+} __pthread_condblocker_t;
+
+typedef struct __pthread_cond {
+    pthread_condattr_t attr;        // Attribute
+    pthread_spinlock_t lock;        // Lock
+    __pthread_condblocker_t *blk;   // Blocker linked list (thank you Banan for the idea)
+} pthread_cond_t;
 
 /* OTHER */
 

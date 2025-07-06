@@ -29,7 +29,7 @@ const char *__kernel_build_time = __TIME__;
 // Versioning information
 const int __kernel_version_major = 1;
 const int __kernel_version_minor = 6;
-const int __kernel_version_lower = 1;
+const int __kernel_version_lower = 3;
 
 // Codename
 const char *__kernel_version_codename = "Phoenix";

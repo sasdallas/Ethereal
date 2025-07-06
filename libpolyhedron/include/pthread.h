@@ -20,6 +20,7 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <sys/types.h>
+#include <sched.h>
 #include <stddef.h>
 
 /**** DEFINITIONS ****/
@@ -48,6 +49,9 @@ _Begin_C_Header
 
 #define PTHREAD_PROCESS_PRIVATE         0
 #define PTHREAD_PROCESS_SHARED          1
+
+#define PTHREAD_CREATE_DETACHED         0
+#define PTHREAD_CREATE_JOINABLE         1
 
 #define PTHREAD_SPIN_INITIALIZER        (pthread_spinlock_t)0
 #define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER }

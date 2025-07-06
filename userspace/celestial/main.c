@@ -96,42 +96,6 @@ void celestial_main() {
             socket_handle((int)(uintptr_t)kn->value);
         }
         list_destroy(keys,false);
-
-
-        // // !!!: Sorta slow, but probably the easiest way with the client map
-        // struct pollfd p[__celestial_client_count];
-        // if (!__celestial_client_count) continue;
-        // int i = 0;
-
-        // list_t *keys = hashmap_keys(WM_SW_MAP);
-
-        // foreach (kn, keys) {
-        //     p[i].fd = (int)(uintptr_t)kn->value;
-        //     p[i].events = POLLIN;
-        //     i++;
-        // } 
-
-        // list_destroy(keys, false);
-
-        // if (!i) continue;
-
-        // // Wait for events
-        // int r = poll(p, __celestial_client_count, 0);
-        // if (r < 0) {
-        //     CELESTIAL_PERROR("poll");
-        //     celestial_fatal();
-        // }
-
-
-        // if (!r) continue;
-
-        // for (int i = 0; i < __celestial_client_count; i++) {
-        //     if (p[i].revents & POLLIN) {
-        //         // INPUT available
-        //         CELESTIAL_DEBUG("Input available on fd %d\n", p[i].fd);
-        //         socket_handle(p[i].fd);
-        //     }
-        // }
     }
 }
 
