@@ -26,6 +26,34 @@ _Begin_C_Header
 
 #define PTHREAD_STACK_SIZE      16384
 
+#define PTHREAD_CANCEL_ASYNCRONOUS      1
+#define PTHREAD_CANCEL_DEFERRED         0
+
+#define PTHREAD_CANCEL_DISABLE          0
+#define PTHREAD_CANCEL_ENABLE           1
+
+#define PTHREAD_PRIO_NONE               0
+#define PTHREAD_PRIO_INHERIT            1
+#define PTHREAD_PRIO_PROTECT            2
+
+#define PTHREAD_EXPLICIT_SCHED          0
+#define PTHREAD_INHERIT_SCHED           1
+
+#define PTHREAD_MUTEX_DEFAULT           0
+#define PTHREAD_MUTEX_ERRORCHECK        1
+#define PTHREAD_MUTEX_NORMAL            2
+#define PTHREAD_MUTEX_RECURSIVE         3
+
+#define PTHREAD_ONCE_INIT               0
+
+#define PTHREAD_PROCESS_PRIVATE         0
+#define PTHREAD_PROCESS_SHARED          1
+
+#define PTHREAD_SPIN_INITIALIZER        (pthread_spinlock_t)0
+#define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER }
+#define PTHREAD_RWLOCK_INITIALIZER      (pthread_rwlock_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER, .writers = 0 }
+
+
 /**** FUNCTIONS ****/
 
 int   pthread_attr_destroy(pthread_attr_t *);

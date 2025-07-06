@@ -409,8 +409,6 @@ void fs_destroy(fs_node_t *node) {
         list_destroy(node->mmap_contexts, false);
     }
 
-    spinlock_acquire(&node->waiter_lock);
-
     if (node->waiting_nodes) {
         list_destroy(node->waiting_nodes, true);
     }
