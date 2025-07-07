@@ -553,12 +553,15 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         
         // Allocate corresponding to prot flags
         int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL);
-        if (pg && !PAGE_IS_PRESENT(pg)) {
+        
+        // TODO: THIS IS A BAD SOLUTION. Pages can appear R/O because they *used* to be part of CoW allocations but got cleared.
+        // !!!: I REITERATE, ONCE MMAP PROTECTION IS ADDED, COME BACK TO THIS. BAD SOLUTION.
+        if (pg && (!PAGE_IS_PRESENT(pg) || !PAGE_IS_WRITABLE(pg))) {
             mem_allocatePage(pg, flags);
         }
     }
 
-    // LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
+    LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
 
     return 1;
 }
