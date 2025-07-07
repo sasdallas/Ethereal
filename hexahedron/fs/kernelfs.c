@@ -331,6 +331,7 @@ static fs_node_t *kernelfs_genericFinddir(fs_node_t *node, char *path) {
 ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
     if (!entry->finished) {
+        entry->buflen = 0;
         if (entry->get_data(entry, entry->data)) {
             LOG(ERR, "Failed to get data for node \"%s\"\n", node->name);
             return 1;
@@ -356,7 +357,6 @@ ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *b
 void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
     // Reset length
     kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
-    entry->buflen = 0;
     
     // !!!: kill me, it's too late here.
     // This will update node->length
