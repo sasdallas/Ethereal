@@ -1,0 +1,58 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build All",
+			"type": "shell",
+			"command": "",
+			"args": [
+				"make",
+				"--directory=${workspaceFolder}",
+				"all"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+			},
+			"problemMatcher": "$gcc"
+		},
+		{
+			"label": "Build and Run All",
+			"type": "shell",
+			"dependsOn": [
+				"Build All"
+			],
+			"command": "",
+			"args": [
+				"qemu-system-x86_64",
+				"-cdrom",
+				"build-output/hexahedron.iso",
+				"-serial",
+				"stdio",
+				"-s"
+			],
+			"isBackground": true,
+			"problemMatcher": [
+				{
+					"pattern": [
+						{
+						"regexp": ".",
+						"file": 1,
+						"line": 1,
+						"column": 1,
+						"message": 1
+						}
+					],
+					"background": {
+						"activeOnStart": true,
+						"beginsPattern": { "regexp": "." },
+						"endsPattern": { "regexp": "^.*$" }
+					}
+				}
+			]		
+		}
+	]
+}

@@ -39,3 +39,7 @@ define debug-driver
 
     add-symbol-file $arg0 $addr
 end
+
+define offsetof
+    print &(($arg0 *)0x0)->$arg1
+end

@@ -561,7 +561,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         }
     }
 
-    LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
+    // LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
 
     return 1;
 }
