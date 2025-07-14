@@ -375,14 +375,13 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 break;
             
             case PT_LOAD:
-            case PT_TLS:
                 // We have to load and map it into memory
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
                 LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
                 
                 for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
                     page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
-                    if (pg) {
+                    if (pg && !PAGE_IS_PRESENT(pg)) {
                         mem_allocatePage(pg, MEM_DEFAULT);
                     }
                 }
@@ -407,6 +406,36 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 if (phdr->p_memsz > phdr->p_filesz) {
                     memset((void*)phdr->p_vaddr + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
                 }
+
+                break;
+
+            case PT_TLS:
+                // Basically the same as a PT_LOAD, but don't zero?
+                LOG(DEBUG, "PHDR #%d PT_TLS: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
+                
+                for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
+                    page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
+                    if (pg && !PAGE_IS_PRESENT(pg)) {
+                        mem_allocatePage(pg, MEM_DEFAULT);
+                    }
+                }
+
+                // !!!: HACK
+                if (current_cpu->current_process) {
+                    vas_node_t *existn = vas_get(current_cpu->current_process->vas, phdr->p_vaddr);
+
+                    if (existn) {
+                        vas_allocation_t *exist = existn->alloc;
+                        if (exist->base + exist->size < phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) {
+                            exist->size = (phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) - exist->base;
+                        }
+                    } else {
+                        vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
+                    }
+                }
+
+                
+                memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
                 break;
 

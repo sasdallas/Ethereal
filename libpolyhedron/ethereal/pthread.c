@@ -1,5 +1,5 @@
 /**
- * @file libpolyhedron/pthread/ethereal.c
+ * @file libpolyhedron/ethereal/pthread.c
  * @brief Ethereal pthread API
  * 
  * 

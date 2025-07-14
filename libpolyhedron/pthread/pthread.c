@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
+#include <stdio.h>
 
 /* Initial pthread startup function */
 struct __pthread_startup_context {
@@ -46,6 +47,17 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     // Zero the stack
     memset(stk, 0, stack_size);
 
+    // Then, create a TLS for the new thread
+    void *tls = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (tls == MAP_FAILED) {
+        munmap(stk, stack_size);
+        return -1;
+    }
+
+    // Zero TLS and set self-pointer
+    memset(tls, 0, 4096);
+    *(char**)tls = (char*)tls;
+
     // Make startup context
     // TODO: Not stack allocated?
     struct __pthread_startup_context ctx = {
@@ -55,7 +67,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     };
 
     // Now make a new thread
-    pid_t tid = ethereal_createThread((uintptr_t)stk + stack_size, 0x0, __pthread_startup, &ctx);
+    pid_t tid = ethereal_createThread((uintptr_t)stk + stack_size, (uintptr_t)tls, __pthread_startup, &ctx);
     if (tid >= 0) *thread = (pthread_t)tid;
     return (tid >= 0) ? 0 : -1;
 }
@@ -66,4 +78,29 @@ __attribute__((noreturn)) void pthread_exit(void *retval) {
 
 int pthread_join(pthread_t thr, void **retval) {
     return ethereal_joinThread(thr, retval);
+}
+
+pthread_t pthread_self() {
+    return (pthread_t)ethereal_gettid();
+}
+
+int pthread_getschedparam(pthread_t pthread, int *__restrict policy, const struct sched_param *__restrict param) {
+    fprintf(stderr, "pthread_getschedparam: stub\n");
+    return ENOTSUP;
+}
+
+int pthread_setschedparam(pthread_t pthread, int policy, const struct sched_param *param) {
+    fprintf(stderr, "pthread_setschedparam: stub\n");
+    return ENOTSUP;
+}
+
+int pthread_detach(pthread_t pthread) {
+    fprintf(stderr, "pthread_detach: stub\n");
+    return ENOTSUP;
+}
+
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
+    int r = sigprocmask(how, set, oldset);
+    if (r < 0) return errno;
+    return 0;
 }

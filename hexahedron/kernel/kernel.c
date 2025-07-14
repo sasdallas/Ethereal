@@ -130,43 +130,6 @@ void kernel_loadDrivers() {
 }
 
 
-struct timeval tv_start;
-
-void kthread(void *ctx) {
-    int iterations = 0;
-    for (;;) {
-        // if (current_cpu->current_process->pid == 1) {
-        //     terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
-
-        //     #include <kernel/drivers/clock.h>
-            
-            
-        //     struct timeval tv;
-        //     gettimeofday(&tv, NULL);
-        //     if (!tv_start.tv_sec) tv_start = tv;
-
-        //     terminal_setXY(100, 100);
-        //     printf("==== CURRENT PROCESSES\n");
-        //     for (unsigned i = 0; i < arch_get_generic_parameters()->cpu_count; i++) {
-        //         if (processor_data[i].current_process && processor_data[i].current_thread) printf("\tCPU%d: Process \"%s\" (%ld ticks so far)\n", i, processor_data[i].current_process->name, processor_data[i].current_thread->total_ticks);
-        //         else printf("\tCPU%d: No thread/no process\n", i);
-        //     }
-
-        //     extern volatile int task_switches;
-        //     if ((tv.tv_sec - tv_start.tv_sec)) {
-        //         printf("==== TASK SWITCHES: %d (%d switches per second)\n", task_switches, task_switches / (tv.tv_sec - tv_start.tv_sec));
-        //     } else {
-        //         printf("==== TASK SWITCHES: %d (give it a second, scheduler is waking up)\n", task_switches);
-        //     }
-        //     printf("==== WE HAVE NOT CRASHED FOR %d SECONDS\n", tv.tv_sec - tv_start.tv_sec);
-        // }
-
-        LOG(DEBUG, "CTX is: %p\n", ctx);
-
-        arch_pause();
-    }
-}
-
 /**
  * @brief Kernel main function
  */

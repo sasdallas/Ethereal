@@ -147,11 +147,11 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int ty
         uintptr_t hole_base = n->base + n->size;
         size_t hole_size = nn->next->alloc->base - hole_base;
 
-        LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", hole_base, hole_base + hole_size);
+        // LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", hole_base, hole_base + hole_size);
 
         // Is it enough?
         if (RANGE_IN_RANGE(address, address+size, hole_base, hole_base + hole_size)) {
-            LOG(DEBUG, "[HOLE] Using hole %016llX - %016llX\n", hole_base, hole_base + hole_size);
+            // LOG(DEBUG, "[HOLE] Using hole %016llX - %016llX\n", hole_base, hole_base + hole_size);
             node->next = nn->next;
             node->prev = nn;
             nn->next = node;
@@ -232,7 +232,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
         size_t hole_size = next->base - (n->base + n->size);
         if (!hole_size) { nn = nn->next; if (!nn) break; n = ALLOC(nn); continue; }
 
-        LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", n->base + n->size, (n->base + n->size) + hole_size);
+        // LOG(DEBUG, "[HOLE] Hole from %016llX - %016llX\n", n->base + n->size, (n->base + n->size) + hole_size);
 
         if (IN_RANGE(size, 1, hole_size)) {
             // Create a new allocation here
@@ -721,7 +721,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         mem_allocatePage(dst, flags);
         MEM_SET_FRAME(dst, new_frame);
 
-        LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
+        // LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }
 
     LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p (no CoW)\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);

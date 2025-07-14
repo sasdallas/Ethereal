@@ -40,6 +40,9 @@ extern __attribute__((noinline)) char ** __get_environ() {
 extern void _init();
 extern void _fini();
 
+// pthread
+extern void __tls_init();
+
 void __create_environ(char **envp) {
     // First calculate envc
     char **envpp = envp;
@@ -67,10 +70,12 @@ int __get_argc() {
     return i;
 }
 
+/* Main libc init function */
 __attribute__((constructor)) void __libc_init() {
     __create_environ(__get_environ());
     __argv = __get_argv();
     __argc = __get_argc();
+    __tls_init();
 }
 
 __attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int argc, char **argv, char **envp) {
