@@ -25,3 +25,16 @@ char* strstr(const char* haystack, const char* needle) {
         
     return NULL;
 }
+
+void *memchr(const void *ptr, int ch, size_t count) {
+    unsigned char *p = (unsigned char*)ptr;
+    size_t idx = 0;
+
+    while (idx < count) {
+        if (*p == ch) return p;
+        p++;
+        idx++;
+    }
+
+    return NULL;
+}

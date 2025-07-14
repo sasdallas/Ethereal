@@ -101,6 +101,8 @@ _Begin_C_Header
 #define SYS_SETEUID         85
 #define SYS_GETEGID         86
 #define SYS_SETEGID         87
+#define SYS_GETHOSTNAME     88
+#define SYS_SETHOSTNAME     89
 
 #endif
 

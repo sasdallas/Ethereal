@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/string/memchr.c
- * @brief memchr
+ * @file libpolyhedron/unistd/sethostname.c
+ * @brief sethostname
  * 
  * 
  * @copyright
@@ -11,17 +11,12 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <errno.h>
 
-void *memchr(const void *ptr, int ch, size_t count) {
-    unsigned char *p = (unsigned char*)ptr;
-    size_t idx = 0;
+DEFINE_SYSCALL2(sethostname, SYS_SETHOSTNAME, const char *, size_t);
 
-    while (idx < count) {
-        if (*p == ch) return p;
-        p++;
-        idx++;
-    }
-
-    return NULL;
+int sethostname(const char *name, size_t size) {
+    __sets_errno(__syscall_sethostname(name, size));
 }

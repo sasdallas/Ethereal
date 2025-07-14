@@ -27,6 +27,7 @@
 #include <kernel/config.h>
 
 #include <sys/types.h>
+#include <limits.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -110,7 +111,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETEUID]           = (syscall_func_t)(uintptr_t)sys_geteuid,
     [SYS_SETEUID]           = (syscall_func_t)(uintptr_t)sys_seteuid,
     [SYS_GETEGID]           = (syscall_func_t)(uintptr_t)sys_getegid,
-    [SYS_SETEGID]           = (syscall_func_t)(uintptr_t)sys_setegid
+    [SYS_SETEGID]           = (syscall_func_t)(uintptr_t)sys_setegid,
+    [SYS_GETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_gethostname,
+    [SYS_SETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_sethostname,
 }; 
 
 
@@ -120,6 +123,10 @@ static syscall_func_t syscall_table[] = {
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL", __VA_ARGS__)
 
+/* Hostname */
+/* TODO: Maybe move */
+static char __hostname[HOST_NAME_MAX] = { 0 };
+static size_t __hostnamelen = 0;
 
 /**
  * @brief Pointer validation failed
@@ -1257,5 +1264,28 @@ int sys_setegid(gid_t gid) {
     }
 
     current_cpu->current_process->egid = gid;
+    return 0;
+}
+
+/**** HOSTNAMES ****/
+
+long sys_gethostname(char *name, size_t size) {
+    SYSCALL_VALIDATE_PTR_SIZE(name, size);
+
+    memcpy(name, __hostname, (size > __hostnamelen) ? __hostnamelen : size);
+
+    if (size < __hostnamelen) return -ENAMETOOLONG;
+    return 0;
+}
+
+long sys_sethostname(const char *name, size_t size) {
+    if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+    SYSCALL_VALIDATE_PTR_SIZE(name, size);
+    if (size > HOST_NAME_MAX) return -EINVAL;
+
+    // Set the hostname
+    memcpy(__hostname, name, size);
+    __hostnamelen = size;
+    
     return 0;
 }
