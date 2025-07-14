@@ -187,13 +187,16 @@ void terminal_scroll() {
     for (int x = 0; x < terminal_width; x++) {
         CELL(x, terminal_height-1)->ch = ' ';
         CELL(x, terminal_height-1)->highlighted = 0;
+        CELL(x, terminal_height-1)->fg = terminal_fg;
+        CELL(x, terminal_height-1)->bg = terminal_bg;
+
         draw_cell(x, terminal_height-1);
     }
 
     // Flush
     gfx_resetClips(ctx);
     gfx_render(ctx);
-    celestial_flip(win);
+    if (win) celestial_flip(win);
 
     // Now zero out the bottom ones
 }
