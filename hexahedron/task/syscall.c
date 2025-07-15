@@ -1281,7 +1281,7 @@ long sys_gethostname(char *name, size_t size) {
 long sys_sethostname(const char *name, size_t size) {
     if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
     SYSCALL_VALIDATE_PTR_SIZE(name, size);
-    if (size > HOST_NAME_MAX) return -EINVAL;
+    if (size > 256) return -EINVAL;
 
     // Set the hostname
     memcpy(__hostname, name, size);
