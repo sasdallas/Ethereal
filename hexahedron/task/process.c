@@ -41,7 +41,7 @@ list_t *process_list = NULL;
 uint32_t *pid_bitmap = NULL;
 
 /* Task switches */
-volatile int task_switches = 0;
+volatile uint64_t task_switches = 0;
 
 /* Reap queue */
 list_t *reap_queue = NULL;

@@ -17,6 +17,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/fs/kernelfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 
@@ -36,6 +37,14 @@ list_t *thread_queue = NULL;
 /* Scheduler lock */
 spinlock_t scheduler_lock = { 0 };
 
+/* Scheduler KernelFS node */
+kernelfs_entry_t *sched_ent = NULL;
+
+/* External helping variables */
+extern volatile uint64_t task_switches;
+extern list_t *process_list;
+extern list_t *sleep_queue;
+extern list_t *reap_queue;
 
 /**
  * @brief Scheduler tick method, called every update
@@ -59,10 +68,25 @@ int scheduler_update(uint64_t ticks) {
 }
 
 /**
+ * @brief Get scheduler data
+ */
+int scheduler_kernelfsRead(kernelfs_entry_t *entry, void *data) {
+    kernelfs_writeData(entry, 
+                "TotalSystemProcesses:%d\n"
+                "ProcessesWaitingForDestruction:%d\n"
+                "QueuedThreads:%d\n"
+                "SleepingThreads:%d\n"
+                "TaskSwitches:%lld\n", process_list->length, reap_queue->length, thread_queue->length, sleep_queue->length, task_switches);
+
+    return 0;
+}
+
+/**
  * @brief Initialize the scheduler
  */
 void scheduler_init() {
     thread_queue = list_create("thread queue");
+    sched_ent = kernelfs_createEntry(NULL, "scheduler", scheduler_kernelfsRead, NULL);
     LOG(INFO, "Scheduler initialized\n");
 }
 
