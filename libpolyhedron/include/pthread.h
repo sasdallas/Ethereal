@@ -59,7 +59,7 @@ _Begin_C_Header
 #define PTHREAD_SPIN_INITIALIZER        (pthread_spinlock_t)0
 #define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { .type = PTHREAD_MUTEX_DEFAULT, .robust = PTHREAD_MUTEX_ROBUST, .pshared = PTHREAD_PROCESS_PRIVATE, .protocol = PTHREAD_PRIO_NONE }, .lock = PTHREAD_SPIN_INITIALIZER }
 #define PTHREAD_RWLOCK_INITIALIZER      (pthread_rwlock_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER, .writers = 0 }
-
+#define PTHREAD_COND_INITIALIZER        (pthread_cond_t){ .attr = { .clock = CLOCK_REALTIME, .shared = 0 }, .blk = NULL, .lock = PTHREAD_SPIN_INITIALIZER }
 
 /**** FUNCTIONS ****/
 
@@ -82,17 +82,17 @@ int   pthread_attr_setstacksize(pthread_attr_t *, size_t);
 int   pthread_cancel(pthread_t);
 void  pthread_cleanup_push(void*, void *);
 void  pthread_cleanup_pop(int);
-// int   pthread_cond_broadcast(pthread_cond_t *);
-// int   pthread_cond_destroy(pthread_cond_t *);
-// int   pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *);
-// int   pthread_cond_signal(pthread_cond_t *);
-// int   pthread_cond_timedwait(pthread_cond_t *, 
-//           pthread_mutex_t *, const struct timespec *);
-// int   pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
-// int   pthread_condattr_destroy(pthread_condattr_t *);
-// int   pthread_condattr_getpshared(const pthread_condattr_t *, int *);
-// int   pthread_condattr_init(pthread_condattr_t *);
-// int   pthread_condattr_setpshared(pthread_condattr_t *, int);
+int   pthread_cond_broadcast(pthread_cond_t *);
+int   pthread_cond_destroy(pthread_cond_t *);
+int   pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *);
+int   pthread_cond_signal(pthread_cond_t *);
+int   pthread_cond_timedwait(pthread_cond_t *, 
+          pthread_mutex_t *, const struct timespec *);
+int   pthread_cond_wait(pthread_cond_t *, pthread_mutex_t *);
+int   pthread_condattr_destroy(pthread_condattr_t *);
+int   pthread_condattr_getpshared(const pthread_condattr_t *, int *);
+int   pthread_condattr_init(pthread_condattr_t *);
+int   pthread_condattr_setpshared(pthread_condattr_t *, int);
 int   pthread_create(pthread_t *, const pthread_attr_t *,
           void *(*)(void *), void *);
 int   pthread_detach(pthread_t);

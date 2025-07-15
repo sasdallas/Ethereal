@@ -46,8 +46,8 @@ typedef struct __pthread_mutexattr {
 } pthread_mutexattr_t;
 
 typedef struct __pthread_condattr {
-    int clock;                      // Clock
-    int shared;                     // Shared
+    int clock;                      // Clock ID
+    unsigned char shared;           // Shared
 } pthread_condattr_t;
 
 /* LOCKS */
@@ -68,6 +68,7 @@ typedef struct __pthread_mutex {
 /* Thank you Bananymous :D */
 typedef struct __pthread_condblocker {
     struct __pthread_condblocker *next;
+    struct __pthread_condblocker *prev;
     unsigned char signalled;
 } __pthread_condblocker_t;
 
