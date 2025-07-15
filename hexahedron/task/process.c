@@ -282,8 +282,18 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->name = strdup(name);
     process->flags = flags;
     process->priority = priority;
-    process->gid = process->uid = 0;
+
+    if (parent) {
+        process->uid = parent->uid;
+        process->gid = parent->gid;
+        process->euid = parent->euid;
+        process->egid = parent->egid;
+    } else {
+        process->gid = process->uid = 0;
+    }
+
     process->pid = process_allocatePID();
+
 
     // Create working directory
     if (parent && parent->wd_path) {
