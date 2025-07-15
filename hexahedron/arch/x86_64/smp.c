@@ -103,6 +103,15 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     arch_set_gsbase((uintptr_t)&processor_data[smp_getCurrentCPU()]);
     arch_initialize_syscall_handler();
 
+    // Setup the PAT
+    asm volatile(
+    	"movl $0x277, %%ecx\n"
+    	"rdmsr\n"
+    	"movw $0x0401, %%dx\n"
+    	"wrmsr\n"
+    	::: "eax", "ecx", "edx", "memory"
+    );
+
     // We want all cores to have a consistent GDT
     hal_gdtInitCore(smp_getCurrentCPU(), _ap_stack_base);
     
