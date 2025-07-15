@@ -125,7 +125,7 @@ static syscall_func_t syscall_table[] = {
 
 /* Hostname */
 /* TODO: Maybe move */
-static char __hostname[HOST_NAME_MAX] = { 0 };
+static char __hostname[256] = { 0 };
 static size_t __hostnamelen = 0;
 
 /**
