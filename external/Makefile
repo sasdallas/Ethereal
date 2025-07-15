@@ -30,7 +30,6 @@ endif
 
 
 
-
 # i love make i love make cmake is bad i love make i love make
 PROJECTS_HEADERS := $(addsuffix /installheaders, $(PROJECTS))
 PROJECTS_INSTALL := $(addsuffix /install, $(PROJECTS))
