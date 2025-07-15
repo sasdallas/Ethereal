@@ -101,4 +101,5 @@ int pthread_cond_broadcast(pthread_cond_t *cond) {
     }
 
     pthread_spin_unlock(&cond->lock);
+    return 0;
 }

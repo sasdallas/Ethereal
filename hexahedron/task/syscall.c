@@ -114,6 +114,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_SETEGID]           = (syscall_func_t)(uintptr_t)sys_setegid,
     [SYS_GETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_gethostname,
     [SYS_SETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_sethostname,
+    [SYS_YIELD]             = (syscall_func_t)(uintptr_t)sys_yield,
 }; 
 
 
@@ -1288,4 +1289,11 @@ long sys_sethostname(const char *name, size_t size) {
     __hostnamelen = size;
     
     return 0;
+}
+
+/**** SCHED ****/
+
+long sys_yield() {
+    process_yield(1);
+    return 0; 
 }

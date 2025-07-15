@@ -32,6 +32,9 @@ _Begin_C_Header
 #define SYS_POLL            11
 #define SYS_MKDIR           12
 #define SYS_PSELECT         13
+#define SYS_READLINK        14
+#define SYS_ACCESS          15
+#define SYS_CHMOD           16
 /* reserved */
 #define SYS_BRK             20
 #define SYS_FORK            21
@@ -103,6 +106,7 @@ _Begin_C_Header
 #define SYS_SETEGID         87
 #define SYS_GETHOSTNAME     88
 #define SYS_SETHOSTNAME     89
+#define SYS_YIELD           90
 
 #endif
 
