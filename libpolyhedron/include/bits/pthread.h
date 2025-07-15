@@ -39,9 +39,10 @@ typedef struct __pthread_rwlockattr {
 } pthread_rwlockattr_t;
 
 typedef struct __pthread_mutexattr {
-    int type;                       // Type
-    int pshared;                    // Process shared
-    int kind;                       // Kind
+    unsigned char type;             // Type
+    unsigned char pshared;          // Process shared
+    unsigned char protocol;         // Protocol
+    unsigned char robust;           // Robust
 } pthread_mutexattr_t;
 
 typedef struct __pthread_condattr {

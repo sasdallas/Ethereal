@@ -53,8 +53,11 @@ _Begin_C_Header
 #define PTHREAD_CREATE_DETACHED         0
 #define PTHREAD_CREATE_JOINABLE         1
 
+#define PTHREAD_MUTEX_STALLED           0
+#define PTHREAD_MUTEX_ROBUST            1
+
 #define PTHREAD_SPIN_INITIALIZER        (pthread_spinlock_t)0
-#define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER }
+#define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { .type = PTHREAD_MUTEX_DEFAULT, .robust = PTHREAD_MUTEX_ROBUST, .pshared = PTHREAD_PROCESS_PRIVATE, .protocol = PTHREAD_PRIO_NONE }, .lock = PTHREAD_SPIN_INITIALIZER }
 #define PTHREAD_RWLOCK_INITIALIZER      (pthread_rwlock_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER, .writers = 0 }
 
 
@@ -138,6 +141,9 @@ int   pthread_setcanceltype(int, int *);
 int   pthread_setconcurrency(int);
 int   pthread_setspecific(pthread_key_t, const void *);
 void  pthread_testcancel(void);
+int pthread_spin_lock(pthread_spinlock_t *lock);
+int pthread_spin_trylock(pthread_spinlock_t *lock);
+int pthread_spin_unlock(pthread_spinlock_t *lock);
 
 #endif
 
