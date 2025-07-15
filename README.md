@@ -10,6 +10,10 @@ Ethereal is a project with the goal of creating a fully functional OS from scrat
 Currently, the project is developing its usermode stages.
 
 ## Screenshots
+
+![]<img width="1040" height="799" alt="image" src="https://github.com/user-attachments/assets/06835253-90cd-4785-a0f8-9f0042ac3676" />
+*Ethereal main desktop environment*
+
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ygmgdlm3dowe1.png?width=1620&format=png&auto=webp&s=0473ac09024c17cefb294c8570671e415866b915)\
 *Ethereal booting in debug mode*
 
@@ -18,9 +22,6 @@ Currently, the project is developing its usermode stages.
 
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ahe88a85dowe1.png?width=682&format=png&auto=webp&s=b435a1e0d57a91b7d4e0479f9649960b74a22de7)\
 *Ethereal running DOOM*
-
-![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-hspq2m58dowe1.png?width=640&crop=smart&auto=webp&s=8764354d2764cb8bfaa77d1a79f710485880d780)\
-*Ethereal running uname*
 
 ![fixed](https://github.com/user-attachments/assets/bfdce356-5555-436b-990d-3aad65d22dea)\
 *Ethereal running a neofetch clone made for it (whatarewe)*
