@@ -63,6 +63,15 @@ struct itimerspec {
 #define CLOCKS_PER_SEC          ((clock_t)1000000)
 #define USEC_PER_SEC            ((useconds_t)1000000)
 
+/**** MACROS ****/
+
+#define timersub(a, b, res) { \
+                                (res)->tv_sec = (a)->tv_sec - (b)->tv_sec; \
+                                (res)->tv_usec = (a)->tv_usec - (b)->tv_usec; \
+                                (res)->tv_sec += (res)->tv_usec / USEC_PER_SEC; \
+                                (res)->tv_usec %= USEC_PER_SEC; \
+                            }
+
 /**** VARIABLES ****/
 
 extern long timezone;

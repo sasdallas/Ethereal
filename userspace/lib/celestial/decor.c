@@ -157,6 +157,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 if (b == DECOR_BTN_MINIMIZE) win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_HOVER);
                 else win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_NORMAL);
 
+                
                 // Fix hack
                 if (!in_borders) decor_was_last_in_borders = 0;
                 else decor_was_last_in_borders = 1;

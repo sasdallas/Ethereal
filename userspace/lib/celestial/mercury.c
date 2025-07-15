@@ -145,17 +145,24 @@ int celestial_inBoundsMercury(struct window *win, int32_t x, int32_t y) {
  * @returns 0 on success
  */
 int celestial_updateStateMercury(struct window *win, int btn, int state) {
+    sprite_t *old;
     switch (btn) {
         case DECOR_BTN_CLOSE:
+            old = close_sprite;
             close_sprite = (state == DECOR_BTN_STATE_HOVER) ? close_sprite_hovered : close_sprite_unhovered;
+            if (close_sprite != old) win->decor->render(win);
             break;
 
         case DECOR_BTN_MAXIMIZE:
+            old = maximize_sprite;
             maximize_sprite = (state == DECOR_BTN_STATE_HOVER) ? maximize_sprite_hovered : maximize_sprite_unhovered;
+            if (maximize_sprite != old) win->decor->render(win);
             break;
 
         case DECOR_BTN_MINIMIZE:
+            old = minimize_sprite;
             minimize_sprite = (state == DECOR_BTN_STATE_HOVER) ? minimize_sprite_hovered : minimize_sprite_unhovered;
+            if (minimize_sprite != old) win->decor->render(win);
             break;
     }
     
@@ -177,7 +184,7 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
             close_sprite = close_sprite_unhovered;
         }
 
-        f = fopen("/usr/share/mercury/close.bmp", "r");
+        f = fopen("/usr/share/mercury/close-hover.bmp", "r");
         if (f) {
             close_sprite_hovered = gfx_createSprite(0,0);
             gfx_loadSprite(close_sprite_hovered, f);
@@ -195,8 +202,7 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
             maximize_sprite = maximize_sprite_unhovered;
         }
 
-        // TODO: Hover textures
-        f = fopen("/usr/share/mercury/maximize.bmp", "r");
+        f = fopen("/usr/share/mercury/maximize-hover.bmp", "r");
         if (f) {
             maximize_sprite_hovered = gfx_createSprite(0,0);
             gfx_loadSprite(maximize_sprite_hovered, f);
@@ -215,8 +221,7 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
             minimize_sprite = minimize_sprite_unhovered;
         }
 
-        // TODO: Hover textures
-        f = fopen("/usr/share/mercury/minimize.bmp", "r");
+        f = fopen("/usr/share/mercury/minimize-hover.bmp", "r");
         if (f) {
             minimize_sprite_hovered = gfx_createSprite(0,0);
             gfx_loadSprite(minimize_sprite_hovered, f);
