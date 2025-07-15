@@ -47,7 +47,9 @@ const sa_handler signal_default_action[] = {
     [SIGVTALRM]         = SIGNAL_ACTION_TERMINATE,
     [SIGXCPU]           = SIGNAL_ACTION_TERMINATE_CORE,
     [SIGXFSZ]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGWINCH]          = SIGNAL_ACTION_IGNORE
+    [SIGWINCH]          = SIGNAL_ACTION_IGNORE,
+    [SIGCANCEL]         = SIGNAL_ACTION_IGNORE,
+    [SIGDISPLAY]        = SIGNAL_ACTION_IGNORE,
 };
 
 /* Pending signal set */

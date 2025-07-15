@@ -68,7 +68,11 @@ _Begin_C_Header
 #define SIGXFSZ             27  // (A) File size limit exceeded
 #define SIGWINCH            28  // (I) Window size changed
 
-#define NUMSIGNALS          29
+/* ETHEREAL CUSTOM SIGNALS */
+#define SIGCANCEL           29  // (I) pthread cancel signal
+#define SIGDISPLAY          30  // (I) Display size changed (TODO: maybe just a SIGWINCH?)
+
+#define NUMSIGNALS          31
 
 /* sigprocmask */
 #define SIG_BLOCK           0

@@ -34,7 +34,7 @@ int sigemptyset(sigset_t *set) {
 }
 
 int sigfillset(sigset_t *set) {
-    *set = (1 << NUMSIGNALS) - 1;
+    *set = (1ull << NUMSIGNALS) - 1;
     return 0;
 }
 
