@@ -85,7 +85,7 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocateBlock();
         mem_mapAddress(NULL, obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i, (obj->flags & SHARED_READ_ONLY ? MEM_PAGE_READONLY : 0));
-        LOG(DEBUG, "Mapped PMM block %p -> %p\n", obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i);
+        // LOG(DEBUG, "Mapped PMM block %p -> %p\n", obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i);
     }
 
     return 0;
