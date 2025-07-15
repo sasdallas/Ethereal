@@ -26,6 +26,10 @@ _Begin_C_Header
 
 typedef unsigned long pthread_t;
 
+typedef struct __pthread_data {
+    
+} __pthread_data_t;
+
 /* ATTRIBUTES */
 
 typedef struct __pthread_attr {

@@ -88,12 +88,16 @@ extern int __celestial_keyboard_fd;
 #define WM_MOUSE_BUTTONS __celestial_mouse_buttons
 
 
-#define PROFILE_START() struct timeval t; \
+#define PROFILE_START() { struct timeval t; \
                         gettimeofday(&t, NULL);
 
-#define PROFILE_END()   { struct timeval t_now; \
+#define PROFILE_END(name) \
+                        struct timeval t_now; \
                         gettimeofday(&t_now, NULL); \
-                        CELESTIAL_DEBUG("%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
+                        struct timeval result; \
+                        timersub(&t_now, &t, &result); \
+                        CELESTIAL_DEBUG("%s: completed in %ld.%06ld\n", (name), (long int)result.tv_sec, (long int)result.tv_usec); \
+                        }
 
 
 

@@ -121,7 +121,7 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
     int wc = !kargs_has("--no-write-combine");
 
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
-    size_t fbsize = (driver->screenWidth * 4) + (driver->screenHeight * driver->screenPitch);
+    size_t fbsize = (driver->screenHeight * driver->screenPitch);
     uintptr_t region = mem_allocate(0, fbsize, MEM_ALLOC_HEAP, MEM_PAGE_NOALLOC | MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE);
     for (uintptr_t phys = parameters->framebuffer->framebuffer_addr, virt = region;
             phys < parameters->framebuffer->framebuffer_addr + fbsize;

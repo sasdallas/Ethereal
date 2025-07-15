@@ -53,9 +53,9 @@ typedef struct loaded_driver {
     driver_metadata_t *metadata;    // Cloned metadata of the driver
     char *filename;                 // Filename of the driver
     int priority;                   // Driver priority
-    int environment;                // Driver environment
     uintptr_t load_address;         // Driver load address
     ssize_t size;                   // Size of the driver in memory    
+    pid_t id;                       // ID of the driver
 } loaded_driver_t;
 
 /**** DEFINITIONS ****/
@@ -71,9 +71,16 @@ typedef struct loaded_driver {
 
 // Driver environments. Some drivers can be loaded as "quickload" drivers by Polyaniline (loaded as Multiboot modules),
 // however certain drivers may require a normal environment instead.
+// !!!: DEPRECATED. PRELOAD DRIVERS DO NOT DIFFER FROM NORMAL DRIVERS
 #define DRIVER_ENVIRONMENT_NORMAL       0       // A normal driver environment is required.
 #define DRIVER_ENVIRONMENT_PRELOAD      1       // A preload driver environment is required.
 #define DRIVER_ENVIRONMENT_ANY          2       // Any environment, either normal/preload
+
+// Statuses for drivers to return
+#define DRIVER_STATUS_SUCCESS           0       // Success
+#define DRIVER_STATUS_UNSUPPORTED       1       // Unsupported/broken components were used (-ENOSYS)
+#define DRIVER_STATUS_NO_DEVICE         2       // No device was found (-ENODEV)
+#define DRIVER_STATUS_ERROR             -1      // Generic error (-EIO)
 
 // IMPORTANT: Current version of the Hexahedron driver loader
 #define DRIVER_CURRENT_VERSION          1
@@ -101,13 +108,12 @@ int driver_loadConfiguration(fs_node_t *file);
  * @brief Load a driver into memory and start it
  * @param driver_file The driver file
  * @param priority The priority of the driver file
- * @param environment The environment of the driver file
  * @param file The driver filename
  * @param argc Argument count
  * @param argv Argument data
- * @returns 0 on success, anything else is a failure/panic
+ * @returns Driver ID on success, anything else is a failure/panic
  */
-int driver_load(fs_node_t *driver_file, int priority, int environment, char *file, int argc, char **argv);
+int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv);
 
 /**
  * @brief Find a driver by name and return data on it
@@ -122,6 +128,13 @@ loaded_driver_t *driver_findByName(char *name);
  * @returns A pointer to the loaded driver data, or NULL
  */
 loaded_driver_t *driver_findByAddress(uintptr_t addr);
+
+/**
+ * @brief Find a driver by its ID and return data on it
+ * @param id The ID to lookup
+ * @returns A pointer to the loaded driver data, or NUL
+ */
+loaded_driver_t *driver_findByID(pid_t id);
 
 /**
  * @brief Mount the drivers /kernel node

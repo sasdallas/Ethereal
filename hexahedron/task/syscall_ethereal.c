@@ -16,6 +16,10 @@
 #include <kernel/fs/shared.h>
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
+#include <kernel/loader/driver.h>
+#include <sys/ethereal/driver.h>
+#include <fcntl.h>
+#include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL:ETHEREAL", __VA_ARGS__)
@@ -124,3 +128,56 @@ long sys_kill_thread(pid_t tid, int sig) {
     LOG(ERR, "sys_kill_thread: UNIMPL\n");
     return 0;
 }
+
+/**** DRIVER API ****/
+
+long sys_load_driver(char *filename, int priority, char **argv) {
+    SYSCALL_VALIDATE_PTR(filename);
+    SYSCALL_VALIDATE_PTR(argv);
+    char **p = argv;
+    int argc = 0;
+    while (*p) {
+        SYSCALL_VALIDATE_PTR(*p);
+        p++;
+        argc++;
+    }
+
+    if (priority > DRIVER_IGNORE) return -EINVAL;
+    if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+
+    // Open
+    fs_node_t *n = kopen_user(filename, O_RDONLY);
+    if (!n) return -ENOENT;
+    
+
+    // Load driver
+    int r = driver_load(n, priority, filename, argc, argv);
+    return r;
+}
+
+long sys_unload_driver(pid_t id) {
+    // TODO
+    LOG(ERR, "sys_unload_driver is unimplemented\n");
+    return -ENOSYS;
+}
+
+long sys_get_driver(pid_t id, ethereal_driver_t *driver) {
+    SYSCALL_VALIDATE_PTR(driver);
+    if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+
+    loaded_driver_t *d = driver_findByID(id);
+    if (!d) return -ENOENT;
+
+    driver->filename = d->filename;
+    driver->base = d->load_address;
+    driver->size = d->size;
+    driver->id = d->id;
+    memcpy(&driver->metadata, d->metadata, sizeof(driver_metadata_t));
+
+    // Remember to dup
+    // TODO: MEMORY LEAK
+    if (driver->metadata.name) driver->metadata.name = strdup(driver->metadata.name);
+    if (driver->metadata.author) driver->metadata.author = strdup(driver->metadata.author);
+
+    return 0;
+} 

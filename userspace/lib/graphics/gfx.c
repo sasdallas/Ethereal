@@ -161,12 +161,17 @@ void gfx_clear(gfx_context_t *ctx, gfx_color_t color) {
  * @param height Height of the clip
  */
 void gfx_createClip(gfx_context_t *ctx, uint32_t x, uint32_t y, size_t width, size_t height) {
+    if (x > ctx->width) return;
+    if (y > ctx->height) return;
+    if (x + width > ctx->width) width = ctx->width - x;
+    if (y + height > ctx->height) height = ctx->height - y;
+
     gfx_clip_t *clip = malloc(sizeof(gfx_clip_t));
     clip->rect.x = x;
     clip->rect.y = y;
     clip->rect.width = width;
     clip->rect.height = height;
-     
+    
     if (ctx->clip) {
         ctx->clip_last->next = clip;
         clip->prev = ctx->clip_last;

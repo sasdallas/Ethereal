@@ -393,5 +393,5 @@ int mouse_update() {
  * @brief Render the mouse
  */
 void mouse_render() {
-    gfx_renderSprite(WM_GFX, WM_MOUSE_SPRITE, WM_MOUSEX, WM_MOUSEY);
+    if (WM_GFX->clip) gfx_renderSprite(WM_GFX, WM_MOUSE_SPRITE, WM_MOUSEX, WM_MOUSEY);
 }

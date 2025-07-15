@@ -13,6 +13,8 @@
  * 
  * This field should be named 'driver_metadata' and be publicly exposed. It will be looked up by the ELF loader.
  * 
+ * @warning A bit of this driver used to rely on some dead concepts and wasnt originally designed for an insmod system. Please shout if you see a bug!
+ * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -39,11 +41,14 @@
 /* List of drivers */
 list_t *driver_list = NULL;
 
-/* Current environment */
-int driver_current_environment = DRIVER_ENVIRONMENT_PRELOAD;
+/* Hashmap of drivers */
+hashmap_t *driver_map = NULL;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER", __VA_ARGS__)
+
+/* Last driver ID */
+pid_t driver_last_id = 0;
 
 
 /**
@@ -83,6 +88,15 @@ loaded_driver_t *driver_findByAddress(uintptr_t addr) {
 }
 
 /**
+ * @brief Find a driver by its ID and return data on it
+ * @param id The ID to lookup
+ * @returns A pointer to the loaded driver data, or NUL
+ */
+loaded_driver_t *driver_findByID(pid_t id) {
+    return hashmap_get(driver_map, (void*)(uintptr_t)id);
+}
+
+/**
  * @brief Handle a loading error in the driver system
  * @param priority The priority of the driver
  * @param error Error string
@@ -97,29 +111,25 @@ static void driver_handleLoadError(int priority, char *error, char *file) {
         
         case DRIVER_WARN:       // TODO: Implement some sort of keyboard support into this or waits
             LOG(WARN, "Failed to load driver '%s' (warn): %s\n", file, error);
-            printf(COLOR_CODE_YELLOW "Failed to load driver '%s': %s\n" COLOR_CODE_RESET, file, error);
             break;
 
         case DRIVER_IGNORE:
         default: 
             LOG(WARN, "Failed to load driver '%s' (ignore): %s\n", file, error);
-            printf(COLOR_CODE_YELLOW "Failed to load driver '%s': %s\n" COLOR_CODE_RESET, file, error);
             break;
     }
 }
-
 
 /**
  * @brief Load a driver into memory and start it
  * @param driver_file The driver file
  * @param priority The priority of the driver file
- * @param environment The environment of the driver file
  * @param file The driver filename
  * @param argc Argument count
  * @param argv Argument data
  * @returns 0 on success, anything else is a failure/panic
  */
-int driver_load(fs_node_t *driver_file, int priority, int environment, char *file, int argc, char **argv) {
+int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv) {
     // First we have to map the driver into memory. The mem subsystem provides functions for this.
     uintptr_t driver_load_address = mem_mapDriver(driver_file->length);
     memset((void*)driver_load_address, 0, driver_file->length);
@@ -129,7 +139,7 @@ int driver_load(fs_node_t *driver_file, int priority, int environment, char *fil
         // Uh oh, read error.
         driver_handleLoadError(priority, "Read error", file);
         mem_unmapDriver(driver_load_address, driver_file->length);
-        return -1;
+        return -EIO;
     }
 
     // Load from buffer
@@ -138,7 +148,7 @@ int driver_load(fs_node_t *driver_file, int priority, int environment, char *fil
         // Load failed
         driver_handleLoadError(priority, "ELF load error (check to make sure architecture matches)", file);
         mem_unmapDriver(driver_load_address, driver_file->length);
-        return -1;
+        return -ENOEXEC;
     }
 
     // Find the metadata
@@ -148,7 +158,7 @@ int driver_load(fs_node_t *driver_file, int priority, int environment, char *fil
         driver_handleLoadError(priority, "No driver metadata (checked for driver_metadata symbol)", file);
         elf_cleanup(elf);
         mem_unmapDriver(driver_load_address, driver_file->length);
-        return -1;
+        return -EINVAL;
     }
 
     // Construct a bit of list data first
@@ -169,9 +179,9 @@ int driver_load(fs_node_t *driver_file, int priority, int environment, char *fil
     // Copy other variables
     loaded_driver->filename = strdup(file);
     loaded_driver->priority = priority;
-    loaded_driver->environment = environment;
     loaded_driver->load_address = driver_load_address;
     loaded_driver->size = driver_loaded_size;
+    loaded_driver->id = driver_last_id++;
 
     // Set in list
     list_append(driver_list, (void*)loaded_driver);
@@ -179,23 +189,36 @@ int driver_load(fs_node_t *driver_file, int priority, int environment, char *fil
     // Now we need to execute the driver. Let's go!
     int loadstatus = metadata->init(argc, argv);
     
-    if (loadstatus) {
+    if (loadstatus != DRIVER_STATUS_SUCCESS) {
+        // Was this a bad loadstatus?
+        if (loadstatus != DRIVER_STATUS_NO_DEVICE) {
+            driver_handleLoadError(priority, "Driver encountered error in init function", file);
+        }
+
         // Didn't return 0 - cleanup.
-        driver_handleLoadError(priority, "Init function did not return 0", file);
         elf_cleanup(elf);
         list_delete(driver_list, list_find(driver_list, (void*)loaded_driver)); // Will this cause issues?
         kfree(loaded_driver->metadata);
         kfree(loaded_driver->filename);
         kfree(loaded_driver);
         mem_unmapDriver(driver_load_address, driver_file->length);
-        return -1;
+        
+        switch (loadstatus) {
+            case DRIVER_STATUS_UNSUPPORTED:
+                return -ENOSYS;
+            case DRIVER_STATUS_NO_DEVICE:
+                return -ENODEV;
+            case DRIVER_STATUS_ERROR:
+            default:
+                return -EIO; // TODO
+        }
     }
 
-
-    printf("Loaded driver '%s' successfully.\n", metadata->name);
+    // Set in
+    hashmap_set(driver_map, (void*)(uintptr_t)loaded_driver->id, loaded_driver);
 
     // Load success!
-    return 0;
+    return loaded_driver->id;
 }
 
 
@@ -328,26 +351,34 @@ int driver_loadConfiguration(fs_node_t *file) {
         json_value *priority_obj = driver_getField(driver, "priority", json_integer);
         int priority = priority_obj->u.integer;
 
-        // Get the environment field
-        json_value *environment_obj = driver_getField(driver, "environment", json_integer);
-        int environment = environment_obj->u.integer;
-
         // Construct the full filename
         char full_filename[256];
         snprintf(full_filename, 256, "%s%s", DRIVER_DEFAULT_PATH, filename);
 
+        char *priority_str = "REQUIRED";
+        if (priority == DRIVER_WARN) priority_str = "WARN";
+        if (priority == DRIVER_IGNORE) priority_str = "IGNORE";
+
+        LOG(INFO, "Loading driver \"%s\" with priority %s...\n", full_filename, priority_str);
+     
         // Try to open the driver
-        LOG(INFO, "Loading driver \"%s\" with priority %i (expected environment %i)...\n", full_filename, priority, environment);
-        
         fs_node_t *driver_file = kopen(full_filename, O_RDONLY);
         if (!driver_file) {
             driver_handleLoadError(priority, "File not found", filename);
         } else {
             char *arguments[] = { filename }; // by default just filename
 
+            char spaces[64] = { 0 };
+            for (unsigned i = 0; i < 64 - strlen(filename); i++) spaces[i] = ' ';            
+
             // Load the driver
-            if (driver_load(driver_file, priority, environment, filename, 1, arguments) == 0) {
+
+            printf("Loading driver: %s%s", filename, spaces);
+            if (driver_load(driver_file, priority, filename, 1, arguments) >= 0) {
                 drivers++;
+                printf(" [" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
+            } else {
+                printf(" [" COLOR_CODE_RED "FAIL" COLOR_CODE_RESET "]\n");
             }
         }
 
@@ -355,7 +386,6 @@ int driver_loadConfiguration(fs_node_t *file) {
         fs_close(driver_file);
         json_value_free(filename_obj);
         json_value_free(priority_obj);
-        json_value_free(environment_obj);
     }
 
     json_value_free(json_data);
@@ -371,5 +401,5 @@ int driver_loadConfiguration(fs_node_t *file) {
 void driver_initialize() {
     // Create the driver list
     if (!driver_list) driver_list = list_create("drivers");
-    driver_current_environment = DRIVER_ENVIRONMENT_NORMAL;
+    if (!driver_map) driver_map = hashmap_create_int("driver map", 20);
 }

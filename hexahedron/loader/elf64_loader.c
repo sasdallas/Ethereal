@@ -657,7 +657,7 @@ int elf_cleanup(uintptr_t elf_address) {
         for (unsigned int i = 0; i < ehdr->e_shnum; i++) {
             Elf64_Shdr *section = &shdr[i];
 
-            if ((section->sh_flags & SHF_ALLOC) && section->sh_size) {
+            if ((section->sh_flags & SHF_ALLOC) && section->sh_size  && section->sh_type == SHT_NOBITS) {
                 kfree((void*)section->sh_addr);
             }
         }

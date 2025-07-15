@@ -371,8 +371,8 @@ void socket_handle(int sock) {
     } else if (hdr->type == CELESTIAL_REQ_FLIP) {
         // Flip window
         CELESTIAL_VALIDATE(celestial_req_flip_t, CELESTIAL_REQ_FLIP);
-        CELESTIAL_LOG("socket: Received CELESTIAL_REQ_FLIP\n");
         celestial_req_flip_t *req = (celestial_req_flip_t*)hdr;
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_FLIP for WID %d\n", req->wid);
         if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_FLIP, EINVAL);
         if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_FLIP, EPERM);
         

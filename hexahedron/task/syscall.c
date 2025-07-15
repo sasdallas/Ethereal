@@ -115,6 +115,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_gethostname,
     [SYS_SETHOSTNAME]       = (syscall_func_t)(uintptr_t)sys_sethostname,
     [SYS_YIELD]             = (syscall_func_t)(uintptr_t)sys_yield,
+    [SYS_LOAD_DRIVER]       = (syscall_func_t)(uintptr_t)sys_load_driver,
+    [SYS_UNLOAD_DRIVER]     = (syscall_func_t)(uintptr_t)sys_unload_driver,
+    [SYS_GET_DRIVER]        = (syscall_func_t)(uintptr_t)sys_get_driver
 }; 
 
 

@@ -300,10 +300,7 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
                 memcpy((void*)&endp->desc, (void*)endpoint_desc, sizeof(USBEndpointDescriptor_t));
                 list_append(interface->endpoint_list, (void*)endp);
 
-                LOG(DEBUG, "\tEndpoint available with bEndpointAddress 0x%x bmAttributes 0x%x wMaxPacketSize %d\n", endp->desc.bEndpointAddress, endp->desc.bmAttributes, endp->desc.wMaxPacketSize);
-                
-                // Configure the endpoint if necessary
-                usb_configureEndpoint(dev, endp);
+                LOG(DEBUG, "\tEndpoint available with bEndpointAddress 0x%x bmAttributes 0x%x wMaxPacketSize %d bLength %d\n", endp->desc.bEndpointAddress, endp->desc.bmAttributes, endp->desc.wMaxPacketSize, endp->desc.bLength);
             
                 // Next
                 buffer += endp->desc.bLength;

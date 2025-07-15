@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <time.h>
 
 /* Log device */
 FILE *__celestial_log_device = NULL; 
@@ -89,7 +90,9 @@ void celestial_main() {
         kbd_update();
 
         // Redraw
-        celestial_redraw();
+        // if (WM_GFX->clip || WM_UPDATE_QUEUE->length) {
+            celestial_redraw();
+        // }
 
         list_t *keys = hashmap_keys(WM_SW_MAP);
         foreach(kn, keys) {

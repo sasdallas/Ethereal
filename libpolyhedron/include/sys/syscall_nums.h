@@ -107,6 +107,9 @@ _Begin_C_Header
 #define SYS_GETHOSTNAME     88
 #define SYS_SETHOSTNAME     89
 #define SYS_YIELD           90
+#define SYS_LOAD_DRIVER     91 // Ethereal API
+#define SYS_UNLOAD_DRIVER   92 // Ethereal API
+#define SYS_GET_DRIVER      93 // Ethereal API
 
 #endif
 

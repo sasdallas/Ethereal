@@ -28,6 +28,7 @@
 #include <sys/select.h>
 #include <sys/utsname.h>
 #include <sys/epoll.h>
+#include <sys/ethereal/driver.h>
 #include <dirent.h>
 #include <signal.h>
 #include <poll.h>
@@ -195,6 +196,10 @@ long sys_kill_thread(pid_t tid, int sig);
 long sys_ethereal_shared_new(size_t size, int flags);
 key_t sys_ethereal_shared_key(int fd);
 long sys_ethereal_shared_open(key_t key);
+
+long sys_load_driver(char *filename, int priority, char **argv);
+long sys_unload_driver(pid_t id);
+long sys_get_driver(pid_t id, ethereal_driver_t *driver);
 
 
 #endif
