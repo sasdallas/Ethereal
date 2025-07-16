@@ -330,6 +330,14 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
 USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     LOG(DEBUG, "Initializing USB device on port 0x%x...\n", dev->port);
 
+    // xHCI controllers *require* that we address the device before doing mps
+    if (dev->setaddr) { 
+        if (dev->setaddr(dev->c, dev)) {
+            // The request did not succeed
+            LOG(ERR, "Device initialization failed - could not set device address\n");
+            return USB_FAILURE;
+        }
+    }
 
     // Get first few bytes of the device descriptor
     // TODO: Bochs requests that this have a size equal the mps of a device - implement this
@@ -371,12 +379,6 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         clock_sleep(20);
 
         dev->address = address;
-    } else {
-        if (dev->setaddr(dev->c, dev)) {
-            // The request did not succeed
-            LOG(ERR, "Device initialization failed - could not set device address\n");
-            return USB_FAILURE;
-        }
     }
 
     // Now we can read the whole descriptor

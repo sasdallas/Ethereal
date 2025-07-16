@@ -29,8 +29,7 @@
 #endif
 
 /* Log method */
-#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:PORT] "); \
-                            dprintf(NOHEADER, __VA_ARGS__);
+#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:PORT] " __VA_ARGS__)
 
 
 
@@ -164,6 +163,7 @@ static xhci_transfer_completion_trb_t *xhci_waitForTransferToComplete(xhci_dev_t
         // Wait for completion
         while (!dev->xhci->transfer_queue->length) {
             // We should be executing in the poller thread..
+            LOG(INFO, "Waiting for transfer to complete\n");
             process_yield(1);
         }
 
@@ -257,7 +257,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     }
 
     // Transfer
-    XHCI_RING_DOORBELL(dev->xhci->capregs, XHCI_DOORBELL_TARGET_CONTROL_EP_RING, dev->slot_id)
+    XHCI_RING_DOORBELL(dev->xhci->capregs, dev->slot_id, XHCI_DOORBELL_TARGET_CONTROL_EP_RING);
     xhci_transfer_completion_trb_t *transfer_trb = xhci_waitForTransferToComplete(dev, dev->control_ring);
     if (transfer_trb) {
         transfer->status = USB_TRANSFER_SUCCESS;
@@ -311,6 +311,26 @@ int xhci_interrupt(USBController_t *controller, USBDevice_t *usbdev, USBTransfer
  * @brief Address the device
  */
 int xhci_address(USBController_t *controller, USBDevice_t *device) {
+    xhci_dev_t *dev = (xhci_dev_t*)(device->dev);
+
+    // Send the address device command with BSR = 1
+    {
+        xhci_address_device_trb_t trb = { 0 };
+        trb.type = XHCI_TRB_TYPE_ADDRESS_DEVICE_CMD;
+        trb.bsr = 1;
+        trb.input_ctx = dev->input_ctx_phys;
+        trb.slot_id = dev->slot_id;
+    
+        // Send
+        xhci_command_completion_trb_t *cmdtrb = xhci_sendCommand(dev->xhci, (xhci_trb_t*)&trb);
+        if (!cmdtrb) {
+            LOG(ERR, "Failed to send ADDRESS_DEVICE command to xHCI (BSR=1)\n");
+            return 1;
+        }
+    
+        LOG(INFO, "Device addressed with BSR=1\n");
+    }
+
     // Send the address device command
     xhci_address_device_trb_t trb = { 0 };
     trb.type = XHCI_TRB_TYPE_ADDRESS_DEVICE_CMD;
@@ -332,9 +352,10 @@ int xhci_address(USBController_t *controller, USBDevice_t *device) {
     }
 
     // HACK: Now that we're done we should set add_flags to 0x1 to only enable control
-    xhci_dev_t *dev = (xhci_dev_t*)device->dev;
     xhci_input_context_t *ic = XHCI_INPUT_CONTEXT(dev);
     ic->control->add_flags = 0x1;
+
+    LOG(INFO, "Device addressed with BSR = 0\n");
 
     // All done
     return USB_SUCCESS;
@@ -518,7 +539,6 @@ int xhci_portInitialize(xhci_t *xhci, int port) {
     input_context->control->add_flags |= 0x3;
     input_context->control->drop_flags = 0;
 
-
     // Setup the slot context
     input_context->device->slot_context.context_entries = 1;
     input_context->device->slot_context.root_hub_port_num = port+1;
@@ -557,6 +577,10 @@ int xhci_portInitialize(xhci_t *xhci, int port) {
         input_context->device->control_endpoint_context.max_packet_size = 64;
     }
 
+    // Allocate an output context
+    uintptr_t output_context = mem_allocateDMA(PAGE_SIZE);
+    xhci->dcbaa[dev->slot_id] = mem_getPhysicalAddress(NULL, output_context);
+
     // Create a USB device
     USBDevice_t *usbdev = usb_createDevice(xhci->controller, port, speed, NULL, xhci_control, xhci_interrupt);   
     usbdev->dev = (void*)dev;
@@ -565,21 +589,6 @@ int xhci_portInitialize(xhci_t *xhci, int port) {
     usbdev->confendp = xhci_configureEndpoint;
     usbdev->mps = input_context->device->control_endpoint_context.max_packet_size;
 
-    // Send the address device command (with BSR)
-    xhci_address_device_trb_t trb = { 0 };
-    trb.type = XHCI_TRB_TYPE_ADDRESS_DEVICE_CMD;
-    trb.bsr = 1;
-    trb.input_ctx = dev->input_ctx_phys;
-    trb.slot_id = dev->slot_id;
-
-    // Send
-    xhci_command_completion_trb_t *cmdtrb = xhci_sendCommand(dev->xhci, (xhci_trb_t*)&trb);
-    if (!cmdtrb) {
-        LOG(ERR, "Failed to send ADDRESS_DEVICE command to xHCI\n");
-        return 1;
-    }
-
-    LOG(INFO, "Device addressed successfully\n");
     LOG(INFO, "Initializing USB device: initial mps=%d, address=0x%x\n", usbdev->mps, usbdev->address);
 
     // Initialize

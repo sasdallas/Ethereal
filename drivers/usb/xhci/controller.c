@@ -30,8 +30,7 @@
 #endif
 
 /* Log method */
-#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:CON ] "); \
-                            dprintf(NOHEADER, __VA_ARGS__);
+#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:CON ] " __VA_ARGS__);
 
 /**
  * @brief Reset an xHCI controller
@@ -91,15 +90,15 @@ static int xhci_resetController(xhci_t *xhci) {
  * @param interrupter The interrupter to acknowledge
  */
 void xhci_acknowledge(xhci_t *xhci, int interrupter) {
+    // Clear EINT bit by writing a one to it
+    xhci->opregs->usbsts = XHCI_USBSTS_EINT;
+    
     // Get the interrupter's IMAN
     uint32_t iman = xhci->runtime->ir[interrupter].iman;
 
     // Write the IP bit
-    // iman |= XHCI_IMAN_INTERRUPT_PENDING | XHCI_IMAN_INTERRUPT_ENABLE;
+    iman |= XHCI_IMAN_INTERRUPT_PENDING | XHCI_IMAN_INTERRUPT_ENABLE;
     xhci->runtime->ir[interrupter].iman = iman;
-
-    // Clear EINT bit by writing a one to it
-    xhci->opregs->usbsts = XHCI_USBSTS_EINT;
 }
 
 /**
@@ -152,8 +151,7 @@ void xhci_pollEventRing(xhci_t *xhci) {
     }
 
     // Update ERDP and clear event handler busy
-    // ERDP_UPDATE(xhci);
-    // EVENTRING(xhci)->regs->erdp = XHCI_ERDP_EHB;
+    xhci->event_ring->regs->erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
 }
 
 /**
@@ -165,9 +163,8 @@ int xhci_irqHandler(void *context) {
     if (xhci) {
         // Acknowledge
         xhci_acknowledge(xhci, 0);
-        xhci->opregs->usbsts = XHCI_USBSTS_EINT;
 
-        LOG(DEBUG, "IRQ detected (event queue dq=%d, usbsts=%08x)\n", xhci->event_ring->dequeue, xhci->opregs->usbsts);
+        LOG(DEBUG, "XHCI %p IRQ detected (event queue dq=%d, usbsts=%08x)\n", xhci, xhci->event_ring->dequeue, xhci->opregs->usbsts);
 
         // Poll event ring for port status change event IRQs
         // !!!: Because some real hardware doesn't support IRQs that well with xHCI (and we dont have MSI),
@@ -175,7 +172,6 @@ int xhci_irqHandler(void *context) {
         // !!!: If the events do get dequeued here, the waiters should have fallback code - but we need to pick a side.
         // !!!: (also should probably wake a thread up here rather than poll during the IRQ and stall the CPU)
         xhci_pollEventRing(xhci);
-        ERDP_UPDATE(xhci);
     }
 
     return 0;
@@ -220,10 +216,20 @@ void xhci_thread(void *context) {
             while (n) {
                 xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)n->value;
                 kfree(n);
-                xhci_portInitialize(xhci, trb->port_id-1);
+                
+                xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, (trb->port_id-1));
+                if (port->portsc & XHCI_PORTSC_CSC && port->portsc & XHCI_PORTSC_CCS) {
+                    LOG(INFO, "Port %d connected\n", trb->port_id-1);
+                    xhci_portInitialize(xhci, trb->port_id-1);
+                } else {
+                    LOG(INFO, "Port %d disconnected\n", trb->port_id-1);
+                }
+
                 n = list_popleft(xhci->port_queue);
             }
         }
+
+        process_yield(1);
     }
 }
 
@@ -418,7 +424,7 @@ int xhci_initController(uint32_t device) {
 
         if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
             LOG(DEBUG, "xHCI USB device detected on port %d\n", i);
-            xhci_portReset(xhci, i);
+            // xhci_portReset(xhci, i);
         }
     }
 
@@ -454,7 +460,8 @@ xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     // Wait until we can pop from the queue
     // TODO: this sucks
     while (!xhci->command_queue->length) {
-        LOG(DEBUG, "Waiting for xHCI to handle command IRQ: usbsts=0x%08x\n", xhci->opregs->usbsts);
+        LOG(DEBUG, "Waiting for xHCI %p to handle command IRQ: trb->type=%d usbsts=0x%08x\n", xhci, trb->control.type, xhci->opregs->usbsts);
+        arch_pause();
     }
 
     // Pop the TRB from the queue
@@ -467,6 +474,8 @@ xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
 
     xhci_command_completion_trb_t *ctrb = (xhci_command_completion_trb_t*)node->value;
     kfree(node);
+
+    LOG(INFO, "Command type=%d was completed with success code %d\n", trb->control.type, ctrb->completion_code);
 
     spinlock_release(&xhci->cmd_lock);
     return ctrb;

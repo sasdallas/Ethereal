@@ -20,8 +20,7 @@
 #include <string.h>
 
 /* Log method */
-#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:RING] "); \
-                            dprintf(NOHEADER, __VA_ARGS__);
+#define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:RING] " __VA_ARGS__)
 
 
 /**
