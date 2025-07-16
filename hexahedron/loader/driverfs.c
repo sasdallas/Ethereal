@@ -42,15 +42,13 @@ static ssize_t driverfs_driverdirRead(fs_node_t *node, off_t off, size_t size, u
             "DriverAuthor:%s\n"
             "Base:%p\n"
             "Size:0x%x\n"
-            "Priority:%d\n"
-            "Environment:%d\n",
+            "Priority:%d\n",
                 driver->filename,
                 driver->metadata->name,
                 driver->metadata->author,
                 driver->load_address,
                 driver->size,
-                driver->priority,
-                driver->environment);
+                driver->priority);
     } else {
         // ???
         node->length = snprintf((char*)tmp_buffer, 512,

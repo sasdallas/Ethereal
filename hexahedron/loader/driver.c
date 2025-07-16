@@ -188,7 +188,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     
     // Now we need to execute the driver. Let's go!
     int loadstatus = metadata->init(argc, argv);
-    
+
     if (loadstatus != DRIVER_STATUS_SUCCESS) {
         // Was this a bad loadstatus?
         if (loadstatus != DRIVER_STATUS_NO_DEVICE) {
@@ -196,12 +196,14 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
         }
 
         // Didn't return 0 - cleanup.
-        elf_cleanup(elf);
+
+        // !!!: WHY DOES THIS NOT WORK??????
+        // elf_cleanup(elf);
         list_delete(driver_list, list_find(driver_list, (void*)loaded_driver)); // Will this cause issues?
         kfree(loaded_driver->metadata);
         kfree(loaded_driver->filename);
         kfree(loaded_driver);
-        mem_unmapDriver(driver_load_address, driver_file->length);
+        // mem_unmapDriver(driver_load_address, driver_file->length);
         
         switch (loadstatus) {
             case DRIVER_STATUS_UNSUPPORTED:

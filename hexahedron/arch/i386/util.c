@@ -80,3 +80,14 @@ void arch_initialize_context(struct thread *thread, uintptr_t entry, uintptr_t s
  */
 void arch_mount_kernelfs() {
 }
+
+
+/**
+ * @brief Set the usermode TLS base
+ * @param tls The TLS base to set
+ * 
+ * This should also reflect in the context when saved/restored
+ */
+void arch_set_tlsbase(uintptr_t tls) {
+    // TODO
+}

@@ -47,8 +47,8 @@ multiboot_header:
 
 // Request framebuffer (1024x768x32)
 .long 0x00000000
-.long 1024
-.long 768
+.long 1920
+.long 1080
 .long 32
 
 /* ==== MULTIBOOT 2 ==== */

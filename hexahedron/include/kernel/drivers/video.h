@@ -32,6 +32,7 @@ typedef union _color {
 } color_t;
 
 struct _video_driver; // Prototype
+struct _video_mode; // Prototype
 
 /**
  * @brief Update the screen and draw the given framebuffer
@@ -72,16 +73,33 @@ typedef int (*video_map_t)(struct _video_driver *driver, size_t size, off_t off,
  */
 typedef int (*video_unmap_t)(struct _video_driver *driver, size_t size, off_t off, void *addr);
 
+/**
+ * @brief Set a specific video mode
+ * @param driver The video driver object
+ * @param mode The requested mode to set
+ * @returns 0 on success 
+ */
+typedef int (*video_setmode_t)(struct _video_driver *driver, struct _video_mode *mode);
+
+/**
+ * @brief Video mode structure
+ */
+typedef struct _video_mode {
+    uint32_t width;                         // Mode width
+    uint32_t height;                        // Mode height
+    uint32_t bpp;                           // Color depth
+} video_mode_t;
+
 typedef struct _video_driver {
     // Driver information
     char            name[64];
-    
+     
     // Information/fields of the video driver
     uint32_t        screenWidth;            // Width
     uint32_t        screenHeight;           // Height
     uint32_t        screenPitch;            // Pitch
     uint32_t        screenBPP;              // BPP
-    uint8_t         *videoBuffer;           // Linear video buffer in virtual memory
+    uint8_t         *videoBuffer;           // Linear video buffer in virtual memory (NON-OPTIONAL, should conform to default LFB standards) 
     uint8_t         *videoBufferPhys;       // (OPTIONAL) Physical address of video buffer 
     int             allowsGraphics;         // Whether it allows graphics (WARNING: This may be used. It is best to leave this correct!)
     void            *dev;                   // Specific to the driver

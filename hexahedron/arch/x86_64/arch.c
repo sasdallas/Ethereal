@@ -101,55 +101,53 @@ void arch_say_hello(int is_debug) {
 
 /**
  * @brief Perform a stack trace using ksym
- * @param depth How far back to stacktrace
+ * @pa ram depth How far back to stacktrace
  * @param registers Optional registers
  */
 void arch_panic_traceback(int depth, registers_t *regs) {
     dprintf(NOHEADER, COLOR_CODE_RED_BOLD "\nSTACK TRACE:\n");
 
-extern uintptr_t __bss_end;
+extern uintptr_t __kernel_start, __kernel_end;
     stack_frame_t *stk = (stack_frame_t*)(regs ? (void*)regs->rbp : __builtin_frame_address(0));
     uintptr_t ip = (regs ? regs->rip : (uintptr_t)&arch_panic_traceback);
 
     for (int frame = 0; stk && frame < depth; frame++) {
+        dprintf(NOHEADER, COLOR_CODE_RED " 0x%016llX ", ip);
+
         // Check to see if fault was in a driver
-        if (ip > MEM_DRIVER_REGION && ip < MEM_DRIVER_REGION + MEM_DRIVER_REGION_SIZE) {
+        if (ip >= MEM_DRIVER_REGION && ip <= MEM_DRIVER_REGION + MEM_DRIVER_REGION_SIZE) {
             // Fault in a driver - try to get it
             loaded_driver_t *data = driver_findByAddress(ip);
             if (data) {
                 // We could get it
-                dprintf(NOHEADER, COLOR_CODE_RED    "0x%016llX (in driver '%s', loaded at %016llX)\n", ip, data->metadata->name, data->load_address);
+                dprintf(NOHEADER, COLOR_CODE_RED    " (in driver '%s', loaded at %016llX)\n", data->metadata->name, data->load_address);
             } else {
                 // We could not
-                dprintf(NOHEADER, COLOR_CODE_RED    "0x%016llX (in unknown driver)\n", ip);
+                dprintf(NOHEADER, COLOR_CODE_RED    " (in an unknown driver)\n");
             }
-
-            goto _next_frame;
-        }
-
-        // Okay, make sure it was in the kernel
-        if (ip > (uintptr_t)&__bss_end) {
+        } else if (ip <= MEM_USERSPACE_REGION_END && ip >= 0x1000) {
+            dprintf(NOHEADER, COLOR_CODE_RED    " (in userspace)");
+        } else if (ip <= (uintptr_t)&__kernel_end && ip >= (uintptr_t)&__kernel_start) {
+            // In the kernel, check the name
+            char *name;
+            uintptr_t addr = ksym_find_best_symbol(ip, (char**)&name);
+            if (addr) {
+                dprintf(NOHEADER, COLOR_CODE_RED    " (%s+0x%llX)\n", name, ip - addr);
+            } else {
+                dprintf(NOHEADER, COLOR_CODE_RED    " (symbols unavailable)\n");
+            }
+        } else {
             // Corrupt frame?
-            dprintf(NOHEADER, COLOR_CODE_RED    "0x%016llX (corrupt frame - outside of kernelspace)\n", ip);
-            goto _next_frame;
+            dprintf(NOHEADER, COLOR_CODE_RED    " (unknown address)\n");
         }
         
-        // In the kernel, check the name
-        char *name;
-        uintptr_t addr = ksym_find_best_symbol(ip, (char**)&name);
-        if (addr) {
-            dprintf(NOHEADER, COLOR_CODE_RED    "0x%016llX (%s+0x%llX)\n", ip, name, ip - addr);
-        } else {
-            dprintf(NOHEADER, COLOR_CODE_RED    "0x%016llX (symbols unavailable)\n", ip);
-        }
-
-    _next_frame:
+        // Next frame
         ip = stk->ip;
         stk = stk->nextframe;
 
         // Validate
         if (!mem_validate((void*)stk, PTR_USER)) {
-            dprintf(NOHEADER,   COLOR_CODE_RED      "Backtrace stopped at %p\n", stk);
+            dprintf(NOHEADER,   COLOR_CODE_RED      "Backtrace stopped at bad stack frame %p\n", stk);
             break;
         }
     }
