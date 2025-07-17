@@ -156,7 +156,7 @@ elf_obj_t *elf_get(char *filename) {
     return obj;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[], char **envp) {
     struct option options[] = {
         { .name = "help", .flag = NULL, .has_arg = no_argument, .val = 'h' },
         { .name = "version", .flag = NULL, .has_arg = no_argument, .val = 'v' },
@@ -308,6 +308,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Update + fix environ
+    Elf64_Sym *envsym = elf_lookupFromLibrary(obj, "environ");
+    if (envsym) {
+        LD_DEBUG("[%s] Fixing environ\n", obj->filename);
+        
+        char ***env = (char***)(obj->base + envsym->st_value);
+        LD_DEBUG("[%s] Environ symbol is located at %p, redirecting to our environ %p\n", obj->filename, env, envp);
+        *env = envp;
+    }
+
     // Now go!
     void (*entry)(int, char **, char **) = (void*)((Elf64_Ehdr*)obj->buffer)->e_entry;
     LD_DEBUG("Setup completed, executing app at %p\n", entry);
@@ -317,6 +327,7 @@ int main(int argc, char *argv[]) {
     // __libc_main handles this correctly by adjusting for __argv, __argc, __envp
     // TODO: NOT??
     asm volatile (
+        "push $0\n"
         "push $0\n"
         "push $0\n"
         "push $0\n"

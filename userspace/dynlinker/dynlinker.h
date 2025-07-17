@@ -22,7 +22,7 @@
 
 /**** DEFINITIONS ****/
 
-#define LINKER_SYMBOL_COUNT     2
+#define LINKER_SYMBOL_COUNT     3
 
 /**** TYPES ****/
 
@@ -115,5 +115,13 @@ int elf_dynamic(elf_obj_t *obj);
  * @returns 0 on success
  */
 int elf_relocate(elf_obj_t *obj);
+
+/**
+ * @brief Try to find a symbol in a dynamic library
+ * @param lib The dynamic library to search
+ * @param name The symbol to look up
+ * @returns ELF symbol or NULL if it could not be funod
+ */
+Elf64_Sym *elf_lookupFromLibrary(elf_obj_t *obj, char *name);
 
 #endif

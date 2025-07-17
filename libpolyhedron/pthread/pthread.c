@@ -69,7 +69,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     }
 
     // Create TCB structure
-    thread_tcb_t *tcb = (thread_tcb_t*)(tls + 8192 - (sizeof(thread_tcb_t) + ((__get_tcb()->dtv[0]+1) * sizeof(uintptr_t))));
+    thread_tcb_t *tcb = (thread_tcb_t*)(tls + 4096);
     tcb->self = tcb;
     tcb->_errno = 0;
     tcb->dtv[0] = __get_tcb()->dtv[0];
