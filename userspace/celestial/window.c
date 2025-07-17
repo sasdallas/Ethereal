@@ -143,6 +143,13 @@ void window_redraw() {
                 GFX_PIXEL(WM_GFX, _x + upd->win->x, _y + upd->win->y) = gfx_alphaBlend(buf[upd->win->width * _y + _x], GFX_PIXEL(WM_GFX, _x + upd->win->x, _y + upd->win->y));
             }
         }
+
+        // HACK: Is the window closing?
+        if (upd->win && upd->win->state == WINDOW_STATE_CLOSING) {
+            close(upd->win->shmfd);
+            free(upd->win);
+        }
+
         free(upd);
     }
 }

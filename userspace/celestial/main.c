@@ -192,7 +192,13 @@ int main(int argc, char *argv[]) {
     }
 
     // If there wasn't a log device, open one.
-    if (!__celestial_log_device) __celestial_log_device = fopen("/device/kconsole", "w");
+    if (!__celestial_log_device) {
+        __celestial_log_device = fopen("/device/kconsole", "w");
+    }
+
+    dup2(__celestial_log_device->fd, STDOUT_FILENO);
+    dup2(__celestial_log_device->fd, STDERR_FILENO);
+        
     CELESTIAL_LOG("celestial v %d.%d.%d\n", CELESTIAL_VERSION_MAJOR, CELESTIAL_VERSION_MINOR, CELESTIAL_VERSION_LOWER);
 
     if (!fake) {
