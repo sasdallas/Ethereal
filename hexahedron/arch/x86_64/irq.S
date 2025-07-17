@@ -171,10 +171,13 @@ halCommonIRQHandler:
         // Try to acknowledge EOI in APIC
         pushq %rcx
         mov (lapic_base)(%rip), %rcx    // RIP-relative addressing
+        test %rcx, %rcx                 // Zero?
+        jz 1f                           // Oui
         add $0xB0, %rcx                 // lapic_base + 0xB0 = EOI register
         movl $0, (%rcx)
+        
+    1:
         popq %rcx
-
         pushq $0
         pushq $\index
         jmp halCommonIRQHandler
