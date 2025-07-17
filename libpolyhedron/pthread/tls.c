@@ -60,6 +60,24 @@ void __tls_init() {
     ethereal_settls((uintptr_t)tcb);
 }
 
+/**
+ * Dummy TCB initialization
+ */
+void __tcb_init_dummy() {
+    // Create dummy TCB 
+static uint8_t __tcb_dummy_storage[sizeof(thread_tcb_t) + sizeof(uintptr_t)];
+    thread_tcb_t *tcb = (thread_tcb_t*)__tcb_dummy_storage;
+    tcb->self = tcb;
+    tcb->_errno = 0;
+    tcb->dtv[0] = 0;
+
+    // Set TLS to TCB
+    ethereal_settls((uintptr_t)tcb);
+}
+
+/**
+ * Get address function
+ */
 void *__tls_get_addr(void *input) {
 #ifdef __ARCH_X86_64__
     struct __tls_index {

@@ -49,9 +49,12 @@ extern __attribute__((noinline)) __auxv_t * __get_auxv() {
 extern void _init();
 extern void _fini();
 
-// pthread
+// TLS
 extern void __tls_init();
 extern void __elf_load_tls();
+
+// TCB
+extern void __tcb_init_dummy();
 
 void __create_environ(char **envp) {
     // First calculate envc
@@ -87,6 +90,7 @@ int __get_argc() {
 
 /* Main libc init function */
 __attribute__((constructor)) void __libc_init() {
+    __tcb_init_dummy();
     __create_environ(__get_environ());
     __create_auxv(__get_auxv());
     __argv = __get_argv();

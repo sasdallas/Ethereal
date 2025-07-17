@@ -142,7 +142,7 @@ typedef struct celestial_req_flip {
 /* Generic error response */
 typedef struct celestial_resp_error {
     CELESTIAL_REQ_COMMON                // Common
-    int errno;                          // Errno
+    int error;                          // Errno
 } celestial_resp_error_t;
 
 /* Generic OK response */
@@ -181,7 +181,7 @@ typedef struct celestial_resp_set_window_pos {
 /* Internal macro */
 #define CELESTIAL_HANDLE_RESP_ERROR(resp, errval)   if (resp->magic == CELESTIAL_MAGIC_ERROR) { \
     celestial_resp_error_t *err = (celestial_resp_error_t*)resp; \
-    errno = err->errno; \
+    errno = err->error; \
     free(err); \
     return errval; \
 }

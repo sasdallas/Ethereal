@@ -74,6 +74,7 @@ int sys_settls(uintptr_t tls) {
     SYSCALL_VALIDATE_PTR(tls);
 
     // Context won't reflect until next save/load cycle
+    TLSBASE(current_cpu->current_thread->context) = tls;
     arch_set_tlsbase(tls);
     return 0;
 }

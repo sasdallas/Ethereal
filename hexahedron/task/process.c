@@ -854,6 +854,7 @@ pid_t process_fork() {
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
     SP(child->main_thread->context) = child->main_thread->kstack;
     BP(child->main_thread->context) = SP(child->main_thread->context);
+    TLSBASE(child->main_thread->context) = TLSBASE(current_cpu->current_thread->context);
     
     // Push the registers onto the stack
     struct _registers r;

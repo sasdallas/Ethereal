@@ -113,14 +113,14 @@ int socket_sendResponse(int sock, void *resp) {
  * @brief Send error for a socket
  * @param sock The socket to error on
  * @param type The type of request to respond with an error to
- * @param errno The error number
+ * @param error The error number
  */
-void socket_error(int sock, int type, int errno) {
+void socket_error(int sock, int type, int error) {
     celestial_resp_error_t err = {
         .magic = CELESTIAL_MAGIC_ERROR,
         .type = type,
         .size = sizeof(celestial_resp_error_t),
-        .errno = errno
+        .error = error
     };
 
     socket_sendResponse(sock, &err);

@@ -13,6 +13,7 @@
 
 #include <pthread.h>
 #include <sys/syscall.h>
+#include <sys/ethereal/auxv.h>
 #include <sys/ethereal/thread.h>
 #include <sys/mman.h>
 #include <string.h>
@@ -20,6 +21,9 @@
 #include <stdint.h>
 #include <errno.h>
 #include <stdio.h>
+
+/* auxv */
+extern __auxv_t *__get_auxv();
 
 /* Initial pthread startup function */
 struct __pthread_startup_context {
@@ -29,6 +33,7 @@ struct __pthread_startup_context {
 };
 
 __attribute__((naked)) void *__pthread_startup(void *arg) {
+    // TODO: Stop leaking ctx
     struct __pthread_startup_context *ctx = (struct __pthread_startup_context*)arg;
     pthread_exit(ctx->entry(ctx->argument));
     __builtin_unreachable();
@@ -48,26 +53,40 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     memset(stk, 0, stack_size);
 
     // Then, create a TLS for the new thread
-    void *tls = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    void *tls = mmap(NULL, 8192, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (tls == MAP_FAILED) {
         munmap(stk, stack_size);
         return -1;
     }
 
-    // Zero TLS and set self-pointer
-    memset(tls, 0, 4096);
-    *(char**)tls = (char*)tls;
+    // Zero TLS
+    memset(tls, 0, 8192);
+
+    // Copy initial TLS data
+    __auxv_t *auxv = __get_auxv();
+    if (auxv && auxv->tls) {
+        memcpy((void*)tls + 4096 - auxv->tls_size, (void*)auxv->tls, auxv->tls_size);
+    }
+
+    // Create TCB structure
+    thread_tcb_t *tcb = (thread_tcb_t*)(tls + 8192 - (sizeof(thread_tcb_t) + ((__get_tcb()->dtv[0]+1) * sizeof(uintptr_t))));
+    tcb->self = tcb;
+    tcb->_errno = 0;
+    tcb->dtv[0] = __get_tcb()->dtv[0];
+    for (unsigned int i = 1; i <= tcb->dtv[0]; i++) {
+        tcb->dtv[i] = __get_tcb()->dtv[i] - (uintptr_t)__get_tcb() + (uintptr_t)tcb; 
+    } 
+
 
     // Make startup context
     // TODO: Not stack allocated?
-    struct __pthread_startup_context ctx = {
-        .entry = func,
-        .argument = arg,
-        .thr = thread,
-    };
+    struct __pthread_startup_context *ctx = malloc(sizeof(struct __pthread_startup_context));
+    ctx->entry = func;
+    ctx->argument = arg;
+    ctx->thr = thread;
 
     // Now make a new thread
-    pid_t tid = ethereal_createThread((uintptr_t)stk + stack_size, (uintptr_t)tls, __pthread_startup, &ctx);
+    pid_t tid = ethereal_createThread((uintptr_t)stk + stack_size, (uintptr_t)tcb, __pthread_startup, ctx);
     if (tid >= 0) *thread = (pthread_t)tid;
     return (tid >= 0) ? 0 : -1;
 }
