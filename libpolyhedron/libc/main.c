@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/ethereal/auxv.h>
 
 /* Environment */
 char **environ = NULL;
@@ -25,6 +26,9 @@ int envc = 0;
 /* argv */
 char **__argv = NULL;
 int __argc = 0;
+
+/* auxv */
+__auxv_t *__auxv = NULL;
 
 // linker will override this, so we will know if we are statically linked
 extern __attribute__((noinline)) char ** __get_argv() {
@@ -36,12 +40,18 @@ extern __attribute__((noinline)) char ** __get_environ() {
     return __envp;
 }
 
+// linker will override this, so we will know if we are statically linked
+extern __attribute__((noinline)) __auxv_t * __get_auxv() {
+    return __auxv;
+}
+
 // crtn/crti
 extern void _init();
 extern void _fini();
 
 // pthread
 extern void __tls_init();
+extern void __elf_load_tls();
 
 void __create_environ(char **envp) {
     // First calculate envc
@@ -62,6 +72,11 @@ void __create_environ(char **envp) {
     envc--;
 }
 
+void __create_auxv(__auxv_t *auxv) {
+    __auxv = malloc(sizeof(__auxv_t));
+    if (auxv) memcpy(__auxv, auxv, sizeof(__auxv_t));
+}
+
 /* Stupid utility function to calculate __argc */
 int __get_argc() {
     int i = 0;
@@ -73,12 +88,12 @@ int __get_argc() {
 /* Main libc init function */
 __attribute__((constructor)) void __libc_init() {
     __create_environ(__get_environ());
+    __create_auxv(__get_auxv());
     __argv = __get_argv();
     __argc = __get_argc();
-    __tls_init();
 }
 
-__attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int argc, char **argv, char **envp) {
+__attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int argc, char **argv, char **envp, __auxv_t *auxv) {
     if (!__get_argv()) {
         // This returned NULL, so thus __libc_init hasn't been called yet.
         // This indicates that we were loaded from static library
@@ -86,6 +101,7 @@ __attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int
         // Set the following variables so __get_environ and __get_argv work
         __argv = argv;
         __envp = envp;
+        __auxv = auxv;
 
         // Now call all the constructors to run __libc_init
 extern uintptr_t __init_array_start;
@@ -94,6 +110,10 @@ extern uintptr_t __init_array_end;
             void (*constructor)() = (void*)*i;
             constructor();
         }
+
+        // Initialize TLS + copy PT_TLS sections
+        __tls_init();
+        __elf_load_tls();
     }
 
     // Initialize default constructors

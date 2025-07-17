@@ -21,14 +21,20 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <stddef.h>
+#include <stdint.h>
 
 /**** TYPES ****/
 
 typedef unsigned long pthread_t;
 
-typedef struct __pthread_data {
-    
-} __pthread_data_t;
+typedef uintptr_t __dtv;
+
+typedef struct __thread_tcb {
+    struct __thread_tcb     *self;      // Self pointer for TLS
+    int _errno;                         // Errno for this thread
+
+    __dtv                   dtv[];      // dtv array
+} __attribute__((packed)) thread_tcb_t;
 
 /* ATTRIBUTES */
 

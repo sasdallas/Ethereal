@@ -22,6 +22,7 @@
 #include <kernel/panic.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <sys/ethereal/auxv.h>
 
 #include <structs/tree.h>
 #include <structs/list.h>
@@ -679,6 +680,9 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
     current_cpu->current_process->heap = current_cpu->current_process->heap_base;
 
+    // Populate image
+    elf_createImage(elf_binary);
+
     // Get the entrypoint
     uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
     arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
@@ -729,7 +733,14 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
 
     user_argv = (char**)current_cpu->current_thread->stack;
 
+    // Create the auxiliary vector
+    __auxv_t auxv = { .tls = current_cpu->current_process->image.tls, .tls_size = current_cpu->current_process->image.tls_size };
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, __auxv_t, auxv);
+
+    __auxv_t *user_auxv = (__auxv_t*)current_cpu->current_thread->stack;
+
     // Now we can the pointers they need
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_auxv);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_envp);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_argv);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);

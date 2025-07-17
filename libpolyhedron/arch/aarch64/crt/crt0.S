@@ -19,6 +19,7 @@ _start:
     ldr x1, [sp], #8
     ldr x2, [sp], #8
     ldr x3, [sp], #8
+    ldr x4, [sp], #8
 
     // The kernel is stupid and doesn't usually align our stack
     // So align the stack to 16-byte boundary (SSE instructions and whatnot need this)

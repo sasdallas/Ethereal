@@ -52,6 +52,15 @@
 typedef void (*kthread_t)(void *data);
 
 /**
+ * @brief Image structure for a process
+ */
+typedef struct process_image {
+    uintptr_t entry;                    // Process entrypoint
+    uintptr_t tls;                      // TLS location
+    size_t tls_size;                    // TLS size
+} process_image_t;
+
+/**
  * @brief The main process type
  */
 typedef struct process {
@@ -100,6 +109,9 @@ typedef struct process {
     sigset_t pending_signals;           // Pending signals
     sigset_t blocked_signals;           // Blocked signals
     vas_allocation_t *userspace;        // Userspace allocation (only for sigtramp right now)
+
+    // ELF
+    process_image_t image;              // Image data for the process
 
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)

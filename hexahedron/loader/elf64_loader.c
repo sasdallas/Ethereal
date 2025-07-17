@@ -734,4 +734,28 @@ uintptr_t elf_getHeapLocation(uintptr_t elf_address) {
     return 0x0;
 }
 
+/**
+ * @brief Populate a process image object
+ * @param elf_address Address given by @c elf_load
+ */
+void elf_createImage(uintptr_t elf_address) {
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr*)elf_address;
+
+    // Setup entrypoint
+    current_cpu->current_process->image.entry = elf_getEntrypoint(elf_address);
+
+    // Find TLS if it exists
+    current_cpu->current_process->image.tls = 0x0;
+    current_cpu->current_process->image.tls_size = 0;
+
+    for (unsigned int i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
+
+        if (phdr->p_type == PT_TLS) {
+            current_cpu->current_process->image.tls = phdr->p_vaddr;
+            current_cpu->current_process->image.tls_size = phdr->p_memsz;
+        }
+    }
+}
+
 #endif

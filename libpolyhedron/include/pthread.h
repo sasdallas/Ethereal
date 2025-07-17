@@ -145,6 +145,9 @@ int pthread_spin_lock(pthread_spinlock_t *lock);
 int pthread_spin_trylock(pthread_spinlock_t *lock);
 int pthread_spin_unlock(pthread_spinlock_t *lock);
 
+/* libc internal function */
+extern thread_tcb_t *__get_tcb();
+
 #endif
 
 _End_C_Header

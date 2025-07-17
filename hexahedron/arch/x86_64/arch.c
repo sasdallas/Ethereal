@@ -126,7 +126,7 @@ extern uintptr_t __kernel_start, __kernel_end;
                 dprintf(NOHEADER, COLOR_CODE_RED    " (in an unknown driver)\n");
             }
         } else if (ip <= MEM_USERSPACE_REGION_END && ip >= 0x1000) {
-            dprintf(NOHEADER, COLOR_CODE_RED    " (in userspace)");
+            dprintf(NOHEADER, COLOR_CODE_RED    " (in userspace)\n");
         } else if (ip <= (uintptr_t)&__kernel_end && ip >= (uintptr_t)&__kernel_start) {
             // In the kernel, check the name
             char *name;

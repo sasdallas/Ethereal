@@ -91,4 +91,10 @@ int elf_cleanup(uintptr_t elf_address);
  */
 uintptr_t elf_getHeapLocation(uintptr_t elf_address);
 
+/**
+ * @brief Populate a process image object
+ * @param elf_address Address given by @c elf_load
+ */
+void elf_createImage(uintptr_t elf_address);
+
 #endif

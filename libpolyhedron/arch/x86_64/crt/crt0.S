@@ -19,6 +19,7 @@ _start:
     popq %rsi // argc
     popq %rdx // argv
     popq %rcx // envp
+    popq %r8  // auxv
 
     // The kernel is stupid and doesn't usually align our stack
     // So align the stack to 16-byte boundary (SSE instructions and whatnot need this)
