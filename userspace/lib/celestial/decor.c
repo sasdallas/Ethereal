@@ -121,8 +121,14 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
         case CELESTIAL_EVENT_MOUSE_BUTTON_DOWN:
             // Depending on bounds
             celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)hdr;
-            if (DECOR_IN_BORDERS(down->x, down->y)) {
-                // TODO
+            if (DECOR_IN_BORDERS(down->x, down->y) && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
+                int in_borders = (DECOR_IN_BORDERS(down->x, down->y));
+                int b = in_borders ? win->decor->inbtn(win, down->x, down->y) : DECOR_BTN_NONE;
+
+                if (b == DECOR_BTN_CLOSE) {
+                    celestial_closeWindow(win);
+                    return 0;
+                }
             } else {
                 return 1;
             }
@@ -157,7 +163,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 if (b == DECOR_BTN_MINIMIZE) win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_HOVER);
                 else win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_NORMAL);
 
-                
+
                 // Fix hack
                 if (!in_borders) decor_was_last_in_borders = 0;
                 else decor_was_last_in_borders = 1;

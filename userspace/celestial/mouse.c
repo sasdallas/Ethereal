@@ -168,8 +168,12 @@ void mouse_events() {
 
             gfx_rect_t upd = { .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
             window_update(WM_MOUSE_WINDOW, upd);
+
+            if (!((WM_MOUSE_BUTTONS & __celestial_previous_buttons) < __celestial_previous_buttons) && !(WM_MOUSE_BUTTONS == __celestial_previous_buttons)) {
+                return;
+            }
         }
-        
+
         if (!(WM_MOUSE_WINDOW->x <= WM_MOUSEX) || !((int)(WM_MOUSE_WINDOW->x + WM_MOUSE_WINDOW->width) > WM_MOUSEX) ||
                 !(WM_MOUSE_WINDOW->y <= WM_MOUSEY) || !((int)(WM_MOUSE_WINDOW->y + WM_MOUSE_WINDOW->height) > WM_MOUSEY)) {
            

@@ -140,7 +140,15 @@ void window_redraw() {
         uint32_t *buf = (uint32_t*)upd->win->buffer;
         for (uint32_t _y = upd->rect.y; _y < upd->rect.y + upd->rect.height; _y++) {
             for (uint32_t _x = upd->rect.x; _x < upd->rect.x + upd->rect.width; _x++) {
-                GFX_PIXEL(WM_GFX, _x + upd->win->x, _y + upd->win->y) = gfx_alphaBlend(buf[upd->win->width * _y + _x], GFX_PIXEL(WM_GFX, _x + upd->win->x, _y + upd->win->y));
+                gfx_color_t *src_pixel = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + ((_x + upd->win->x) * (WM_GFX->bpp/8))));
+                gfx_color_t *dst_pixel = &buf[upd->win->width * _y + _x];
+
+                // Blend
+                if (GFX_RGB_A(*dst_pixel) == 255) {
+                    *src_pixel = *dst_pixel;
+                } else {
+                    *src_pixel = gfx_alphaBlend(*dst_pixel, *src_pixel);
+                }
             }
         }
 

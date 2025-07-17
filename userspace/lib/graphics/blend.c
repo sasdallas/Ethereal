@@ -18,7 +18,7 @@
  * @param top The topmost color
  * @param bottom The bottom color
  */
-gfx_color_t gfx_alphaBlend(gfx_color_t top, gfx_color_t bottom) {
+inline gfx_color_t gfx_alphaBlend(gfx_color_t top, gfx_color_t bottom) {
     // Quick alpha cases
     if (GFX_RGB_A(top) == 0) return bottom; // Top is fully transparent
     if (GFX_RGB_A(bottom) == 0) return top;
