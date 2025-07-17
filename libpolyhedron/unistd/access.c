@@ -15,8 +15,8 @@
 #include <errno.h>
 #include <stdio.h>
 
+DEFINE_SYSCALL2(access, SYS_ACCESS, const char*, int);
+
 int access(const char *path, int amode) {
-    printf("access %s\n", path);
-    errno = EACCES;
-    return -1;
+    __sets_errno(__syscall_access(path, amode));
 }

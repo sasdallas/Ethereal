@@ -48,6 +48,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_READDIR]           = (syscall_func_t)(uintptr_t)sys_readdir,
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
+    [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
     [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
@@ -823,6 +824,23 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     // Ready!
     return ret; 
+}
+
+long sys_access(const char *path, int amode) {
+    SYSCALL_VALIDATE_PTR(path);
+
+    int flags = 0;
+
+    // TODO: F_OK and X_OK
+    if (amode & R_OK) flags |= O_RDONLY;
+    if (amode & W_OK) flags |= O_WRONLY;
+
+    // TODO: Better this.. vfs_errno?
+    fs_node_t *n = kopen_user(path, amode);
+    if (!n) return -ENOENT;
+    fs_close(n);
+
+    return 0;
 }
 
 long sys_mkdir(const char *pathname, mode_t mode) {

@@ -127,6 +127,7 @@ long sys_ioctl(int fd, unsigned long request, void *argp);
 long sys_readdir(struct dirent *ent, int fd, unsigned long index);
 long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout);
 long sys_pselect(sys_pselect_context_t *ctx);
+long sys_access(const char *path, int amode);
 long sys_mkdir(const char *pathname, mode_t mode);
 void *sys_brk(void *addr);
 pid_t sys_fork();
