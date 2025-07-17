@@ -200,3 +200,24 @@ int gfx_renderSpriteInTheHoles(gfx_context_t *ctx, sprite_t *sprite) {
 
     return 0;
 }
+
+/**
+ * @brief Render a scaled sprite
+ * @param ctx The context to render the sprite in
+ * @param sprite The sprite to render
+ * @param scaled The scaled rectangle to render in
+ */
+int gfx_renderSpriteScaled(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t scaled) {
+    for (size_t y = 0; y < scaled.height; y++) {
+        size_t src_y = y * sprite->height / scaled.height;
+
+        for (size_t x = 0; x < scaled.width; x++) {
+            size_t src_x = x * sprite->width / scaled.width;
+
+            uint32_t pixel = sprite->bitmap[src_y * sprite->width + src_x];
+            GFX_PIXEL(ctx, scaled.x + x, scaled.y + y) = pixel;
+        }
+    }
+
+    return 0;
+}

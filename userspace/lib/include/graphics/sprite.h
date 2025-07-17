@@ -70,4 +70,12 @@ int gfx_renderSprite(struct gfx_context *ctx, sprite_t *sprite, int x, int y);
  */
 int gfx_renderSpriteInTheHoles(struct gfx_context *ctx, sprite_t *sprite);
 
+/**
+ * @brief Render a scaled sprite
+ * @param ctx The context to render the sprite in
+ * @param sprite The sprite to render
+ * @param scaled The scaled rectangle to render in
+ */
+int gfx_renderSpriteScaled(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t scaled);
+
 #endif
