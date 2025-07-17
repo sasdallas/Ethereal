@@ -15,6 +15,7 @@
 #include <sys/syscall.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 
 DEFINE_SYSCALL3(load_driver, SYS_LOAD_DRIVER, char*, int, char**);
 DEFINE_SYSCALL1(unload_driver, SYS_UNLOAD_DRIVER, pid_t);
@@ -30,6 +31,8 @@ int ethereal_unloadDriver(pid_t id) {
 
 ethereal_driver_t *ethereal_getDriver(pid_t id) {
     ethereal_driver_t *driver = malloc(sizeof(ethereal_driver_t));
+    memset(driver, 0, sizeof(ethereal_driver_t));
+
     long r = __syscall_get_driver(id, driver);
 
     if (r < 0) {

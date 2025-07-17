@@ -168,16 +168,13 @@ long sys_get_driver(pid_t id, ethereal_driver_t *driver) {
     loaded_driver_t *d = driver_findByID(id);
     if (!d) return -ENOENT;
 
-    driver->filename = d->filename;
+    strncpy(driver->filename, d->filename, 256);
     driver->base = d->load_address;
     driver->size = d->size;
     driver->id = d->id;
-    memcpy(&driver->metadata, d->metadata, sizeof(driver_metadata_t));
 
-    // Remember to dup
-    // TODO: MEMORY LEAK
-    if (driver->metadata.name) driver->metadata.name = strdup(driver->metadata.name);
-    if (driver->metadata.author) driver->metadata.author = strdup(driver->metadata.author);
-
+    if (d->metadata->author) strncpy(driver->metadata.author, d->metadata->author, 256);
+    if (d->metadata->name) strncpy(driver->metadata.name, d->metadata->name, 256);
+    
     return 0;
 } 

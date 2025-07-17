@@ -23,12 +23,17 @@ _Begin_C_Header
 
 /**** TYPES ****/
 
-typedef struct ethereal_driver {
-    pid_t id;                   // Driver ID
-    char *filename;             // Exact filename of the driver
-    uintptr_t base;             // Base address in memory
-    size_t size;                // Size in memory
-    driver_metadata_t metadata; // Exact metadata copy
+typedef struct ethereal_driver_metadata {
+    char name[256];                         // Driver name
+    char author[256];                       // Author
+} ethereal_driver_metadata_t;
+
+typedef struct ethereal_driver {    
+    pid_t id;                               // Driver ID
+    char filename[256];                     // Exact filename of the driver
+    uintptr_t base;                         // Base address in memory
+    size_t size;                            // Size in memory
+    ethereal_driver_metadata_t metadata;    // Exact metadata copy
 } ethereal_driver_t;
 
 /**** FUNCTIONS ****/
