@@ -31,6 +31,10 @@
 #define NIC_ETHERNET_PREFIX         "eth%d"
 #define NIC_WIRELESS_PRERFIX        "wifi%d"
 
+/* NIC state */
+#define NIC_STATE_DOWN              0
+#define NIC_STATE_UP                1
+
 /**** TYPES ****/
 
 /**
@@ -58,6 +62,7 @@ typedef struct nic {
     int type;                           // Type of the NIC
     nic_stats_t stats;                  // Statistics for the NIC
     size_t mtu;                         // MTU for the NIC
+    int state;                          // NIC state (default: UP)
 
     uint8_t mac[6];                     // MAC address of the NIC
     fs_node_t *parent_node;             // Parent node of the NIC

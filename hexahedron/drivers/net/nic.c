@@ -98,6 +98,7 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver) {
     memcpy(nic->mac, mac, 6);
     nic->driver = driver;
     nic->type = type;
+    nic->state = NIC_STATE_UP;
 
     // Allocate a filesystem node
     fs_node_t *node = kmalloc(sizeof(fs_node_t));
