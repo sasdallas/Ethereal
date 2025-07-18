@@ -62,11 +62,9 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
     // Zero TLS
     memset(tls, 0, 8192);
 
-    // Copy initial TLS data
-    __auxv_t *auxv = __get_auxv();
-    if (auxv && auxv->tls) {
-        memcpy((void*)tls + 4096 - auxv->tls_size, (void*)auxv->tls, auxv->tls_size);
-    }
+    // Copy TLS data
+    // TODO: Uh, which thread does this again?
+    memcpy(tls, (void*)__get_tcb()->dtv[1], 4096);
 
     // Create TCB structure
     thread_tcb_t *tcb = (thread_tcb_t*)(tls + 4096);

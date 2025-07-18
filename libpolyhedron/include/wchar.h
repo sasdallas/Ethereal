@@ -25,11 +25,13 @@ _Begin_C_Header
 
 /**** TYPES ****/
 
+typedef struct {} mbstate_t;
+typedef int wctype_t;
 typedef uint16_t wint_t;
 
 /**** DEFINITIONS ****/
 
-#define WEOF        (wint_t)-1
+#define WEOF        ((wchar_t)-1)
 
 /**** FUNCTIONS ****/
 

@@ -41,6 +41,7 @@ typedef struct __thread_tcb {
 typedef struct __pthread_attr {
     size_t stack_size;              // By default PTHREAD_STACK_SIZE
     unsigned char sched;            // Scheduler param
+    unsigned char detach_state;     // Detach state
     int temp;                       // TODO
 } pthread_attr_t;
 

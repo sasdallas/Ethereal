@@ -38,4 +38,12 @@ int pthread_attr_setstacksize(pthread_attr_t *attr, size_t stacksize) {
     return 0;
 }
 
+int pthread_attr_getdetachstate(const pthread_attr_t *__restrict attr, int *__restrict detach_state) {
+    *detach_state = attr->detach_state;
+    return 0;
+}
 
+int pthread_attr_setdetachstate(pthread_attr_t *__restrict attr, int detach_state) {
+    attr->detach_state = detach_state;
+    return 0;
+}
