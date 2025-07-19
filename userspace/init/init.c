@@ -37,15 +37,30 @@ int main(int argc, char *argv[]) {
 
     system("/etc/init.d/01_welcome.sh");
 
-    printf("Initializing shell...\n");
-    
+    // Read kernel command line
+    FILE *f = fopen("/kernel/cmdline", "r");
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char *cmdline = malloc(size);
+    fread(cmdline, size, 1, f);
+
     pid_t cpid = fork();
 
     if (!cpid) {
+        if (strstr(cmdline, "--single-user")) {
+            // Launch single-user mode
+            char *nargv[3] = { "termemu", "-f", NULL };
+            execvpe("termemu", (const char**)nargv, environ);
+
+            printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
+        }
+
         char *nargv[3] = { "/device/initrd/usr/bin/celestial",  "-d", NULL };
         execvpe("/device/initrd/usr/bin/celestial", (const char**)nargv, environ);
     
-        printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
+        printf("ERROR: Failed to launch Celestial process: %s\n", strerror(errno));
         return 1;
     }
 
