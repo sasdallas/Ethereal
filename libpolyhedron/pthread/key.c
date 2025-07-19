@@ -16,6 +16,11 @@
 #include <errno.h>
 #include <stdio.h>
 
+// !!!: SERIOUS BUILD HACK FOR GH ACTIONS
+#ifndef PTHREAD_KEYS_MAX
+#define PTHREAD_KEYS_MAX            128
+#endif
+
 // Yet another pthread idea from banan-os :D
 
 typedef struct __pthread_key_obj {
