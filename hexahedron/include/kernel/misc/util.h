@@ -19,6 +19,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <time.h>
+#include <kernel/drivers/clock.h>
 
 /**** MACROS ****/
 
@@ -36,6 +37,8 @@
                         gettimeofday(&t_now, NULL); \
                         dprintf(DEBUG, "%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
 
+/* Timeout macro (0 on success, 1 on timeout) */
+#define TIMEOUT(cond, ms) ({ int64_t timeout = (ms); while (!(cond)) { clock_sleep(25); timeout -= 25; if (timeout <= 0) break; }; !(timeout > 0); })
 
 /* Static asserts - https://stackoverflow.com/questions/3385515/static-assert-in-c */
 /* !!!: Yes this is hacky, but it's at least not GCC specific */
