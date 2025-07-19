@@ -32,6 +32,9 @@
 #define CELESTIAL_Z_DEFAULT                 1
 #define CELESTIAL_Z_OVERLAY                 2
 
+#define CELESTIAL_STATE_RUNNING             0
+#define CELESTIAL_STATE_CLOSED              1
+
 /**** TYPES ****/
 
 /**
@@ -39,6 +42,7 @@
  */
 typedef struct window {
     uint8_t flags;                      // Flags
+    uint8_t state;                      // State
 
     wid_t wid;                          // Window ID
     int32_t x;                          // X
@@ -179,5 +183,13 @@ void celestial_flip(window_t *win);
  * @warning Any attempts to update the window from here might crash.
  */
 void celestial_closeWindow(window_t *win);
+
+/**
+ * @brief Resize a window
+ * @param win The window to resize
+ * @param width The new width of the window
+ * @param height The new height of the window
+ */
+int celestial_resizeWindow(window_t *win, size_t width, size_t height);
 
 #endif

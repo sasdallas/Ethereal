@@ -457,6 +457,35 @@ void celestial_closeWindow(window_t *win) {
     // Close the window shm
     close(win->shmfd);
     
-    // TODO: Free other resources
-    free(win);
+    win->state = CELESTIAL_STATE_CLOSED;
+}
+
+/**
+ * @brief Resize a window
+ * @param win The window to resize
+ * @param width The new width of the window
+ * @param height The new height of the window
+ */
+int celestial_resizeWindow(window_t *win, size_t width, size_t height) {
+    celestial_req_resize_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_resize_t),
+        .type = CELESTIAL_REQ_RESIZE,
+        .wid = win->wid,
+        .width = width,
+        .height = height,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1;
+
+    // Wait for a resonse
+    celestial_resp_resize_t *resp = celestial_getResponse(CELESTIAL_REQ_RESIZE);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
 }

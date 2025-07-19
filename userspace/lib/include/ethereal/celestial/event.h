@@ -35,6 +35,7 @@
 #define CELESTIAL_EVENT_FOCUSED                 0x00000040
 #define CELESTIAL_EVENT_UNFOCUSED               0x00000080
 #define CELESTIAL_EVENT_KEY_EVENT               0x00000100
+#define CELESTIAL_EVENT_RESIZE                  0x00000200 // Special event. Library automatically resizes
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\

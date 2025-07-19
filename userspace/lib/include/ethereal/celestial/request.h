@@ -43,6 +43,7 @@
 #define CELESTIAL_REQ_SET_FOCUSED           0x100C
 #define CELESTIAL_REQ_SET_Z_ARRAY           0x100D
 #define CELESTIAL_REQ_FLIP                  0x100E
+#define CELESTIAL_REQ_RESIZE                0x100F
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -137,6 +138,13 @@ typedef struct celestial_req_flip {
     size_t height;                      // Height of region
 } celestial_req_flip_t;
 
+typedef struct celestial_req_resize {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    size_t width;                       // Width
+    size_t height;                      // Height
+} celestial_req_resize_t;
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -175,6 +183,12 @@ typedef struct celestial_resp_set_window_pos {
     int32_t x;                          // Window X position
     int32_t y;                          // Window Y position
 } celestial_resp_set_window_pos_t;
+
+typedef struct celestial_resp_resize {
+    CELESTIAL_REQ_COMMON                // Common
+    size_t width;                       // New width
+    size_t height;                      // New height
+} celestial_resp_resize_t;
 
 /**** MACROS ****/
 
