@@ -221,6 +221,15 @@ static void terminal_write(char ch) {
 
         // Update cursor
         goto _update_cursor;
+    } else if (ch == '\t') {
+        CURSOR->ch = ' ';
+        CURSOR->fg = terminal_fg;
+        CURSOR->bg = terminal_bg;
+        draw_cell(cursor_x, cursor_y);
+
+        cursor_x += (8 - cursor_x % 8);
+        
+        goto _update_cursor;
     } else if (ch == '\r') {
         return;
     }
