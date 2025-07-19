@@ -193,16 +193,14 @@ ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     // First, get a lock on the file
     spinlock_acquire(entry->file->lock);
 
-    size_t available_size = entry->file->blk_count * TMPFS_BLOCK_SIZE;
-
     // Do some VFS calculations
-    if (off >= (off_t)available_size) {
+    if (off >= (off_t)node->length) {
         spinlock_release(entry->file->lock);
         return 0;
     }
     
-    if (off+size > available_size) {
-        size = available_size - off;
+    if (off+size > node->length) {
+        size = node->length - off;
     }
 
     // Do some math to calculate the starting and ending block
