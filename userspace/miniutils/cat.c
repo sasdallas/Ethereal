@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 /**
  * @brief Usage
@@ -68,7 +69,7 @@ int main(int argc, char *argv[]) {
             // We were given no argument, read from stdin file descriptor
             char buf[4096] = { 0 };
             ssize_t r = read(STDIN_FILENO, buf, 4096);
-            
+
             // If we didn't get anything then return
             if (r < 0) {
                 fprintf(stderr, "cat: stdin: %s\n", strerror(errno));
@@ -77,7 +78,7 @@ int main(int argc, char *argv[]) {
 
             if (!r) return 0;
 
-            write(STDOUT_FILENO, buf, 4096);
+            write(STDOUT_FILENO, buf, r);
         }
 
     }
@@ -119,7 +120,7 @@ int main(int argc, char *argv[]) {
             
             // Error
             if (r < 0) {
-                fprintf(stderr, "cat: %s: %s\n", (fd == STDIN_FILE_DESCRIPTOR ? "stdin" : argv[i]), strerror(errno));
+                fprintf(stderr, "cat: %s: %s\n", (fd == STDIN_FILENO ? "stdin" : argv[i]), strerror(errno));
                 return_value = 1;
                 continue;
             }
