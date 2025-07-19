@@ -776,6 +776,12 @@ void ide_detectDevice(ide_device_t *device) {
         timeout++; // Keep waiting...
     }
 
+    // Was there a device?
+    if (ide_read(device, ATA_REG_STATUS) == 0x00) {
+        LOG_DEVICE(INFO, device, "No device detected\n");
+        return;
+    }
+
     // Did it timeout?
     if (timeout >= 10000) {
         LOG_DEVICE(INFO, device, "Timeout while waiting for ATA_CMD_IDENTIFY - assuming dead\n");
