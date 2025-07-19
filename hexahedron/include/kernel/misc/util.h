@@ -37,6 +37,15 @@
                         dprintf(DEBUG, "%s: Profiling complete. Elapsed: %ds %dusec\n", __FUNCTION__, t_now.tv_sec - t.tv_sec, t_now.tv_usec - t.tv_usec); }
 
 
+/* Static asserts - https://stackoverflow.com/questions/3385515/static-assert-in-c */
+/* !!!: Yes this is hacky, but it's at least not GCC specific */
+
+#define STATIC_ASSERT_MSG(cond, msg) typedef char static_assertion_##msg[(cond) ? 1 : -1]
+#define __STATIC_ASSERT3(cond, file, line) STATIC_ASSERT_MSG((cond), at_line_##line)
+#define __STATIC_ASSERT2(cond, file, line) __STATIC_ASSERT3(cond, file, line)
+#define STATIC_ASSERT(cond) __STATIC_ASSERT2(cond, __FILE__, __LINE__)
+
+/* min/max */
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
