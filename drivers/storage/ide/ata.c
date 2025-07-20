@@ -34,7 +34,7 @@
 #endif
 
 /* PCI IDE controller */
-uint32_t ide_pci = 0xFFFFFFFF; // Constructed via PCI_ADDR
+pci_device_t *ide_pci = NULL; // Constructed via PCI_ADDR
 
 /* PIO only */
 int pio_only = 0;
@@ -68,18 +68,21 @@ static spinlock_t *ata_lock = NULL;
  * 
  * @warning This goes based off of subclass/class ID 
  */
-int ata_find(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (ide_pci != 0xFFFFFFFF) {
-        LOG(WARN, "Additional IDE controller detected: 0x%x 0x%x at bus %i slot %i function %i\n", vendor_id, device_id, bus, slot, function);
+int ata_find(pci_device_t *dev, void *data) {
+    if (dev->class_code != 0x01) return 0;
+    if (dev->subclass_code != 0x01 && dev->subclass_code != 0x05 && dev->subclass_code != 0x06) return 0;
+
+    // !!!: Ugh, why did I think only one ATA controller could be present? That was a while ago and now I hate myself for it.
+    if (ide_pci) {
+        LOG(WARN, "Additional IDE controller detected: 0x%x 0x%x at bus %i slot %i function %i\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
         LOG(WARN, "This IDE driver does not support multiple controllers.\n");
         return 0;
     }
 
-    LOG(DEBUG, "IDE controller - vendor 0x%x device 0x%x\n", vendor_id, device_id);
+    LOG(DEBUG, "IDE controller - vendor 0x%x device 0x%x\n", dev->vid, dev->pid);
 
-    ide_pci = PCI_ADDR(bus, slot, function, 0); // Bus/slot/function can be extracted using other macros
-
-    return 0; // Temporary while I work some kinks, see ata_initialize
+    ide_pci = dev;
+    return 0;
 }
 
 
@@ -836,14 +839,15 @@ void ide_detectDevice(ide_device_t *device) {
     }
 } 
 
+
 /**
  * @brief Initialize the ATA/ATAPI driver logic
  */
 int ata_initialize() {
     // First, scan for the ATA controller
-    pci_scan(ata_find, NULL, ATA_PCI_TYPE);     // Ignore result for now, just in case there are multiple controllers
+    pci_scanDevice(ata_find, NULL, NULL);     
 
-    if (ide_pci == 0xFFFFFFFF) {
+    if (ide_pci == NULL) {
         LOG(DEBUG, "No IDE controller detected\n");
         return 0; // No IDE controller
     }
@@ -854,7 +858,7 @@ int ata_initialize() {
     ata_lock = spinlock_create("ata_lock");
 
     // Let's determine how to program the controller
-    uint8_t progif = pci_readConfigOffset(PCI_BUS(ide_pci), PCI_SLOT(ide_pci), PCI_FUNCTION(ide_pci), PCI_PROGIF_OFFSET, 1);
+    uint8_t progif = pci_readConfigOffset(ide_pci->bus, ide_pci->slot, ide_pci->function, PCI_PROGIF_OFFSET, 1);
     if (progif == 0xFF) {
         LOG(WARN, "Error attempting to determine ATA controller programming.\n");
         return 0;
@@ -879,7 +883,7 @@ int ata_initialize() {
     pio_only = 1;
 
     // Read BAR4 and set it in bmide of each channel
-    pci_bar_t *bar4 = pci_readBAR(PCI_BUS(ide_pci), PCI_SLOT(ide_pci), PCI_FUNCTION(ide_pci), 4);
+    pci_bar_t *bar4 = pci_readBAR(ide_pci->bus, ide_pci->slot, ide_pci->function, 4);
     if (bar4) {
         channels[ATA_PRIMARY].bmide = bar4->address + 0;
         channels[ATA_SECONDARY].bmide = bar4->address + 8;

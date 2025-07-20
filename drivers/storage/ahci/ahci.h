@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/clock.h>
+#include <kernel/drivers/pci.h>
 
 /**** DEFINITIONS ****/
 
@@ -619,7 +620,7 @@ typedef struct ahci_port {
  */
 typedef struct ahci {
 	ahci_hba_mem_t *mem;		// HBA memory
-	uint32_t pci_device;		// PCI device of controller
+	pci_device_t *pci_device;	// PCI device of controller
 
 	int ncmdslot;				// Number of command slots
 	ahci_port_t *ports[32];		// Allocated list of port structures

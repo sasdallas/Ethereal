@@ -33,12 +33,11 @@
  * @brief AHCI scan method
  * @param data Pointer to PCI out
  */
-int ahci_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (pci_readConfigOffset(bus, slot, function, PCI_PROGIF_OFFSET, 1) != 0x01) return 0; // Not an AHCI device
+int ahci_scan(pci_device_t *dev, void *data) {
+    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) != 0x01) return 0; // Not an AHCI device
 
-    
     // TODO: Check ven/dev id
-    *(uint32_t*)data = PCI_ADDR(bus, slot, function, 0); 
+    *(pci_device_t**)data = dev; 
     return 1;
 }
 
@@ -116,22 +115,32 @@ int ahci_resetController(ahci_t *ahci) {
     return AHCI_SUCCESS;
 }
 
+
+
 /**
  * @brief AHCI init method
  */
 int ahci_init(int argc, char **argv) {
     // Scan for AHCI controller
-    uint32_t ahci_data = 0xFFFFFFFF;
-    if (pci_scan(ahci_scan, (void*)&ahci_data, 0x0106) == 0) {
+    // TODO: Multi-controller support
+    pci_scan_parameters_t params = {
+        .class_code = 0x01,
+        .subclass_code = 0x06,
+        .id_list = NULL,
+    };
+
+    pci_device_t *ahci_data = NULL;
+    pci_scanDevice(ahci_scan, &params, (void*)&ahci_data);
+    if (!ahci_data) {
         // No AHCI controller
         LOG(INFO, "No AHCI controller found\n");
         return 0;
     }
 
-    LOG(INFO, "Found AHCI controller at bus %d slot %d func %d\n", PCI_BUS(ahci_data), PCI_SLOT(ahci_data), PCI_FUNCTION(ahci_data));
+    LOG(INFO, "Found AHCI controller at bus %d slot %d func %d\n", ahci_data->bus, ahci_data->slot, ahci_data->function);
 
     // Get ABAR (BAR5)
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(ahci_data), PCI_SLOT(ahci_data), PCI_FUNCTION(ahci_data), 5);
+    pci_bar_t *bar = pci_readBAR(ahci_data->bus, ahci_data->slot, ahci_data->function, 5);
 
     // TODO: Has to be a MEMORY32? Could it be a MEMORY64?
     if (bar->type != PCI_BAR_MEMORY32) {
@@ -142,10 +151,10 @@ int ahci_init(int argc, char **argv) {
 
     // Now we can configure the PCI command register.
     // Read it in and set flags
-    uint16_t ahci_pci_command = pci_readConfigOffset(PCI_BUS(ahci_data), PCI_SLOT(ahci_data), PCI_FUNCTION(ahci_data), PCI_COMMAND_OFFSET, 2);
+    uint16_t ahci_pci_command = pci_readConfigOffset(ahci_data->bus, ahci_data->slot, ahci_data->function, PCI_COMMAND_OFFSET, 2);
     ahci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
     ahci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(PCI_BUS(ahci_data), PCI_SLOT(ahci_data), PCI_FUNCTION(ahci_data), PCI_COMMAND_OFFSET, ahci_pci_command, 2);
+    pci_writeConfigOffset(ahci_data->bus, ahci_data->slot, ahci_data->function, PCI_COMMAND_OFFSET, ahci_pci_command, 2);
 
     // Map it into MMIO
     LOG(INFO, "HBA memory space location: %p\n", bar->address);
@@ -159,7 +168,7 @@ int ahci_init(int argc, char **argv) {
     ahci->pci_device = ahci_data;
 
     // Register the interrupt handler
-    uint8_t irq = pci_getInterrupt(PCI_BUS(ahci->pci_device), PCI_SLOT(ahci->pci_device), PCI_FUNCTION(ahci->pci_device));
+    uint8_t irq = pci_getInterrupt(ahci->pci_device->bus, ahci->pci_device->slot, ahci->pci_device->function);
 
     // Does it have an IRQ?
     if (irq == 0xFF) {

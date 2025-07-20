@@ -203,21 +203,21 @@ void ac97_createBDL(ac97_t *ac) {
 /**
  * @brief Initialize AC/97 controller
  */
-int ac97_init(uint32_t address) {
-    LOG(INFO, "Found an AC/97 card on bus %d slot %d func %d\n", PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address));
+int ac97_init(pci_device_t *dev) {
+    LOG(INFO, "Found an AC/97 card on bus %d slot %d func %d\n", dev->bus, dev->slot, dev->function);
     
     // Create AC97 object
     ac97_t *ac = kzalloc(sizeof(ac97_t));
-    ac->pci_device = address;
+    ac->pci_device = dev;
 
     // Enable bus mastering and I/O space
-    uint16_t command = pci_readConfigOffset(PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address), PCI_COMMAND_OFFSET, 2);
+    uint16_t command = pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, 2);
     command |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_BUS_MASTER;
-    pci_writeConfigOffset(PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address), PCI_COMMAND_OFFSET, command, 2);
+    pci_writeConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, command, 2);
 
     // Read I/O base and type
-    pci_bar_t *nambbar = pci_readBAR(PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address), 0);
-    pci_bar_t *nammbar = pci_readBAR(PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address), 1);
+    pci_bar_t *nambbar = pci_readBAR(dev->bus, dev->slot, dev->function, 0);
+    pci_bar_t *nammbar = pci_readBAR(dev->bus, dev->slot, dev->function, 1);
     if (!nambbar || !nammbar) {
         LOG(ERR, "NAMBBAR/NAMMBAR could not be read\n");
         return 1;
@@ -237,7 +237,7 @@ int ac97_init(uint32_t address) {
 
     // Register an IRQ
     // TODO: Support MSI?
-    uint8_t irq = pci_getInterrupt(PCI_BUS(address), PCI_SLOT(address), PCI_FUNCTION(address));
+    uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
     if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, ac97_irq, ac) != 0) {
         LOG(ERR, "AC97 has no IRQ or failed to register it . Cannot continue\n");
 
@@ -296,16 +296,22 @@ int ac97_init(uint32_t address) {
 /**
  * @brief PCI scan method
  */
-int ac97_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
+int ac97_scan(pci_device_t *dev, void *data) {
     // If this is a match, it must be an AC/97 card
-    return ac97_init(PCI_ADDR(bus, slot, function, 0));
+    return ac97_init(dev);
 }
 
 /**
  * @brief Driver init method
  */
 int driver_init(int argc, char *argv[]) {
-    return pci_scan(ac97_scan, NULL, 0x0401);
+    pci_scan_parameters_t params = {
+        .class_code = 0x04,
+        .subclass_code = 0x01,
+        .id_list = NULL,
+    };
+
+    return pci_scanDevice(ac97_scan, &params, NULL);
 }
 
 /**

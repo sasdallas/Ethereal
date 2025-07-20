@@ -17,37 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 
-/**** TYPES ****/
-
-/**
- * @brief PCI base address register
- *
- * @param type Defines the type of the BAR and its address size. Can be @c PCI_BAR_IO_SPACE or @c PCI_BAR_MEMORY32 or @c PCI_BAR_MEMORY64
- * @param size Size of the actual BAR in memory
- * @param prefetchable Whether the BAR is prefetchable (applies to memory BARs only)
- * @param address The address of the BAR
- */
-typedef struct pci_bar {
-    int type;           // Type of the BAR
-    uint64_t size;      // Size of the BAR
-    int prefetchable;   // Whether the BAR is prefetchable (it does not read side effects)
-    uint64_t address;   // Address of the BAR. Note that it doesn't take up all of this space.s
-} pci_bar_t;
-
-/**
- * @brief PCI callback function
- * 
- * @param bus The bus of the currently being checked PCI device
- * @param slot The slot of the currently being checked PCI device
- * @param function The function of the currently being checked PCI device
- * @param vendor_id The vendor ID of the device
- * @param device_id The device ID of the device
- * @param data Any additionally specified data by the caller of @c pci_scan
- * 
- * @returns 1 on successfully found, 0 on failed to find
- */
-typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data);
-
 /**** DEFINITIONS ****/
 
 // General stuff
@@ -55,6 +24,8 @@ typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint1
 #define PCI_MAX_BUS                 256     // 256 buses
 #define PCI_MAX_SLOT                32      // 32 slots
 #define PCI_MAX_FUNC                8       // 8 functions
+
+#define PCI_MAX_PID                 32
 
 // BAR-specifics
 #define PCI_BAR_MEMORY32            0x0     // 32-bit memory space BAR (physical RAM) 
@@ -133,6 +104,107 @@ typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint1
 // PCI types that are required
 #define PCI_TYPE_BRIDGE                     0x0604  // PCI-to-PCI bridge
 
+/**** TYPES ****/
+
+/* PCI address */
+typedef uint32_t pci_address_t;
+
+
+/**
+ * @brief PCI device object
+ * @param bus Device bus
+ * @param slot Device slot
+ * @param function Device function
+ * @param class_code Class code of the device
+ * @param subclass_code Subclass code of the device
+ * @param vid Vendor ID of the device
+ * @param pid Product ID of the device
+ */
+typedef struct pci_device {
+    uint8_t             bus;                // Bus
+    uint8_t             slot;               // Slot
+    uint8_t             function;           // Function
+    uint8_t             class_code;         // Class code
+    uint8_t             subclass_code;      // Subclass code
+    uint16_t            vid;                // Vendor ID
+    uint16_t            pid;                // Product ID
+    void                *driver;            // Driver-specific field                       
+
+    int                 valid;              // !!!: Valid device hack
+} pci_device_t;
+
+/**
+ * @brief PCI base address register
+ *
+ * @param type Defines the type of the BAR and its address size. Can be @c PCI_BAR_IO_SPACE or @c PCI_BAR_MEMORY32 or @c PCI_BAR_MEMORY64
+ * @param size Size of the actual BAR in memory
+ * @param prefetchable Whether the BAR is prefetchable (applies to memory BARs only)
+ * @param address The address of the BAR
+ */
+typedef struct pci_bar {
+    int type;           // Type of the BAR
+    uint64_t size;      // Size of the BAR
+    int prefetchable;   // Whether the BAR is prefetchable (it does not read side effects)
+    uint64_t address;   // Address of the BAR. Note that it doesn't take up all of this space.s
+} pci_bar_t;
+
+/**
+ * @brief PCI callback function
+ * 
+ * @param bus The bus of the currently being checked PCI device
+ * @param slot The slot of the currently being checked PCI device
+ * @param function The function of the currently being checked PCI device
+ * @param vendor_id The vendor ID of the device
+ * @param device_id The device ID of the device
+ * @param data Any additionally specified data by the caller of @c pci_scan
+ * 
+ * @returns 1 on successfully found, 0 on failed to find
+ */
+typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data);
+
+/**
+ * @brief PCI scan callback function
+ * @param device The device currently being checked
+ * @param data Driver-specific
+ * @returns 1 on an error, 0 on success
+ */
+typedef int (*pci_scan_callback_t)(pci_device_t *device, void *data);
+
+/**
+ * @brief PCI VID:PID(s) mapping
+ */
+typedef struct pci_id_pid_mapping {
+    uint16_t vid;                   // Vendor ID
+    uint16_t pid[PCI_MAX_PID+1];    // PCI_NONE-terminated of accepted PIDs. If there is only one and VID matches, it will be accepted
+} pci_id_mapping_t;
+
+/**
+ * @brief PCI scan parameters
+ * @param class_code Class code being scanned for, leave as 0 to ignore
+ * @param subclass_code Subclass code being scanned for, leave as 0 to ignore
+ * @param id_list List of VID:PID(s) mappings to accept, leave as NULL to ignore. SHOULD END WITH PCI_ID_MAPPING_END
+ */
+typedef struct pci_scan_parameters {
+    uint8_t class_code;
+    uint8_t subclass_code;
+    pci_id_mapping_t *id_list;
+} pci_scan_parameters_t;
+
+
+/**
+ * @brief PCI slot
+ */
+typedef struct pci_slot {
+    pci_device_t functions[PCI_MAX_FUNC];
+} pci_slot_t;
+
+/**
+ * @brief PCI bus
+ */
+typedef struct pci_bus {
+    pci_slot_t slots[PCI_MAX_SLOT];
+} pci_bus_t;
+
 /**** MACROS ****/
 
 // Macro for help translating a bus/slot/function/offset to an address that can be written to PCI_CONFIG_ADDRESS
@@ -142,6 +214,10 @@ typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint1
 #define PCI_FUNCTION(address) (uint8_t)((address >> 8) & 0xFF)
 #define PCI_SLOT(address) (uint8_t)((address >> 11) & 0xFF)
 #define PCI_BUS(address) (uint8_t)((address >> 16) & 0xFF)
+
+// Ending mapping
+#define PCI_ID_MAPPING_END { .pid = { PCI_NONE }, .vid = PCI_NONE }
+#define PCI_PID_ACCEPT_ALL { PCI_NONE }
 
 /**** FUNCTIONS ****/
 
@@ -235,60 +311,6 @@ uint16_t pci_readVendorID(uint8_t bus, uint8_t slot, uint8_t func);
 uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func);
 
 /**
- * @brief Scan and find a PCI device on a specific function
- * 
- * This is required because of @c PCI_TYPE_BRIDGE - also a remnant of the Ethereal Operating System scanner
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to use
- * @param slot The slot of the bus
- * @param func The function of the device
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanFunction(pci_callback_t callback, void *data, int type, uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Scan and find a PCI device on a certain slot
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to use
- * @param slot The slot of the bus
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanSlot(pci_callback_t callback, void *data, int type, uint8_t bus, uint8_t slot);
-
-/**
- * @brief Scan and find a PCI device on a certain bus
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to check
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanBus(pci_callback_t callback, void *data, int type, uint8_t bus);
-
-/**
- * @brief Scan and find a PCI device. Calls a callback function that can be used to determine the device more closely.
- * 
- * @see pci_callback_t for params/return value.
- * 
- * @param callback The callback function to call. 
- * @param data Any user data to pass to callback.
- * @param type The type of the device. Set to -1 to ignore type field.
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scan(pci_callback_t callback, void *data, int type);
-
-/**
  * @brief Get the interrupt registered to a PCI device
  * 
  * @param bus The bus of the PCI device
@@ -312,5 +334,28 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func);
  * @brief Mount PCI KernelFS node
  */
 void pci_mount();
+
+/**
+ * @brief Initialize and probe for PCI devices
+ */
+void pci_init();
+
+/**
+ * @brief Scan for PCI devices
+ * @param callback Callback function
+ * @param parameters Scan parameters (optional, leave as NULL if you don't care)
+ * @param data Driver-specific data to pass along
+ * @returns 1 on an error, 0 on success
+ */
+int pci_scanDevice(pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data); 
+
+/**
+ * @brief Get a device from bus/slot/function
+ * @param bus The bus to check
+ * @param slot The slot to check
+ * @param function The function to check
+ * @returns Device object or NULL
+ */
+pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function);
 
 #endif

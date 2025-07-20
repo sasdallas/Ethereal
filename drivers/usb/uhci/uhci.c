@@ -429,11 +429,11 @@ int uhci_interrupt(USBController_t *controller, USBDevice_t *dev, USBTransfer_t 
 /**
  * @brief UHCI initialize controller
  */
-void uhci_initController(uint32_t uhci_pci) {
-    LOG(DEBUG, "Initializing UHCI controller on bus %d slot %d function %d\n", PCI_BUS(uhci_pci), PCI_SLOT(uhci_pci), PCI_FUNCTION(uhci_pci));
+void uhci_initController(pci_device_t *dev) {
+    LOG(DEBUG, "Initializing UHCI controller on bus %d slot %d function %d\n", dev->bus, dev->slot, dev->function);
 
     // Now read in the PCI bar
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(uhci_pci), PCI_SLOT(uhci_pci), PCI_FUNCTION(uhci_pci), 4);
+    pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 4);
     if (!bar) {
         LOG(ERR, "UHCI controller does not have BAR4 - false positive?\n");
         return;
@@ -517,24 +517,27 @@ void uhci_initController(uint32_t uhci_pci) {
 /**
  * @brief UHCI controller find method
  */
-int uhci_find(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
+int uhci_find(pci_device_t *dev, void *data) {
     // We know this device is of type 0x0C03, but it's only UHCI if the interface is 0x00
-    if (pci_readConfigOffset(bus, slot, function, PCI_PROGIF_OFFSET, 1) == 0x00) {
-        uhci_initController(PCI_ADDR(bus, slot, function, 0));
+    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) == 0x00) {
+        uhci_initController(dev);
     }
 
     return 0;
 }
-
-
 
 /**
  * @brief UHCI initialize method
  */
 int uhci_init(int argc, char **argv) {
     // Scan and find the UHCI PCI device
-    pci_scan(uhci_find, NULL, 0x0C03);
-    return 0;
+    pci_scan_parameters_t params = {
+        .class_code = 0x0C,
+        .subclass_code = 0x03,
+        .id_list = NULL
+    };
+
+    return pci_scanDevice(uhci_find, &params, NULL);
 }
 
 /**

@@ -143,15 +143,13 @@ int nvme_start(nvme_t *nvme) {
 
 /**
  * @brief Initialize an NVMe device
- * @param bus The bus of the NVMe device
- * @param slot The slot of the NVMe device
- * @param function The function of the NVMe device
+ * @param dev The PCI device
  */
-int nvme_init(uint8_t bus, uint8_t slot, uint8_t function) {
-    LOG(INFO, "Initializing NVMe controller on bus %d slot %d function %d\n", bus, slot, function);
+int nvme_init(pci_device_t *dev) {
+    LOG(INFO, "Initializing NVMe controller on bus %d slot %d function %d\n", dev->bus, dev->slot, dev->function);
 
     // Get the BAR
-    pci_bar_t *bar = pci_readBAR(bus, slot, function, 0);
+    pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 0);
 
     if (!bar) {
         LOG(ERR, "NVMe controller does not have BAR0\n");
@@ -181,10 +179,10 @@ int nvme_init(uint8_t bus, uint8_t slot, uint8_t function) {
     }
 
     // Enable interrupts
-    uint8_t irq = pci_enableMSI(bus, slot, function);
+    uint8_t irq = pci_enableMSI(dev->bus, dev->slot, dev->function);
     if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, nvme_irq, (void*)nvme)) {
         LOG(DEBUG, "MSI unavailable, fallback to pin interrupt\n");
-        irq = pci_getInterrupt(bus, slot, function);
+        irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
 
         LOG(DEBUG, "Got IRQ%d\n", irq);
         if (hal_registerInterruptHandlerContext(irq, nvme_irq, (void*)nvme)) {
@@ -229,16 +227,21 @@ _nvme_cleanup:
 /**
  * @brief PCI scan method for NVMe device
  */
-int nvme_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
+int nvme_scan(pci_device_t *dev, void *data) {
     // Should just be an NVMe device
-    return nvme_init(bus, slot, function);
+    return nvme_init(dev);
 }
 
 /**
  * @brief Init method
  */
 int driver_init(int argc, char *argv[]) {
-    pci_scan(nvme_scan, NULL, 0x0108);
+    pci_scan_parameters_t params = {
+        .class_code = 0x01,
+        .subclass_code = 0x08
+    };
+
+    pci_scanDevice(nvme_scan, &params, NULL);
     return 0;
 }
 

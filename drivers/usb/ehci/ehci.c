@@ -55,19 +55,6 @@ static spinlock_t ehci_lock = { 0 };
 #define LOG(status, ...) dprintf_module(status, "DRIVER:EHCI", __VA_ARGS__)
 
 /**
- * @brief EHCI scan method
- */
-int ehci_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    // We know this device is of type 0x0C03, but it's only EHCI if the interface is 0x20
-    if (pci_readConfigOffset(bus, slot, function, PCI_PROGIF_OFFSET, 1) == 0x20) {
-        *((uint32_t*)data) = PCI_ADDR(bus, slot, function, 0x0);
-        return 1; // Found it
-    }
-    
-    return 0;
-}
-
-/**
  * @brief Allocate a new queue head
  * @param hc The host controller
  */
@@ -597,20 +584,15 @@ int ehci_irq(void *context) {
 }
 
 /**
- * @brief Driver initialization method
+ * @brief EHCI controller initialize method
+ * @param dev The device to use
  */
-int driver_init(int argc, char **argv) {
-    // Scan for the EHCI PCI device
-    uint32_t ehci_device = 0xDEADBEEF;
-    if (pci_scan(ehci_scan, (void*)&ehci_device, 0x0C03) == 0 || ehci_device == 0xDEADBEEF) {
-        LOG(INFO, "No EHCI controller found\n");
-        return 0;
-    }
+int ehci_init(pci_device_t *dev) {
 
     LOG(DEBUG, "EHCI controller located\n");
 
     // Read in the PCI bar
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), 0);
+    pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 0);
     if (!bar) {
         LOG(ERR, "EHCI controller does not have BAR0 - false positive?\n");
         return 1;
@@ -623,10 +605,10 @@ int driver_init(int argc, char **argv) {
 
     // Now we can configure the PCI command register.
     // Read it in and set flags
-    uint16_t ehci_pci_command = pci_readConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), PCI_COMMAND_OFFSET, 2);
+    uint16_t ehci_pci_command = pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, 2);
     ehci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
     ehci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), PCI_COMMAND_OFFSET, ehci_pci_command, 2);
+    pci_writeConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, ehci_pci_command, 2);
 
     // Map into memory space
     uintptr_t mmio_mapped = mem_mapMMIO(bar->address, bar->size);
@@ -675,8 +657,6 @@ int driver_init(int argc, char **argv) {
         hc->frame_list[i].terminate = 0;
     }
 
-    LOG(DEBUG, "hc->frame_list[0] = 0x%x\n", hc->frame_list[0]);
-
     // Mark entry 1024 as terminate
     hc->frame_list[1023].terminate = 1;
 
@@ -690,7 +670,7 @@ int driver_init(int argc, char **argv) {
     list_append(hc->async_list, (void*)hc->qh_async);
 
     // Register the interrupt handler
-    uint8_t irq = pci_getInterrupt(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device));
+    uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
 
     // Does it have an IRQ?
     if (irq == 0xFF) {
@@ -705,17 +685,17 @@ int driver_init(int argc, char **argv) {
     // We need to take over the controller. Read EECP
     uint32_t eecp = (EHCI_CAP_READ32(EHCI_REG_HCCPARAMS) & EHCI_HCCPARAMS_EECP) >> EHCI_HCCPARAMS_EECP_SHIFT;
     if (eecp >= 0x40) {
-        uint32_t legsup = pci_readConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), eecp + USBLEGSUP, 4);
+        uint32_t legsup = pci_readConfigOffset(dev->bus, dev->slot, dev->function, eecp + USBLEGSUP, 4);
 
         if (legsup != PCI_NONE && legsup & USBLEGSUP_HC_BIOS) {
             LOG(INFO, "Legacy support indicates BIOS still owns EHCI controller - taking\n");
 
-            pci_writeConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), eecp + USBLEGSUP, legsup | USBLEGSUP_HC_OS, 4);
+            pci_writeConfigOffset(dev->bus, dev->slot, dev->function, eecp + USBLEGSUP, legsup | USBLEGSUP_HC_OS, 4);
             
             // !!! please kill me
             int timeout = 2000;
             while (timeout) {
-                uint32_t legsup = pci_readConfigOffset(PCI_BUS(ehci_device), PCI_SLOT(ehci_device), PCI_FUNCTION(ehci_device), eecp + USBLEGSUP, 4);
+                uint32_t legsup = pci_readConfigOffset(dev->bus, dev->slot, dev->function, eecp + USBLEGSUP, 4);
                 if (!(legsup & USBLEGSUP_HC_BIOS) && (legsup & USBLEGSUP_HC_OS)) {
                     LOG(INFO, "EHCI controller owned\n");
                     break;
@@ -799,6 +779,34 @@ int driver_init(int argc, char **argv) {
     usb_registerController(controller);
 
     return 0;
+}
+
+/**
+ * @brief EHCI scan method
+ * @param dev The device
+ * @param data Useless
+ */
+int ehci_scan(pci_device_t *dev, void *data) {
+    // We know this device is of type 0x0C03, but it's only EHCI if the interface is 0x20
+    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) == 0x20) {
+        return ehci_init(dev);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Driver initialization method
+ */
+int driver_init(int argc, char **argv) {
+    // Scan for the EHCI PCI device
+    pci_scan_parameters_t params = {
+        .class_code = 0x0C,
+        .subclass_code = 0x03,
+        .id_list = NULL
+    };
+
+    return pci_scanDevice(ehci_scan, &params, NULL);
 }
 
 /**

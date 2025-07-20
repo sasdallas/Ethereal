@@ -19,6 +19,7 @@
 #include <kernel/drivers/sound/card.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <kernel/drivers/pci.h>
 
 /**** DEFINITIONS ****/
 
@@ -87,7 +88,7 @@ typedef struct ac97_buffer_entry {
 
 typedef struct ac97 {
     // PCI
-    uint32_t pci_device;                            // PCI device
+    pci_device_t *pci_device;                       // PCI device
     
     // I/O
     uintptr_t io_base;                              // I/O base

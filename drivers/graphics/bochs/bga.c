@@ -30,9 +30,8 @@
 #include <kernel/arch/arch.h>
 #include <string.h>
 
-
 /* BGA, global scope */
-uint32_t bga_device = 0x0;
+pci_device_t *bga_device = NULL;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:BGA", __VA_ARGS__)
@@ -59,12 +58,13 @@ uint16_t bga_read(uint16_t index) {
 /**
  * @brief Scan method for BGA
  */
-int bga_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (vendor_id == 0x1234 && device_id == 0x1111) {
-        bga_device = PCI_ADDR(bus, slot, function, 0);
+int bga_scan(pci_device_t *dev, void *data) {
+    if (bga_device) {
+        LOG(ERR, "Multiple BGA controllers detected (bus %d slot %d function %d)\n", dev->bus, dev->slot, dev->function);
         return 1;
     }
 
+    bga_device = dev;
     return 0;
 }
 
@@ -124,8 +124,19 @@ int bga_unmap(struct _video_driver *driver, size_t size, off_t off, void *addr) 
  * @brief Driver initialization function
  */
 int driver_init(int argc, char **argv) {
+    pci_id_mapping_t id_map[] = {
+        { .vid = 0x1234, .pid = { 0x1111, PCI_NONE }},
+        PCI_ID_MAPPING_END,
+    };
+
+    pci_scan_parameters_t params = {
+        .class_code = 0,
+        .subclass_code = 0,
+        .id_list = id_map
+    };
+
     // Scan for BGA device
-    pci_scan(bga_scan, NULL, -1);
+    pci_scanDevice(bga_scan, &params, NULL);
     if (!bga_device) {
         // No BGA device
         return 0;
@@ -135,7 +146,7 @@ int driver_init(int argc, char **argv) {
     LOG(INFO, "Graphics adapter ID: 0x%x\n", bga_read(VBE_DISPI_INDEX_ID));
 
     // Get framebuffer region
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(bga_device), PCI_SLOT(bga_device), PCI_FUNCTION(bga_device), 0);
+    pci_bar_t *bar = pci_readBAR(bga_device->bus, bga_device->slot, bga_device->function, 0);
     if (!bar || bar->type != PCI_BAR_MEMORY32) {
         LOG(ERR, "Failed to get framebuffer region. Assuming faulty card.\n");
         return 1;   

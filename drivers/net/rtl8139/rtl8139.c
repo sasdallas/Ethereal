@@ -226,20 +226,20 @@ ssize_t rtl8139_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
 /**
  * @brief Initialize a RTL8139 NIC
  */
-int rtl8139_init(uint32_t device) {
-    LOG(INFO, "Initializing a RTL8139 NIC (bus %d slot %d func %d)\n", PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+int rtl8139_init(pci_device_t *device) {
+    LOG(INFO, "Initializing a RTL8139 NIC (bus %d slot %d func %d)\n", device->bus, device->slot, device->function);
     
     // Step 1: Get bus mastering on
-    uint16_t command = pci_readConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, 2);
+    uint16_t command = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
     command |= PCI_COMMAND_BUS_MASTER;
-    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, command, 2);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, command, 2);
 
     // Allocate a RTL8139 structure
     rtl8139_t *nic = kzalloc(sizeof(rtl8139_t));
     nic->pci_device = device;
     
     // Get MMIO
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0);
+    pci_bar_t *bar = pci_readBAR(device->bus, device->slot, device->function, 0);
     if (!bar) {
         LOG(ERR, "BAR0 does not exist or could not be read.\n");
         printf(COLOR_CODE_YELLOW "[RTL8139] BAR0 does not exist. Bad chip?");
@@ -258,12 +258,12 @@ int rtl8139_init(uint32_t device) {
     LOG(DEBUG, "Communicating with this NIC over %s\n", (nic->io_space ? "I/O" : "MMIO"));
 
     // Register our IRQ handler
-    uint8_t irq = pci_getInterrupt(PCI_BUS(nic->pci_device), PCI_SLOT(nic->pci_device), PCI_FUNCTION(nic->pci_device));
+    uint8_t irq = pci_getInterrupt(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
 
     if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, rtl8139_handler, (void*)nic)) {
         // Failed to register IRQ
         LOG(ERR, "Failed to register IRQ%d - trying MSI\n", irq);
-        uint8_t msi = pci_enableMSI(PCI_BUS(nic->pci_device), PCI_SLOT(nic->pci_device), PCI_FUNCTION(nic->pci_device));
+        uint8_t msi = pci_enableMSI(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
         if (msi == 0xFF || hal_registerInterruptHandlerContext(msi, rtl8139_handler, (void*)nic)) {
             LOG(ERR, "No other configuration methods\n");
             goto _cleanup;
@@ -316,7 +316,7 @@ int rtl8139_init(uint32_t device) {
 
     // Register it
     char name[128];
-    snprintf(name, 128, "enp%ds%d", PCI_BUS(device), PCI_SLOT(device));
+    snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
     nic_register(nic->nic, name);
 
     // Start thread
@@ -333,19 +333,28 @@ _cleanup:
 /**
  * @brief PCI scan method
  */
-int rtl8139_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (vendor_id == 0x10ec && device_id == 0x8139) {
-        return rtl8139_init(PCI_ADDR(bus, slot, function, 0));
-    }
-
-    return 0;
+int rtl8139_scan(pci_device_t *dev, void *data) {
+    return rtl8139_init(dev);
 }
 
 /**
  * @brief Init method
  */
 int driver_init(int argc, char *argv[]) {
-    return pci_scan(rtl8139_scan, NULL, -1);
+    pci_id_mapping_t id_list[] = {
+        { .vid = 0x10ec, .pid = { 0x8193, PCI_NONE } },
+        PCI_ID_MAPPING_END
+    };
+
+
+    pci_scan_parameters_t params = {
+        .class_code = 0,
+        .subclass_code = 0,
+        .id_list = id_list
+    };
+
+
+    return pci_scanDevice(rtl8139_scan, &params, NULL);
 }
 
 /**

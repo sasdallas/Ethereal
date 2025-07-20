@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/task/process.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/misc/spinlock.h>
 
 /**** DEFINITIONS ****/
@@ -100,7 +101,7 @@
 /**** TYPES ****/
 
 typedef struct rtl8139 {
-    uint32_t pci_device;        // PCI device
+    pci_device_t *pci_device;   // PCI device
     uintptr_t mmio_addr;        // MMIO/IO space address
     uint8_t io_space;           // I/O space toggle
     spinlock_t lock;            // Garbage lock

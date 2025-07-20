@@ -237,15 +237,15 @@ void xhci_thread(void *context) {
  * @brief Initialize an xHCI controller
  * @param device The PCI device of the xHCI controller
  */
-int xhci_initController(uint32_t device) {
-    LOG(INFO, "Initializing xHCI controller (bus %d, slot %d, function %d)\n", PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+int xhci_initController(pci_device_t *device) {
+    LOG(INFO, "Initializing xHCI controller (bus %d, slot %d, function %d)\n", device->bus, device->slot, device->function);
 
     // Start by making a new xhci_t structure
     xhci_t *xhci = kzalloc(sizeof(xhci_t));
-    xhci->pci_addr = device;
+    xhci->pci = device;
     
     // Read in BAR0
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0);
+    pci_bar_t *bar = pci_readBAR(device->bus, device->slot, device->function, 0);
     if (!bar) {
         LOG(ERR, "xHCI does not have BAR0\n");
         kfree(xhci);
@@ -260,13 +260,13 @@ int xhci_initController(uint32_t device) {
     }
 
     // Enable IRQs in PCI command
-    uint16_t xhci_pci_command = pci_readConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, 2);
+    uint16_t xhci_pci_command = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
     xhci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
     xhci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(PCI_BUS(xhci->pci_addr), PCI_SLOT(xhci->pci_addr), PCI_FUNCTION(xhci->pci_addr), PCI_COMMAND_OFFSET, xhci_pci_command, 2);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, xhci_pci_command, 2);
 
     // Try to enable MSI
-    uint8_t irq = pci_enableMSI(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+    uint8_t irq = pci_enableMSI(device->bus, device->slot, device->function);
     if (irq != 0xFF) {
         if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
             LOG(ERR, "Error while registering IRQ%d\n", irq);
@@ -274,7 +274,7 @@ int xhci_initController(uint32_t device) {
         }
     } else {
         LOG(WARN, "This xHCI controller does not support MSI - fallback to pin interrupt\n");
-        irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+        irq = pci_getInterrupt(device->bus, device->slot, device->function);
         if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
             LOG(ERR, "Error while registering IRQ%d\n", irq);
             return 1;
@@ -394,8 +394,8 @@ int xhci_initController(uint32_t device) {
     xhci_acknowledge(xhci, 0);
 
     // Take over control (Panther Point)
-    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0xD0, 0xFFFFFFFF, 4);
-    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0xD8, 0xFFFFFFFF, 4);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, 0xD0, 0xFFFFFFFF, 4);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, 0xD8, 0xFFFFFFFF, 4);
 
     // Start the controller
     if (xhci_startController(xhci)) {

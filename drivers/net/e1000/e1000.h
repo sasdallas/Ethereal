@@ -172,7 +172,7 @@ typedef struct e1000_tx_desc {
  * @brief E1000 NIC
  */
 typedef struct e1000 {
-    uint32_t pci_device;                        // PCI device
+    pci_device_t *pci_device;                   // PCI device
     uint16_t nic_type;                          // Device ID field
     fs_node_t *nic;                             // NIC
 	spinlock_t *lock;							// NIC lock

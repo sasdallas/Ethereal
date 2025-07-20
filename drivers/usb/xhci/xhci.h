@@ -25,6 +25,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/misc/pool.h>
 #include <kernel/drivers/usb/usb.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/task/process.h>
 
 /**** TYPES ****/
@@ -33,7 +34,7 @@
 typedef uintptr_t xhci_dcbaa_t;
 
 typedef struct xhci {
-    uint32_t pci_addr;              // PCI address in case any new calls need to be made
+    pci_device_t *pci;              // PCI address in case any new calls need to be made
     uintptr_t mmio_addr;            // MMIO address
     USBController_t *controller;    // Controller object
 
@@ -89,7 +90,7 @@ typedef struct xhci_endpoint {
  * @brief Initialize an xHCI controller
  * @param device The PCI device of the xHCI controller
  */
-int xhci_initController(uint32_t device);
+int xhci_initController(pci_device_t *device);
 
 /**
  * @brief Try to initialize an xHCI port

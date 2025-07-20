@@ -40,6 +40,7 @@
 #include <kernel/drivers/grubvid.h>
 #include <kernel/drivers/video.h>
 #include <kernel/drivers/font.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/drivers/usb/usb.h>
 
 /* Architecture drivers */
@@ -227,6 +228,9 @@ _no_smp: ;
     } else {
         dprintf(INFO, "Argument \"--no_video\" found, disabling video.\n");
     }
+
+    /* PCI INITIALIZATION */
+    pci_init();
 
     /* USB INITIALIZATION */
     usb_init();

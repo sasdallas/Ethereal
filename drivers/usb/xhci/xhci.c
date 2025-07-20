@@ -18,10 +18,10 @@
 /**
  * @brief PCI scan method for xHCI
  */
-int xhci_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (pci_readConfigOffset(bus, slot, function, PCI_PROGIF_OFFSET, 1) == 0x30) {
+int xhci_scan(pci_device_t *dev, void *data) {
+    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) == 0x30) {
         // xHCI controller found
-        xhci_initController(PCI_ADDR(bus, slot, function, 0));
+        xhci_initController(dev);
     }
 
     return 0; // return 0 to find more
@@ -32,8 +32,13 @@ int xhci_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, u
  */
 int driver_init(int argc, char **argv) {
     // Do a scan
-    pci_scan(xhci_scan, NULL, 0x0C03);
-    return 0;
+    pci_scan_parameters_t params = {
+        .class_code = 0x0C,
+        .subclass_code = 0x03,
+        .id_list = NULL
+    };
+
+    return pci_scanDevice(xhci_scan, &params, NULL);
 }
 
 /**

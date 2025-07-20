@@ -324,11 +324,11 @@ ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
  * @brief Initialize a RTL8169 NIC
  * @param device The PCI device
  */
-int rtl8169_init(uint32_t device) {
-    LOG(DEBUG, "Initializing a RTL8169 NIC (bus %d slot %d func %d)\n", PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+int rtl8169_init(pci_device_t *device) {
+    LOG(DEBUG, "Initializing a RTL8169 NIC (bus %d slot %d func %d)\n", device->bus, device->slot, device->function);
     
     // Get BAR
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0);
+    pci_bar_t *bar = pci_readBAR(device->bus, device->slot, device->function, 0);
     if (!bar) {
         LOG(ERR, "RTL8169 is lacking BAR0\n");
         return 1;
@@ -364,10 +364,10 @@ int rtl8169_init(uint32_t device) {
     LOG(DEBUG, "MAC: " MAC_FMT "\n", MAC(mac));
     
     // Register IRQ handler
-    uint8_t irq = pci_enableMSI(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+    uint8_t irq = pci_enableMSI(device->bus, device->slot, device->function);
     if (irq == 0xFF) {
         LOG(WARN, "RTL8169 does not support MSI, fallback to pin interrupt\n");
-        irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+        irq = pci_getInterrupt(device->bus, device->slot, device->function);
 
         if (irq == 0xFF) {
             LOG(ERR, "No IRQ found for RTL8169 (or it needs to allocate one and we don't do that)\n");
@@ -434,36 +434,54 @@ int rtl8169_init(uint32_t device) {
 
     // Mount the NIC!
     char name[128];
-    snprintf(name, 128, "enp%ds%d", PCI_BUS(device), PCI_SLOT(device));
+    snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
     nic_register(nic->nic, name);
 
     return 0;
 }
 
+// /**
+//  * @brief PCI scan method
+//  */
+// int rtl8169_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
+//     if (vendor_id == 0x10ec && (device_id == 0x8161 || device_id == 0x8168 || device_id == 0x8169 || device_id == 0x2600)) {
+//         // RTL8169
+//         return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
+//     }
+
+//     if ((vendor_id == 0x1259 && device_id == 0xc107) || (vendor_id == 0x1737 && device_id == 0x1032) || (vendor_id == 0x16ec && device_id == 0x0116)) {
+//         return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
+//     }
+
+//     return 0;
+// }
+
 /**
  * @brief PCI scan method
  */
-int rtl8169_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (vendor_id == 0x10ec && (device_id == 0x8161 || device_id == 0x8168 || device_id == 0x8169 || device_id == 0x2600)) {
-        // RTL8169
-        return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
-    }
-
-    if ((vendor_id == 0x1259 && device_id == 0xc107) || (vendor_id == 0x1737 && device_id == 0x1032) || (vendor_id == 0x16ec && device_id == 0x0116)) {
-        return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
-    }
-
-    return 0;
+int rtl8169_find(pci_device_t *dev, void *data) {
+    return rtl8169_init(dev);
 }
 
 /**
  * @brief Init method
  */
 int driver_init(int argc, char *argv[]) {
-    if (pci_scan(rtl8169_scan, NULL, -1)) {
-        // One failed to initialize
-        return DRIVER_STATUS_ERROR;
-    }
+    pci_id_mapping_t id_list[] = {
+        { .vid = 0x10ec, .pid = { 0x8161, 0x8168, 0x8169, 0x2600, PCI_NONE } },
+        { .vid = 0x1259, .pid = { 0xc107, PCI_NONE } },
+        { .vid = 0x1737, .pid = { 0x1032, PCI_NONE } },
+        { .vid = 0x16ec, .pid = { 0x0116, PCI_NONE } },
+        PCI_ID_MAPPING_END
+    };
+
+    pci_scan_parameters_t params = {
+        .class_code = 0,
+        .subclass_code = 0,
+        .id_list = id_list
+    };
+
+    pci_scanDevice(rtl8169_find, &params, NULL);
 
     return DRIVER_STATUS_SUCCESS;
 }

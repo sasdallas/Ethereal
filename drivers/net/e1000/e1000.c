@@ -414,25 +414,25 @@ int e1000_irq(void *context) {
 
 /**
  * @brief Initialize method for an E1000 device
- * @param device Concatenated bus, slot, function
+ * @param dev Device
  * @param type NIC type (device ID)
  */
-void e1000_init(uint32_t device, uint16_t type) {
+void e1000_init(pci_device_t *dev, uint16_t type) {
     // First, we should enable PCI I/O space and MMIO space access
-    uint16_t cmd = pci_readConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, 2);
+    uint16_t cmd = pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, 2);
     cmd |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
     cmd &= ~(PCI_COMMAND_INTERRUPT_DISABLE);
-    pci_writeConfigOffset(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), PCI_COMMAND_OFFSET, cmd, 2);
+    pci_writeConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, cmd, 2);
 
     // Allocate an E1000 structure
     e1000_t *nic = kmalloc(sizeof(e1000_t));
     memset(nic, 0, sizeof(e1000_t));
-    nic->pci_device = device;           // PCI
+    nic->pci_device = dev;              // PCI
     nic->nic_type = type;               // Device ID
     nic->lock = spinlock_create("e1000 lock");
 
     // Get the BAR of the device
-    pci_bar_t *bar = pci_readBAR(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device), 0);
+    pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 0);
     if (!bar) {
         LOG(WARN, "E1000 device does not have a BAR0.. ok?\n");
         spinlock_destroy(nic->lock);
@@ -453,7 +453,7 @@ void e1000_init(uint32_t device, uint16_t type) {
     kfree(bar);
 
     // Register our IRQ handler
-    uint8_t irq = pci_getInterrupt(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+    uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
 
     if (irq == 0xFF) {
         LOG(ERR, "E1000 NIC does not have interrupt number\n");
@@ -466,7 +466,7 @@ void e1000_init(uint32_t device, uint16_t type) {
         LOG(ERR, "Error registering IRQ%d for E1000\n", irq);
         
         // Try to enable MSI
-        uint8_t vector = pci_enableMSI(PCI_BUS(device), PCI_SLOT(device), PCI_FUNCTION(device));
+        uint8_t vector = pci_enableMSI(dev->bus, dev->slot, dev->function);
         if (vector == 0xFF) {
             LOG(ERR, "MSI configuration failed\n");
             goto _cleanup;
@@ -533,7 +533,7 @@ void e1000_init(uint32_t device, uint16_t type) {
 
     // Mount the NIC!
     char name[128];
-    snprintf(name, 128, "enp%ds%d", PCI_BUS(device), PCI_SLOT(device));
+    snprintf(name, 128, "enp%ds%d", dev->bus, dev->slot);
     nic_register(nic->nic, name);
 
     process_t *e1000_proc = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
@@ -558,11 +558,8 @@ _cleanup:
 /**
  * @brief Scan method
  */
-int e1000_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-    if (vendor_id == VENDOR_ID_INTEL && (device_id == E1000_DEVICE_EMU || device_id == E1000_DEVICE_I217 || device_id == E1000_DEVICE_82577LM || device_id == E1000_DEVICE_82574L || device_id == E1000_DEVICE_82545EM || device_id == E1000_DEVICE_82543GC)) {
-        e1000_init(PCI_ADDR(bus, slot, function, 0), device_id);
-    }
-
+int e1000_scan(pci_device_t *dev, void *data) {
+    e1000_init(dev, dev->pid);
     return 0;
 }
 
@@ -570,7 +567,18 @@ int e1000_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, 
  * @brief Driver initialization method
  */
 int driver_init(int argc, char **argv) {
-    pci_scan(e1000_scan, NULL, -1);
+    pci_id_mapping_t id_map[] = {
+        { .vid = VENDOR_ID_INTEL, .pid = { E1000_DEVICE_EMU, E1000_DEVICE_I217, E1000_DEVICE_82577LM, E1000_DEVICE_82574L, E1000_DEVICE_82545EM, E1000_DEVICE_82543GC, PCI_NONE }},
+        PCI_ID_MAPPING_END
+    };
+
+    pci_scan_parameters_t params = {
+        .class_code = 0,
+        .subclass_code = 0,
+        .id_list = id_map,
+    };
+
+    pci_scanDevice(e1000_scan, &params, NULL);
     return 0;
 }
 

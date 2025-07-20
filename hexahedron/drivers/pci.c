@@ -28,6 +28,12 @@ uint8_t msi_array[HAL_IRQ_MSI_COUNT / 8] = { 0 };
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "PCI", __VA_ARGS__)
 
+/* PCI bus array */
+pci_bus_t pci_bus_list[PCI_MAX_BUS];
+
+/* Macro to get PCI devices */
+#define PCI_DEVICE(bus, slot, func) (&(pci_bus_list[bus].slots[slot].functions[func]))
+
 /**
  * @brief Read a specific offset from the PCI configuration space
  * 
@@ -216,130 +222,6 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
 }
 
 /**
- * @brief PCI callback for when a hit was found on the device
- * 
- * @param callback The callback function
- * @param data User-specified data
- * @param type The type of the device as requested
- * @param bus The bus of the device
- * @param slot The slot of the device
- * @param function The function of the device
- * 
- * @returns Whatever the callback function returns
- */
-static int pci_scanHit(pci_callback_t callback, void *data, int type, uint8_t bus, uint8_t slot, uint8_t function) {
-    // Read vendor and device ID
-    uint16_t vendor_id = pci_readVendorID(bus, slot, function);
-    uint16_t device_id = pci_readDeviceID(bus, slot, function);
-
-    // Call
-    return callback(bus, slot, function, vendor_id, device_id, data);
-}
-
-/**
- * @brief Scan and find a PCI device on a specific function
- * 
- * This is required because of @c PCI_TYPE_BRIDGE - also a remnant of the Ethereal Operating System scanner
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to use
- * @param slot The slot of the bus
- * @param func The function of the device
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanFunction(pci_callback_t callback, void *data, int type, uint8_t bus, uint8_t slot, uint8_t func) {
-    if (type == -1 || type == pci_readType(bus, slot, func)) {
-        // Found it
-        return pci_scanHit(callback, data, type, bus, slot, func);
-    }
-
-    if (pci_readType(bus, slot, func) == PCI_TYPE_BRIDGE) {
-        // It's a bridge, do more work
-        // TODO: Add header definitions for type 0x1, we're using a hardcoded PCI_SECONDARY_BUS_OFFSET (0x19) 
-        return pci_scanBus(callback, data, type, pci_readConfigOffset(bus, slot, func, 0x19, 1));
-    }
-
-    return 0;
-}
-
-/**
- * @brief Scan and find a PCI device on a certain slot
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to use
- * @param slot The slot of the bus
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanSlot(pci_callback_t callback, void *data, int type, uint8_t bus, uint8_t slot) {
-    // Does the device even exist?
-    if ((uint16_t)pci_readConfigOffset(bus, slot, 0, PCI_VENID_OFFSET, 2) == PCI_NONE) return 0;
-
-    // First make sure this even supports multi-function
-    uint8_t htype = (uint8_t)pci_readConfigOffset(bus, slot, 0, PCI_HEADER_TYPE_OFFSET, 1);
-    if (!(htype & PCI_HEADER_TYPE_MULTIFUNCTION)) {
-        // Use function 0
-        return pci_scanFunction(callback, data, type, bus, slot, 0);
-    }
-
-    // It does, scan each one.
-    for (uint32_t func = 0; func < PCI_MAX_FUNC; func++) {
-        // Does this one exist?
-        if (pci_readConfigOffset(bus, slot, func, PCI_VENID_OFFSET, 2) != PCI_NONE) {
-            int ret = pci_scanFunction(callback, data, type, bus, slot, func);
-            if (ret) return 1; // Found it!
-        }
-    }
-
-    return 0;
-}
-
-/**
- * @brief Scan and find a PCI device on a certain bus
- * 
- * @param callback The callback to use
- * @param data Any user data to pass to callback
- * @param type The type of the device. Set to -1 to ignore type field
- * @param bus The bus to check
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scanBus(pci_callback_t callback, void *data, int type, uint8_t bus) {
-    // We don't need to check the validity of each as pci_scanSlot does that
-    for (uint32_t slot = 0; slot < PCI_MAX_SLOT; slot++) {
-        if (pci_scanSlot(callback, data, type, bus, slot)) return 1;
-    }
-
-    return 0;
-}
-
-/**
- * @brief Scan and find a PCI device. Calls a callback function that can be used to determine the device more closely.
- * 
- * @see pci_callback_t for params/return value.
- * 
- * @param callback The callback function to call. 
- * @param data Any user data to pass to callback.
- * @param type The type of the device. Set to -1 to ignore type field.
- * 
- * @returns 0 on failure, 1 on successfully found
- */
-int pci_scan(pci_callback_t callback, void *data, int type) {
-    // Start scanning
-    for (uint32_t bus = 0; bus < PCI_MAX_BUS; bus++) {
-        int r = pci_scanBus(callback, data, type, bus);
-        if (r) return r;
-    }
-    
-    return 0;
-}
-
-/**
  * @brief Read the type of the PCI device (class code + subclass)
  * 
  * @param bus The bus of the PCI device
@@ -350,32 +232,6 @@ int pci_scan(pci_callback_t callback, void *data, int type) {
  */
 uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func) {
     return (pci_readConfigOffset(bus, slot, func, PCI_CLASSCODE_OFFSET, 1) << 8) | pci_readConfigOffset(bus, slot, func, PCI_SUBCLASS_OFFSET, 1);
-}
-
-/**
- * @brief Read the vendor ID of a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the vendor ID
- */
-uint16_t pci_readVendorID(uint8_t bus, uint8_t slot, uint8_t func) {
-    return pci_readConfigOffset(bus, slot, func, PCI_VENID_OFFSET, 2);
-}
-
-/**
- * @brief Read the device ID of a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the device ID
- */
-uint16_t pci_readDeviceID(uint8_t bus, uint8_t slot, uint8_t func) {
-    return pci_readConfigOffset(bus, slot, func, PCI_DEVID_OFFSET, 2);
 }
 
 
@@ -487,23 +343,264 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     return interrupt - 32;
 }
 
+/* Prototype */
+static void pci_probeBus(uint8_t bus);
+
+/**
+ * @brief Probe function
+ * @param bus The bus of the device
+ * @param slot The slot number
+ * @param function The function number
+ */
+static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
+    // Is this a valid device?
+    if (pci_readConfigOffset(bus, slot, function, PCI_VENID_OFFSET, 2) == PCI_NONE) return;
+
+    // Yes, initialize this device.
+    pci_device_t *dev = PCI_DEVICE(bus, slot, function);
+    dev->valid = 1;
+    dev->bus = bus;
+    dev->slot = slot;
+    dev->function = function;
+    dev->vid = pci_readConfigOffset(bus, slot, function, PCI_VENID_OFFSET, 2);
+    dev->pid = pci_readConfigOffset(bus, slot, function, PCI_DEVID_OFFSET, 2);
+    dev->class_code = pci_readConfigOffset(bus, slot, function, PCI_CLASSCODE_OFFSET, 1);
+    dev->subclass_code = pci_readConfigOffset(bus, slot, function, PCI_SUBCLASS_OFFSET, 1);
+    dev->driver = NULL;
+    
+    LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
+
+    // Do we need to initialize another bus?
+    if (dev->class_code == 0x06 && dev->subclass_code == 0x04) {
+        // PCI-to-PCI bridge
+        uint8_t secondary_bus = pci_readConfigOffset(bus, slot, function, 0x19, 1);
+        pci_probeBus(secondary_bus);
+    }
+}
+
+/**
+ * @brief Probe device
+ * @param bus Bus number
+ * @param slot Slot number
+ */
+static void pci_probeSlot(uint8_t bus, uint8_t slot) {
+    // Check vendor ID
+    if (pci_readConfigOffset(bus, slot, 0, PCI_VENID_OFFSET, 2) == PCI_NONE) return;
+
+    // Check the first function
+    pci_probeFunction(bus, slot, 0);
+
+    // Are we multi-function?
+    uint8_t type = pci_readConfigOffset(bus, slot, 0, PCI_HEADER_TYPE_OFFSET, 1);
+    if (type & PCI_HEADER_TYPE_MULTIFUNCTION) {
+        // Yes, probe each function
+        for (int func = 1; func < PCI_MAX_FUNC; func++) {
+            pci_probeFunction(bus, slot, func);
+        }
+    }
+}
+
+/**
+ * @brief Probe bus
+ * @param bus Bus number
+ */
+static void pci_probeBus(uint8_t bus) {
+    for (int slot = 0; slot < PCI_MAX_SLOT; slot++) {
+        pci_probeSlot(bus, slot);
+    }
+}
+
+/**
+ * @brief Initialize and probe for PCI devices
+ */
+void pci_init() {
+    // Perform PCI probing
+    // Check if this bus is multi-function
+    uint8_t header_type = pci_readConfigOffset(0, 0, 0, PCI_HEADER_TYPE_OFFSET, 1);
+    if (header_type & PCI_HEADER_TYPE_MULTIFUNCTION) {
+        for (int func = 0; func < 8; func++) {
+            uint16_t vid = pci_readConfigOffset(0, 0, func, PCI_VENID_OFFSET, 2);
+            if (vid != PCI_NONE) {
+                pci_probeBus(func);
+            }
+        }
+    } else {
+        pci_probeBus(0);
+    }
+
+    LOG(INFO, "PCI probing completed\n");
+}
+
+
+
+/* Prototype */
+int pci_scanBus(uint8_t bus, pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data);
+
+/**
+ * @brief Scan for PCI devices on a function
+ * @param bus The bus to scan
+ * @param slot The slot to scan
+ * @param function The function to scan
+ * @param callback Callback function
+ * @param parameters Scan parameters (optional, leave as NULL if you don't care)
+ * @param data Driver-specific data to pass along
+ */
+int pci_scanFunction(uint8_t bus, uint8_t slot, uint8_t function, pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data) {
+    pci_device_t *dev = PCI_DEVICE(bus, slot, function);
+    if (!dev->valid) return 0;
+
+    // Do we need to initialize another bus?
+    if (dev->class_code == 0x06 && dev->subclass_code == 0x04) {
+        // PCI-to-PCI bridge
+        uint8_t secondary_bus = pci_readConfigOffset(bus, slot, function, 0x19, 1);
+        pci_probeBus(secondary_bus);
+    }
+
+    // Check to see if this matches parameters
+    if (parameters) {
+        if (parameters->class_code && dev->class_code != parameters->class_code) return 0;
+        if (parameters->subclass_code && dev->subclass_code != parameters->subclass_code) return 0;
+    
+        if (parameters->id_list) {
+            pci_id_mapping_t *map = parameters->id_list;
+            
+            while (map) {
+                if (map->vid == PCI_NONE) return 0;
+
+                // Matching VID?
+                if (map->vid == dev->vid) {
+                    // For each PID
+                    uint16_t *pid = map->pid;
+
+                    if (*pid == PCI_NONE) {
+                        // The first and only PID in the list is PCI_NONE, accept all that have VID
+                        break;
+                    }
+
+                    int found = 0;
+                    while (*pid != PCI_NONE) {
+                        if (*pid == dev->pid) { found = 1; break; }
+                        pid++;
+                    }
+
+                    // Did we find it?
+                    if (!found) return 0;
+                    
+                    // Yes
+                    break;
+                
+                } 
+
+                map++;
+            }
+        }
+    }
+
+    return callback(dev, data);
+}
+
+/**
+ * @brief Scan for PCI devices on a slot
+ * @param bus The bus to scan
+ * @param slot The slot to scan
+ * @param callback Callback function
+ * @param parameters Scan parameters (optional, leave as NULL if you don't care)
+ * @param data Driver-specific data to pass along
+ */
+int pci_scanSlot(uint8_t bus, uint8_t slot, pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data) {
+    // Check vendor ID
+    if (pci_readConfigOffset(bus, slot, 0, PCI_VENID_OFFSET, 2) == PCI_NONE) return 0;
+
+    // Check the first function
+    if (pci_scanFunction(bus, slot, 0, callback, parameters, data)) return 1;
+
+    // Are we multi-function?
+    uint8_t type = pci_readConfigOffset(bus, slot, 0, PCI_HEADER_TYPE_OFFSET, 1);
+    if (type & PCI_HEADER_TYPE_MULTIFUNCTION) {
+        // Yes, probe each function
+        for (int func = 1; func < PCI_MAX_FUNC; func++) {
+            if (pci_scanFunction(bus, slot, func, callback, parameters, data)) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Scan for PCI devices on a bus
+ * @param bus The bus to scan
+ * @param callback Callback function
+ * @param parameters Scan parameters (optional, leave as NULL if you don't care)
+ * @param data Driver-specific data to pass along
+ */
+int pci_scanBus(uint8_t bus, pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data) {
+    for (int slot = 0; slot < 32; slot++) {
+        if (pci_scanSlot(bus, slot, callback, parameters, data)) {
+            return 1;
+        } 
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Scan for PCI devices
+ * @param callback Callback function
+ * @param parameters Scan parameters (optional, leave as NULL if you don't care)
+ * @param data Driver-specific data to pass along
+ * @returns 1 on an error, 0 on success
+ */
+int pci_scanDevice(pci_scan_callback_t callback, pci_scan_parameters_t *parameters, void *data) {
+    // Check if this bus is multi-function
+    uint8_t header_type = pci_readConfigOffset(0, 0, 0, PCI_HEADER_TYPE_OFFSET, 1);
+    if (header_type & PCI_HEADER_TYPE_MULTIFUNCTION) {
+        for (int func = 0; func < 8; func++) {
+            uint16_t vid = pci_readConfigOffset(0, 0, func, PCI_VENID_OFFSET, 2);
+            if (vid != PCI_NONE) {
+                if (pci_scanBus(func, callback, parameters, data)) {
+                    return 1;
+                }
+            }
+        }
+    } else {
+        return pci_scanBus(0, callback, parameters, data);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Get a device from bus/slot/function
+ * @param bus The bus to check
+ * @param slot The slot to check
+ * @param function The function to check
+ * @returns Device object or NULL
+ */
+pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function) {
+    pci_device_t *dev = PCI_DEVICE(bus, slot, function);
+    if (dev->valid) return dev;
+    return NULL;
+}
+
 /**
  * @brief PCI KernelFS scan method
  */
-static int pci_kernelFSScan(uint8_t bus, uint8_t slot, uint8_t func, uint16_t vendor_id, uint16_t device_id, void *data) {
+static int pci_kernelFSScan(pci_device_t *dev, void *data) {
     kernelfs_entry_t *entry = (kernelfs_entry_t*)data;
 
     kernelfs_appendData(entry,   "%02x:%02x.%d (%04x, %04x:%04x)\n"
         " IRQ: %d Pin: %d\n"
         " BAR0: 0x%08x BAR1: 0x%08x BAR2: 0x%08x BAR3: 0x%08x BAR4: 0x%08x BAR5: 0x%08x\n", 
-            bus, slot, func, pci_readType(bus, slot, func), vendor_id, device_id,
-            pci_getInterrupt(bus, slot, func), pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR0_OFFSET, 4),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR1_OFFSET, 4),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR2_OFFSET, 4),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR3_OFFSET, 4),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR4_OFFSET, 4),
-            pci_readConfigOffset(bus, slot, func, PCI_GENERAL_BAR5_OFFSET, 4));
+            dev->bus, dev->slot, dev->function, pci_readType(dev->bus, dev->slot, dev->function), dev->vid, dev->pid,
+            pci_getInterrupt(dev->bus, dev->slot, dev->function), pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR0_OFFSET, 4),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR1_OFFSET, 4),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR2_OFFSET, 4),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR3_OFFSET, 4),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR4_OFFSET, 4),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR5_OFFSET, 4));
 
     return 0;
 }
@@ -512,7 +609,7 @@ static int pci_kernelFSScan(uint8_t bus, uint8_t slot, uint8_t func, uint16_t ve
  * @brief PCI KernelFS 
  */
 static int pci_fillKernelFS(struct kernelfs_entry *entry, void *data) {
-    pci_scan(pci_kernelFSScan, (void*)entry, -1);
+    pci_scanDevice(pci_kernelFSScan, NULL, (void*)entry);
     return 0;
 }
 
