@@ -134,10 +134,10 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
         rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->tx_descriptors + (i * sizeof(rtl8169_desc_t)));
 
         // Get buffer
-        uintptr_t buffer = mem_getPhysicalAddress(NULL, nic->tx_buffers + (i * RTL8169_RX_BUFFER_SIZE));
+        uintptr_t buffer = mem_getPhysicalAddress(NULL, nic->tx_buffers + (i * RTL8169_TX_BUFFER_SIZE));
 
         // Setup parameters
-        desc->command = (i == RTL8169_RX_DESC_COUNT-1) ? RTL8169_DESC_CMD_EOR : 0;
+        desc->command = (i == RTL8169_TX_DESC_COUNT-1) ? RTL8169_DESC_CMD_EOR : 0;
         desc->vlan = 0x00000000;
         desc->buffer_lo = (buffer & 0xFFFFFFFF);
         desc->buffer_hi = (buffer >> 32);
@@ -305,13 +305,16 @@ ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
 
     // Give ownership
     desc->command = size | RTL8169_DESC_CMD_OWN | RTL8169_DESC_CMD_LS | RTL8169_DESC_CMD_FS;
+
+    // Advance tx_current
+    nic->tx_current = (nic->tx_current + 1) % RTL8169_TX_DESC_COUNT;
     if (nic->tx_current >= RTL8169_TX_DESC_COUNT-1) desc->command |= RTL8169_DESC_CMD_EOR;
 
     // Inform NIC gracefully
     RTL8169_WRITE8(RTL8169_REG_TPPoll, RTL8169_TPPoll_NPQ);
 
-    // Advance tx_current
-    nic->tx_current = (nic->tx_current + 1) % RTL8169_TX_DESC_COUNT;
+    NIC(node)->stats.tx_bytes += size;
+    NIC(node)->stats.tx_packets++;
 
     spinlock_release(&nic->lock);
     return size;
