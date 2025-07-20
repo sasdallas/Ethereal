@@ -86,6 +86,7 @@ void qsort_r(void * base, size_t nmemb, size_t size, int (*compar)(const void *,
 
 int system(const char *command);
 
+void __cxa_finalize(void *d);
 int __cxa_atexit(void (*func) (void *), void * arg, void * dso_handle);
 int atexit(void (*func)());
 

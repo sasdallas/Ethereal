@@ -12,9 +12,13 @@
  */
 
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/syscall.h>
 
 DEFINE_SYSCALL1(exit, SYS_EXIT, int);
+
+extern int _fini();
+extern void __libc_cleanup();
 
 void __attribute__((noreturn)) _exit(int status) {
     __syscall_exit(status);
@@ -22,5 +26,8 @@ void __attribute__((noreturn)) _exit(int status) {
 }
 
 void __attribute__((noreturn)) exit(int status) {
+    __cxa_finalize(NULL);
+    __libc_cleanup();
+    _fini();
     _exit(status);
 }

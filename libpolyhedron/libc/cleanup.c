@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdlib/atexit.c
- * @brief __cxa_atexit and atexit
+ * @file libpolyhedron/libc/cleanup.c
+ * @brief libc cleanup code
  * 
  * 
  * @copyright
@@ -11,8 +11,15 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <stdlib.h>
+#include <stdio.h>
 
-int atexit(void (*func)(void)) {
-    return __cxa_atexit((void*)func, NULL, NULL);
+
+void __stdio_flush_buffers() {
+    fflush(stdin);
+    fflush(stdout);
+    fflush(stderr);
+}
+
+void __libc_cleanup() {
+    __stdio_flush_buffers();
 }

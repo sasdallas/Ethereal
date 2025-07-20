@@ -18,7 +18,7 @@
 void perror(const char *s) {
 #ifndef __LIBK
     if (s && *s) {
-        printf("%s: %s\n", s, strerror(errno));
+        fprintf(stderr, "%s: %s\n", s, strerror(errno));
     }
 #endif
 }
