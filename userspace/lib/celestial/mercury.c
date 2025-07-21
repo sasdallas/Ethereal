@@ -44,7 +44,7 @@ int celestial_initMercury(window_t *win) {
     gfx_render(win->decor->ctx);
 
     // Load font object
-    win->decor->font = gfx_loadFont(win->decor->ctx, "/usr/share/UbuntuMono-Regular.ttf");
+    win->decor->font = gfx_loadFont(win->decor->ctx, "/usr/share/DejaVuSans.ttf");
 
     return 0;
 }
