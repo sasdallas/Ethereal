@@ -35,6 +35,9 @@ _Begin_C_Header
 #define SYS_READLINK        14
 #define SYS_ACCESS          15
 #define SYS_CHMOD           16
+#define SYS_FCNTL           17
+#define SYS_UNLINK          18
+#define SYS_FTRUNCATE       19
 /* reserved */
 #define SYS_BRK             20
 #define SYS_FORK            21

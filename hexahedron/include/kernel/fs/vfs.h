@@ -65,6 +65,7 @@ typedef int (*mmap_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*msync_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*munmap_t)(struct fs_node*, void *, size_t, off_t);
 typedef int (*ready_t)(struct fs_node*, int event_type);
+typedef int (*truncate_t)(struct fs_node*, off_t);
 
 // Map context for a file
 typedef struct vfs_mmap_context {
@@ -110,6 +111,7 @@ typedef struct fs_node {
     msync_t msync;              // Msync function
     munmap_t munmap;            // Munmap function
     ready_t ready;              // Ready function
+    truncate_t truncate;        // Truncate function
 
     // Other
     list_t *mmap_contexts;      // mmap() context list
@@ -255,6 +257,14 @@ int fs_ioctl(fs_node_t *node, unsigned long request, char *argp);
  * @returns OR bitmask of events the file is ready for
  */
 int fs_ready(fs_node_t *node, int event_type);
+
+/**
+ * @brief Truncate a file
+ * @param node The node to truncate
+ * @param length The new length of the file
+ * @returns Error code
+ */
+int fs_truncate(fs_node_t *node, size_t length);
 
 /**
  * @brief Alert any processes in the queue that new events are ready

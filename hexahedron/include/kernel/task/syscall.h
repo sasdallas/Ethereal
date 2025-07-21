@@ -129,6 +129,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout);
 long sys_pselect(sys_pselect_context_t *ctx);
 long sys_access(const char *path, int amode);
 long sys_mkdir(const char *pathname, mode_t mode);
+long sys_ftruncate(int fd, off_t length);
 void *sys_brk(void *addr);
 pid_t sys_fork();
 off_t sys_lseek(int fd, off_t offset, int whence);

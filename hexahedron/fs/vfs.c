@@ -375,6 +375,22 @@ int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 }
 
 /**
+ * @brief Truncate a file
+ * @param node The node to truncate
+ * @param length The new length of the file
+ * @returns Error code
+ */
+int fs_truncate(fs_node_t *node, size_t length) {
+    if (!node) return -EINVAL;
+
+    if (node->truncate) {
+        return node->truncate(node, length);
+    }
+
+    return -ENOTSUP;
+}
+
+/**
  * @brief Destroy a filesystem node immediately
  * @param node The node to destroy
  * @warning This does not check if the node has references, just use @c fs_close if you don't know what you're doing

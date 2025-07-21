@@ -47,9 +47,11 @@ static syscall_func_t syscall_table[] = {
     [SYS_IOCTL]             = (syscall_func_t)(uintptr_t)sys_ioctl,
     [SYS_READDIR]           = (syscall_func_t)(uintptr_t)sys_readdir,
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
-    [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
-    [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
     [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
+    [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
+    [SYS_READLINK]          = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
+    [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
     [SYS_LSEEK]             = (syscall_func_t)(uintptr_t)sys_lseek,
@@ -492,11 +494,8 @@ long sys_usleep(useconds_t usec) {
         return 0;
     }
 
-    LOG(DEBUG, "sys_usleep %d\n", usec);
     sleep_untilTime(current_cpu->current_thread, (usec / 10000) / 1000, (usec / 10000) % 1000);
     if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
-
-    LOG(DEBUG, "resuming process\n");
 
     return 0;
 }
@@ -842,6 +841,11 @@ long sys_access(const char *path, int amode) {
     fs_close(n);
 
     return 0;
+}
+
+long sys_ftruncate(int fd, off_t length) {
+    if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
+    return fs_truncate(FD(current_cpu->current_process, fd)->node, length); 
 }
 
 long sys_mkdir(const char *pathname, mode_t mode) {
