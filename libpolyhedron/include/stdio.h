@@ -154,6 +154,9 @@ int sscanf(const char *str, const char *format, ...);
 int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);
 
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+ssize_t getdelim(char **lineptr, size_t *n, int delim, FILE *stream);
+
 FILE *tmpfile();
 char *tmpnam_r(char *s);
 char *tmpnam(char *s);

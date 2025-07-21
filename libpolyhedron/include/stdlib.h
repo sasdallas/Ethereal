@@ -46,7 +46,7 @@ __define_div_structure(lldiv_t, long long);
 /**** FUNCTIONS ****/
 
 __attribute__((__noreturn__)) void abort(void);
-void exit(int status);
+__attribute__((__noreturn__)) void exit(int status);
 int abs(int x);
 long labs(long j);
 long long llabs(long long j);
