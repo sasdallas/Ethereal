@@ -26,6 +26,7 @@
 #include <kernel/task/fd.h>
 #include <kernel/task/mem.h>
 #include <kernel/task/signal.h>
+#include <kernel/task/timer.h>
 
 #include <kernel/mem/vas.h>
 
@@ -112,6 +113,9 @@ typedef struct process {
 
     // ELF
     process_image_t image;              // Image data for the process
+
+    // TIMER
+    process_timer_t itimers[3];         // setitimer timers
 
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)

@@ -23,6 +23,12 @@ _Begin_C_Header
 #include <sys/types.h>
 #include <sys/select.h>
 
+/**** DEFINITIONS ****/
+
+#define ITIMER_REAL         0
+#define ITIMER_VIRTUAL      1
+#define ITIMER_PROF         2
+
 /**** TYPES ****/
 
 // Seconds/microseconds timeval
@@ -37,10 +43,47 @@ struct timezone {
     int tz_dsttime;     // Type of Daylight Savings Time correction
 };
 
+struct itimerval {
+    struct timeval it_interval;     // Timer interval
+    struct timeval it_value;        // Current value
+};
+
+/**** MACROS ****/
+
+#define timeradd(a, b, c) ({ \
+                                (c)->tv_sec = (a)->tv_sec + (b)->tv_sec; \
+                                (c)->tv_usec = (a)->tv_usec + (b)->tv_usec; \
+                                (c)->tv_sec += (c)->tv_usec / 1000000; \
+                                (c)->tv_usec %= 1000000; \
+                            })
+
+#define timersub(a, b, c) ({ \
+                                (c)->tv_sec = (a)->tv_sec - (b)->tv_sec; \
+                                (c)->tv_usec = (a)->tv_usec - (b)->tv_usec; \
+                                (c)->tv_sec += (c)->tv_usec / 1000000; \
+                                (c)->tv_usec %= 1000000; \
+                            })
+
+#define timerclear(a) ({ \
+                            (a)->tv_sec = 0; \
+                            (a)->tv_usec = 0; \
+                        })
+
+#define timerisset(a) ((a)->tv_sec || (a)->tv_usec)
+
+#define timercmp(a, b, cmp) (((a)->tv_sec == (b)->tv_sec) ? ((a)->tv_usec cmp (b)->tv_usec) : ((a)->tv_sec cmp (b)->tv_sec)) 
+
 /**** FUNCTIONS ****/
 extern int gettimeofday(struct timeval *ptr, void *z);
 extern int settimeofday(struct timeval *ptr, void *z);
+
+int getitimer(int, struct itimerval *);
+int setitimer(int, const struct itimerval *, struct itimerval*);
+int utimes(const char *, const struct timeval[2]);
+
+#ifdef __LIBK
 extern unsigned long long now();
+#endif
 
 #endif
 

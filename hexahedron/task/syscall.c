@@ -118,7 +118,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_YIELD]             = (syscall_func_t)(uintptr_t)sys_yield,
     [SYS_LOAD_DRIVER]       = (syscall_func_t)(uintptr_t)sys_load_driver,
     [SYS_UNLOAD_DRIVER]     = (syscall_func_t)(uintptr_t)sys_unload_driver,
-    [SYS_GET_DRIVER]        = (syscall_func_t)(uintptr_t)sys_get_driver
+    [SYS_GET_DRIVER]        = (syscall_func_t)(uintptr_t)sys_get_driver,
+    [SYS_SETITIMER]         = (syscall_func_t)(uintptr_t)sys_setitimer,
 }; 
 
 
@@ -1317,4 +1318,39 @@ long sys_sethostname(const char *name, size_t size) {
 long sys_yield() {
     process_yield(1);
     return 0; 
+}
+
+/**** TIMERS ****/
+
+long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue) {
+    if (which > ITIMER_PROF) return -EINVAL;
+
+    // Check values
+    if (value) SYSCALL_VALIDATE_PTR_SIZE(value, sizeof(struct itimerval));
+    if (ovalue) SYSCALL_VALIDATE_PTR_SIZE(ovalue, sizeof(struct itimerval));
+
+    if (!value && !ovalue) {
+        return 0;
+    }
+
+    // Handle cases
+    if (value) {
+        if (ovalue) {
+            ovalue->it_interval.tv_sec = current_cpu->current_process->itimers[which].reset_value.tv_sec;
+            ovalue->it_interval.tv_usec = current_cpu->current_process->itimers[which].reset_value.tv_usec;
+            ovalue->it_value.tv_sec = current_cpu->current_process->itimers[which].value.tv_usec;
+            ovalue->it_value.tv_usec = current_cpu->current_process->itimers[which].value.tv_usec;
+        }
+
+        int r = timer_set(current_cpu->current_process, which, (struct itimerval*)value);
+        if (r != 0) return r;
+    } else {
+        // They just want to get the timer in ovalue
+        ovalue->it_interval.tv_sec = current_cpu->current_process->itimers[which].reset_value.tv_sec;
+        ovalue->it_interval.tv_usec = current_cpu->current_process->itimers[which].reset_value.tv_usec;
+        ovalue->it_value.tv_sec = current_cpu->current_process->itimers[which].value.tv_usec;
+        ovalue->it_value.tv_usec = current_cpu->current_process->itimers[which].value.tv_usec;
+    }
+
+    return 0;
 }

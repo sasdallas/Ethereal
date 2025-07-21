@@ -46,6 +46,7 @@
 #define VAS_ALLOC_THREAD_STACK  4       // Thread stack
 #define VAS_ALLOC_EXECUTABLE    5       // Executable memory
 #define VAS_ALLOC_PROG_BRK      6       // Program brk
+#define VAS_ALLOC_SIGNAL_TRAMP  7       // Signal trampoline
 
 /**** TYPES ****/
 

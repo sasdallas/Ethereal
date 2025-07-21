@@ -97,6 +97,11 @@ int signal_send(struct process *proc, int signal) {
 
     // TODO: Interrupt system calls
 
+    // Syncronously execute sleep callback, because why not
+    extern void sleep_callback(uint64_t ticks);
+    sleep_callback(0);
+
+
     // Wake them up if they aren't us
     if (proc != current_cpu->current_process && (proc->flags & PROCESS_STOPPED || proc->flags & PROCESS_SLEEPING)) {
         // TODO: Continue
@@ -158,6 +163,8 @@ extern uintptr_t __userspace_start, __userspace_end;
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
+
+        proc->userspace->type = VAS_ALLOC_SIGNAL_TRAMP;
 
         // Copy in the userspace section
         memcpy((void*)proc->userspace->base, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);

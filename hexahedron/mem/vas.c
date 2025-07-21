@@ -298,6 +298,8 @@ static char *vas_typeToString(int type) {
             return "PROGBRK";
         case VAS_ALLOC_EXECUTABLE:
             return "PROGRAM";
+        case VAS_ALLOC_SIGNAL_TRAMP:
+            return "TRAMP  ";
         default:
             return "???????";
     }

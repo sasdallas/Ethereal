@@ -186,6 +186,7 @@ int sys_setegid(gid_t gid);
 long sys_gethostname(char *name, size_t size);
 long sys_sethostname(const char *name, size_t size);
 long sys_yield();
+long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue);
 
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 long sys_exit_thread(void *retval);

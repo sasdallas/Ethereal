@@ -169,6 +169,7 @@ int symlink(const char *path1, const char *path2);
 int link(const char *oldpath, const char *newpath);
 int gethostname(char *name, size_t size);
 int sethostname(const char *name, size_t size);
+unsigned alarm(unsigned seconds);
 
 #endif
 
