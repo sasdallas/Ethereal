@@ -17,7 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <stddef.h>
-#include <bits/dirent.h>
+#include <bits/types/dirent.h>
 #include <sys/types.h>
 #include <structs/tree.h>
 #include <kernel/misc/spinlock.h>

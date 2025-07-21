@@ -19,7 +19,7 @@ _Begin_C_Header
 #define _SYS_TYPES_H
 
 /**** INCLUDES ****/
-#include <bits/pthread.h>
+#include <bits/types/pthread.h>
 
 /**** TYPES ****/
 

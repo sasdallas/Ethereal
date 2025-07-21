@@ -19,7 +19,7 @@ _Begin_C_Header;
 #define _LOCALE_H
 
 /**** INCLUDES ****/
-#include <stdint.h>
+#include <bits/types/locale_t.h>
 
 /**** DEFINITIONS ****/
 

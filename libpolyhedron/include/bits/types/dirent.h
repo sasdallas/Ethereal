@@ -1,5 +1,5 @@
 /**
- * @file libpolyhedron/include/bits/dirent.h
+ * @file libpolyhedron/include/bits/types/dirent.h
  * @brief Directory entry
  * 
  * 
@@ -15,8 +15,8 @@
 
 _Begin_C_Header
 
-#ifndef _BITS_DIRENT_H
-#define _BITS_DIRENT_H
+#ifndef _BITS_TYPES_DIRENT_H
+#define _BITS_TYPES_DIRENT_H
 
 /**** INCLUDES ****/
 #include <stdint.h>

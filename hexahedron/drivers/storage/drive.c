@@ -42,8 +42,6 @@ ssize_t drive_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     uint64_t end_sector = (end + d->sector_size - 1) / d->sector_size;
     uint64_t sector_count = end_sector - lba_start;
 
-    LOG(DEBUG, "For offset %d and size %d, need to read at LBA %d sectors %d sector offset %d\n", off, size, lba_start, sector_count, sector_offset); 
-
     // Trigger read call
     uint8_t *temporary_buffer = kmalloc(sector_count * d->sector_size);
     ssize_t r = d->read_sectors(d, lba_start, sector_count, temporary_buffer);
@@ -80,8 +78,6 @@ ssize_t drive_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     uint64_t end = off + size;
     uint64_t end_sector = (end + d->sector_size - 1) / d->sector_size;
     uint64_t sector_count = end_sector - lba_start;
-
-    LOG(DEBUG, "For offset %d and size %d, need to write at LBA %d sectors %d sector offset %d\n", off, size, lba_start, sector_count, sector_offset); 
 
     // First, create a buffer to hold everything
     uint8_t *write_buffer = kmalloc(sector_count * d->sector_size);

@@ -1,5 +1,5 @@
 /**
- * @file libpolyhedron/include/bits/pthread.h
+ * @file libpolyhedron/include/bits/types/pthread.h
  * @brief pthread
  * 
  * Unfinalized
@@ -16,8 +16,8 @@
 
 _Begin_C_Header
 
-#ifndef _BITS_PTHREAD_H
-#define _BITS_PTHREAD_H
+#ifndef _BITS_TYPES_PTHREAD_H
+#define _BITS_TYPES_PTHREAD_H
 
 /**** INCLUDES ****/
 #include <stddef.h>
@@ -29,6 +29,7 @@ typedef unsigned long pthread_t;
 
 typedef uintptr_t __dtv;
 
+/* equivalent to struct uthread */
 typedef struct __thread_tcb {
     struct __thread_tcb     *self;      // Self pointer for TLS
     int _errno;                         // Errno for this thread

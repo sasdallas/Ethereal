@@ -20,7 +20,7 @@ _Begin_C_Header
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <bits/dirent.h>
+#include <bits/types/dirent.h>
 #include <sys/types.h>
 
 /**** DEFINITIONS ****/
