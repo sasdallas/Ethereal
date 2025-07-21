@@ -23,6 +23,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/fs/drivefs.h>
 #include <string.h>
+#include <errno.h>
 
 // Architecture-specific
 #if defined(__ARCH_I386__)
@@ -454,150 +455,71 @@ int atapi_access(ide_device_t *device, int operation, uint64_t lba, size_t secto
     return IDE_SUCCESS;
 }
 
-
 /**
- * @brief VFS read method for IDE device
- * @warning !!! THIS MATH IS HORRIBLE DO NOT READ !!!
+ * @brief Read sectors implementation for ATA/ATAPI
  */
-ssize_t ide_readFS(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    // Make sure offset and buffer are good
-    if ((uint64_t)offset >= node->length || !buffer) {
-        return 0;
-    }
-    
-    // Make sure offset + size is good
-    if (offset + size > node->length) {
-        size = node->length - offset;
-    }
+ssize_t ide_read_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer) {
+    ide_device_t *dev = (ide_device_t*)d->driver;
 
-    // Get device
-    ide_device_t *device = (ide_device_t*)node->dev;
-    if (!device) return 0;
-
-    // Create an LBA, rounded size, and offset
-    // For an offset of 0x5794, the offset would become 0x5600, and the buffer_offset would become 0x194
-    // For a size of 0x34F (which is added to buffer_offset before rounding), it would become 0x400/0x600 (depending on buffer_offset) 
-    
-    uint64_t lba, buffer_offset;
-    size_t size_rounded;
-    
-    if (device->atapi) {
-        // ATAPI devices have different block sizes
-        uint64_t blocksize = device->atapi_block_size;
-
-        lba = (offset - (offset % blocksize)) / blocksize;
-        buffer_offset = offset - (lba % blocksize);
-        size_rounded = (((size + buffer_offset) + blocksize) - (((size+buffer_offset)+blocksize) % blocksize));
+    int code;
+    if (dev->atapi) {
+        code = atapi_access(dev, ATA_READ, lba, sectors, buffer);
     } else {
-        // ATA devices are fixed with a 512-byte sector size
-        lba = (offset - (offset % 512)) / 512;
-        buffer_offset = offset - (lba * 512);
-        size_rounded = (((size+buffer_offset) + 512) - (((size+buffer_offset) + 512) % 512));
+        code = ata_access(dev, ATA_READ, lba, sectors, buffer);
     }
 
-    // Create a temporary buffer that rounds up size to the nearest 512 multiple
-    // !!!: DMA accesses would make this much better
-    uint8_t *tmpbuffer = kmalloc(size_rounded);
-    memset(tmpbuffer, 0, size_rounded);
-
-    if (device->atapi) {
-        // Read in the buffer
-        atapi_access(device, ATA_READ, lba, size_rounded / device->atapi_block_size, tmpbuffer);
-    } else {
-        // Read in the buffer
-        ata_access(device, ATA_READ, lba, size_rounded / 512, tmpbuffer);
+    if (code != IDE_SUCCESS) {
+        // TODO: Maybe have kernel drive system use its own error codes?
+        if (code == IDE_DEVICE_FAULT || code == IDE_DRQ_NOT_SET) return -EIO;
+        if (code == IDE_TIMEOUT) return -ETIMEDOUT;
+        return -EIO; // ???
     }
 
-    // Now copy the buffer with offset
-    memcpy(buffer, tmpbuffer + buffer_offset, size);
-    kfree(tmpbuffer);
-    return size;
+    return sectors;
 }
 
 /**
- * @brief VFS write method for IDE device
- * @warning !!! THIS MATH IS HORRIBLE DO NOT READ !!!
+ * @brief Write sectors implementation for ATA/ATAPI
  */
-ssize_t ide_writeFS(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    // Make sure offset and buffer are good
-    if ((uint64_t)offset >= node->length || !buffer) {
-        return 0;
-    }
-    
-    // Make sure offset + size is good
-    if (offset + size > node->length) {
-        size = node->length - offset;
-    }
+ssize_t ide_write_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer) {
+    ide_device_t *dev = (ide_device_t*)d->driver;
 
-    // Create an LBA and rounded size
-    uint64_t lba = (offset - (offset % 512)) / 512;
-    size_t size_rounded = ((size + 512) - ((size + 512) % 512));
-
-    // Get device
-    ide_device_t *device = (ide_device_t*)node->dev;
-    if (!device) return 0;
-
-    // TODO: ATAPI writes
-    if (device->atapi) {
-        LOG(ERR, "ATAPI writes not supported\n");
-        return 0;
-    }
-
-    // !!!: We have to read in a sector at the end of offset + size rounded to prevent the driver from overwriting existing bytes
-    // !!!: There seems to be a better way to do this, instead of allocating more memory
-    uint8_t *actual_write_buffer = kmalloc(size_rounded);
-
-    // Read one chunk at the beginning of the disk and one at the end.
-    // !!!: this sucks, and likely corrupts/will corrupt something
-    if (device->atapi) {
-        LOG(ERR, "atapi unimplemented\n");
+    int code;
+    if (dev->atapi) {
+        code = atapi_access(dev, ATA_WRITE, lba, sectors, buffer);
     } else {
-        if (ata_access(device, ATA_READ, lba, 1, actual_write_buffer) != IDE_SUCCESS) {
-            kfree(actual_write_buffer);
-            return 0;
-        }
-
-        if (ata_access(device, ATA_READ, ((lba + size_rounded) / 512)-1, 1, actual_write_buffer + (size_rounded-512)) != IDE_SUCCESS) {
-            kfree(actual_write_buffer);
-            return 0;
-        }
+        code = ata_access(dev, ATA_WRITE, lba, sectors, buffer);
     }
 
-    // Now we can copy the new bytes in
-    memcpy(actual_write_buffer + (offset-(lba*512)), buffer, size);
-
-    // And we can write
-    if (device->atapi) {
-        LOG(ERR, "atapi unimplemented");
-    } else {
-        if (ata_access(device, ATA_WRITE, lba, size_rounded / 512, actual_write_buffer) != IDE_SUCCESS) {
-            kfree(actual_write_buffer);
-            return 0;
-        }
+    if (code != IDE_SUCCESS) {
+        // TODO: Maybe have kernel drive system use its own error codes?
+        if (code == IDE_DEVICE_FAULT || code == IDE_DRQ_NOT_SET) return -EIO;
+        if (code == IDE_TIMEOUT) return -ETIMEDOUT;
+        return -EIO; // ???
     }
 
-    kfree(actual_write_buffer);
-    return 0;
+    return sectors;
 }
 
-
 /**
- * @brief Create an IDE node
- * @param device The device to create off of
+ * @brief Create drive object
+ * @param device The device to create the drive object from
  */
-fs_node_t *ide_createNode(ide_device_t *device) {
-    fs_node_t *out = kmalloc(sizeof(fs_node_t));
-    memset(out, 0, sizeof(fs_node_t));
+drive_t *ide_createDrive(ide_device_t *device) {
+    drive_t *d = drive_create((device->atapi) ? DRIVE_TYPE_CDROM : DRIVE_TYPE_IDE_HD);
+    d->driver = (void*)device;
+    d->read_sectors = ide_read_sectors;
+    d->write_sectors = ide_write_sectors;
 
-    // Don't set name, let drivefs handle that
-    out->read = ide_readFS;
-    out->write = ide_writeFS;
-    out->flags = VFS_BLOCKDEVICE;
-    out->mask = 0770;
-    out->length = device->size;
-    out->dev = (void*)device;
-
-    return out;
+    // Setup other things
+    d->sectors = device->size / (device->atapi ? device->atapi_block_size : 512);
+    d->sector_size = (device->atapi ? device->atapi_block_size : 512);
+    d->model = strdup(device->model);
+    d->serial = strdup(device->serial);
+    d->vendor = NULL;
+    d->revision = NULL;
+    
+    return d;
 }
 
 /**
@@ -811,10 +733,10 @@ void ide_detectDevice(ide_device_t *device) {
         if (!device->exists) return; // Init failed
 
         // Create a VFS node for it
-        fs_node_t *node = ide_createNode(device);
+        drive_t *d = ide_createDrive(device);
 
-        // Mount node
-        drive_mount(node, DRIVE_TYPE_CDROM);
+        // Mount the node
+        drive_mount(d);
     } else if ((cl == 0x00 && ch == 0x00) || (cl == 0x3C && ch == 0xC3)) {
         // ATA device
         LOG_DEVICE(DEBUG, device, "Detected an ATA device\n");
@@ -828,10 +750,10 @@ void ide_detectDevice(ide_device_t *device) {
         if (!device->exists) return; // Init failed
 
         // Create a VFS node for it
-        fs_node_t *node = ide_createNode(device);
+        drive_t *d = ide_createDrive(device);
 
         // Mount the node
-        drive_mount(node, DRIVE_TYPE_IDE_HD);
+        drive_mount(d);
     } else if ((cl == 0xFF && ch == 0xFF)) {
         LOG_DEVICE(DEBUG, device, "No device was detected\n");
     } else {

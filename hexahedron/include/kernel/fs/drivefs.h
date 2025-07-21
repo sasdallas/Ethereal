@@ -19,18 +19,9 @@
 #include <stdint.h>
 #include <kernel/fs/vfs.h>
 #include <structs/list.h>
+#include <kernel/drivers/storage/drive.h>
 
 /**** DEFINITIONS ****/
-
-// Drive types
-#define DRIVE_TYPE_IDE_HD       1   // IDE harddrive
-#define DRIVE_TYPE_CDROM        2   // CD-ROM (use DRIVE_TYPE_SCSI_CDROM for SCSI CDROMs)
-#define DRIVE_TYPE_SATA         3   // SATA drive
-#define DRIVE_TYPE_SCSI         4   // SCSI drive
-#define DRIVE_TYPE_SCSI_CDROM   5   // SCSI CD-rom
-#define DRIVE_TYPE_NVME         6   // NVMe drive
-#define DRIVE_TYPE_FLOPPY       7   // Floppy drive
-#define DRIVE_TYPE_MMC          8   // MMC drive
 
 // Drive name prefixes
 #define DRIVE_NAME_IDE_HD       "idehd"
@@ -56,15 +47,6 @@ typedef struct fs_drive {
     list_t *partition_list;     // List of drive partitions
 } fs_drive_t;
 
-/**
- * @brief Filesystem partition object
- */
-typedef struct fs_part {
-    fs_node_t *node;        // Filesystem node of the partition
-    fs_drive_t *parent;     // Parent drive
-    int part_number;        // Partition number
-} fs_part_t;
-
 /**** FUNCTIONS ****/
 
 /**
@@ -73,43 +55,7 @@ typedef struct fs_part {
  * @param type The type of the drive
  * @returns Drive object or NULL on failure
  */
-fs_drive_t *drive_mount(fs_node_t *node, int type);
-
-/**
- * @brief Register a new drive partition
- * @param drive The drive to register the partition on
- * @param node The node of the partition
- * @returns Partition object or NULL on failure
- * 
- * @note Partitions are automatically unmounted when the entire drive is unmounted
- */
-fs_part_t *drive_mountPartition(fs_drive_t *drive, fs_node_t *node);
-
-/**
- * @brief Find and get a drive by its path
- * @param path The path to search for (full path)
- * @returns The drive object or NULL if it could not be found
- */
-fs_drive_t *drive_findPath(const char *path);
-
-/**
- * @brief Find and get a partition by its path
- * @param path The path to search for (full path)
- * @returns The drive object or NULL if it could not be found.
- */
-fs_part_t *drive_findPathPartition(const char *path);
-
-/**
- * @brief Unmount a drive
- * @param drive The drive to unmount
- */
-void drive_unmount(fs_drive_t *drive);
-
-/**
- * @brief Unmount a partition
- * @param part The partition to unmount
- */
-void drive_unmountPartition(fs_part_t *part);
+fs_drive_t *drive_mountNode(fs_node_t *node, int type);
 
 
 #endif

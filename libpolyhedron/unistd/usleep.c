@@ -23,5 +23,5 @@ int usleep(useconds_t usec) {
 }
 
 unsigned int sleep(unsigned int seconds) {
-    return usleep(seconds * 10000 * 1000); // !!!: CHECK THIS
+    return usleep(seconds * USEC_PER_SEC);
 }

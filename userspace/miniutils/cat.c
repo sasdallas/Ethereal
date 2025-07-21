@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
             if (r < 0) {
                 fprintf(stderr, "cat: %s: %s\n", (fd == STDIN_FILENO ? "stdin" : argv[i]), strerror(errno));
                 return_value = 1;
-                continue;
+                break;
             }
 
             if (!r) break; // Done

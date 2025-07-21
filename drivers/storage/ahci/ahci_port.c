@@ -651,14 +651,16 @@ int ahci_portFinishInitialization(ahci_port_t *port) {
         return AHCI_SUCCESS; // Return success but do not allow usage
     }
 
+
+    // TODO: AHCI needs to use modern drive interface
     // Create node
-    fs_node_t *node = ahci_createNode(port);
+    // fs_node_t *node = ahci_createNode(port);
     
     // Mount node
     if (port->type == AHCI_DEVICE_SATA) {
-        drive_mount(node, DRIVE_TYPE_IDE_HD);
+        // drive_mount(node, DRIVE_TYPE_IDE_HD);
     } else {
-        drive_mount(node, DRIVE_TYPE_CDROM);
+        // drive_mount(node, DRIVE_TYPE_CDROM);
     }
 
     // All done! Port should be initialized
