@@ -15,6 +15,9 @@
 #include <stddef.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <pthread.h>
+
+static pthread_mutex_t __liballoc_heap_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /** This function is supposed to lock the memory data structures. It
  * could be as simple as disabling interrupts or acquiring a spinlock.
@@ -24,7 +27,8 @@
  * failure.
  */
 int liballoc_lock() {
-    return 0; // TODO
+    pthread_mutex_lock(&__liballoc_heap_lock);
+	return 0;
 }
 
 /** This function unlocks what was previously locked by the liballoc_lock
@@ -34,7 +38,8 @@ int liballoc_lock() {
  * \return 0 if the lock was successfully released.
  */
 int liballoc_unlock() {
-    return 0; // TODO
+    pthread_mutex_unlock(&__liballoc_heap_lock);
+	return 0;
 }
 
 /** This is the hook into the local system which allocates pages. It

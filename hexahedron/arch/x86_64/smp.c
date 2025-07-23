@@ -83,7 +83,7 @@ int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number
  * @brief Collect AP information to store in processor_data
  * @param ap The core to store information on
  */
-static void smp_collectAPInfo(int ap) {
+void smp_collectAPInfo(int ap) {
     processor_data[ap].cpu_id = smp_getCurrentCPU();
     processor_data[ap].cpu_manufacturer = cpu_getVendorName();
     strncpy(processor_data[ap].cpu_model, cpu_getBrandString(), 48);
@@ -236,7 +236,7 @@ int smp_init(smp_info_t *info) {
 
 _finish_collection:
     // Register TLB shootdown IRQ
-    hal_registerInterruptHandler(124 - 32, smp_handleTLBShootdown);
+    hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
 
     // Initialize I/O APIC
     if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);

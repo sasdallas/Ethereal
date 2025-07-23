@@ -102,6 +102,6 @@ void smp_tlbShootdown(uintptr_t address);
  * @brief Collect AP information to store in processor_data
  * @param ap The core to store information on
  */
-static void smp_collectAPInfo(int ap);
+void smp_collectAPInfo(int ap);
 
 #endif
