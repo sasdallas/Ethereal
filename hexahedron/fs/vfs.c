@@ -52,7 +52,7 @@ spinlock_t *vfs_lock;
  * @param flags The open flags
  */
 int fs_open(fs_node_t *node, unsigned int flags) {
-    if (!node) return;
+    if (!node) return -EINVAL;
 
     // TODO: Locking?
     node->refcount++;
@@ -69,7 +69,7 @@ int fs_open(fs_node_t *node, unsigned int flags) {
  * @param node The node to close
  */
 int fs_close(fs_node_t *node) {
-    if (!node) return;
+    if (!node) return -EINVAL;
 
     // First, decrement the reference counter
     node->refcount--;
