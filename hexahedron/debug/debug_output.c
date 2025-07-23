@@ -16,7 +16,9 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
-
+#include <kernel/mem/alloc.h>
+#include <kernel/mem/mem.h>
+#include <errno.h>
 #include <time.h>
 #include <stdarg.h>
 #include <string.h>
@@ -28,12 +30,20 @@ static log_putchar_method_t debug_putchar_method = NULL;
 static fs_node_t debug_node = {
     .name = "kconsole",
     .flags = VFS_CHARDEVICE,
+    .read = debug_read,
     .write = debug_write
 };
 
 /* Spinlock */
 static spinlock_t debug_lock = { 0 };
 
+/* Debug buffer */
+char *debug_buffer = NULL;
+size_t debug_buffer_size = 0;
+size_t debug_buffer_index = 0; 
+
+/* Push character into debug buffer */
+#define DEBUG_PUSH(ch) ({ debug_buffer[debug_buffer_index++] = (ch); if (debug_buffer_index >= debug_buffer_size) { debug_buffer = krealloc(debug_buffer, debug_buffer_size + PAGE_SIZE); debug_buffer_size += PAGE_SIZE; }; debug_buffer[debug_buffer_index] = 0; })
 
 /**
  * @brief Write to buffer
@@ -51,12 +61,37 @@ static int debug_write_buffer(size_t length, char *buffer) {
  * @brief Function to print debug string
  */
 int debug_print(void *user, char ch) {
+    /* First, write the character to debug buffer */
+    if (debug_buffer) {
+        if (ch == '\n') DEBUG_PUSH('\r');
+        DEBUG_PUSH(ch);
+    }
+
     if (!debug_putchar_method) return 0; // Log not yet initialized or failed to initialize correctly.
 
     /* Account for CRLF. It doesn't hurt any terminals (that I know of) */
     if (ch == '\n') debug_putchar_method(NULL, '\r');
 
     return debug_putchar_method(NULL, ch);
+}
+
+
+/**
+ * @brief Read function for debug console node
+ * @param node The node
+ * @param offset The offset
+ * @param size The size of how much to read
+ * @param buffer The buffer
+ */
+ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+    if (offset > (off_t)debug_buffer_index) return 0;
+    if (offset + size > (size_t)debug_buffer_index) size = debug_buffer_index - (size_t)offset;
+
+    spinlock_acquire(&debug_lock);
+    memcpy(buffer, debug_buffer + offset, size);
+    spinlock_release(&debug_lock);
+
+    return size;
 }
 
 /**
@@ -69,6 +104,7 @@ int debug_print(void *user, char ch) {
 ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
     spinlock_acquire(&debug_lock);
     ssize_t r = debug_write_buffer(size, (char*)buffer);
+    debug_node.length = debug_buffer_index;
     spinlock_release(&debug_lock);
     return r;
 }
@@ -172,5 +208,12 @@ log_putchar_method_t debug_getOutput() {
  * @brief Mount the debug node onto the VFS
  */
 void debug_mountNode() {
+    /* Allocate the debug buffer */
+    debug_buffer = kmalloc(PAGE_SIZE);
+    debug_buffer_size = PAGE_SIZE;
+    debug_buffer_index = 0;
+
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
+
+    dprintf(INFO, "Debug buffer initialized - all content is being stored in memory.\n");
 }

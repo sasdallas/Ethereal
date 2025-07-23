@@ -115,6 +115,15 @@ int debug_print(void *user, char ch);
 ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 
 /**
+ * @brief Read function for debug console node
+ * @param node The node
+ * @param offset The offset
+ * @param size The size of how much to read
+ * @param buffer The buffer
+ */
+ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
+
+/**
  * @brief Mount the debug node onto the VFS
  */
 void debug_mountNode();
