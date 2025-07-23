@@ -235,9 +235,6 @@ int smp_init(smp_info_t *info) {
     pmm_freeBlock(temp_frame);
 
 _finish_collection:
-    // Collect AP info for CPU0
-    smp_collectAPInfo(0);
-
     // Register TLB shootdown IRQ
     hal_registerInterruptHandler(124 - 32, smp_handleTLBShootdown);
 

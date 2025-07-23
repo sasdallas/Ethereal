@@ -192,6 +192,10 @@ _no_debug: ;
     if (!smp) goto _no_smp;
     
     /* SMP INITIALIZATION */
+    
+    // Collect AP info for CPU0
+    smp_collectAPInfo(0);
+
     if (smp_init(smp)) {
         dprintf(ERR, "Failed to initialize SMP\n");
     }
