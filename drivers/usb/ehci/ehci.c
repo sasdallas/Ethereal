@@ -30,11 +30,7 @@
 #include <kernel/panic.h>
 #include <string.h>
 
-#ifdef __ARCH_I386__
-#include <kernel/arch/i386/hal.h>
-#else
-#include <kernel/arch/x86_64/hal.h>
-#endif
+#include <kernel/arch/arch.h>
 
 /* Macros to read/write values to port memory */
 #define EHCI_OP_WRITE8(reg, value) (*((uint8_t*)(hc->op_base + reg)) = (uint8_t)value)
@@ -680,7 +676,7 @@ int ehci_init(pci_device_t *dev) {
     }
 
     // Register IRQ handler
-    hal_registerInterruptHandlerContext(irq, ehci_irq, (void*)hc);
+    hal_registerInterruptHandler(irq, ehci_irq, (void*)hc);
 
     // We need to take over the controller. Read EECP
     uint32_t eecp = (EHCI_CAP_READ32(EHCI_REG_HCCPARAMS) & EHCI_HCCPARAMS_EECP) >> EHCI_HCCPARAMS_EECP_SHIFT;

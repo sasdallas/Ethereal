@@ -11,11 +11,7 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#ifdef __ARCH_I386__
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#endif
+#include <kernel/arch/arch.h>
 
 #include "ps2.h"
 #include <kernel/loader/driver.h>
@@ -71,5 +67,5 @@ void kbd_init() {
     ps2_writeKeyboard(2);
 
     // Register IRQ
-    hal_registerInterruptHandlerContext(PS2_KEYBOARD_IRQ, ps2_keyboardIRQ, NULL);
+    hal_registerInterruptHandler(PS2_KEYBOARD_IRQ, ps2_keyboardIRQ, NULL);
 }

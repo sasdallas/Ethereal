@@ -92,12 +92,7 @@ void hal_installIDT();
  *                It will take registers and extended registers as arguments.
  * @returns 0 on success, -EINVAL if handler is taken
  */
-int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_t handler);
-
-/**
- * @brief Unregisters an interrupt handler
- */
-void hal_unregisterInterruptHandler(uintptr_t int_no);
+int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handler);
 
 /**
  * @brief Register an exception handler
@@ -112,15 +107,6 @@ int hal_registerExceptionHandler(uintptr_t int_no, exception_handler_t handler);
  * @brief Unregisters an exception handler
  */
 void hal_unregisterExceptionHandler(uintptr_t int_no);
-
-/**
- * @brief Register an interrupt handler with context
- * @param int_no The interrupt number
- * @param handler The handler for the interrupt (should accept context)
- * @param context The context to pass to the handler
- * @returns 0 on success, -EINVAL if taken
- */
-int hal_registerInterruptHandlerContext(uintptr_t int_no, interrupt_handler_context_t handler, void *context);
 
 /**
  * @brief Sets an RSDP if one was set

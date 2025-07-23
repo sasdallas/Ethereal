@@ -268,14 +268,14 @@ int xhci_initController(pci_device_t *device) {
     // Try to enable MSI
     uint8_t irq = pci_enableMSI(device->bus, device->slot, device->function);
     if (irq != 0xFF) {
-        if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
+        if (hal_registerInterruptHandler(irq, xhci_irqHandler, (void*)xhci)) {
             LOG(ERR, "Error while registering IRQ%d\n", irq);
             return 1;
         }
     } else {
         LOG(WARN, "This xHCI controller does not support MSI - fallback to pin interrupt\n");
         irq = pci_getInterrupt(device->bus, device->slot, device->function);
-        if (hal_registerInterruptHandlerContext(irq, xhci_irqHandler, (void*)xhci)) {
+        if (hal_registerInterruptHandler(irq, xhci_irqHandler, (void*)xhci)) {
             LOG(ERR, "Error while registering IRQ%d\n", irq);
             return 1;
         }

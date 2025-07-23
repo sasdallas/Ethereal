@@ -126,7 +126,7 @@ static syscall_func_t syscall_table[] = {
 
 
 /* Unimplemented system call */
-#define SYSCALL_UNIMPLEMENTED(syscall) kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "syscall", "*** The system call \"%s\" is unimplemented\n", syscall)
+#define SYSCALL_UNIMPLEMENTED(syscall) ({ LOG(ERR, "[UNIMPLEMENTED] The system call \"%s\" is unimplemented\n", syscall); return 0; })
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL", __VA_ARGS__)

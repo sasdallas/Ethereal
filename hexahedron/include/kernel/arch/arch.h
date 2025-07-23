@@ -24,6 +24,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/generic_mboot.h>
+#include <kernel/hal.h>
 
 /**** TYPES ****/
 

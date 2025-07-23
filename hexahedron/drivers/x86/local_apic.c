@@ -216,8 +216,8 @@ int lapic_initialize(uintptr_t lapic_address) {
     }
 
     // Register the interrupt handlers
-    hal_registerInterruptHandler(LAPIC_SPUR_INTNO - 32, lapic_irq); // NOTE: This might fail occasionally (BSP will reinitialize APICs for each core)
-    hal_registerInterruptHandler(LAPIC_TIMER_IRQ - 32, lapic_timer_irq);
+    hal_registerInterruptHandlerRegs(LAPIC_SPUR_INTNO - 32, lapic_irq); // NOTE: This might fail occasionally (BSP will reinitialize APICs for each core)
+    hal_registerInterruptHandlerRegs(LAPIC_TIMER_IRQ - 32, lapic_timer_irq);
 
     // Disable PIT from updating
     pit_setState(0);

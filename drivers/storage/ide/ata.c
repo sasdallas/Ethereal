@@ -813,8 +813,8 @@ int ata_initialize() {
     }
 
     // Register IRQ handlers
-    hal_registerInterruptHandler(14, ide_irqHandler);
-    hal_registerInterruptHandler(15, ide_irqHandler);
+    hal_registerInterruptHandlerRegs(14, ide_irqHandler);
+    hal_registerInterruptHandlerRegs(15, ide_irqHandler);
 
     // Detect devices
     for (int i = 0; i < 4; i++) {

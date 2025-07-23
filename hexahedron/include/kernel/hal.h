@@ -15,17 +15,31 @@
 #ifndef KERNEL_HAL_H
 #define KERNEL_HAL_H
 
+/**** INCLUDES ****/
+#include <stdint.h>
+
 /**** TYPES ****/
 
-struct _registers;
-struct _extended_registers;
+/**
+ * @brief Generic interrupt handler
+ * @param context The context passed to @c hal_registerInterruptHandler
+ */
+typedef int (*hal_interrupt_handler_t)(void *context);
+
+/**** FUNCTIONS ****/
 
 /**
- * @brief Get registers from architecture
- * @returns Registers structure
+ * @brief Register an interrupt handler
+ * @param int_number The interrupt number to register a handler for
+ * @param handler The handler to register
+ * @param context Optional context that gets passed to the handler
+ * @returns 0 on success
  */
-extern struct _registers *hal_getRegisters();
+int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t handler, void *context);
 
-
+/**
+ * @brief Unregisters an interrupt handler
+ */
+void hal_unregisterInterruptHandler(uintptr_t int_no);
 
 #endif

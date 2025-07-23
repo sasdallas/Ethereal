@@ -234,7 +234,7 @@ int smp_init(smp_info_t *info) {
     pmm_freeBlock(temp_frame);
 
 _finish_collection:
-    hal_registerInterruptHandler(124 - 32, smp_handleTLBShootdown);
+    hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
     smp_collectAPInfo(0);
     if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
     processor_count = smp_data->processor_count;

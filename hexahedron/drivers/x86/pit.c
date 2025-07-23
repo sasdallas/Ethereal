@@ -93,7 +93,7 @@ int pit_irqHandler(uintptr_t exception_index, uintptr_t int_number, registers_t 
  */
 void pit_initialize() {
     // Register handler
-    hal_registerInterruptHandler(PIT_IRQ, pit_irqHandler);
+    hal_registerInterruptHandlerRegs(PIT_IRQ, pit_irqHandler);
 
     // On default use 100 Hz for divisor
     pit_setTimerPhase(100);

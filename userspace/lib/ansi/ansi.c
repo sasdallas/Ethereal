@@ -1,10 +1,10 @@
 /**
  * @file userspace/lib/ansi/ansi.c
- * @brief ANSI escape code parser library
+ * @brief ANSI library
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -254,8 +254,52 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
 
                 ansi->move_cursor(cx-cols_backward, cy);
                 break;
-                
 
+            case CUP:
+                if (argc < 2) {
+                    ansi->move_cursor(0, 0);
+                } else {
+                    ansi->move_cursor(strtol(argv[1], NULL, 10), strtol(argv[0], NULL, 10));
+                }
+
+                break;
+
+            case EL:
+                int op = 0;
+                if (argc) op = strtol(argv[0], NULL, 10);
+                
+                int x = 0, x_end = 0;
+                switch (op) {
+                    case 0:
+                        x = cx;
+                        x_end = ansi->screen_width;
+                        break;
+
+                    case 1:
+                        x = 0;
+                        x_end = cx;
+                        break;
+
+                    case 2:
+                        x = 0;
+                        x_end = ansi->screen_width;
+                        break;
+                }
+
+                for (int i = x; i < x_end; i++) ansi->set_cell(i, cy, ' ');
+                break;
+            
+            case SD:
+                int lines = 1;
+                if (argc) {
+                    lines = strtol(argv[0], NULL, 10);
+                }    
+
+                ansi->scroll(lines);
+                break;
+
+            default:
+                fprintf(stderr, "ANSI: Unrecognized function '%c'\n", ch);
         }
 
         ansi->bufidx = 0;

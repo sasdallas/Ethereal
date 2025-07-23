@@ -321,7 +321,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
  *                It will take an exception number, irq number, registers, and extended registers as arguments.
  * @returns 0 on success, -EINVAL if handler is taken
  */
-int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_t handler) {
+int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handler) {
     if (hal_handler_table[int_no] != NULL) {
         return -EINVAL;
     }
@@ -373,7 +373,7 @@ void hal_unregisterExceptionHandler(uintptr_t int_no) {
  * @param context The context to pass to the handler
  * @returns 0 on success, -EINVAL if taken
  */
-int hal_registerInterruptHandlerContext(uintptr_t int_no, interrupt_handler_context_t handler, void *context) {
+int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_context_t handler, void *context) {
     if (hal_handler_table[int_no] != NULL) {
         return -EINVAL;
     }

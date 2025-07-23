@@ -12,11 +12,7 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#ifdef __ARCH_I386__
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#endif
+#include <kernel/arch/arch.h>
 
 #include "ps2.h"
 #include <kernel/loader/driver.h>
@@ -108,5 +104,5 @@ void mouse_init() {
     ps2_writeMouse(PS2_MOUSE_ENABLE_DATA_REPORTING);
     
     // Register IRQ
-    hal_registerInterruptHandlerContext(PS2_MOUSE_IRQ, mouse_irq, NULL);
+    hal_registerInterruptHandler(PS2_MOUSE_IRQ, mouse_irq, NULL);
 }

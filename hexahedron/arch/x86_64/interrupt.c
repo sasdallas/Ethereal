@@ -20,6 +20,7 @@
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
+#include <kernel/hal.h>
 
 #include <errno.h>
 #include <string.h>
@@ -384,7 +385,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
  *                It will take an exception number, irq number, registers, and extended registers as arguments.
  * @returns 0 on success, -EINVAL if handler is taken
  */
-int hal_registerInterruptHandler(uintptr_t int_no, interrupt_handler_t handler) {
+int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handler) {
     if (hal_handler_table[int_no] != NULL) {
         return -EINVAL;
     }
@@ -430,22 +431,23 @@ void hal_unregisterExceptionHandler(uintptr_t int_no) {
 }
 
 /**
- * @brief Register an interrupt handler with context
- * @param int_no The interrupt number
- * @param handler The handler for the interrupt (should accept context)
- * @param context The context to pass to the handler
- * @returns 0 on success, -EINVAL if taken
+ * @brief Register an interrupt handler
+ * @param int_number The interrupt number to register a handler for
+ * @param handler The handler to register
+ * @param context Optional context that gets passed to the handler
+ * @returns 0 on success
  */
-int hal_registerInterruptHandlerContext(uintptr_t int_no, interrupt_handler_context_t handler, void *context) {
-    if (hal_handler_table[int_no] != NULL) {
+int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t handler, void *context){
+    if (hal_handler_table[int_number] != NULL) {
         return -EINVAL;
     }
 
-    pic_unmask(int_no);
+    // Unmask the IRQ in the PIC
+    pic_unmask(int_number);
 
     // !!!: i mean, they're the same data type at the core level.. right?
-    hal_handler_table[int_no] = handler;
-    hal_interrupt_context_table[int_no] = context;
+    hal_handler_table[int_number] = handler;
+    hal_interrupt_context_table[int_number] = context;
 
     return 0;
 }

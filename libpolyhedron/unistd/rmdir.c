@@ -17,5 +17,5 @@
 
 int rmdir(const char *path) {
     fprintf(stderr, "rmdir: stub\n");
-    abort();
+    return 0;
 }

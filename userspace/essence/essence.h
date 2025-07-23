@@ -39,8 +39,9 @@ typedef struct builtin_command {
 } builtin_command_t;
 
 typedef struct essence_fd_redir {
-    int srcfd;
-    int dstfd;
+    int srcfd;              // Source fd
+    int dstfd;              // Destination fd
+    char token;             // Token
 } essence_fd_redir_t;
 
 typedef struct essence_command {

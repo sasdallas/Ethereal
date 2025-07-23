@@ -19,6 +19,7 @@
 #include "ac97.h"
 #include <kernel/drivers/sound/mixer.h>
 #include <kernel/arch/arch.h>
+#include <kernel/hal.h>
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/debug.h>
@@ -238,7 +239,7 @@ int ac97_init(pci_device_t *dev) {
     // Register an IRQ
     // TODO: Support MSI?
     uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
-    if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, ac97_irq, ac) != 0) {
+    if (irq == 0xFF || hal_registerInterruptHandler(irq, ac97_irq, ac) != 0) {
         LOG(ERR, "AC97 has no IRQ or failed to register it . Cannot continue\n");
 
         if (ac->io_type == 0) {

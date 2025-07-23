@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/unistd/fsync.c
- * @brief fsync
+ * @file libpolyhedron/termios/cfgetospeed.c
+ * @brief cfgetospeed
  * 
  * 
  * @copyright
@@ -11,14 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <unistd.h>
-#include <stdio.h>
+#include <termios.h>
 
-int fsync(int fildes) {
-    fprintf(stderr, "libc: Unimplemented method fsync\n");
-    return 0;
-}
-
-void sync() {
-    return;
+speed_t cfgetospeed(const struct termios *tios) {
+    return B38400;
 }

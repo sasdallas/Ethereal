@@ -1,10 +1,10 @@
 /**
  * @file userspace/lib/include/ethereal/ansi_defs.h
- * @brief ANSI escape code definitions (do not include)
+ * @brief ANSI escape code definitions
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -42,6 +42,8 @@
 #define SD                      'T'     // Scroll down
 #define HVP                     'f'     // Horizontal and vertical position
 #define SGR                     'm'     // Set graphics mode
- 
+#define IL                      'L'     // Insert lines
+#define DL                      'M'     // Delete lines
+
 
 #endif

@@ -260,11 +260,11 @@ int rtl8139_init(pci_device_t *device) {
     // Register our IRQ handler
     uint8_t irq = pci_getInterrupt(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
 
-    if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, rtl8139_handler, (void*)nic)) {
+    if (irq == 0xFF || hal_registerInterruptHandler(irq, rtl8139_handler, (void*)nic)) {
         // Failed to register IRQ
         LOG(ERR, "Failed to register IRQ%d - trying MSI\n", irq);
         uint8_t msi = pci_enableMSI(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
-        if (msi == 0xFF || hal_registerInterruptHandlerContext(msi, rtl8139_handler, (void*)nic)) {
+        if (msi == 0xFF || hal_registerInterruptHandler(msi, rtl8139_handler, (void*)nic)) {
             LOG(ERR, "No other configuration methods\n");
             goto _cleanup;
         }

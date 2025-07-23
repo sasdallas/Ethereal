@@ -17,6 +17,7 @@
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/hal.h>
 #include <kernel/arch/arch.h>
 #include <string.h>
 
@@ -180,12 +181,12 @@ int nvme_init(pci_device_t *dev) {
 
     // Enable interrupts
     uint8_t irq = pci_enableMSI(dev->bus, dev->slot, dev->function);
-    if (irq == 0xFF || hal_registerInterruptHandlerContext(irq, nvme_irq, (void*)nvme)) {
+    if (irq == 0xFF || hal_registerInterruptHandler(irq, nvme_irq, (void*)nvme)) {
         LOG(DEBUG, "MSI unavailable, fallback to pin interrupt\n");
         irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
 
         LOG(DEBUG, "Got IRQ%d\n", irq);
-        if (hal_registerInterruptHandlerContext(irq, nvme_irq, (void*)nvme)) {
+        if (hal_registerInterruptHandler(irq, nvme_irq, (void*)nvme)) {
             LOG(ERR, "Error registering IRQs\n");
             goto _nvme_cleanup;
         }

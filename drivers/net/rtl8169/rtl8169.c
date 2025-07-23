@@ -372,12 +372,12 @@ int rtl8169_init(pci_device_t *device) {
         if (irq == 0xFF) {
             LOG(ERR, "No IRQ found for RTL8169 (or it needs to allocate one and we don't do that)\n");
             return 1;       
-        } else if (hal_registerInterruptHandlerContext(irq, rtl8169_irq, (void*)nic)) {
+        } else if (hal_registerInterruptHandler(irq, rtl8169_irq, (void*)nic)) {
             LOG(ERR, "Failed to register IRQ%d\n", irq);
             return 1;
         }
     } else {
-        if (hal_registerInterruptHandlerContext(irq, rtl8169_irq, (void*)nic)) {
+        if (hal_registerInterruptHandler(irq, rtl8169_irq, (void*)nic)) {
             LOG(ERR, "Failed to register IRQ%d\n", irq);
             return 1;
         }

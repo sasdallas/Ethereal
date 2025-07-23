@@ -139,8 +139,7 @@ static void draw_cell(uint16_t x, uint16_t y) {
     gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y + 13, fg);
     
     // TODO: not
-    gfx_createClip(ctx, r.x, r.y, r.width, r.height);
-    
+    gfx_createClip(ctx, r.x, r.y, r.width, r.height);    
 }
 
 /**
@@ -382,6 +381,33 @@ void terminal_clear() {
 }
 
 /**
+ * @brief Set cell method
+ */
+void terminal_setCell(int16_t x, int16_t y, char ch) {
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    if (x >= terminal_width) x = terminal_width-1;
+    if (y >= terminal_height) y = terminal_height-1;
+
+    // Change the character
+    CELL(x, y)->ch = ch;
+    draw_cell(x, y);
+    FLUSH();
+}
+
+/**
+ * @brief Scroll method
+ */
+void terminal_scrollAnsi(int lines) {
+    if (lines) {
+        for (int i = 0; i < lines; i++) terminal_scroll();
+    } else {
+        fprintf(stderr, "termemu: Cannot scroll up lines as this is not implemented\n");
+    }
+}
+
+/**
  * @brief Main method
  */
 int main(int argc, char *argv[]) {
@@ -420,7 +446,7 @@ int main(int argc, char *argv[]) {
         ctx = gfx_createFullscreen(CTX_DEFAULT);
     } else {
         // Initialize the graphics context for celestial
-        wid_t wid = celestial_createWindow(0, 512, 256);
+        wid_t wid = celestial_createWindow(0, 640, 480);
         win = celestial_getWindow(wid);
         celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT);
         celestial_setTitle(win, "Terminal");
@@ -438,6 +464,11 @@ int main(int argc, char *argv[]) {
     terminal_font_bold = gfx_loadFont(ctx, "/usr/share/DejaVuSansMono-Bold.ttf");
     gfx_setFontSize(terminal_font_bold, 13);
 
+
+    // Calculate width and height
+    terminal_width = GFX_WIDTH(ctx) / CELL_WIDTH;
+    terminal_height = GFX_HEIGHT(ctx) / CELL_HEIGHT;
+
     // Create ANSI
     terminal_ansi = ansi_create();
     terminal_ansi->write = terminal_write;
@@ -447,10 +478,11 @@ int main(int argc, char *argv[]) {
     terminal_ansi->get_cursor = terminal_getCursor;
     terminal_ansi->move_cursor = terminal_setCursor;
     terminal_ansi->clear = terminal_clear;
+    terminal_ansi->set_cell = terminal_setCell;
+    terminal_ansi->scroll = terminal_scrollAnsi;
+    terminal_ansi->screen_width = terminal_width;
+    terminal_ansi->screen_height = terminal_height;
 
-    // Calculate width and height
-    terminal_width = GFX_WIDTH(ctx) / CELL_WIDTH;
-    terminal_height = GFX_HEIGHT(ctx) / CELL_HEIGHT;
 
     // Create cell array
     cell_array = malloc(terminal_height * sizeof(term_cell_t*));

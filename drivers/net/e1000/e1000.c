@@ -462,7 +462,7 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     }
 
     // Register the interrupt handler
-    if (hal_registerInterruptHandlerContext(irq, e1000_irq, (void*)nic)) {
+    if (hal_registerInterruptHandler(irq, e1000_irq, (void*)nic)) {
         LOG(ERR, "Error registering IRQ%d for E1000\n", irq);
         
         // Try to enable MSI
@@ -471,7 +471,7 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
             LOG(ERR, "MSI configuration failed\n");
             goto _cleanup;
         } else {
-            hal_registerInterruptHandlerContext(vector, e1000_irq, (void*)nic);
+            hal_registerInterruptHandler(vector, e1000_irq, (void*)nic);
         }
     }
 

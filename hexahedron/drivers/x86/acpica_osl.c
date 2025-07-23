@@ -20,14 +20,7 @@
 #include <acpica/actypes.h>
 
 
-// HAL-specific types
-#if defined(__ARCH_I386__)
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#else
-#error "No support"
-#endif
+#include <kernel/arch/arch.h>
 
 // Kernel includes
 #include <kernel/debug.h>
@@ -265,7 +258,7 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLE
     ACPI_interruptContext[InterruptLevel] = Context;
 
     
-    int r = hal_registerInterruptHandler(InterruptLevel, ACPICA_InterruptHandler);
+    int r = hal_registerInterruptHandlerRegs(InterruptLevel, ACPICA_InterruptHandler);
     if (r != 0) {
         // This seems like a kernel fault
         LOG(ERR, "hal_registerInterruptHandler(%i, 0x%x) returned %i\n", InterruptLevel, ACPICA_InterruptHandler, r);

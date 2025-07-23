@@ -140,7 +140,12 @@
     "fcntl.h": "c",
     "pwd.h": "c",
     "liballoc.h": "c",
-    "strings.h": "c"
+    "strings.h": "c",
+    "limits.h": "c",
+    "list.h": "c",
+    "drive.h": "c",
+    "ctype.h": "c",
+    "wctype.h": "c"
   },
   "makefile.configureOnOpen": false
 }

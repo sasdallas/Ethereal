@@ -48,12 +48,21 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
     essence_parsed_command_t *parse = malloc(sizeof(essence_parsed_command_t));
     parse->commands = list_create("essence parsed commands");
 
-    char *cmd = in;             // Current command pointer
+    char *cmd = in;                             // Current command pointer
+    essence_fd_redir_t *redir_next = NULL;      // Redirection for the next command
 
+
+    // Start parsing
     while (1) {
         essence_command_t *cmdobj = malloc(sizeof(essence_command_t));
         memset(cmdobj, 0, sizeof(essence_command_t));
 
+        if (redir_next) {
+            // Apply next redirection
+            cmdobj->redirs = list_create("essence fd redirections");
+            list_append(cmdobj->redirs, redir_next);
+            redir_next = NULL;
+        }
 
         // Let's start parsing this command
         char **argv = malloc(MAX_ARGV * sizeof(char*)); // !!!: mem waste
@@ -186,7 +195,7 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
                 case '>':
                     // Redirection character
                     if (backslash || quoted) ESSENCE_ONLY_PUSH(*p);
-                    cmdobj->redirs = list_create("essence redirections");
+                    if (!cmdobj->redirs) cmdobj->redirs = list_create("essence redirections");
 
                     // Pop last character
                     char a;
@@ -201,12 +210,11 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
                     ESSENCE_NEW_ARGV();
                     argc--;
 
-                    printf("essence: redirecting fd %d\n", redirect_fd);
-
                     // Create redir object
                     essence_fd_redir_t *rd = malloc(sizeof(essence_fd_redir_t));
                     rd->dstfd = redirect_fd;
                     rd->srcfd = -1;
+                    rd->token = '>';
                     list_append(cmdobj->redirs, rd);
 
                     // Next character
@@ -218,6 +226,34 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
 
                     p--; // For essence next character
                     ESSENCE_NEXT_CHARACTER();
+
+                case '|':
+                    if (backslash || quoted) ESSENCE_ONLY_PUSH(*p);
+                    if (!cmdobj->redirs) cmdobj->redirs = list_create("essence redirections");
+
+                    int pfds[2];
+                    if (pipe(pfds) < 0) {
+                        perror("pipe");
+                        ESSENCE_NEXT_CHARACTER();
+                    }
+
+
+                    // Create redir object 1
+                    rd = malloc(sizeof(essence_fd_redir_t));
+                    rd->dstfd = STDOUT_FILENO;
+                    rd->srcfd = pfds[1];
+                    rd->token = '|';
+                    list_append(cmdobj->redirs, rd);
+
+                    // Set redirection fd that we are awaiting
+                    waiting_redir = rd;
+
+                    // Create redir object 2
+                    redir_next = malloc(sizeof(essence_fd_redir_t));
+                    redir_next->dstfd = STDIN_FILENO;
+                    redir_next->srcfd = pfds[0];
+
+                    break;
 
                 case '#':
                     if (!buffer_len) {
@@ -256,31 +292,34 @@ essence_parsed_command_t *essence_parseCommand(char *in) {
 
         // We might be finished, unless we have a waiting redirection (>)
         if (waiting_redir) {
-            if (!buffer_len) {
-                fprintf(stderr, "essence: Token \'>\' expects an argument.\n");
-                return NULL; // TODO: Cleanup
-            }
-
-            // We have a waiting redirection
-            printf("essence: opening %s\n", buffer);
-            
-            // Depending on whether the buffer begins with & they might want us to redirect an fd
-            if (*buffer == '&') {
-                // Redirect file descriptor
-                char *b = buffer+1;
-                waiting_redir->srcfd = strtol((const char*)b, NULL, 10);
-            } else {
-                // Create the file instead
-                waiting_redir->srcfd = open(buffer, O_CREAT | O_RDWR);
-                if (waiting_redir->srcfd < 0) {
-                    perror("open");
-                    return parse;
+            if (waiting_redir->token == '>') {
+                // The redirection fd won't be filled out if this is the case
+                if (!buffer_len) {
+                    fprintf(stderr, "essence: Token \'>\' expects an argument.\n");
+                    return NULL; // TODO: Cleanup
                 }
-            }
 
-            // Cleanup by revoking buffer
-            free(buffer);
-            buffer_len = 0;
+                // We have a waiting redirection
+                printf("essence: opening %s\n", buffer);
+                
+                // Depending on whether the buffer begins with & they might want us to redirect an fd
+                if (*buffer == '&') {
+                    // Redirect file descriptor
+                    char *b = buffer+1;
+                    waiting_redir->srcfd = strtol((const char*)b, NULL, 10);
+                } else {
+                    // Create the file instead
+                    waiting_redir->srcfd = open(buffer, O_CREAT | O_RDWR);
+                    if (waiting_redir->srcfd < 0) {
+                        perror("open");
+                        return parse;
+                    }
+                }
+
+                // Cleanup by revoking buffer
+                free(buffer);
+                buffer_len = 0;
+            }
         } else if (buffer_len) {
             // Push final argument
             argv[argc] = buffer;
@@ -301,6 +340,14 @@ _really_finished:
         // Now set cmd
         cmd = p;
         if (!(*cmd)) break;
+    }
+
+
+    if (redir_next) {
+        // We are still waiting on a redirection?
+        fprintf(stderr, "essence: Token \'%c\' expects an argument.\n", redir_next->token);
+        essence_cleanupParsed(parse);
+        return NULL;
     }
 
     return parse;

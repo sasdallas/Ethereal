@@ -12,6 +12,7 @@
  */
 
 #include "ahci.h"
+#include <kernel/hal.h>
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
@@ -182,7 +183,7 @@ int ahci_init(int argc, char **argv) {
 
 
     // Register a context-based interrupt handler?
-    if (hal_registerInterruptHandlerContext(irq, ahci_interrupt, (void*)ahci) != 0) {
+    if (hal_registerInterruptHandler(irq, ahci_interrupt, (void*)ahci) != 0) {
         LOG(ERR, "Error registering AHCI controller IRQ (I/O APIC in use?)\n");
         kfree(ahci);
         return 1;

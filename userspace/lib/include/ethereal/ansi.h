@@ -4,7 +4,7 @@
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
@@ -73,6 +73,20 @@ typedef void (*ansi_get_cursor_t)(int16_t *x, int16_t *y);
  */
 typedef void (*ansi_clear_t)();
 
+/**
+ * @brief Set cell character
+ * @param x Cell X
+ * @param y Cell Y
+ * @param character The character to set
+ */
+typedef void (*ansi_set_cell_t)(int16_t x, int16_t y, char ch);
+
+/**
+ * @brief Scroll
+ * @param lines Lines to scroll
+ */
+typedef void (*ansi_scroll_t)(int lines);
+
 typedef struct ansi {
     int state;                          // Current state of the ANSI state machine
     int flags;                          // ANSI flags
@@ -84,6 +98,9 @@ typedef struct ansi {
     int ansi_fg;                        // ANSI foreground code (0-255)
     int ansi_bg;                        // ANSI background code (0 - 255)
 
+    size_t screen_width;                // YOU fill this out, screen width
+    size_t screen_height;               // YOU fill this out, screen height
+
     uint32_t *ansi_pallete;             // ANSI pallete
 
     ansi_write_t write;                 // Write method
@@ -92,6 +109,8 @@ typedef struct ansi {
     ansi_backspace_t backspace;         // Backspace
     ansi_move_cursor_t move_cursor;     // Move cursor
     ansi_get_cursor_t get_cursor;       // Get cursor
+    ansi_set_cell_t set_cell;           // Set cell
+    ansi_scroll_t scroll;               // Scroll
     ansi_clear_t clear;                 // Clear screen
 } ansi_t;
 
