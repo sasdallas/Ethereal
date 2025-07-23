@@ -19,6 +19,7 @@ static const char *sys_siglist[] = {
     [SIGABRT]           = "Aborted",
     [SIGALRM]           = "Alarm clock",
     [SIGBUS]            = "Bus error",
+    [SIGCONT]           = "Continued",
     [SIGCHLD]           = "Child process state change",
     [SIGFPE]            = "Arithmetic exception",
     [SIGHUP]            = "Hang up",

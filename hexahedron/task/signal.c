@@ -70,10 +70,11 @@ const sa_handler signal_default_action[] = {
  * @returns 0 on success, otherwise error code
  */
 int signal_send(struct process *proc, int signal) {
+    LOG(DEBUG, "Sending signal %d to process pid %d\n", signal, proc->pid);
     if (signal < 0 || signal >= NUMSIGNALS) return -EINVAL;
 
     // Are they trying to continue a process?
-    if (PROCESS_SIGNAL(proc, signal).handler == SIGNAL_ACTION_CONTINUE && proc->flags & PROCESS_SLEEPING) {
+    if (PROCESS_SIGNAL(proc, signal).handler == SIGNAL_ACTION_CONTINUE && proc->flags & PROCESS_SUSPENDED) {
         // TODO: Continue
         LOG(ERR, "Cannot continue a process as this is unimplemented\n");
         return -ENOTSUP;
@@ -81,17 +82,18 @@ int signal_send(struct process *proc, int signal) {
 
     // Is this signal blocked?
     if (SIGNAL_IS_BLOCKED(proc, signal)) {
+        LOG(DEBUG, "Signal is blocked\n");
         return 0;
     }
 
     // Do we just ignore it? Don't waste time on that
     if (PROCESS_SIGNAL(proc, signal).handler == SIGNAL_ACTION_IGNORE) {
+        LOG(DEBUG, "Signal is ignored\n");
         return 0;
     }
 
     // Mark the signal as pending
     spinlock_acquire(&proc->siglock);
-    LOG(DEBUG, "Sending signal %d to process pid %d\n", signal, proc->pid);
     SIGNAL_MARK_PENDING(proc, signal);
     spinlock_release(&proc->siglock);
 
@@ -103,10 +105,12 @@ int signal_send(struct process *proc, int signal) {
 
 
     // Wake them up if they aren't us
-    if (proc != current_cpu->current_process && (proc->flags & PROCESS_STOPPED || proc->flags & PROCESS_SLEEPING)) {
-        // TODO: Continue
-        LOG(ERR, "Cannot wake up a process as this is unimplemented\n");
-        return -ENOTSUP;
+    if (proc != current_cpu->current_process && (proc->flags & PROCESS_SUSPENDED)) {
+        // Wakeup bro
+        // TODO: Use threads, not processes...
+        LOG(DEBUG, "Waking up process\n");
+        proc->flags &= ~(PROCESS_SUSPENDED);
+        scheduler_insertThread(proc->main_thread);
     }
 
     return 0;
@@ -136,17 +140,51 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     if (handler == SIGNAL_ACTION_DEFAULT) {
         kernel_panic_extended(UNKNOWN_CORRUPTION_DETECTED, "signal", "*** The default signal handler says to call the default signal handler.\n");
     } else if (handler == SIGNAL_ACTION_CONTINUE) {
-        // TODO: Continue
-        LOG(ERR, "Cannot continue process as this is unimplemented\n");
-        return -ENOTSUP;
+        // Really nothing new should be needed for this.
     } else if (handler == SIGNAL_ACTION_STOP) {
-        SLEEP_ENTIRE_PROCESS(proc, sleep_untilNever(t));
+        // Set up our waitpid parameters
+        proc->exit_status = signum;
+        proc->exit_reason = PROCESS_EXIT_SIGNAL;
+
+        // Stop process
+        proc->flags &= ~(PROCESS_RUNNING);
+        proc->flags |= PROCESS_SUSPENDED;
+
+        // Wakeup any parents that are waiting
+        if (proc->parent) {
+            if (proc->parent->waitpid_queue && proc->parent->waitpid_queue->length) {
+                // TODO: Locking?
+                foreach(thr_node, proc->parent->waitpid_queue) {
+                    thread_t *thr = (thread_t*)thr_node->value;
+                    sleep_wakeup(thr);
+                }
+            }
+
+            signal_send(proc->parent, SIGCHLD);
+        }
+
+        // Suspend ourselves
+        LOG(DEBUG, "Suspending process - received SIGNAL_ACTION_STOP\n");
+
+        // Now enter a loop forever with no escape!!
+        spinlock_release(&proc->siglock);
+        do {
+            process_yield(0);
+        } while (!SIGNAL_ANY_PENDING(proc));
+        spinlock_acquire(&proc->siglock);
+
+        // Oh, we escaped. Go back to normal exit state.
+        proc->exit_status = PROCESS_EXIT_NORMAL;
+
+        // Done, go back and handle another
+        return 0;
     } else if (handler == SIGNAL_ACTION_IGNORE) {
         // Ignore signal
         return 0;
     } else if (handler == SIGNAL_ACTION_TERMINATE || handler == SIGNAL_ACTION_TERMINATE_CORE) {
         // Terminate the process
-        process_exit(proc, ((128 + signum) << 8) | signum);
+        proc->exit_status = PROCESS_EXIT_SIGNAL;
+        process_exit(proc, signum);
         return 2;
     }
 

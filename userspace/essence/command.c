@@ -65,7 +65,11 @@ int essence_waitForExecution(pid_t cpid) {
     
     while (1) {
         int wstatus = 0;
-        pid_t pid = waitpid(cpid, &wstatus, 0);
+        pid_t pid = waitpid(cpid, &wstatus, WSTOPPED);
+
+        if (WIFSTOPPED(wstatus)) {
+            printf("[Process %d stopped]\n", cpid);
+        }
 
         if (pid == -1 && errno == ECHILD) {
             break;

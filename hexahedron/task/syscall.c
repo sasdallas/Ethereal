@@ -27,6 +27,7 @@
 #include <kernel/config.h>
 
 #include <sys/types.h>
+#include <sys/ptrace.h>
 #include <limits.h>
 #include <unistd.h>
 #include <string.h>
@@ -51,6 +52,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
     [SYS_READLINK]          = (syscall_func_t)(uintptr_t)0xdeadbeef,
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
+    [SYS_CHMOD]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_UNLINK]            = (syscall_func_t)(uintptr_t)0xdeadbeef,
     [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
@@ -122,6 +126,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_UNLOAD_DRIVER]     = (syscall_func_t)(uintptr_t)sys_unload_driver,
     [SYS_GET_DRIVER]        = (syscall_func_t)(uintptr_t)sys_get_driver,
     [SYS_SETITIMER]         = (syscall_func_t)(uintptr_t)sys_setitimer,
+    [SYS_PTRACE]            = (syscall_func_t)(uintptr_t)sys_ptrace,
 }; 
 
 
@@ -1360,4 +1365,10 @@ long sys_setitimer(int which, const struct itimerval *value, struct itimerval *o
     }
 
     return 0;
+}
+
+/**** PTRACE ****/
+
+long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
+    return ptrace_handle(op, pid, addr, data);
 }

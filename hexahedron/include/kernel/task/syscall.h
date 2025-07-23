@@ -23,6 +23,7 @@
 #include <sys/times.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ptrace.h>
 #include <termios.h>
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -188,7 +189,9 @@ long sys_gethostname(char *name, size_t size);
 long sys_sethostname(const char *name, size_t size);
 long sys_yield();
 long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue);
+long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
 
+/* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 long sys_exit_thread(void *retval);
 pid_t sys_gettid();

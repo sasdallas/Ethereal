@@ -23,7 +23,8 @@
                 "${workspaceFolder}/hexahedron/include/**",
                 "${workspaceFolder}/userspace/lib/include/**",
                 "${workspaceFolder}/build-output/sysroot/usr/include/",
-                "${workspaceFolder}/build-output/sysroot/usr/include/freetype2/"
+                "${workspaceFolder}/build-output/sysroot/usr/include/freetype2/",
+                "${workspaceFolder}/libkstructures/include"
             ],
             "defines": [
                 "REDUCEOS",

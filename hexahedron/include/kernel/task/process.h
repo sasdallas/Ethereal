@@ -27,6 +27,7 @@
 #include <kernel/task/mem.h>
 #include <kernel/task/signal.h>
 #include <kernel/task/timer.h>
+#include <kernel/task/ptrace.h>
 
 #include <kernel/mem/vas.h>
 
@@ -43,6 +44,9 @@
 #define PROCESS_PID_BITMAP_SIZE     PROCESS_MAX_PIDS / (sizeof(uint32_t) * 8)   // Bitmap size
 
 #define PROCESS_KSTACK_SIZE         PAGE_SIZE*4    // Kernel stack size
+
+#define PROCESS_EXIT_NORMAL                 0           // The process chose to exit on its own will
+#define PROCESS_EXIT_SIGNAL                 1           // The process was exited by a signal, and exit_status contains the signal number
 
 /**** TYPES ****/
 
@@ -69,6 +73,7 @@ typedef struct process {
     struct process *parent;             // Parent process
     char *name;                         // Name of the process
     int exit_status;                    // Exit statuscode
+    int exit_reason;                    // Reason for exit
 
     // IDs
     pid_t pid;                          // Process ID
@@ -116,6 +121,9 @@ typedef struct process {
 
     // TIMER
     process_timer_t itimers[3];         // setitimer timers
+    
+    // DEBUG
+    process_ptrace_t ptrace;            // ptrace structure
 
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)

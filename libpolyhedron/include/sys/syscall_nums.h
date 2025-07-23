@@ -114,6 +114,7 @@ _Begin_C_Header
 #define SYS_UNLOAD_DRIVER   92 // Ethereal API
 #define SYS_GET_DRIVER      93 // Ethereal API
 #define SYS_SETITIMER       94
+#define SYS_PTRACE          95
 
 #endif
 
