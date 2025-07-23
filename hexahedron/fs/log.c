@@ -38,20 +38,22 @@ extern spinlock_t debug_lock;
  * @param node The node to open
  * @param flags The flags with which to open the node
  */
-void logdev_open(fs_node_t *node, unsigned int flags) {
+int logdev_open(fs_node_t *node, unsigned int flags) {
     char b[256];
     snprintf(b, 256, "Process %s connected to log daemon\n", current_cpu->current_process->name);
     node->write(node, 0, strlen(b), (uint8_t*)b);
+    return 0;
 }
 
 /**
  * @brief Log device clse method
  * @param node The node to close
  */
-void logdev_close(fs_node_t *node) {
+int logdev_close(fs_node_t *node) {
     char b[256];
     snprintf(b, 256, "Process %s disconnected from log daemon\n", current_cpu->current_process->name);
     node->write(node, 0, strlen(b), (uint8_t*)b);
+    return 0;
 }
 
 /**

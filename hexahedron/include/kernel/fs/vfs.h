@@ -47,8 +47,8 @@ struct fs_node;
 
 // These are the types of operations that can be performed on an inode.
 // Sourced from the POSIX standard (tweaked to use fs_node rather than fd)
-typedef void (*open_t)(struct fs_node*, unsigned int oflag); // oflag can be sourced from fcntl.h
-typedef void (*close_t)(struct fs_node*);
+typedef int (*open_t)(struct fs_node*, unsigned int oflag); // oflag can be sourced from fcntl.h
+typedef int (*close_t)(struct fs_node*);
 typedef ssize_t (*read_t)(struct fs_node *, off_t, size_t, uint8_t*);
 typedef ssize_t (*write_t)(struct fs_node *, off_t, size_t, uint8_t*);
 
@@ -161,13 +161,13 @@ typedef struct vfs_waiter {
  * @param node The node to open
  * @param flags The open flags
  */
-void fs_open(fs_node_t *node, unsigned int flags);
+int fs_open(fs_node_t *node, unsigned int flags);
 
 /**
  * @brief Standard POSIX close call
  * @param node The node to close
  */
-void fs_close(fs_node_t *node);
+int fs_close(fs_node_t *node);
 
 /**
  * @brief Standard POSIX read call

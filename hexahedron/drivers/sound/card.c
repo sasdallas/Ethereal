@@ -24,8 +24,8 @@ list_t *sound_card_list = NULL;
 sound_card_t *sound_default_card = NULL;
 
 /* /device/audio */
-void sound_open(fs_node_t *node, unsigned int flags);
-void sound_close(fs_node_t *node);
+int sound_open(fs_node_t *node, unsigned int flags);
+int sound_close(fs_node_t *node);
 ssize_t sound_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer);
 ssize_t sound_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer); 
 
@@ -51,16 +51,16 @@ static int sound_last_index = 0;
  * @param node The node to open
  * @param flags Flags opened with
  */
-void sound_open(fs_node_t *node, unsigned int flags) {
-
+int sound_open(fs_node_t *node, unsigned int flags) {
+    return 0;
 }
 
 /**
  * @brief Sound card close method
  * @param node The node to close
  */
-void sound_close(fs_node_t *node) {
-
+int sound_close(fs_node_t *node) {
+    return 0;
 }
 
 /**

@@ -42,16 +42,18 @@ void shared_init() {
  * @param node The node to open
  * @param flags Open flags
  */
-static void sharedfs_open(fs_node_t *node, unsigned int flags) {
+static int sharedfs_open(fs_node_t *node, unsigned int flags) {
     shared_object_t *obj = (shared_object_t*)node->dev;
     obj->refcount++;
+
+    return 0;
 }
 
 /**
  * @brief Close method for a shared memory object
  * @param node The node to close
  */
-static void sharedfs_close(fs_node_t *node) {
+static int sharedfs_close(fs_node_t *node) {
     shared_object_t *obj = (shared_object_t*)node->dev;
     obj->refcount--;
 
@@ -64,6 +66,8 @@ static void sharedfs_close(fs_node_t *node) {
         LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
         kfree(obj);
     }
+
+    return 0;
 }
 
 /**

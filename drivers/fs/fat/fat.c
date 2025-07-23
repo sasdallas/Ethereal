@@ -27,7 +27,7 @@
  * @param node The node
  * @param flags The flags
  */
-void fat_open(fs_node_t *node, unsigned int flags) {
+int fat_open(fs_node_t *node, unsigned int flags) {
     fat_node_t *fnode = (fat_node_t*)node->dev;
     fat_t *fat = (fat_t*)fnode->fat;
     
@@ -46,19 +46,22 @@ void fat_open(fs_node_t *node, unsigned int flags) {
         if (fs_read(fat->dev, sector * fat->bpb.bytes_per_sector, sizeof(fat_entry_t), (uint8_t*)fnode->entry) < (ssize_t)sizeof(fat_entry_t)) {
             LOG(ERR, "Failed to read sector at %d (%d offset)\n", sector, sector * fat->bpb.bytes_per_sector);
             kfree(fnode->entry);
-            return;
+            return -EIO;
         }
 
         LOG(INFO, "Read FAT entry for sector %d\n", sector);
     }
+    
+    return 0;
 }
 
 /**
  * @brief FAT close method
  */
-void fat_close(fs_node_t *node) {
+int fat_close(fs_node_t *node) {
     fat_node_t *fnode = (fat_node_t*)node->dev;
     if (fnode->entry) kfree(fnode->entry);
+    return 0;
 }
 
 /**

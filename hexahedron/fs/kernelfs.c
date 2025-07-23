@@ -108,8 +108,8 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
 /**
  * @brief /kernel/processes/<pid>/XXX open
  */
-void kernelfs_processdirOpen(fs_node_t *node, unsigned int flags) {
-    fs_read(node, 0, 0, NULL);
+int kernelfs_processdirOpen(fs_node_t *node, unsigned int flags) {
+    return fs_read(node, 0, 0, NULL);
 }
 
 /**
@@ -354,7 +354,7 @@ ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *b
  * 
  * This is kinda annoying... make it stop..
  */
-void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
+int kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
     // Reset length
     kernelfs_entry_t *entry = (kernelfs_entry_t*)node->dev;
     
@@ -366,14 +366,15 @@ void kernelfs_genericOpen(fs_node_t *node, unsigned int mode) {
     // !!!: Because vfs_open creates a copy of the node, update this copies length from the original
     node->length = entry->node->length;
 
-    return;
+    return 0;
 }
 
 /**
  * @brief Generic close method
  */
-static void kernelfs_genericClose(fs_node_t *node) {
+static int kernelfs_genericClose(fs_node_t *node) {
     // Don't free, let others reuse   
+    return 0;
 }
 
 /**

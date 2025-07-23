@@ -70,8 +70,8 @@ static ssize_t driverfs_driverdirRead(fs_node_t *node, off_t off, size_t size, u
 /**
  * @brief /kernel/drivers/<ID>/XXX open
  */
-void driverfs_driverdirOpen(fs_node_t *node, unsigned int flags) {
-    fs_read(node, 0, 0, NULL);
+int driverfs_driverdirOpen(fs_node_t *node, unsigned int flags) {
+    return fs_read(node, 0, 0, NULL);
 }
 
 /**

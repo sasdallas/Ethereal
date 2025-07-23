@@ -32,10 +32,10 @@
 #define LOG(status, ...) dprintf_module(status, "FS:TMPFS", __VA_ARGS__)
 
 /* Function prototypes */
-void tmpfs_open(fs_node_t *node, unsigned int flags);
+int tmpfs_open(fs_node_t *node, unsigned int flags);
 ssize_t tmpfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 ssize_t tmpfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
-void tmpfs_close(fs_node_t *node);
+int tmpfs_close(fs_node_t *node);
 fs_node_t *tmpfs_finddir(fs_node_t *node, char *path);
 struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index);
 fs_node_t *tmpfs_create(fs_node_t *node, char *path, mode_t mode);
@@ -138,13 +138,15 @@ static tmpfs_entry_t *tmpfs_createEntry(tmpfs_entry_t *parent, int type, char *n
 /**
  * @brief Temporary filesystem open method
  */
-void tmpfs_open(fs_node_t *node, unsigned int flags) {
+int tmpfs_open(fs_node_t *node, unsigned int flags) {
+    return 0;
 }
 
 /**
  * @brief Temporary filesystem close method
  */
-void tmpfs_close(fs_node_t *node) {
+int tmpfs_close(fs_node_t *node) {
+    return 0;
 }
 
 /**

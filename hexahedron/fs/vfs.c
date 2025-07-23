@@ -51,7 +51,7 @@ spinlock_t *vfs_lock;
  * @param node The node to open
  * @param flags The open flags
  */
-void fs_open(fs_node_t *node, unsigned int flags) {
+int fs_open(fs_node_t *node, unsigned int flags) {
     if (!node) return;
 
     // TODO: Locking?
@@ -60,6 +60,8 @@ void fs_open(fs_node_t *node, unsigned int flags) {
     if (node->open) {
         return node->open(node, flags);
     }
+
+    return 0;
 }
 
 /**
@@ -75,10 +77,15 @@ void fs_close(fs_node_t *node) {
     // Anyone still using this node?
     if (node->refcount <= 0) {
         // Nope. It's free memory.
-        if (node->close) node->close(node);
-    
+        if (node->close) {
+            int r = node->close(node);
+            if (r != 0) return r;
+        }
+
         fs_destroy(node);
     }
+
+    return 0;
 }
 
 /**
