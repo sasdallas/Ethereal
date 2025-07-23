@@ -441,7 +441,7 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 /**
  * @brief Socket close method
  */
-void socket_close(fs_node_t *node) {
+int socket_close(fs_node_t *node) {
     sock_t *sock = (sock_t*)node->dev;
 
     // First, call the socket's dedicated close method
@@ -453,6 +453,8 @@ void socket_close(fs_node_t *node) {
     if (sock->recv_queue) list_destroy(sock->recv_queue, true);
     if (sock->recv_wait_queue) kfree(sock->recv_wait_queue);
     kfree(sock);
+
+    return 0;
 }
 
 /**

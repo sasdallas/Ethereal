@@ -64,7 +64,7 @@ ssize_t pipe_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
  * @brief Close the read end of a pipe
  * @param node The pipe node to close
  */
-void pipe_closeRead(fs_node_t *node) {
+int pipe_closeRead(fs_node_t *node) {
     fs_pipe_t *pipe = (fs_pipe_t*)node->dev;
 
     // Did the other end close?
@@ -78,13 +78,14 @@ void pipe_closeRead(fs_node_t *node) {
     // Not yet
     pipe->closed_read = 1;
     circbuf_stop(pipe->buf);
+    return 0;
 }
 
 /**
  * @brief Close the write end of a pipe
  * @param node The pipe node to close
  */
-void pipe_closeWrite(fs_node_t *node) {
+int pipe_closeWrite(fs_node_t *node) {
     fs_pipe_t *pipe = (fs_pipe_t*)node->dev;
 
     // Did the other end close?
@@ -98,6 +99,7 @@ void pipe_closeWrite(fs_node_t *node) {
     // Not yet
     pipe->closed_write = 1;
     circbuf_stop(pipe->buf);
+    return 0;
 }
 
 /**
