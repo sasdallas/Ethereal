@@ -68,7 +68,7 @@ int fs_open(fs_node_t *node, unsigned int flags) {
  * @brief Standard POSIX close call that also frees the node
  * @param node The node to close
  */
-void fs_close(fs_node_t *node) {
+int fs_close(fs_node_t *node) {
     if (!node) return;
 
     // First, decrement the reference counter

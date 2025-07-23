@@ -219,7 +219,10 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
         }
 
         // HACK: Open the node
-        fs_open(node, flags);
+        ret = fs_open(node, flags);
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     // Did they want a directory?
