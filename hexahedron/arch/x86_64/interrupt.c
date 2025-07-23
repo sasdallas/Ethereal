@@ -452,6 +452,31 @@ int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t h
     return 0;
 }
 
+
+/**
+ * @brief Set interrupt state on the current CPU
+ * @param state The interrupt state to set
+ */
+void hal_setInterruptState(int state) {
+    if (state == HAL_INTERRUPTS_ENABLED) {
+        asm volatile ("sti");
+    } else {
+        asm volatile ("cli");
+    }
+}
+
+/**
+ * @brief Get the interrupt state on the current CPU
+ */
+int hal_getInterruptState() {
+    // Get flags
+    uintptr_t flags;
+    asm volatile ("pushf\n"
+                    "pop %0" : "=rm"(flags));
+
+    return (flags & (1 << 9)) ? HAL_INTERRUPTS_ENABLED : HAL_INTERRUPTS_DISABLED;
+}
+
 /**
  * @brief Installs the IDT in the current AP
  */

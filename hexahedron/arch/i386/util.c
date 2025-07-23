@@ -36,13 +36,20 @@ generic_parameters_t *arch_get_generic_parameters() {
 }
 
 /**
- * @brief Pause execution on the current CPU for one cycle
+ * @brief Pause execution on the current CPU until preemption
  */
 void arch_pause() {
     // Halt here. This will allow for an interrupt to catch us
     asm volatile (  "sti\n"
                     "hlt\n"
                     "cli\n");
+}
+
+/**
+ * @brief Pause execution on the CPU for one cycle
+ */
+void arch_pause_single() {
+    asm volatile ("pause");
 }
 
 /**

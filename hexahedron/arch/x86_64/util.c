@@ -47,6 +47,13 @@ void arch_pause() {
 }
 
 /**
+ * @brief Pause execution on the CPU for one cycle
+ */
+void arch_pause_single() {
+	asm volatile ("pause");
+}
+
+/**
  * @brief Determine whether the interrupt fired came from usermode 
  * 
  * Useful to main timer logic to know when to switch tasks.

@@ -137,9 +137,6 @@ static void draw_cell(uint16_t x, uint16_t y) {
     gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
     gfx_drawRectangleFilled(ctx, &r, bg);
     gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y + 13, fg);
-    
-    // TODO: not
-    gfx_createClip(ctx, r.x, r.y, r.width, r.height);    
 }
 
 /**
@@ -521,11 +518,9 @@ int main(int argc, char *argv[]) {
 
     // Enter main loop
     for (;;) {
-        if (win) celestial_poll();
-
         // Get events
-        struct pollfd fds[] = { { .fd = keyboard_fd, .events = POLLIN }, { .fd = pty_master, .events = POLLIN}};
-        int p = poll(fds, 2, fullscreen ? -1 : 0);
+        struct pollfd fds[] = { { .fd = keyboard_fd, .events = POLLIN }, { .fd = pty_master, .events = POLLIN }, { .fd = celestial_getSocketFile(), .events = POLLIN }};
+        int p = poll(fds, 3, -1);
         if (p < 0) return 1;
         if (!p) continue;
 
@@ -558,6 +553,10 @@ int main(int argc, char *argv[]) {
 
                 FLUSH();
             }
+        }
+
+        if (fds[2].revents & POLLIN) {
+            celestial_poll();
         }
     }
 

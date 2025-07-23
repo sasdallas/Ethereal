@@ -196,3 +196,11 @@ int celestial_query() {
     if (p <= 0 || !(fds[0].revents & POLLIN)) return 0;
     return 1;
 }
+
+/**
+ * @brief Get the Celestial socket file descriptor
+ * @returns The socket file descriptor if it exists or -1 if it is not ready
+ */
+int celestial_getSocketFile() {
+    return __celestial_socket;
+}

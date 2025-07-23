@@ -237,4 +237,10 @@ void celestial_poll();
  */
 int celestial_query();
 
+/**
+ * @brief Get the Celestial socket file descriptor
+ * @returns The socket file descriptor if it exists or -1 if it is not ready
+ */
+int celestial_getSocketFile();
+
 #endif

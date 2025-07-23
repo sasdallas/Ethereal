@@ -193,6 +193,7 @@ thread_t *scheduler_get() {
             // Normally this would be fatal, but it just in fact means we've cleared our queue of all running processes
             // This is supposed to be fatal (no init process), but other parts of the code will catch this.
             // Else, guess it just freezes. Who knows!
+            spinlock_release(&scheduler_lock);
             return current_cpu->idle_process->main_thread;
         }
 

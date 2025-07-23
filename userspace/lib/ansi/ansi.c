@@ -109,10 +109,21 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
         // Make sure that ch was a number
         if (ch == '[') {
             // Discard these characters
+            ansi->state = ANSI_STATE_ARG_COLLECT;
         } else if (ch >= 'A' && ch <= 'z') {
             // Looks like we found a function
             ansi->state = ANSI_STATE_FUNCTION;
         } else {
+            ansi->state = ANSI_STATE_NONE;
+            ansi->write('\033');
+            ansi->write(ch);
+            return;
+        }
+    } else if (ansi->state == ANSI_STATE_ARG_COLLECT) {
+        if (ch >= 'A' && ch <= 'z') {
+            // Looks like we found a function
+            ansi->state = ANSI_STATE_FUNCTION;
+        } else { 
             // Nothing of note
             ANSI_PUSH(ch);
         }

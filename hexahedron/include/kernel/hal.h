@@ -18,6 +18,11 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 
+/**** DEFINITIONS ****/
+
+#define HAL_INTERRUPTS_DISABLED         0
+#define HAL_INTERRUPTS_ENABLED          1
+
 /**** TYPES ****/
 
 /**
@@ -41,5 +46,16 @@ int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t h
  * @brief Unregisters an interrupt handler
  */
 void hal_unregisterInterruptHandler(uintptr_t int_no);
+
+/**
+ * @brief Set interrupt state on the current CPU
+ * @param state The interrupt state to set
+ */
+void hal_setInterruptState(int state);
+
+/**
+ * @brief Get the interrupt state on the current CPU
+ */
+int hal_getInterruptState();
 
 #endif

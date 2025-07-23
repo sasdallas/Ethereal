@@ -16,7 +16,6 @@
         {
             "name": "osdev-x86_64",
             "includePath": [
-                "${workspaceFolder}/**",
                 "${workspaceFolder}/userspace/lib/include/",
                 "${workspaceFolder}/libkstructures/include/**",
                 "${workspaceFolder}/libpolyhedron/include/",

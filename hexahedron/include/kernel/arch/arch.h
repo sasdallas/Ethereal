@@ -81,9 +81,14 @@ extern generic_parameters_t *arch_get_generic_parameters();
 extern int arch_current_cpu();
 
 /**
- * @brief Pause execution on the current CPU for one cycle
+ * @brief Pause execution on the current CPU until preemption
  */
 void arch_pause();
+
+/**
+ * @brief Pause execution on the CPU for one cycle
+ */
+void arch_pause_single();
 
 /**
  * @brief Determine whether the interrupt fired came from usermode 

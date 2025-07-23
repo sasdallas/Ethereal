@@ -22,9 +22,10 @@
 
 // spin
 typedef struct spinlock {
-    char *name;         // Optional name
-    int cpu;            // ID of the CPU holding the spinlock 
-    atomic_flag lock;   // Lock
+    char *name;             // Optional name
+    int cpu;                // ID of the CPU holding the spinlock 
+    atomic_flag lock;       // Lock
+    int state;
 } spinlock_t;
 
 /**** FUNCTIONS ****/
@@ -53,6 +54,5 @@ void spinlock_acquire(spinlock_t *spinlock);
  * @brief Release a spinlock
  */
 void spinlock_release(spinlock_t *spinlock);
-
 
 #endif

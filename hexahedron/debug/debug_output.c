@@ -18,6 +18,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
+#include <kernel/misc/args.h>
 #include <errno.h>
 #include <time.h>
 #include <stdarg.h>
@@ -84,6 +85,7 @@ int debug_print(void *user, char ch) {
  * @param buffer The buffer
  */
 ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+    if (!debug_buffer) return -EINVAL;
     if (offset > (off_t)debug_buffer_index) return 0;
     if (offset + size > (size_t)debug_buffer_index) size = debug_buffer_index - (size_t)offset;
 
@@ -208,10 +210,12 @@ log_putchar_method_t debug_getOutput() {
  * @brief Mount the debug node onto the VFS
  */
 void debug_mountNode() {
-    /* Allocate the debug buffer */
-    debug_buffer = kmalloc(PAGE_SIZE);
-    debug_buffer_size = PAGE_SIZE;
-    debug_buffer_index = 0;
+    // /* Allocate the debug buffer */
+    // if (!kargs_has("--no-store-debug")) {
+    //     debug_buffer = kmalloc(PAGE_SIZE);
+    //     debug_buffer_size = PAGE_SIZE;
+    //     debug_buffer_index = 0;
+    // }
 
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
 

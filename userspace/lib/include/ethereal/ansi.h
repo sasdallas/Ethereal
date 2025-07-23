@@ -23,7 +23,8 @@
 /* States */
 #define ANSI_STATE_NONE         0   // Nothing
 #define ANSI_STATE_ESCAPE       1   // \x1b
-#define ANSI_STATE_FUNCTION     2   // Function
+#define ANSI_STATE_ARG_COLLECT  2   // ESC[
+#define ANSI_STATE_FUNCTION     3   // Function
 
 /* Flags */
 #define ANSI_FLAG_BOLD          0x01

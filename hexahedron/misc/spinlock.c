@@ -50,10 +50,14 @@ void spinlock_destroy(spinlock_t *spinlock) {
  * Will spin around until we acquire the lock
  */
 void spinlock_acquire(spinlock_t *spinlock) {
+    int state = hal_getInterruptState();
+    // hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
     while (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
-        // TODO: CPU pause
+        arch_pause_single();
     }
 
+    spinlock->state = state;
     spinlock->cpu = arch_current_cpu();
 }
 
@@ -63,4 +67,5 @@ void spinlock_acquire(spinlock_t *spinlock) {
 void spinlock_release(spinlock_t *spinlock) {
     spinlock->cpu = -1;
     atomic_flag_clear_explicit(&(spinlock->lock), memory_order_release);
+    // hal_setInterruptState(spinlock->state);
 }
