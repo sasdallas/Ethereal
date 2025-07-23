@@ -75,7 +75,7 @@ int pmm_testFrame(int frame) {
 }
 
 // Find the first free frame
-uint32_t pmm_findFirstFrame() {
+int pmm_findFirstFrame() {
     for (uint32_t i = 0; i < PMM_INDEX_BIT(nframes); i++) {
         if (frames[i] != 0xFFFFFFFF) {
             // At least one bit is free. Which one?
@@ -108,8 +108,10 @@ int pmm_findFirstFrames(size_t n) {
                     uint32_t free_bits = 0;
                     for (uint32_t check = 0; check < n; check++) {
                         if (!pmm_testFrame(starting_bit + check)) free_bits++;
-                        if (free_bits == n) return i * 4 * 8 + bit; // Yes, there are!
+                        else break;
                     }
+
+                    if (free_bits == n) return i * 4 * 8 + bit;
                 }
             }
         }
@@ -129,8 +131,8 @@ void pmm_initializeRegion(uintptr_t base, uintptr_t size) {
 
     spinlock_acquire(&frame_lock);
 
-    // Careful not to cause a div by zero on base.
-    int align = (base == 0) ? 0 : (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
+    // Calculate align and blocks
+    int align = (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
     int blocks = PMM_ALIGN(size) / PMM_BLOCK_SIZE;
 
     // Check
@@ -222,7 +224,7 @@ void pmm_freeBlock(uintptr_t block) {
 
     spinlock_acquire(&frame_lock);
 
-    int frame = (block == 0x0) ? 0: block / PMM_BLOCK_SIZE;
+    int frame = block / PMM_BLOCK_SIZE;
     pmm_clearFrame(frame);
     pmm_usedBlocks--;
 
@@ -262,8 +264,7 @@ void pmm_freeBlocks(uintptr_t base, size_t blocks) {
     
     spinlock_acquire(&frame_lock);
 
-    // Careful not to cause a div by zero on base.
-    int frame = (base == 0x0) ? 0x0: base / PMM_BLOCK_SIZE;
+    int frame = base / PMM_BLOCK_SIZE;
     for (uint32_t i = 0; i < blocks; i++) pmm_clearFrame(frame + i);
     pmm_usedBlocks -= blocks;
 
