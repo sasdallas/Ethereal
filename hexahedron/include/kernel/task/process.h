@@ -28,6 +28,7 @@
 #include <kernel/task/signal.h>
 #include <kernel/task/timer.h>
 #include <kernel/task/ptrace.h>
+#include <kernel/task/syscall.h>
 
 #include <kernel/mem/vas.h>
 
@@ -124,7 +125,6 @@ typedef struct process {
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)
     page_t *dir;                        // Page directory
-    struct _registers *regs;            // Dirty hack. See process_fork
     arch_context_t sigctx;              // Signal handler context
     pid_t tid_next;                     // Next TID to use
 } process_t;

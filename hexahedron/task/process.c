@@ -858,7 +858,7 @@ pid_t process_fork() {
     
     // Push the registers onto the stack
     struct _registers r;
-    memcpy(&r, current_cpu->current_process->regs, sizeof(struct _registers));
+    memcpy(&r, current_cpu->current_thread->regs, sizeof(struct _registers));
     
     // Configure the system call return value
 #ifdef __ARCH_I386__
@@ -1013,7 +1013,7 @@ pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *ar
 
     // Make some registers
     struct _registers r;
-    memcpy(&r, current_cpu->current_process->regs, sizeof(struct _registers));
+    memcpy(&r, current_cpu->current_thread->regs, sizeof(struct _registers));
 
 #ifdef __ARCH_I386__
     THREAD_PUSH_STACK(thr->stack, void*, arg);

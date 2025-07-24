@@ -50,6 +50,8 @@
 #endif
 
 
+#include <sys/user.h>
+
 /**** TYPES ****/
 
 struct thread; // Prototype
@@ -180,5 +182,26 @@ void arch_mount_kernelfs();
  * This should also reflect in the context when saved/restored
  */
 void arch_set_tlsbase(uintptr_t tls);
+
+/**
+ * @brief Convert a thread's saved registers into a user context structure
+ * @param user_regs The user registers structure to fill
+ * @param thread The thread to use the registers from to fill
+ */
+void arch_to_user_regs(struct user_regs_struct *user_regs, struct thread *thread);
+
+/**
+ * @brief Convert user regs into a thread's saved registers (AND updates the system call in thread->syscall)
+ * @param user_regs The user registers structure to use to fill
+ * @param thread The thread to fill
+ */
+void arch_from_user_regs(struct user_regs_struct *user_regs, struct thread *thread);
+
+/**
+ * @brief Set the single step state of a thread
+ * @param thread The thread to set the single step state of
+ * @param state On or off
+ */
+void arch_single_step(struct thread *thread, int state);
 
 #endif

@@ -281,13 +281,14 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         syscall.parameters[4] = regs->edi;
         syscall.parameters[5] = regs->ebp;
 
-        // HACK
-        current_cpu->current_process->regs = regs;
+        current_cpu->current_thread->syscall = &syscall;
+        current_cpu->current_thread->regs = regs;
 
         // Handle
         syscall_handle(&syscall); // ???: Stack-based syscall OK?
 
         regs->eax = syscall.return_value;
+        current_cpu->current_thread->syscall = NULL;
         return;
     }
 

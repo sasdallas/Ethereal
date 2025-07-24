@@ -12,8 +12,10 @@
  */
 
 #include <kernel/task/process.h>
+#include <kernel/task/syscall.h>
 #include <kernel/debug.h>
 #include <sys/ptrace.h>
+#include <sys/user.h>
 #include <errno.h>
 
 /* Log method */
@@ -141,6 +143,37 @@ int ptrace_cont(pid_t pid, void *data) {
     return 0;
 }
 
+
+/**
+ * @brief Get the registers of a tracee
+ * @param pid The PID of the tracee
+ * @param data Pointer to regs structure
+ */
+int ptrace_getregs(pid_t pid, void *data) {
+    SYSCALL_VALIDATE_PTR_SIZE(data, sizeof(struct user_regs_struct));
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    // Get user registers
+    arch_to_user_regs((struct user_regs_struct*)data, tracee->main_thread);
+    return 0;
+}
+
+/**
+ * @brief Set the registers of a tracee
+ * @param pid The PID of the tracee
+ * @param data Pointer to regs structure
+ */
+int ptrace_setregs(pid_t pid, void *data) {
+    SYSCALL_VALIDATE_PTR_SIZE(data, sizeof(struct user_regs_struct));
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    // Set user registers
+    arch_from_user_regs((struct user_regs_struct*)data, tracee->main_thread);
+    return 0;
+}
+
 /**
  * @brief Alert that an event has been completed
  * @param event The event that was completed
@@ -149,8 +182,6 @@ int ptrace_event(int event) {
     // TODO: For ptrace events, how are we supposed to keep track of each thread?
     process_t *process = current_cpu->current_process;
     if (!process->ptrace.tracer || !(process->ptrace.events & event)) return 0; // Not listening for or not being traced
-
-    LOG(DEBUG, "ptrace event: %d\n", event);
 
     // Signal to the process, turn off said event
     spinlock_acquire(&process->ptrace.lock);
@@ -176,8 +207,6 @@ int ptrace_event(int event) {
     // Night night
     process_yield(0);
 
-    LOG(INFO, "ptrace event processed: %d\n", event);
-
     process->exit_reason = 0;
     process->exit_status = 0;
 
@@ -201,6 +230,10 @@ long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data) 
             return ptrace_syscall(pid, data);
         case PTRACE_CONT:
             return ptrace_cont(pid, data);
+        case PTRACE_GETREGS:
+            return ptrace_getregs(pid, data);
+        case PTRACE_SETREGS:
+            return ptrace_setregs(pid, data);
         default:
             LOG(WARN, "Unknown or unimplemented ptrace operation %d\n", op);
             return -ENOSYS;

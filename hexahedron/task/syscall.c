@@ -176,6 +176,9 @@ void syscall_pointerValidateFailed(void *ptr) {
 void syscall_handle(syscall_t *syscall) {
     // LOG(INFO, "Received system call %d\n", syscall->syscall_number);
 
+    // Enter
+    ptrace_event(PROCESS_TRACE_SYSCALL);
+
     // Is the system call within bounds?
     if (syscall->syscall_number < 0 || syscall->syscall_number >= (int)(sizeof(syscall_table) / sizeof(*syscall_table))) {
         LOG(ERR, "Invalid system call %d received\n");
@@ -183,9 +186,6 @@ void syscall_handle(syscall_t *syscall) {
         return;
     }
 
-    // Enter
-    ptrace_event(PROCESS_TRACE_SYSCALL);
-    
     // Call!
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],

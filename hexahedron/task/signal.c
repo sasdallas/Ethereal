@@ -204,11 +204,9 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     // Else, let's have it call the handler.
     LOG(DEBUG, "Handling signal %d for process PID %d thread TID %d (handler: %p)\n", signum, proc->pid, thr->tid, handler);
 
-
-extern uintptr_t __userspace_start, __userspace_end;
-
     // If the process does not have a userspace allocation, create one.
     // !!!: This probably needs to be refactored?
+    extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace) {
         proc->userspace = vas_allocate(proc->vas, PAGE_SIZE);
         if (!proc->userspace) {
@@ -231,6 +229,7 @@ extern uintptr_t __userspace_start, __userspace_end;
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, regs->rflags);
 #endif
     
+    // Push handler and signal number
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, handler);
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, signum);
 

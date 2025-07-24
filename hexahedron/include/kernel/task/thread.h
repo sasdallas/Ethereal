@@ -44,6 +44,7 @@
 
 // Prototype
 struct process;
+struct syscall;
 
 /**
  * @brief Thread structure. Contains an execution path in a process.
@@ -75,8 +76,10 @@ typedef struct thread {
 
     // OTHER
     page_t *dir;                            // Page directory for the thread
+    struct _registers *regs;                // Registers of the thread
     uintptr_t stack;                        // Thread stack (kernel will load kstack in TSS)
     uintptr_t kstack;                       // Kernel stack
+    struct syscall *syscall;                // The current system call of the thread
     
     // PTHREAD RELATED
     pid_t tid;                              // Thread ID
