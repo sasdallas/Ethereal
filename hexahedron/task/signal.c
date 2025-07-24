@@ -103,8 +103,6 @@ int signal_sendThread(struct thread *thr, int signal) {
     // Wake them up if they aren't us
     if (thr != current_cpu->current_thread && (thr->parent->flags & PROCESS_SUSPENDED)) {
         // Wakeup bro
-        // TODO: Use threads, not processes...
-        LOG(DEBUG, "Waking up thread\n");
         thr->parent->flags &= ~(PROCESS_SUSPENDED);
         scheduler_insertThread(thr);
     }

@@ -476,6 +476,15 @@ void process_destroy(process_t *proc) {
     // Drop main thread in process (?)
     // thread_destroy(proc->main_thread);
 
+    if (proc->ptrace.tracees) {
+        foreach(tracee, proc->ptrace.tracees) {
+            // TODO: PTRACE_O_EXITKILL
+            ptrace_untrace((process_t*)tracee->value, proc);
+        }
+
+        list_destroy(proc->ptrace.tracees, 0);
+    }
+
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);

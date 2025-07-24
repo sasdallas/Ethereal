@@ -36,6 +36,12 @@ typedef struct process_ptrace {
 
 /**** FUNCTIONS ****/
 
+/**
+ * @brief Detach from and release a tracee
+ * @param tracee The tracee to release
+ * @param tracer The tracer to release from
+ */
+int ptrace_untrace(struct process *tracee, struct process *tracer);
 
 /**
  * @brief Handle a ptrace request by the current process

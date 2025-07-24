@@ -21,6 +21,9 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:PTRACE", __VA_ARGS__)
 
+/* Must be in stopped state */
+#define PTRACE_REQUIRE_STOPPED(thr) if (!((thr)->parent->flags & PROCESS_SUSPENDED)) return -ESRCH;
+
 /**
  * @brief Get a process' tracee by its PID
  * @param proc The process to search tracees of
@@ -72,6 +75,29 @@ int ptrace_trace(process_t *tracee, process_t *tracer) {
 }
 
 /**
+ * @brief Detach from and release a tracee
+ * @param tracee The tracee to release
+ * @param tracer The tracer to release from
+ */
+int ptrace_untrace(process_t *tracee, process_t *tracer) {
+    spinlock_acquire(&tracee->ptrace.lock);
+    spinlock_acquire(&tracer->ptrace.lock);
+
+    list_delete(tracer->ptrace.tracees, list_find(tracer->ptrace.tracees, tracee));
+    tracee->ptrace.tracer = NULL;
+
+    // If tracee is stopped, send it a SIGCONT
+    if (tracee->flags & PROCESS_SUSPENDED) {
+        signal_send(tracee, SIGCONT);
+    }
+
+    spinlock_release(&tracee->ptrace.lock);
+    spinlock_release(&tracee->ptrace.lock);
+    
+    return 0;
+}
+
+/**
  * @brief Attach to a process (PTRACE_ATTACH)
  * @param pid Tracee
  */
@@ -112,6 +138,7 @@ int ptrace_traceme() {
 int ptrace_syscall(pid_t pid, void *data) {
     process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
     if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
 
     // Arrange for tracee to be stopped at next system call
     spinlock_acquire(&tracee->ptrace.lock);
@@ -153,6 +180,7 @@ int ptrace_getregs(pid_t pid, void *data) {
     SYSCALL_VALIDATE_PTR_SIZE(data, sizeof(struct user_regs_struct));
     process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
     if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
 
     // Get user registers
     arch_to_user_regs((struct user_regs_struct*)data, tracee->main_thread);
@@ -168,6 +196,7 @@ int ptrace_setregs(pid_t pid, void *data) {
     SYSCALL_VALIDATE_PTR_SIZE(data, sizeof(struct user_regs_struct));
     process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
     if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
 
     // Set user registers
     arch_from_user_regs((struct user_regs_struct*)data, tracee->main_thread);
@@ -182,6 +211,7 @@ int ptrace_setregs(pid_t pid, void *data) {
 int ptrace_singlestep(pid_t pid, void *data) {
     process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
     if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
 
     arch_single_step(tracee->main_thread, 1);
 
@@ -243,6 +273,17 @@ int ptrace_event(int event) {
 }
 
 /**
+ * @brief Detach from ptrace
+ * @param pid The PID of the tracee
+ */
+int ptrace_detach(pid_t pid) {
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    return ptrace_untrace(tracee, current_cpu->current_process);
+}
+
+/**
  * @brief Handle a ptrace request by the current process
  * @param op The operation to perform
  * @param pid The target PID
@@ -265,6 +306,8 @@ long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data) 
             return ptrace_setregs(pid, data);
         case PTRACE_SINGLESTEP:
             return ptrace_singlestep(pid, data);
+        case PTRACE_DETACH:
+            return ptrace_detach(pid);
         default:
             LOG(WARN, "Unknown or unimplemented ptrace operation %d\n", op);
             return -ENOSYS;

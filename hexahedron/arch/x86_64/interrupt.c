@@ -500,9 +500,9 @@ void hal_installIDT() {
 int hal_debugTrapHandler(uintptr_t exception_index, registers_t *regs, extended_registers_t *extended_regs) {
     if (regs->cs != 0x08) {
         // Must be from usermode
-        dprintf(DEBUG, "TRAP: Trap detected in process\n");
+        current_cpu->current_thread->regs = regs;
         ptrace_event(PROCESS_TRACE_SINGLE_STEP);
-        return 0;
+        return 0; // TODO: Send SIGTRAP
     }
 
     // Uh, kernel debug trap?

@@ -150,8 +150,9 @@ typedef struct vfs_tree_node {
 
 // Waiter structure for any processes waiting
 typedef struct vfs_waiter {
-    struct thread *thread;
-    int events;
+    struct thread *thread;      // Thread
+    int events;                 // Events we want to capture
+    int refcount;               // References remaining on the node
 } vfs_waiter_t;
 
 /**** FUNCTIONS ****/

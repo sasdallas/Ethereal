@@ -16,7 +16,7 @@
 _Begin_C_Header
 
 #ifndef _SYS_WAIT_H
-#define SYS_WAIT_H
+#define _SYS_WAIT_H
 
 /**** INCLUDES ****/
 #include <stdint.h>

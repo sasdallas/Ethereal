@@ -222,19 +222,23 @@ int fs_alert(fs_node_t *node, int events) {
         vfs_waiter_t *waiter = (vfs_waiter_t*)n->value;
         if (waiter) {
             if (waiter->events & events) {
-                // Is the thread actually sleeping?
-                if (waiter->thread->sleep) {
-                    // Yes, wake it up.
-                    // If the thread ISN'T sleeping, that means it probably got what it wanted and isn't waiting anymore.
-                    // !!!: Yes, there is a race condition here.
+                // Is the thread being awaited?
+                if (waiter->thread->waiter == waiter) {
                     // LOG(INFO, "Alerting thread %p that events 0x%x are available\n", waiter->thread, waiter->events);
                     sleep_wakeup(waiter->thread);
+                    waiter->thread->waiter = NULL;
+                    waiter->refcount--; // Lower the reference count
                 } else {
-                    LOG(DEBUG, "Not waking up thread %p, assuming it has already completed its poll\n", waiter->thread);
+                    // LOG(DEBUG, "Node %p not waking up thread %p, assuming it has already completed its poll (waiter references: %d)\n", node, waiter->thread, waiter->refcount);
+                    waiter->refcount--;
                 }
 
                 // Hacky deletion
-                kfree(waiter);
+                if (waiter->refcount <= 0) {
+                    // !!!: Might be bad
+                    kfree(waiter);
+                }
+
                 node_t *next = n->next;
                 list_delete(node->waiting_nodes, n);
                 n = next;
@@ -261,11 +265,16 @@ int fs_wait(fs_node_t *node, int events) {
     if (!node) return -EINVAL;
     if (!node->waiting_nodes) node->waiting_nodes = list_create("waiting nodes");
 
+    if (!current_cpu->current_thread->waiter) {
+        vfs_waiter_t *waiter = kzalloc(sizeof(vfs_waiter_t));
+        waiter->thread = current_cpu->current_thread;
+        waiter->events = events;
+        current_cpu->current_thread->waiter = waiter;
+    }
+
     spinlock_acquire(&node->waiter_lock);
-    vfs_waiter_t *waiter = kzalloc(sizeof(vfs_waiter_t));
-    waiter->thread = current_cpu->current_thread;
-    waiter->events = events;
-    list_append(node->waiting_nodes, (void*)waiter);
+    current_cpu->current_thread->waiter->refcount++;
+    list_append(node->waiting_nodes, (void*)current_cpu->current_thread->waiter);
     spinlock_release(&node->waiter_lock);
 
     return 0;
