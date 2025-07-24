@@ -65,17 +65,22 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file);
 int gfx_renderSprite(struct gfx_context *ctx, sprite_t *sprite, int x, int y);
 
 /**
- * @brief Render a large sprite in all available holes on the context
- * This is only really used for background drawing.
- */
-int gfx_renderSpriteInTheHoles(struct gfx_context *ctx, sprite_t *sprite);
-
-/**
  * @brief Render a scaled sprite
  * @param ctx The context to render the sprite in
  * @param sprite The sprite to render
  * @param scaled The scaled rectangle to render in
  */
 int gfx_renderSpriteScaled(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t scaled);
+
+
+/**
+ * @brief Render a rectangle from a sprite
+ * @param ctx Graphics context
+ * @param sprite The sprite to render
+ * @param rect A (relative-to-sprite) rectangle
+ * @param x X coordinate of the sprite
+ * @param y Y coordinate of the sprite
+ */
+int gfx_renderSpriteRegion(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t *rect, int x, int y);
 
 #endif
