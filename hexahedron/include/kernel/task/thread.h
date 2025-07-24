@@ -19,6 +19,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/mem/mem.h>
 #include <kernel/task/sleep.h>
+#include <kernel/task/signal.h>
 #include <sys/types.h>
 
 /**** DEFINITIONS ****/
@@ -49,35 +50,41 @@ struct process;
  */
 typedef struct thread {
     // GENERAL VARIABLES
-    struct process *parent;     // Parent process
-    unsigned int status;        // Status of this thread
-    unsigned int flags;         // Flags of the thread
+    struct process *parent;                 // Parent process
+    unsigned int status;                    // Status of this thread
+    unsigned int flags;                     // Flags of the thread
 
     // SCHEDULER VARIABLES
-    node_t *sched_node;         // Scheduler node
-    time_t preempt_ticks;       // Ticks until the thread is preempted
-    time_t total_ticks;         // Total amount of ticks the thread has been running for
-    time_t start_ticks;         // Starting ticks
+    node_t *sched_node;                     // Scheduler node
+    time_t preempt_ticks;                   // Ticks until the thread is preempted
+    time_t total_ticks;                     // Total amount of ticks the thread has been running for
+    time_t start_ticks;                     // Starting ticks
 
     // BLOCKING VARIABLES
-    thread_sleep_t *sleep;      // Sleep structure
+    thread_sleep_t *sleep;                  // Sleep structure
 
     // THREAD VARIABLES
-    arch_context_t context;     // Thread context (defined by architecture)
+    arch_context_t context;                 // Thread context (defined by architecture)
     uint8_t fp_regs[512] __attribute__((aligned(16))); // FPU registers (TEMPORARY - should be moved into arch_context?)
 
+    // SIGNALS
+    spinlock_t siglock;                     // Signal lock
+    proc_signal_t signals[NUMSIGNALS];      // Signal list
+    sigset_t pending_signals;               // Pending signals
+    sigset_t blocked_signals;               // Blocked signals
+
     // OTHER
-    page_t *dir;                // Page directory for the thread
-    uintptr_t stack;            // Thread stack (kernel will load kstack in TSS)
-    uintptr_t kstack;           // Kernel stack
+    page_t *dir;                            // Page directory for the thread
+    uintptr_t stack;                        // Thread stack (kernel will load kstack in TSS)
+    uintptr_t kstack;                       // Kernel stack
     
     // PTHREAD RELATED
-    pid_t tid;                  // Thread ID
-    list_t *joiners;            // List of joiners
-    void *retval;               // Return value of the thread
-                                // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
-                                // NOTE: except the actual object itself, until the process exits.
-    spinlock_t joiner_lck;      // Joiner lock
+    pid_t tid;                              // Thread ID
+    list_t *joiners;                        // List of joiners
+    void *retval;                           // Return value of the thread
+                                            // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
+                                            // NOTE: except the actual object itself, until the process exits.
+    spinlock_t joiner_lck;                  // Joiner lock
 } thread_t;
 
 

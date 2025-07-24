@@ -110,10 +110,6 @@ typedef struct process {
     list_t *mmap;                       // mmap() mappings
 
     // SIGNALS
-    spinlock_t siglock;                 // Signal lock
-    proc_signal_t signals[NUMSIGNALS];  // Signal list
-    sigset_t pending_signals;           // Pending signals
-    sigset_t blocked_signals;           // Blocked signals
     vas_allocation_t *userspace;        // Userspace allocation (only for sigtramp right now)
 
     // ELF

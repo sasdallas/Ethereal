@@ -20,6 +20,23 @@
 #define LOG(status, ...) dprintf_module(status, "TASK:PTRACE", __VA_ARGS__)
 
 /**
+ * @brief Get a process' tracee by its PID
+ * @param proc The process to search tracees of
+ * @param pid The PID of the tracee
+ */
+process_t *ptrace_getTracee(process_t *proc, pid_t pid) {
+    if (!proc->ptrace.tracees) return NULL;
+
+    foreach(tracee_node, proc->ptrace.tracees) {
+        if (((process_t*)tracee_node->value)->pid == pid) {
+            return (process_t*)tracee_node->value;
+        }
+    }
+
+    return NULL;
+}
+
+/**
  * @brief Trace @c tracee by @c tracer
  * @param tracee The process being traced
  * @param tracer The process tracing
@@ -53,7 +70,7 @@ int ptrace_trace(process_t *tracee, process_t *tracer) {
 }
 
 /**
- * @brief Attach to a process
+ * @brief Attach to a process (PTRACE_ATTACH)
  * @param pid Tracee
  */
 int ptrace_attach(pid_t pid) {
@@ -74,11 +91,97 @@ int ptrace_attach(pid_t pid) {
 }
 
 /**
- * @brief Trace the current process by its parent
+ * @brief Trace the current process by its parent (PTRACE_TRACEME)
  */
 int ptrace_traceme() {
     if (!current_cpu->current_process->parent) return -EINVAL;
-    return ptrace_trace(current_cpu->current_process, current_cpu->current_process->parent);
+    int r = ptrace_trace(current_cpu->current_process, current_cpu->current_process->parent);
+    if (r) return r;
+
+    signal_send(current_cpu->current_process, SIGSTOP);
+    return 0;
+}
+
+/**
+ * @brief Catch any system calls by the tracee (PTRACE_SYSCALL)
+ * @param pid PID of the tracee
+ * @param data Same as for @c ptrace_cont
+ */
+int ptrace_syscall(pid_t pid, void *data) {
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    // Arrange for tracee to be stopped at next system call
+    spinlock_acquire(&tracee->ptrace.lock);
+    tracee->ptrace.events |= PROCESS_TRACE_SYSCALL;
+    spinlock_release(&tracee->ptrace.lock);
+
+    // Continue the tracee
+    uintptr_t signum = data ? (uintptr_t)data : SIGCONT;
+    signal_send(tracee, signum);
+    LOG(DEBUG, "ptrace: tracing system calls\n");
+
+    // Until later
+    return 0;
+}
+
+/**
+ * @brief Continue process (PTRACE_CONT)
+ * @param pid The process to continue
+ * @param data Optional data argument/signal to send
+ */
+int ptrace_cont(pid_t pid, void *data) {
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    LOG(DEBUG, "Sending SIGCONT to tracee\n");
+    uintptr_t signum = data ? (uintptr_t)data : SIGCONT;
+    signal_send(tracee, signum);
+
+    return 0;
+}
+
+/**
+ * @brief Alert that an event has been completed
+ * @param event The event that was completed
+ */
+int ptrace_event(int event) {
+    // TODO: For ptrace events, how are we supposed to keep track of each thread?
+    process_t *process = current_cpu->current_process;
+    if (!process->ptrace.tracer || !(process->ptrace.events & event)) return 0; // Not listening for or not being traced
+
+    LOG(DEBUG, "ptrace event: %d\n", event);
+
+    // Signal to the process, turn off said event
+    spinlock_acquire(&process->ptrace.lock);
+    process->ptrace.events &= ~(event);
+    spinlock_release(&process->ptrace.lock);
+
+    // We are the tracee, so let's put ourselves together
+    __sync_or_and_fetch(&process->flags, PROCESS_SUSPENDED);
+
+    // Wakeup our tracer?
+    process->exit_reason = PROCESS_EXIT_SIGNAL;
+    process->exit_status = SIGTRAP;
+
+    process_t *tracer = process->ptrace.tracer;
+    if (tracer->waitpid_queue && tracer->waitpid_queue->length) {
+        // TODO: Locking?
+        foreach(thr_node, tracer->waitpid_queue) {
+            thread_t *thr = (thread_t*)thr_node->value;
+            sleep_wakeup(thr);
+        }
+    }
+
+    // Night night
+    process_yield(0);
+
+    LOG(INFO, "ptrace event processed: %d\n", event);
+
+    process->exit_reason = 0;
+    process->exit_status = 0;
+
+    return 0;
 }
 
 /**
@@ -94,6 +197,10 @@ long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data) 
             return ptrace_traceme();
         case PTRACE_ATTACH:
             return ptrace_attach(pid);
+        case PTRACE_SYSCALL:
+            return ptrace_syscall(pid, data);
+        case PTRACE_CONT:
+            return ptrace_cont(pid, data);
         default:
             LOG(WARN, "Unknown or unimplemented ptrace operation %d\n", op);
             return -ENOSYS;

@@ -53,7 +53,7 @@ void sleep_callback(uint64_t ticks) {
 
         if (sleep->sleep_state >= WAKEUP_SIGNAL) {
             wakeup = sleep->sleep_state; // Some other thread already marked this one as time to wakey wakey
-        } else if (sleep->thread->parent->pending_signals) {
+        } else if (sleep->thread->pending_signals) {
             // Yes, get out!
             wakeup = WAKEUP_SIGNAL;
         } else if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {

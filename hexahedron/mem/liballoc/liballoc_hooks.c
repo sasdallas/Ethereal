@@ -18,6 +18,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/debug.h>
 #include <string.h>
+#include <kernel/hal.h>
 
 /*** ALLOCATOR SUBSYSTEM FUNCTIONS ***/
 
@@ -56,10 +57,6 @@ void *alloc_valloc(size_t n) {
 }
 
 
-
-#include <kernel/hal.h>
-
-
 /*** HOOKS ***/
 
 /* Memory heap */
@@ -83,7 +80,6 @@ spinlock_t liballoc_spinlock = { 0 };
  */
 int liballoc_lock() {
     spinlock_acquire(&liballoc_spinlock);
-    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
     return 0;
 }
 
@@ -95,7 +91,6 @@ int liballoc_lock() {
  */
 int liballoc_unlock() {
     spinlock_release(&liballoc_spinlock);
-    hal_setInterruptState(liballoc_spinlock.state);
     return 0;
 }
 

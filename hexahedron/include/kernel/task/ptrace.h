@@ -19,6 +19,11 @@
 #include <structs/list.h>
 #include <kernel/misc/spinlock.h>
 
+/**** DEFINITIONS ****/
+
+#define PROCESS_TRACE_SYSCALL           0x0001
+#define PROCESS_TRACE_SINGLE_STEP       0x0002
+
 /**** TYPES ****/
 
 typedef struct process_ptrace {
@@ -40,5 +45,11 @@ typedef struct process_ptrace {
  * @param data Data
  */
 long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data);
+
+/**
+ * @brief Alert that an event has been completed
+ * @param event The event that was completed
+ */
+int ptrace_event(int event);
 
 #endif

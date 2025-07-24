@@ -70,11 +70,12 @@ enum __ptrace_setoptions {
     PTRACE_O_TRACEEXEC              = 0x00000010,
     PTRACE_O_TRACEVFORKDONE         = 0x00000020,
     PTRACE_O_TRACEEXIT              = 0x00000040,
-    PTRACE_O_MASK                   = 0x0000007F
+    PTRACE_O_EXITKILL               = 0x00000080,
+    PTRACE_O_MASK                   = 0x000000FF
 };
 
 /**** FUNCTIONS ****/
-long ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
+long ptrace(enum __ptrace_request op, ...);
 
 #endif
 

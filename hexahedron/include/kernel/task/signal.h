@@ -38,7 +38,7 @@ typedef struct proc_signal {
 
 /**** MACROS ****/
 
-#define PROCESS_SIGNAL(proc, signal) ((proc->signals[signal]))
+#define THREAD_SIGNAL(thr, signum) (((thr)->signals[(signum)]))
 
 /**** FUNCTIONS ****/
 

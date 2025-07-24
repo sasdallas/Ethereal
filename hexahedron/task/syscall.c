@@ -183,10 +183,16 @@ void syscall_handle(syscall_t *syscall) {
         return;
     }
 
+    // Enter
+    ptrace_event(PROCESS_TRACE_SYSCALL);
+    
     // Call!
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
+
+    // Exit
+    ptrace_event(PROCESS_TRACE_SYSCALL);
 
     return;
 }
@@ -944,18 +950,18 @@ long sys_signal(int signum, sa_handler handler) {
     if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL; // Trying to set signals that cannot be handled
 
     // Is the handler special?
-    sa_handler old_handler = PROCESS_SIGNAL(current_cpu->current_process, signum).handler;
+    sa_handler old_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
     if (handler == SIG_IGN) {
-        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_IGNORE;
+        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_IGNORE;
     } else if (handler == SIG_DFL) {
-        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_DEFAULT;
+        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_DEFAULT;
     } else {
         // Yes, the kernel will "fail" to catch this if handler is an invalid argument
         // ..but this executes in usermode so it's really us who are laughing
-        PROCESS_SIGNAL(current_cpu->current_process, signum).handler = handler;
+        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = handler;
     }
 
-    PROCESS_SIGNAL(current_cpu->current_process, signum).flags = SA_RESTART;
+    THREAD_SIGNAL(current_cpu->current_thread, signum).flags = SA_RESTART;
     return (long)old_handler;
 }
 
@@ -991,9 +997,9 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
 
     // First, assign the old action
     if (oact) {
-        oact->sa_handler = PROCESS_SIGNAL(current_cpu->current_process, signum).handler;
-        oact->sa_mask = PROCESS_SIGNAL(current_cpu->current_process, signum).mask;
-        oact->sa_flags = PROCESS_SIGNAL(current_cpu->current_process, signum).flags;
+        oact->sa_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
+        oact->sa_mask = THREAD_SIGNAL(current_cpu->current_thread, signum).mask;
+        oact->sa_flags = THREAD_SIGNAL(current_cpu->current_thread, signum).flags;
 
         if (oact->sa_handler == SIGNAL_ACTION_IGNORE) oact->sa_handler = SIG_IGN;
         if (oact->sa_handler == SIGNAL_ACTION_DEFAULT) oact->sa_handler = SIG_DFL;
@@ -1002,15 +1008,15 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
     // Now, assign the new one
     if (act) {
         if (act->sa_handler == SIG_IGN) {
-            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_IGNORE;
+            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_IGNORE;
         } else if (act->sa_handler == SIG_DFL) {
-            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = SIGNAL_ACTION_DEFAULT;
+            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_DEFAULT;
         } else {
-            PROCESS_SIGNAL(current_cpu->current_process, signum).handler = act->sa_handler;
+            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = act->sa_handler;
         }
 
-        PROCESS_SIGNAL(current_cpu->current_process, signum).mask = act->sa_mask;
-        PROCESS_SIGNAL(current_cpu->current_process, signum).flags = act->sa_flags;
+        THREAD_SIGNAL(current_cpu->current_thread, signum).mask = act->sa_mask;
+        THREAD_SIGNAL(current_cpu->current_thread, signum).flags = act->sa_flags;
         LOG(DEBUG, "Changed signal %s to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), act->sa_handler, act->sa_mask, act->sa_flags);
     }
 
@@ -1026,7 +1032,7 @@ long sys_sigpending(sigset_t *set) {
 long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
     if (oset) {
         SYSCALL_VALIDATE_PTR(oset);
-        *oset = current_cpu->current_process->blocked_signals; // TODO: thread?
+        *oset = current_cpu->current_thread->blocked_signals; // TODO: thread?
     }
 
     if (set) {
@@ -1036,17 +1042,17 @@ long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
         switch (how) {
             case SIG_BLOCK:
                 // Block a signal
-                current_cpu->current_process->blocked_signals |= *set;
+                current_cpu->current_thread->blocked_signals |= *set;
                 break;
 
             case SIG_UNBLOCK:
                 // Unblock a signal 
-                current_cpu->current_process->blocked_signals &= ~(*set);
+                current_cpu->current_thread->blocked_signals &= ~(*set);
                 break;
 
             case SIG_SETMASK:
                 // Set mask
-                current_cpu->current_process->blocked_signals = *set;
+                current_cpu->current_thread->blocked_signals = *set;
                 break;
             
             default:

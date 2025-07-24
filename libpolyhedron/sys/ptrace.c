@@ -14,9 +14,22 @@
 #include <sys/syscall.h>
 #include <sys/ptrace.h>
 #include <errno.h>
+#include <stdarg.h>
 
 DEFINE_SYSCALL4(ptrace, SYS_PTRACE, enum __ptrace_request, pid_t, void*, void*);
 
-long ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
-    __sets_errno(__syscall_ptrace(op, pid, addr, data));
+long ptrace(enum __ptrace_request op, ...) {
+    va_list ap;
+    va_start(ap, op);
+    
+    // Get arguments
+    pid_t pid = va_arg(ap, pid_t);
+    void *addr = va_arg(ap, void*);
+    void *data = va_arg(ap, void*);
+
+    // ptrace
+    long ret = __syscall_ptrace(op, pid, addr, data);
+    va_end(ap);
+    
+    __sets_errno(ret);
 }

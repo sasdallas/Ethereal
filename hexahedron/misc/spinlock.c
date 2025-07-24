@@ -51,7 +51,7 @@ void spinlock_destroy(spinlock_t *spinlock) {
  */
 void spinlock_acquire(spinlock_t *spinlock) {
     int state = hal_getInterruptState();
-    // hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
     while (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
         arch_pause_single();
@@ -67,5 +67,5 @@ void spinlock_acquire(spinlock_t *spinlock) {
 void spinlock_release(spinlock_t *spinlock) {
     spinlock->cpu = -1;
     atomic_flag_clear_explicit(&(spinlock->lock), memory_order_release);
-    // hal_setInterruptState(spinlock->state);
+    hal_setInterruptState(spinlock->state);
 }
