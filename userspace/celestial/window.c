@@ -19,6 +19,7 @@
 #include <kernel/misc/util.h>
 #include "event.h"
 #include <unistd.h>
+#include <immintrin.h>
 
 /* Window map */
 hashmap_t *__celestial_window_map = NULL;
@@ -138,7 +139,47 @@ void window_redraw() {
         // Basically replicate the sprite redraw function
         gfx_createClip(WM_GFX, upd->rect.x + upd->win->x, upd->rect.y + upd->win->y, upd->rect.width, upd->rect.height);
         uint32_t *buf = (uint32_t*)upd->win->buffer;
+
         for (uint32_t _y = upd->rect.y; _y < upd->rect.y + upd->rect.height; _y++) {
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE)
+            uint32_t *src_row = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + (upd->rect.x + upd->win->x) * (WM_GFX->bpp / 8)));
+            uint32_t *dst_row = &buf[upd->win->width * _y + upd->rect.x];
+
+            for (uint32_t _x = 0; _x < upd->rect.width; _x += 4) {
+                __m128i src_pixels = _mm_loadu_si128((__m128i*)&src_row[_x]);
+                __m128i dst_pixels = _mm_loadu_si128((__m128i*)&dst_row[_x]);
+
+                // Extract alpha channel from destination pixels
+                __m128i alpha = _mm_srli_epi32(dst_pixels, 24);
+
+                // Check if alpha is 255 (fully opaque)
+                __m128i mask = _mm_cmpeq_epi32(alpha, _mm_set1_epi32(255));
+
+                // Extract alpha channel from source pixels
+                __m128i src_alpha = _mm_srli_epi32(src_pixels, 24);
+
+                // Compute inverse alpha (255 - alpha)
+                __m128i inv_alpha = _mm_sub_epi32(_mm_set1_epi32(255), src_alpha);
+
+                // Multiply source and destination by their respective alpha values
+                __m128i src_mul = _mm_mullo_epi16(_mm_and_si128(src_pixels, _mm_set1_epi32(0x00FF00FF)), src_alpha);
+                __m128i dst_mul = _mm_mullo_epi16(_mm_and_si128(dst_pixels, _mm_set1_epi32(0x00FF00FF)), inv_alpha);
+
+                // Add the results and normalize
+                __m128i blended = _mm_add_epi16(src_mul, dst_mul);
+                blended = _mm_srli_epi16(blended, 8);
+
+                // Combine the blended RGB channels with the source alpha channel
+                blended = _mm_or_si128(_mm_and_si128(blended, _mm_set1_epi32(0x00FF00FF)), _mm_slli_epi32(src_alpha, 24));
+
+                // Blend only where alpha is not 255
+                __m128i result = _mm_or_si128(_mm_and_si128(mask, dst_pixels),
+                                _mm_andnot_si128(mask, blended));
+
+                _mm_storeu_si128((__m128i*)& src_row[_x], result);
+            }
+#else
+            // Normal, loser non-SSE copy
             for (uint32_t _x = upd->rect.x; _x < upd->rect.x + upd->rect.width; _x++) {
                 gfx_color_t *src_pixel = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + ((_x + upd->win->x) * (WM_GFX->bpp/8))));
                 gfx_color_t *dst_pixel = &buf[upd->win->width * _y + _x];
@@ -150,6 +191,7 @@ void window_redraw() {
                     *src_pixel = gfx_alphaBlend(*dst_pixel, *src_pixel);
                 }
             }
+#endif
         }
 
         // HACK: Is the window closing?
