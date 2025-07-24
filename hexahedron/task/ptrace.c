@@ -145,7 +145,7 @@ int ptrace_cont(pid_t pid, void *data) {
 
 
 /**
- * @brief Get the registers of a tracee
+ * @brief Get the registers of a tracee (PTRACE_GETREGS)
  * @param pid The PID of the tracee
  * @param data Pointer to regs structure
  */
@@ -160,7 +160,7 @@ int ptrace_getregs(pid_t pid, void *data) {
 }
 
 /**
- * @brief Set the registers of a tracee
+ * @brief Set the registers of a tracee (PTRACE_SETREGS)
  * @param pid The PID of the tracee
  * @param data Pointer to regs structure
  */
@@ -171,6 +171,29 @@ int ptrace_setregs(pid_t pid, void *data) {
 
     // Set user registers
     arch_from_user_regs((struct user_regs_struct*)data, tracee->main_thread);
+    return 0;
+}
+
+/**
+ * @brief Enable single step for one instruction (PTRACE_SINGLESTEP)
+ * @param pid The PID of the tracee
+ * @param data Same as @c PTRACE_CONT
+ */
+int ptrace_singlestep(pid_t pid, void *data) {
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+
+    arch_single_step(tracee->main_thread, 1);
+
+    // Arrange for tracee to be stopped at next instruction
+    spinlock_acquire(&tracee->ptrace.lock);
+    tracee->ptrace.events |= PROCESS_TRACE_SINGLE_STEP;
+    spinlock_release(&tracee->ptrace.lock);
+
+    // Continue the tracee
+    uintptr_t signum = data ? (uintptr_t)data : SIGCONT;
+    signal_send(tracee, signum);
+
     return 0;
 }
 
@@ -186,6 +209,12 @@ int ptrace_event(int event) {
     // Signal to the process, turn off said event
     spinlock_acquire(&process->ptrace.lock);
     process->ptrace.events &= ~(event);
+
+    // Double turn off said event
+    if (event & PROCESS_TRACE_SINGLE_STEP) {
+        arch_single_step(process->main_thread, 0);
+    }
+
     spinlock_release(&process->ptrace.lock);
 
     // We are the tracee, so let's put ourselves together
@@ -234,6 +263,8 @@ long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data) 
             return ptrace_getregs(pid, data);
         case PTRACE_SETREGS:
             return ptrace_setregs(pid, data);
+        case PTRACE_SINGLESTEP:
+            return ptrace_singlestep(pid, data);
         default:
             LOG(WARN, "Unknown or unimplemented ptrace operation %d\n", op);
             return -ENOSYS;

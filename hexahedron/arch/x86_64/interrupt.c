@@ -16,7 +16,7 @@
 #include <kernel/arch/x86_64/smp.h>
 #include <kernel/arch/x86_64/arch.h>
 #include <kernel/drivers/x86/pic.h>
-#include <kernel/task/syscall.h>
+#include <kernel/task/process.h>
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -228,7 +228,6 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         // Now we're finished so return
         return;
     }
-
 
     // NMIs are fired as of now only for a core shutdown. If we receive one, just halt.
     if (exception_index == 2) {
@@ -493,6 +492,25 @@ void hal_installIDT() {
 }
 
 /**
+ * @brief Debug trap handler
+ * @param exception_index Always 1
+ * @param regs Registers at time of fault
+ * @param extended_regs Extended registers at time of trap
+ */
+int hal_debugTrapHandler(uintptr_t exception_index, registers_t *regs, extended_registers_t *extended_regs) {
+    if (regs->cs != 0x08) {
+        // Must be from usermode
+        dprintf(DEBUG, "TRAP: Trap detected in process\n");
+        ptrace_event(PROCESS_TRACE_SINGLE_STEP);
+        return 0;
+    }
+
+    // Uh, kernel debug trap?
+    kernel_panic(KERNEL_DEBUG_TRAP, "hal");
+    return 0;
+}
+
+/**
  * @brief Initializes the PIC, GDT/IDT, TSS, etc.
  */
 void hal_initializeInterrupts() {
@@ -576,6 +594,9 @@ void hal_initializeInterrupts() {
 
     // Initialize 8259 PICs
     pic_init(PIC_TYPE_8259, NULL);
+    
+    // Register debug interrupt handler
+    hal_registerExceptionHandler(1, hal_debugTrapHandler);
 
     // Enable interrupts
     asm volatile ("sti");
