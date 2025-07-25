@@ -342,7 +342,7 @@ int rtl8139_scan(pci_device_t *dev, void *data) {
  */
 int driver_init(int argc, char *argv[]) {
     pci_id_mapping_t id_list[] = {
-        { .vid = 0x10ec, .pid = { 0x8193, PCI_NONE } },
+        { .vid = 0x10ec, .pid = { 0x8139, PCI_NONE } },
         PCI_ID_MAPPING_END
     };
 
