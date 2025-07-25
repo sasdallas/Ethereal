@@ -90,6 +90,9 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*func)(
 }
 
 __attribute__((noreturn)) void pthread_exit(void *retval) {
+    // Cleanup thread stack
+    while (__get_tcb()->cleanups) pthread_cleanup_pop(1);
+
     ethereal_exitThread(retval);
 }
 

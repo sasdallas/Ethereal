@@ -80,7 +80,7 @@ int   pthread_attr_setscope(pthread_attr_t *, int);
 int   pthread_attr_setstackaddr(pthread_attr_t *, void *);
 int   pthread_attr_setstacksize(pthread_attr_t *, size_t);
 int   pthread_cancel(pthread_t);
-void  pthread_cleanup_push(void*, void *);
+void  pthread_cleanup_push(void (*routine)(void*), void *);
 void  pthread_cleanup_pop(int);
 int   pthread_cond_broadcast(pthread_cond_t *);
 int   pthread_cond_destroy(pthread_cond_t *);

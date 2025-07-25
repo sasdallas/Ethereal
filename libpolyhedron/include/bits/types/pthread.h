@@ -29,10 +29,18 @@ typedef unsigned long pthread_t;
 
 typedef uintptr_t __dtv;
 
+/* pthread cleanup routine */
+typedef struct __thread_cleanup {
+    struct __thread_cleanup *next;
+    void (*func)(void*);
+    void *arg;
+} __thread_cleanup_t;
+
 /* equivalent to struct uthread */
 typedef struct __thread_tcb {
     struct __thread_tcb     *self;      // Self pointer for TLS
     int _errno;                         // Errno for this thread
+    __thread_cleanup_t      *cleanups;  // Cleanup routines
 
     __dtv                   dtv[];      // dtv array
 } thread_tcb_t;
