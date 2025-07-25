@@ -100,6 +100,11 @@ struct servent {
     char *s_proto;
 };
 
+
+/**** MACROS ****/
+
+#define h_addr h_addr_list[0]
+
 /**** VARIABLES ****/
 
 extern int h_errno;

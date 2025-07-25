@@ -85,6 +85,8 @@ _Begin_C_Header
 #define PF_INET6            AF_INET6
 #define PF_UNIX             AF_UNIX
 
+#define SOMAXCONN           4096
+
 /**** TYPES ****/
 typedef size_t socklen_t;
 typedef unsigned int sa_family_t;

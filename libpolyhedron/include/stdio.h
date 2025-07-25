@@ -126,6 +126,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *f);
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
 long ftell(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
+int fseeko(FILE *stream, off_t offset, int whence);
 int fgetc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int ungetc(int c, FILE *stream);
