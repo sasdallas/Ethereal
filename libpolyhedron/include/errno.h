@@ -105,9 +105,9 @@
 #define __sets_errno(fn) {long _ret = fn; if ((int)_ret < 0) { errno = -_ret; _ret = -1; } return _ret; }
 
 #include <bits/types/pthread.h>
-extern thread_tcb_t *__get_tcb();
 
-#define errno (__get_tcb()->_errno)
+int *__errno_location();
+#define errno ((__get_tcb()->_errno))
 
 #endif
 
