@@ -46,6 +46,10 @@ typedef int (*sock_accept_t)(struct sock *sock, struct sockaddr *addr, socklen_t
 typedef int (*sock_listen_t)(struct sock *sock, int backlog);
 typedef int (*sock_close_t)(struct sock *sock);
 typedef int (*sock_ready_t)(struct sock *sock, int events);
+typedef int (*sock_getsockname_t)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+typedef int (*sock_getpeername_t)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+typedef int (*sock_setsockopt_t)(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+typedef int (*sock_getsockopt_t)(struct sock *sock, int level, int option_name, void *option_value, socklen_t *option_len);
 
 /**
  * @brief Socket object
@@ -68,6 +72,10 @@ typedef struct sock {
     sock_accept_t accept;               // accept
     sock_close_t close;                 // close
     sock_ready_t ready;                 // (VFS replacement) ready
+    sock_getsockname_t getsockname;     // getsockname
+    sock_getpeername_t getpeername;     // getpeername
+    sock_getsockopt_t getsockopt;       // getsockopt
+    sock_setsockopt_t setsockopt;       // setsockopt
 
     // RECEIVE
     spinlock_t *recv_lock;              // Receive lock
@@ -207,6 +215,22 @@ int socket_listen(int socket, int backlog);
  * @param addrlen The address length
  */
 int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
+
+/**
+ * @brief Socket getpeername method
+ * @param socket The socket file descriptor
+ * @param address The address to store in
+ * @param address_len The address length
+ */
+int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen);
+
+/**
+ * @brief Socket getsockname method
+ * @param socket The socket file descriptor
+ * @param address The address to store in
+ * @param address_len The address length
+ */
+int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen);
 
 /**
  * @brief Get a socket by its ID

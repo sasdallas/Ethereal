@@ -437,6 +437,58 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     return -EINVAL;
 }
 
+/**
+ * @brief Socket getpeername method
+ * @param socket The socket file descriptor
+ * @param address The address to store in
+ * @param address_len The address length
+ */
+int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
+
+    // !!!: Pointer validation in cases of addrlen = 0?
+    if (sock->getpeername) {
+        return sock->getpeername(sock, addr, addrlen);
+    }
+
+    return -EOPNOTSUPP;
+}
+
+/**
+ * @brief Socket getsockname method
+ * @param socket The socket file descriptor
+ * @param address The address to store in
+ * @param address_len The address length
+ */
+int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
+
+    // !!!: Pointer validation in cases of addrlen = 0?
+    if (sock->getsockname) {
+        return sock->getsockname(sock, addr, addrlen);
+    }
+
+    return -EOPNOTSUPP;
+}
+
 
 /**
  * @brief Socket close method

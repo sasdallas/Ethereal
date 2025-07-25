@@ -204,4 +204,16 @@ void arch_from_user_regs(struct user_regs_struct *user_regs, struct thread *thre
  */
 void arch_single_step(struct thread *thread, int state);
 
+/**
+ * @brief Read the current tick count
+ * @returns The current architecture tick count
+ */
+uint64_t arch_tick_count();
+
+/**
+ * @brief Rebase a tick count
+ * @param tick_count The tick count to rebase
+ */
+uint64_t arch_rebase_tick_count(uint64_t tick_count);
+
 #endif

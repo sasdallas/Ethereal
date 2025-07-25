@@ -305,7 +305,6 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
  * @brief System call handler
  */
 void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) {
-    // Handle system call
     syscall_t syscall;
     syscall.syscall_number = regs->rax;
     syscall.parameters[0] = regs->rdi;
@@ -319,8 +318,11 @@ void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) 
     current_cpu->current_thread->regs = regs;
     current_cpu->current_thread->syscall = &syscall;
 
+    // Handle syscall
     syscall_handle(&syscall);
     regs->rax = syscall.return_value;
+
+    // Handle any signals
     signal_handle(current_cpu->current_thread, regs);
     current_cpu->current_thread->syscall = NULL;
 }
@@ -374,7 +376,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         }
     }
     
-    if (current_cpu->current_thread) {
+    if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
     }
     

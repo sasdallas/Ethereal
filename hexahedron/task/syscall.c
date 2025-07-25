@@ -85,11 +85,14 @@ static syscall_func_t syscall_table[] = {
     [SYS_SOCKET]            = (syscall_func_t)(uintptr_t)sys_socket,
     [SYS_SENDMSG]           = (syscall_func_t)(uintptr_t)sys_sendmsg,
     [SYS_RECVMSG]           = (syscall_func_t)(uintptr_t)sys_recvmsg,
+    [SYS_GETSOCKOPT]        = (syscall_func_t)(uintptr_t)sys_getsockopt,
     [SYS_SETSOCKOPT]        = (syscall_func_t)(uintptr_t)sys_setsockopt,
     [SYS_BIND]              = (syscall_func_t)(uintptr_t)sys_bind,
     [SYS_CONNECT]           = (syscall_func_t)(uintptr_t)sys_connect,
     [SYS_LISTEN]            = (syscall_func_t)(uintptr_t)sys_listen,
     [SYS_ACCEPT]            = (syscall_func_t)(uintptr_t)sys_accept,
+    [SYS_GETSOCKNAME]       = (syscall_func_t)(uintptr_t)sys_getsockname,
+    [SYS_GETPEERNAME]       = (syscall_func_t)(uintptr_t)sys_getpeername,
     [SYS_MOUNT]             = (syscall_func_t)(uintptr_t)sys_mount,
     [SYS_UMOUNT]            = (syscall_func_t)(uintptr_t)sys_umount,
     [SYS_PIPE]              = (syscall_func_t)(uintptr_t)sys_pipe,
@@ -700,6 +703,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     for (size_t i = 0; i < nfds; i++) {
         // Does the file descriptor have available contents right now?
+        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) continue;
         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
 
@@ -917,8 +921,7 @@ long sys_mprotect(void *addr, size_t len, int prot) {
 /* TIMES */
 
 clock_t sys_times(struct tms *buf) {
-    LOG(WARN, "sys_times\n");
-    return 0;
+    return -ENOSYS;
 }
 
 /* DUP */
@@ -1086,6 +1089,10 @@ long sys_recvmsg(int socket, struct msghdr *message, int flags) {
     return socket_recvmsg(socket, message, flags);
 }
 
+long sys_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
+    return -ENOSYS; // TODO
+}
+
 long sys_setsockopt(sys_setopt_context_t *context) {
     // !!!: I don't know why context is required..
     SYSCALL_VALIDATE_PTR(context);
@@ -1106,6 +1113,14 @@ long sys_listen(int socket, int backlog) {
 
 long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     return socket_accept(socket, addr, addrlen);
+}
+
+long sys_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    return socket_getsockname(socket, addr, addrlen);
+}
+
+long sys_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
+    return socket_getpeername(socket, addr, addrlen);
 }
 
 /* MOUNTS */
