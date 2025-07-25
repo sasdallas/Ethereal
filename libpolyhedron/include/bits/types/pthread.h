@@ -35,7 +35,9 @@ typedef struct __thread_tcb {
     int _errno;                         // Errno for this thread
 
     __dtv                   dtv[];      // dtv array
-} __attribute__((packed)) thread_tcb_t;
+} thread_tcb_t;
+
+extern thread_tcb_t *__get_tcb();
 
 /* ATTRIBUTES */
 
