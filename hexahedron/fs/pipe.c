@@ -73,6 +73,7 @@ int pipe_closeRead(fs_node_t *node) {
         // Yes, free the pipe object now
         circbuf_destroy(pipe->buf);
         kfree(pipe);
+        return 0;
     }
 
     // Not yet
@@ -89,11 +90,11 @@ int pipe_closeWrite(fs_node_t *node) {
     fs_pipe_t *pipe = (fs_pipe_t*)node->dev;
 
     // Did the other end close?
-    // TODO: Lock this?
     if (pipe->closed_read) {
         // Yes, free the pipe object now
         circbuf_destroy(pipe->buf);
         kfree(pipe);
+        return 0;
     }
 
     // Not yet
