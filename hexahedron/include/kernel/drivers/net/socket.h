@@ -186,6 +186,16 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags);
 int socket_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
 
 /**
+ * @brief Get socket option
+ * @param socket The socket file descriptor
+ * @param level The protocol level for the option
+ * @param option_name The name of the option
+ * @param option_value The value of the option
+ * @param option_len The length of the option
+ */
+int socket_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len);
+
+/**
  * @brief Socket bind method
  * @param socket The socket file descriptor
  * @param addr The address to bind to

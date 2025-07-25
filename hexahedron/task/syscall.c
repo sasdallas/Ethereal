@@ -1090,7 +1090,7 @@ long sys_recvmsg(int socket, struct msghdr *message, int flags) {
 }
 
 long sys_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
-    return -ENOSYS; // TODO
+    return socket_getsockopt(socket, level, option_name, option_value, option_len);
 }
 
 long sys_setsockopt(sys_setopt_context_t *context) {

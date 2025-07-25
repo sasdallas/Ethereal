@@ -848,6 +848,40 @@ _cleanup_socket:
 }
 
 /**
+ * @brief getsockname method for TCP
+ */
+int tcp_getsockname(sock_t *sock, struct sockaddr *address, socklen_t *address_len) {
+    tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
+
+    // ???
+    if (address_len) {
+        SYSCALL_VALIDATE_PTR_SIZE(address, *address_len);
+    } else {
+        SYSCALL_VALIDATE_PTR_SIZE(address, sizeof(struct sockaddr_in));
+    }
+
+    struct sockaddr_in in;
+
+    // Route NIC
+    if (sock->connected_addr) {
+        nic_t *nic = nic_route(((struct sockaddr_in*)sock->connected_addr)->sin_addr.s_addr);
+        if (nic) {
+            in.sin_addr.s_addr = nic->ipv4_address;
+        }
+    }
+
+    // Setup other things
+    in.sin_family = AF_INET;
+    in.sin_port = htons(tcpsock->port);
+
+    // Copy address
+    memcpy(address, &in, *address_len > sizeof(struct sockaddr_in) ? sizeof(struct sockaddr_in) : *address_len);
+    if (*address_len < sizeof(struct sockaddr_in)) *address_len = sizeof(struct sockaddr_in);
+
+    return 0;
+}
+
+/**
  * @brief Create a TCP socket
  */
 sock_t *tcp_socket() {
@@ -859,6 +893,7 @@ sock_t *tcp_socket() {
     sock->bind = tcp_bind;
     sock->connect = tcp_connect;
     sock->close = tcp_close;
+    sock->getsockname = tcp_getsockname;
 
     sock->driver = (void*)tcpsock;
     return sock;

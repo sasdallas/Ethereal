@@ -35,8 +35,10 @@ int last_socket_id = 0;
 /* Validate socket option */
 #define SOCKET_VALIDATE_OPT(optvalue, optlen) SYSCALL_VALIDATE_PTR_SIZE(optvalue, optlen)
 
-/* Set socket option in flags */
+/* Set/get socket option in flags */
+#define SOCKET_CHECK_LEN(len, needed) { if (*len < sizeof(needed)) { return 0; }; }
 #define SOCKET_CHANGE_FLAG(flag, value) { if (value) { sock->flags |= flag; } else { sock->flags &= ~(flag); } };
+#define SOCKET_GET_FLAG(flag, value, len) { if (sock->flags & flag) { *(int*)value = 1; } else { *(int*)value = 0; }; if (*len > sizeof(int)) *len = sizeof(int); }
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NET:SOCKET", __VA_ARGS__)
@@ -312,6 +314,56 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
     return -ENOPROTOOPT;
 }
 
+
+/**
+ * @brief Getsockopt for the @c SOL_SOCKET type of sockets
+ * @param sock The socket to set options for
+ * @param option_name The option to set
+ * @param option_value The value of the option
+ * @param option_len The length of the option
+ */
+static int socket_default_getsockopt(sock_t *sock, int option_name, void *option_value, socklen_t *option_len) {
+    // Handle boolean options first
+    switch (option_name) {
+        case SO_DEBUG:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_DEBUG, option_value, option_len);
+            return 0;
+        case SO_BROADCAST:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_BROADCAST, option_value, option_len);
+            return 0;
+        case SO_REUSEADDR:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_REUSEADDR, option_value, option_len);
+            return 0;
+        case SO_KEEPALIVE:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_KEEPALIVE, option_value, option_len);
+            return 0;
+        case SO_OOBINLINE:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_OOBINLINE, option_value, option_len);
+            return 0;
+        case SO_DONTROUTE:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_DONTROUTE, option_value, option_len);
+            return 0;
+    }
+
+    // Other cases
+    switch (option_name) {
+        case SO_ERROR:
+            SOCKET_CHECK_LEN(option_len, int);
+            *((int*)option_len) = 0;
+            return 0;
+    }
+
+    // TODO
+    LOG(ERR, "Unimplemented protocol option: %d\n", option_name);
+    return -ENOPROTOOPT;
+}
+
 /**
  * @brief Socket setsockopt method
  * @param socket The socket file descriptor
@@ -334,6 +386,36 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
     switch (level) {
         case SOL_SOCKET:
             return socket_default_setsockopt(sock, option_name, option_value, option_len);
+        default:
+            return -ENOPROTOOPT;
+    }
+}
+
+/**
+ * @brief Get socket option
+ * @param socket The socket file descriptor
+ * @param level The protocol level for the option
+ * @param option_name The name of the option
+ * @param option_value The value of the option
+ * @param option_len The length of the option
+ */
+int socket_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
+    // Lookup the file descriptor
+    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+
+    // Is it actually a socket?
+    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+
+    sock_t *sock = (sock_t*)socknode->dev;
+
+    SYSCALL_VALIDATE_PTR(option_len);
+    SYSCALL_VALIDATE_PTR_SIZE(option_value, *option_len);
+
+    // TODO: Replace this with a handler system. This is temporary
+    switch (level) {
+        case SOL_SOCKET:
+            return socket_default_getsockopt(sock, option_name, option_value, option_len);
         default:
             return -ENOPROTOOPT;
     }
@@ -454,6 +536,7 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     sock_t *sock = (sock_t*)socknode->dev;
 
     if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
+    if (!(*addrlen)) return 0; // TODO: Weird cases in which we can handle this?
 
     // !!!: Pointer validation in cases of addrlen = 0?
     if (sock->getpeername) {
@@ -479,7 +562,10 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 
     sock_t *sock = (sock_t*)socknode->dev;
 
-    if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
+    // ???: Can addrlen be NULL?
+    SYSCALL_VALIDATE_PTR(addrlen);
+    if (!(*addrlen)) return 0; // TODO: Weird cases?
+    SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
 
     // !!!: Pointer validation in cases of addrlen = 0?
     if (sock->getsockname) {
