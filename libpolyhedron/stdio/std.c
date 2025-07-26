@@ -25,6 +25,7 @@ FILE _stdin = {
     .wbuflen = 0,
     .wbufsz = 0,
     .eof = 0,
+    .ungetc = EOF,
 };
 
 FILE _stdout = {
@@ -35,6 +36,7 @@ FILE _stdout = {
     .wbuflen = 0,
     .wbufsz = WRITE_BUFFER_SIZE,
     .eof = 0,
+    .ungetc = EOF,
 };
 
 FILE _stderr = {
@@ -45,6 +47,7 @@ FILE _stderr = {
     .wbuflen = 0,
     .wbufsz = 0,
     .eof = 0,
+    .ungetc = EOF,
 };
 
 /* Pointers to these structures */

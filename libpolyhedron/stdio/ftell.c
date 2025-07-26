@@ -15,7 +15,7 @@
 #include <errno.h>
 #include <unistd.h>
 
-long ftell(FILE *stream) {
+off_t ftello(FILE *stream) {
     // Flush everything
     if (stream->wbuflen) fflush(stream);
     // TODO: Flush other variables. Remember to come back here when a proper reading API is done
@@ -23,4 +23,8 @@ long ftell(FILE *stream) {
     // This should take care of errno
     long seek_result = lseek(stream->fd, 0, SEEK_CUR);
     return seek_result;
+}
+
+long ftell(FILE *stream) {
+    return ftello(stream);
 }
