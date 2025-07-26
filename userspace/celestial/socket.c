@@ -424,9 +424,6 @@ void socket_handle(int sock) {
         // First, do bounds checks to ensure that we don't explode.
         wm_window_t *win = WID(req->wid);
         
-        if (win->x + req->width >= GFX_WIDTH(WM_GFX)) return socket_error(sock, CELESTIAL_REQ_RESIZE, EINVAL);
-        if (win->y + req->height >= GFX_HEIGHT(WM_GFX)) return socket_error(sock, CELESTIAL_REQ_RESIZE, EINVAL);
-        
         int resize = window_resize(win, req->width, req->height);
         if (resize != 0) return socket_error(sock, CELESTIAL_REQ_RESIZE, -(resize));
 

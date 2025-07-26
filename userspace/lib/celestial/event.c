@@ -118,6 +118,18 @@ void celestial_handleEvent(void *event) {
     // If this is a resize event, *we* need to handle it
     if (hdr->type == CELESTIAL_EVENT_RESIZE) {
         celestial_completeWindowResize(win, event);
+    } else if (hdr->type == CELESTIAL_EVENT_POSITION_CHANGE) {
+        // Rebase X/Y
+        celestial_event_position_change_t *pos_change = (celestial_event_position_change_t*)event;
+        if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+            win->info->x = pos_change->x;
+            win->info->y = pos_change->y;
+            win->x = win->info->x - win->decor->borders.left_width;
+            win->y = win->info->y - win->decor->borders.top_height;
+        } else {
+            win->x = pos_change->x;
+            win->y = pos_change->y;
+        }
     }
 
     // First drop it into decor, see if it needs anything

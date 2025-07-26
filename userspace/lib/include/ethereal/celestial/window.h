@@ -60,6 +60,7 @@ typedef struct window {
     decor_window_info_t *info;          // REAL window information. Our macros will use this
 
     hashmap_t *event_handler_map;       // Window event handler map
+    void *d;                            // Driver object
 } window_t;
 
 /**** MACROS ****/

@@ -319,6 +319,7 @@ void window_close(wm_window_t *win) {
  *      - Server receives, sets window state to @c WINDOW_STATE_RESIZING and creates the new shared memory object
  *      - If pending flip requests are present, resizing is delayed and the process is done asyncronously
  *      - The buffers are switched, Celestial sends @c CELESTIAL_EVENT_RESIZE with the new buffer key and data, allowing the window to process the event
+ *      - If the window position was required to be updated, Celestial also sends @c CELESTIAL_EVENT_POSITION_UPDATE to notify the changed position.
  *      - A response to the original @c CELESTIAL_REQ_RESIZE is sent to indicate success and return execution
  * 
  * @param win The window to resize
@@ -327,13 +328,24 @@ void window_close(wm_window_t *win) {
  */
 int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
     // Validate parameters
-    if (win->x + new_width >= GFX_WIDTH(WM_GFX)) return -EINVAL;
-    if (win->y + new_height >= GFX_HEIGHT(WM_GFX)) return -EINVAL;
-
-    // TODO: Flush pending buffers, implement asyncronous resize, etc.
+    int pos_modified = 0;
 
     size_t old_buffer_size = win->width * win->height * 4;
     gfx_rect_t update_region = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };
+
+    if (win->x + new_width >= GFX_WIDTH(WM_GFX)) {
+        if (new_width >= GFX_WIDTH(WM_GFX)) return -EINVAL;
+        pos_modified = 1;
+        win->x = GFX_WIDTH(WM_GFX) - new_width;
+    }
+    
+    if (win->y + new_height >= GFX_HEIGHT(WM_GFX)) {
+        if (new_height >= GFX_HEIGHT(WM_GFX)) return -EINVAL;
+        pos_modified = 1;
+        win->y = GFX_HEIGHT(WM_GFX) - new_height;
+    }
+
+    // TODO: Flush pending buffers, implement asyncronous resize, etc.
 
     // Set them in the window
     win->width = new_width;
@@ -365,6 +377,20 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
     };
 
     event_send(win, &resize_event);
+
+    // Do we need to adjust window position?
+    if (pos_modified) {
+        celestial_event_position_change_t pos_change = {
+            .magic = CELESTIAL_MAGIC_EVENT,
+            .type = CELESTIAL_EVENT_POSITION_CHANGE,
+            .size = sizeof(celestial_event_position_change_t),
+            .wid = win->id,
+            .x = win->x,
+            .y = win->y
+        };
+
+        event_send(win, &pos_change);
+    }
 
     // Update the old region where the window was
     window_updateRegion(update_region);

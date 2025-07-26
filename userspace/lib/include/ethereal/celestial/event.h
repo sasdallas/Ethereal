@@ -36,6 +36,7 @@
 #define CELESTIAL_EVENT_UNFOCUSED               0x00000080
 #define CELESTIAL_EVENT_KEY_EVENT               0x00000100
 #define CELESTIAL_EVENT_RESIZE                  0x00000200 // Special event. Library automatically resizes
+#define CELESTIAL_EVENT_POSITION_CHANGE         0x00000400
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -112,6 +113,12 @@ typedef struct celestial_event_resize {
     size_t new_width;                   // New width of the window
     size_t new_height;                  // New height of the window
 } celestial_event_resize_t;
+
+typedef struct celestial_event_position_change {
+    CELESTIAL_EVENT_COMMON              // Common
+    int32_t x;                          // New window X
+    int32_t y;                          // New window Y
+} celestial_event_position_change_t;
 
 /**
  * @brief Celestial event handler
