@@ -218,14 +218,6 @@ wm_window_t *window_top(int32_t x, int32_t y) {
         }
     }
 
-    // foreach(window_node, WM_WINDOW_LIST_BG) {
-        // wm_window_t *win = (wm_window_t*)window_node->value;
-// 
-        // if (win->x <= x && (int)(win->x + win->width) > x && win->y <= y && (int)(win->y + win->height) > y) {
-            // return win;
-        // }
-    // }
-
     return sel;
 }
 
@@ -317,9 +309,66 @@ void window_close(wm_window_t *win) {
 
     // Window is removed from, flip it now
     window_updateRegion((gfx_rect_t){ .x = win->x, .y = win->y, .width = win->width, .height = win->height });
+}
 
-    // Close the shared memory object
-    // TODO: This bugging?
-    // close(win->shmfd);
-    // free(win);
+/**
+ * @brief Resize a window to a desired width/height
+ * 
+ * In Celestial, windows are resized using a complex process:
+ *      - Client sends @c CELESTIAL_REQ_RESIZE with the desired width and height
+ *      - Server receives, sets window state to @c WINDOW_STATE_RESIZING and creates the new shared memory object
+ *      - If pending flip requests are present, resizing is delayed and the process is done asyncronously
+ *      - The buffers are switched, Celestial sends @c CELESTIAL_EVENT_RESIZE with the new buffer key and data, allowing the window to process the event
+ *      - A response to the original @c CELESTIAL_REQ_RESIZE is sent to indicate success and return execution
+ * 
+ * @param win The window to resize
+ * @param new_width The new width of the window
+ * @param new_height The new height of the window
+ */
+int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
+    // Validate parameters
+    if (win->x + new_width >= GFX_WIDTH(WM_GFX)) return -EINVAL;
+    if (win->y + new_height >= GFX_HEIGHT(WM_GFX)) return -EINVAL;
+
+    // TODO: Flush pending buffers, implement asyncronous resize, etc.
+
+    size_t old_buffer_size = win->width * win->height * 4;
+    gfx_rect_t update_region = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };
+
+    // Set them in the window
+    win->width = new_width;
+    win->height = new_height;
+
+    // Create a new buffer key
+    int new_shm_object = shared_new(win->width * win->height * 4, SHARED_DEFAULT);
+    win->bufkey = shared_key(new_shm_object);
+
+    // Unmap the old buffer from memory
+    munmap(win->buffer, old_buffer_size);
+
+    // Close the old shared memory object. This decrements reference count.
+    close(win->shmfd);
+    win->shmfd = new_shm_object;
+
+    // Map the new buffer into memory
+    win->buffer = mmap(NULL, win->width * win->height * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
+
+    // Resize is complete, mostly. Send event to server
+    celestial_event_resize_t resize_event = {
+        .magic = CELESTIAL_MAGIC_EVENT,
+        .type = CELESTIAL_EVENT_RESIZE,
+        .size = sizeof(celestial_event_resize_t),
+        .wid = win->id,
+        .new_width = win->width,
+        .new_height = win->height,
+        .buffer_key = win->bufkey
+    };
+
+    event_send(win, &resize_event);
+
+    // Update the old region where the window was
+    window_updateRegion(update_region);
+
+    // Resize process is complete
+    return 0;
 }

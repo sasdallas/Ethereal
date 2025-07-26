@@ -64,7 +64,6 @@ int celestial_initDecorations(struct window *win, decor_handler_t *decor) {
 
     // Create new graphics context for the window
     win->ctx = malloc(sizeof(gfx_context_t));
-    // memcpy(win->ctx, win->decor->ctx, sizeof(gfx_context_t));
     memset(win->ctx, 0, sizeof(gfx_context_t));
     win->ctx->width = win->decor->ctx->width;
     win->ctx->pitch = win->decor->ctx->pitch;

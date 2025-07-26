@@ -115,6 +115,11 @@ void celestial_handleEvent(void *event) {
     window_t *win = celestial_getWindow(hdr->wid);
     if (!win) { free(event); return; }
 
+    // If this is a resize event, *we* need to handle it
+    if (hdr->type == CELESTIAL_EVENT_RESIZE) {
+        celestial_completeWindowResize(win, event);
+    }
+
     // First drop it into decor, see if it needs anything
     if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED && !celestial_handleDecorationEvent(win, event)) {
         free(event);

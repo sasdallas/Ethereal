@@ -116,4 +116,20 @@ void window_updateRegion(gfx_rect_t rect);
  */
 void window_close(wm_window_t *win);
 
+/**
+ * @brief Resize a window to a desired width/height
+ * 
+ * In Celestial, windows are resized using a complex process:
+ *      - Client sends @c CELESTIAL_REQ_RESIZE with the desired width and height
+ *      - Server receives, sets window state to @c WINDOW_STATE_RESIZING and creates the new shared memory object
+ *      - If pending flip requests are present, resizing is delayed and the process is done asyncronously
+ *      - The buffers are switched, Celestial sends @c CELESTIAL_EVENT_RESIZE with the new buffer key and data, allowing the window to process the event
+ *      - A response to the original @c CELESTIAL_REQ_RESIZE is sent to indicate success and return execution
+ * 
+ * @param win The window to resize
+ * @param new_width The new width of the window
+ * @param new_height The new height of the window
+ */
+int window_resize(wm_window_t *win, size_t new_width, size_t new_height);
+
 #endif

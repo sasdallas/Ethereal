@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <structs/hashmap.h>
 #include <unistd.h>
+#include <assert.h>
 
 /* Global celestial window map (WID -> Window object) */
 hashmap_t *celestial_window_map = NULL;
@@ -489,3 +490,72 @@ int celestial_resizeWindow(window_t *win, size_t width, size_t height) {
     free(resp);
     return 0;
 }
+
+/**
+ * @brief Complete resize of window (internal method)
+ * @param win The window to use
+ * @param resize_event The resize event that was received
+ */
+void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *resize_event) {
+    int old_shm_fd = win->shmfd;
+
+    // Update the window data. Depending on whether the window is decorated we need to fake it.
+    if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+        // Ah, this will be fun. We have to reinitialize decorations basically.
+        // First, update the shared memory object key
+        win->shmfd = -1; // celestial_getFramebuffer opens it
+        win->key = resize_event->buffer_key;
+
+        // Almost nothing that isn't in the decorations can be trusted
+        munmap(win->decor->ctx->buffer, win->width * win->height * 4);
+        win->buffer = NULL; // So that celestial_getFramebuffer returns a proper framebuffer from our buffer key
+
+        // Update the window width + height
+        win->width = win->ctx->width;
+        win->height = win->ctx->height;
+
+        // Now let's start updating decorations. First, using the decor context, update the real window height
+        win->decor->ctx->width = resize_event->new_width;
+        win->decor->ctx->height = resize_event->new_height;
+        if (win->decor->ctx->backbuffer) win->decor->ctx->backbuffer = realloc(win->decor->ctx->backbuffer, resize_event->new_width * resize_event->new_height * 4);
+        win->decor->ctx->buffer = celestial_getFramebuffer(win);
+        win->decor->ctx->pitch = resize_event->new_width * 4;
+
+        // Move window graphics context
+        win->ctx->buffer = &GFX_PIXEL_REAL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
+        if (win->decor->ctx->backbuffer) win->ctx->backbuffer = &GFX_PIXEL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
+        win->ctx->width -= win->decor->borders.right_width + win->decor->borders.left_width;
+        win->ctx->height -= win->decor->borders.bottom_height + win->decor->borders.top_height;
+        win->ctx->pitch = win->decor->ctx->pitch;
+    } else {
+        // Easy, just update some minor stuff
+        // First, update the shared memory object key
+        win->shmfd = -1; // celestial_getFramebuffer opens it
+        win->key = resize_event->buffer_key;
+    
+        // Unmap the old buffer
+        if (win->buffer) {
+            munmap(win->buffer, win->width * win->height * 4);
+            win->buffer = NULL; // So that celestial_getFramebuffer returns a proper framebuffer from our buffer key
+        }
+
+        // Update width and height
+        win->width = resize_event->new_width;
+        win->height = resize_event->new_height;
+
+        // Modify the graphics context
+        if (!win->ctx) {
+            win->ctx = celestial_getGraphicsContext(win);
+        } else {
+            // Existing graphical context, update it.
+            win->ctx->width = resize_event->new_width;
+            win->ctx->height = resize_event->new_height;
+            win->ctx->pitch = resize_event->new_width * 4;
+            if (win->ctx->backbuffer) win->ctx->backbuffer = realloc(win->ctx->backbuffer, GFX_SIZE(win->ctx));
+            win->ctx->buffer = celestial_getFramebuffer(win);
+        }
+    }
+
+    // The resize event is complete
+    close(old_shm_fd);
+} 

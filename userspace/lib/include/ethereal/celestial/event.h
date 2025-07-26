@@ -106,6 +106,12 @@ typedef struct celestial_event_key {
     key_event_t ev;                     // Key event
 } celestial_event_key_t;
 
+typedef struct celestial_event_resize {
+    CELESTIAL_EVENT_COMMON              // Common
+    key_t buffer_key;                   // New shared memory key
+    size_t new_width;                   // New width of the window
+    size_t new_height;                  // New height of the window
+} celestial_event_resize_t;
 
 /**
  * @brief Celestial event handler
@@ -148,5 +154,12 @@ int celestial_setHandler(window_t *win, uint32_t event, celestial_event_handler_
  * @param event The event that was received
  */
 void celestial_handleEvent(void *event);
+
+/**
+ * @brief Complete resize of window (internal method)
+ * @param win The window to use
+ * @param resize_event The resize event that was received
+ */
+void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *resize_event);
 
 #endif

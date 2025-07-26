@@ -14,6 +14,7 @@
 #include "celestial.h"
 #include <sys/un.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 
 /* Celestial socket file descriptor */
 int __celestial_socket = -1;
@@ -394,7 +395,7 @@ void socket_handle(int sock) {
     } else if (hdr->type == CELESTIAL_REQ_CLOSE_WINDOW) {
         // Close window
         CELESTIAL_VALIDATE(celestial_req_close_window_t, CELESTIAL_REQ_CLOSE_WINDOW);
-        CELESTIAL_LOG("socket: Received CELESTIAL_REQ_CLOSE_WINDOW\n");
+        CELESTIAL_DEBUG("socket: Received CELESTIAL_REQ_CLOSE_WINDOW\n");
         celestial_req_close_window_t *req = (celestial_req_close_window_t*)hdr;
         if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EINVAL);
         if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EPERM);
@@ -402,6 +403,44 @@ void socket_handle(int sock) {
         window_close(WID(req->wid));
 
         return; // NO RESPONSE FOR CLOSE REQUEST
+    } else if (hdr->type == CELESTIAL_REQ_MINIMIZE_WINDOW) {
+        // TODO: This needs to interop with panel
+        CELESTIAL_ERR("CELESTIAL_REQ_MINIMIZE_WINDOW is not implemented\n");
+        return socket_error(sock, CELESTIAL_REQ_MINIMIZE_WINDOW, ENOTSUP);
+    } else if (hdr->type == CELESTIAL_REQ_MAXIMIZE_WINDOW) {
+        // Maximize window
+        // Maximize is not the same as fullscreen. This needs to interop with taskbar.
+        CELESTIAL_ERR("CELESTIAL_REQ_MAXIMIZE_WINDOW is not implemented\n");
+        return socket_error(sock, CELESTIAL_REQ_MAXIMIZE_WINDOW, ENOTSUP);
+    } else if (hdr->type == CELESTIAL_REQ_RESIZE) {
+        // Resize request
+        CELESTIAL_VALIDATE(celestial_req_resize_t, CELESTIAL_REQ_RESIZE);
+        CELESTIAL_DEBUG("socket: Receieved CELESTIAL_REQ_RESIZE\n");
+        celestial_req_resize_t *req = (celestial_req_resize_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_CLOSE_WINDOW, EPERM);
+
+        // Documentation of how the resize process works can be found in the lib function for resizing
+        // First, do bounds checks to ensure that we don't explode.
+        wm_window_t *win = WID(req->wid);
+        
+        if (win->x + req->width >= GFX_WIDTH(WM_GFX)) return socket_error(sock, CELESTIAL_REQ_RESIZE, EINVAL);
+        if (win->y + req->height >= GFX_HEIGHT(WM_GFX)) return socket_error(sock, CELESTIAL_REQ_RESIZE, EINVAL);
+        
+        int resize = window_resize(win, req->width, req->height);
+        if (resize != 0) return socket_error(sock, CELESTIAL_REQ_RESIZE, -(resize));
+
+        // Build response
+        celestial_resp_resize_t resp = {
+            .magic = CELESTIAL_MAGIC,
+            .type = CELESTIAL_REQ_RESIZE,
+            .size = sizeof(celestial_resp_resize_t),
+            .width = win->width,
+            .height = win->height
+        };
+
+        socket_sendResponse(sock, &resp);
+        return;
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);
