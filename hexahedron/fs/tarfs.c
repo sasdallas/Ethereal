@@ -31,6 +31,7 @@ ssize_t tarfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 ssize_t tarfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 fs_node_t *tarfs_finddir(fs_node_t *node, char *path);
 struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index);
+int tarfs_readlink(struct fs_node *node, char *buf, size_t size);
 
 
 /**
@@ -123,11 +124,27 @@ static fs_node_t *tarfs_ustarToNode(ustar_header_t *header, uint64_t inode, fs_n
     node->write = tarfs_write;
     node->finddir = tarfs_finddir;
     node->readdir = tarfs_readdir;
+    node->readlink = tarfs_readlink;
 
     return node;
 }
 
 
+/**
+ * @brief tarfs readlink method
+ */
+int tarfs_readlink(struct fs_node *node, char *buf, size_t size) {
+    // Read the ustar header for this node
+    ustar_header_t *header = tarfs_getUstar(node, node->inode);
+    if (!header) return -EIO; // Invalid header
+
+    // Get the node
+    size_t sz_to_read = strlen(header->linkname) > size ? size : strlen(header->linkname);
+    memcpy(buf, header->linkname, sz_to_read); 
+    kfree(header);
+
+    return 0;
+}
 
 
 /**

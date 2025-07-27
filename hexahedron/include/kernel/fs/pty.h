@@ -104,7 +104,7 @@ void pty_init();
  * @brief Create a new PTY device
  * @param tios Optional presetup termios. Leave as NULL to use defaults
  * @param size TTY window size
- * @param index The index of the TTY. If -1, an index will be auto assigned.
+ * @param index The index of the TTY. If -1, an index will be auto assigned. If specified, it will not be mounted under /device/pts
  * @returns PTY or NULL on failure
  */
 pty_t *pty_create(struct termios *tios, struct winsize *size, int index);

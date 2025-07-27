@@ -122,20 +122,21 @@ void print_entry(char *ent) {
         printf("%10ld ", st.st_size);
     }
 
+
+    // We are a TTY, print some colors
+    if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
+        printf(COLOR_DEVICE);    
+    } else if (S_ISDIR(st.st_mode)) {
+        printf(COLOR_DIRECTORY);
+    } else if (st.st_mode & S_ISUID) {
+        printf(COLOR_SETUID);
+    } else if (st.st_mode & 0111) {
+        printf(COLOR_EXECUTABLE);
+    }
     
     if (!is_tty || list) {
-        printf("%s\n", ent);
+        printf("%s%s\n", ent, is_tty ? "\033[0m" : "");
     } else {
-        // We are a TTY, print some colors
-        if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
-            printf(COLOR_DEVICE);    
-        } else if (S_ISDIR(st.st_mode)) {
-            printf(COLOR_DIRECTORY);
-        } else if (st.st_mode & S_ISUID) {
-            printf(COLOR_SETUID);
-        } else if (st.st_mode & 0111) {
-            printf(COLOR_EXECUTABLE);
-        }
 
         printf("%s\033[0m", ent);
     
@@ -213,7 +214,7 @@ void list_directory(char *dir) {
                 printf("\n");
             }
         }
-        putchar('\n');
+        if (col) putchar('\n');
     }
 }
 

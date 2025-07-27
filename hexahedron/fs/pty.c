@@ -24,9 +24,18 @@
 #include <sys/signal.h>
 #include <string.h>
 #include <termios.h>
+#include <structs/hashmap.h>
+#include <stdlib.h>
 
 /* Last used index for PTY */
 static int last_pty_index = 0;
+
+/* Nodes */
+fs_node_t *tty_link = NULL;
+fs_node_t *pty_dir = NULL;
+
+/* Map */
+hashmap_t *pty_map = NULL;
 
 /* Helpers */
 #define CTRL(ch) (('@' + ch) % 128)
@@ -299,10 +308,65 @@ int pty_readySlave(fs_node_t *node, int events) {
 }
 
 /**
+ * @brief Read PTY directory
+ */
+struct dirent *pty_readdir(fs_node_t *node, unsigned long index) {
+    // Handle . and ..
+    if (index < 2) {
+        struct dirent *out = kmalloc(sizeof(struct dirent));
+        strcpy(out->d_name, (index == 0) ? "." : "..");
+        out->d_ino = 0;
+        return out;
+    }
+
+
+    index -= 2;
+
+    list_t *vals = hashmap_values(pty_map);
+
+    foreach(pty_node, vals) {
+        pty_t *pty = (pty_t*)pty_node->value;
+        if ((unsigned long)pty->number == index) {
+            struct dirent *out = kmalloc(sizeof(struct dirent));
+            out->d_name[0] = 0;
+            snprintf(out->d_name, 256, "%d", pty->number);
+            out->d_ino = 0;
+
+            list_destroy(vals, false);
+            return out;
+        }
+    }
+
+    list_destroy(vals, false);
+    return NULL;
+}
+
+/**
+ * @brief PTY finddir method
+ */
+fs_node_t *pty_finddir(fs_node_t *node, char *name) {
+    long index = strtol(name, NULL, 10);
+    pty_t *p = hashmap_get(pty_map, (void*)(uintptr_t)index);
+
+    if (!p) return NULL;
+    return p->slave;
+}
+
+/**
  * @brief Initialize the PTY system
  */
 void pty_init() {
-    // TODO
+    pty_dir = fs_node();
+    strcpy(pty_dir->name, "pts");
+    pty_dir->flags = VFS_DIRECTORY;
+    pty_dir->mask = 0755;
+    pty_dir->atime = pty_dir->ctime = pty_dir->mtime = now();
+    pty_dir->gid = pty_dir->uid = 0;
+    pty_dir->readdir = pty_readdir;
+    pty_dir->finddir = pty_finddir;
+
+    vfs_mount(pty_dir, "/device/pts");
+    pty_map = hashmap_create_int("pty map", 20);
 }
 
 /**
@@ -387,7 +451,7 @@ int pty_ioctl(fs_node_t *node, unsigned long request, void *argp) {
         
         case TIOCCONS:
             // TODO
-            LOG(DEBUG, "WARNING: Need to redirect /device/tty0\n");
+            LOG(WARN, "Need to redirect /device/tty0\n");
             return -ENOTSUP;
 
         case TIOCSCTTY:
@@ -499,7 +563,7 @@ void pty_name(pty_t *pty, char *name) {
  * @brief Create a new PTY device
  * @param tios Optional presetup termios. Leave as NULL to use defaults
  * @param size TTY window size
- * @param index The index of the TTY. If -1, an index will be auto assigned.
+ * @param index The index of the TTY. If -1, an index will be auto assigned. If specified, it will not be mounted under /device/pts
  * @returns PTY or NULL on failure
  */
 pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
@@ -587,6 +651,10 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
         memset(pty->canonical_buffer, 0, PTY_BUFFER_SIZE);
         pty->canonical_idx = 0;
         pty->canonical_bufsz = PTY_BUFFER_SIZE;
+    }
+
+    if (index == -1) {
+        hashmap_set(pty_map, (void*)(uintptr_t)pty->number, pty);
     }
 
     return pty;
