@@ -24,6 +24,8 @@ int pic_selected = PIC_TYPE_8259;
 
 /**** 8259 INTERFACE ****/
 
+uint32_t pic8259_allocations = 0x0; // 16 IRQs
+
 /**
  * @brief Initialize 8259 PIC
  */
@@ -54,6 +56,9 @@ static int pic8259_init() {
     outportb(PIC2_DATA, PIC_ICW4_8086);  
     io_wait();
 
+    // Reserve some IRQs (PS/2)
+    pic8259_allocations |= (1 << 1) | (1 << 12);
+
     return 0;
 }
 
@@ -73,6 +78,8 @@ static int pic8259_mask(uintptr_t interrupt) {
     uint16_t port = (interrupt < 8 ? PIC1_DATA : PIC2_DATA);
     uint8_t mask = inportb(port) | (1 << ((port == PIC2_DATA) ? interrupt-8 : interrupt));
     outportb(port, mask);
+
+    pic8259_allocations &= ~(1 << interrupt);
     return 0;
 }
 
@@ -88,6 +95,7 @@ static int pic8259_unmask(uintptr_t interrupt) {
     uint16_t port = (irq < 8 ? PIC1_DATA : PIC2_DATA);
     uint8_t mask = inportb(port) & ~((unsigned)1 << ((port == PIC2_DATA) ? irq-8 : irq));
     outportb(port, mask);
+    pic8259_allocations |= (1 << interrupt);
     return 0;
 }
 
@@ -101,6 +109,15 @@ static int pic8259_eoi(uintptr_t interrupt) {
     return 0;
 }
 
+static uint32_t pic8259_allocate() {
+    for (int i = 0; i < 16; i++) {
+        if (!(pic8259_allocations & (1 << i))) {
+            return i;
+        }
+    }
+
+    return 0xFFFFFFFF;
+}
 
 /**** GENERIC PIC FUNCTIONS ****/
 
@@ -206,4 +223,22 @@ int pic_eoi(uintptr_t interrupt) {
  */
 int pic_type() {
     return pic_selected;
+}
+
+/**
+ * @brief Allocate an IRQ from the PIC
+ * @returns Interrupt or @c 0xFFFFFFFF
+ */
+uint32_t pic_allocate() {
+    switch (pic_selected) {
+        case PIC_TYPE_8259:
+            return pic8259_allocate();
+        case PIC_TYPE_IOAPIC:
+            return ioapic_allocate();
+        default:
+        LOG(ERR, "Unknown PIC type\n");
+        break;
+    }
+
+    return 0xFFFFFFFF;
 }

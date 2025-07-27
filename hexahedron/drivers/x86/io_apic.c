@@ -35,6 +35,9 @@ int io_apic_count = 0;
 /* IRQ override list */
 uint32_t *io_apic_irq_overrides = NULL;
 
+/* Reserved GSI list */
+uint8_t reserved_gsis[HAL_IRQ_MSI_COUNT/8] = { 0 };
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:X86:IOAPIC", __VA_ARGS__)
 
@@ -157,6 +160,14 @@ int ioapic_init(void *data) {
     }
     
     LOG(INFO, "Initialized %d I/O APICs\n", io_apic_count);
+
+    uint32_t gsi = io_apic_irq_overrides[0];
+    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
+    gsi = io_apic_irq_overrides[1];
+    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
+    gsi = io_apic_irq_overrides[12];
+    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
+
     return io_apic_count ? 0 : 1;
 }
 
@@ -172,7 +183,8 @@ void ioapic_shutdown() {
  * @param interrupt The interrupt to mask
  */
 int ioapic_mask(uintptr_t interrupt) {
-    // TODO
+    uint32_t gsi = io_apic_irq_overrides[interrupt];
+    reserved_gsis[gsi / 8] &= ~(1 << (gsi % 8));
     return 0;
 }
 
@@ -181,6 +193,8 @@ int ioapic_mask(uintptr_t interrupt) {
  * @param interrupt The interrupt to unmask
  */
 int ioapic_unmask(uintptr_t interrupt) {
+    uint32_t gsi = io_apic_irq_overrides[interrupt];
+    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
     return ioapic_enableIRQ(interrupt);
 }
 
@@ -192,4 +206,37 @@ int ioapic_eoi(uintptr_t interrupt) {
     // Forward this to LAPIC
     lapic_acknowledge();
     return 0;
+}
+
+/**
+ * @brief Allocate an IRQ from the I/O APIC
+ */
+uint32_t ioapic_allocate() {
+    for (int i = 0; i < HAL_IRQ_MSI_BASE - HAL_IRQ_BASE; i++) {
+        uint8_t gsi = io_apic_irq_overrides[i];
+
+        // Find the I/O APIC with this GSI
+        io_apic_t *apic = NULL;
+        for (int i = 0; i < io_apic_count; i++) {
+            io_apic_t *apic_i = io_apic_list[i];
+            
+            if (apic_i->interrupt_base <= gsi && gsi <= apic_i->interrupt_base + apic_i->redir_count) {
+                apic = apic_i;
+                break;
+            }
+        }
+
+        if (!apic) {
+            continue;
+        }
+
+        // Check if this IRQ is reserved
+        if (!(reserved_gsis[gsi / 8] & (1 << (gsi % 8)))) {
+            LOG(DEBUG, "IRQ%d allocated\n", i);
+            reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
+            return i;
+        }
+    }
+
+    return 0xFFFFFFFF;
 }

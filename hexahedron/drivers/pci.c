@@ -21,6 +21,10 @@
 #include <assert.h>
 #include <string.h>
 
+#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
+#include <kernel/drivers/x86/pic.h>
+#endif
+
 /* MSI map array */
 /* TODO: This will be rewritten */
 uint8_t msi_array[HAL_IRQ_MSI_COUNT / 8] = { 0 };
@@ -248,7 +252,17 @@ uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func) {
  */
 uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
     // TODO: Make sure header type is 1?
+#if !defined(__ARCH_I386__) && !defined(__ARCH_X86_64__)
     return pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
+#else
+    // Allocate an IRQ from the PIC
+    uint32_t irq = pic_allocate();
+    LOG(DEBUG, "PCI allocated IRQ%d\n", irq);
+    if (irq == 0xFFFFFFFF) return 0xFF;
+
+    pci_writeConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, irq, 1);
+    return irq;    
+#endif
 }
 
 /**
