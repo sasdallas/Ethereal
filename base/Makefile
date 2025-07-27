@@ -25,7 +25,7 @@ install-headers:
 	-cp -rp initrd/* $(INITRD)/
 	-cp -rp sysroot/* $(SYSROOT)/
 
-	$(BUILDSCRIPTS_ROOT)/create-base-structure.sh
+	bash -c "$(BUILDSCRIPTS_ROOT)/create-base-structure.sh"
 
 clean:
 	-rm -rf $(INITRD)/
