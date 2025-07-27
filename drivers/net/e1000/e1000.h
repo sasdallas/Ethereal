@@ -20,6 +20,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/pci.h>
+#include <kernel/task/process.h>
 
 /**** DEFINITIONS ****/
 
@@ -140,6 +141,7 @@
 #define E1000_ICR_RXT0                          (1 << 7) 
 #define E1000_ICR_ACK                           (1 << 17)
 #define E1000_ICR_SRPD                          (1 << 16)
+#define E1000_ICR_RxQ0							(1 << 20)
 
 /**** TYPES ****/
 
@@ -189,6 +191,8 @@ typedef struct e1000 {
 
     uintptr_t tx_virt[E1000_NUM_TX_DESC]; 		// Virtual addresses of Tx descriptor buffers
     uintptr_t rx_virt[E1000_NUM_RX_DESC]; 		// Virtual addresses of Rx descriptor buffers
+
+	process_t *receiver;						// Receiver process
 } e1000_t;
 
 #endif

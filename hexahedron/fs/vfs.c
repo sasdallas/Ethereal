@@ -156,6 +156,23 @@ fs_node_t *fs_finddir(fs_node_t *node, char *path) {
     return NULL;
 }
 
+
+/**
+ * @brief Read the link of the symlink
+ * @param node The node to read the link of
+ * @param buf A buffer to hold the symlink path in
+ * @param size The size of the buffer
+ */
+int fs_readlink(fs_node_t *node, char *buf, size_t size) {
+    if (!node) return -EINVAL;
+
+    if (node->flags & VFS_SYMLINK && node->readlink) {
+        return node->readlink(node, buf, size);
+    }
+
+    return -EINVAL;
+}
+
 /**
  * @brief Create new entry
  * @param node The node to run create() on
@@ -1069,15 +1086,15 @@ static fs_node_t *vfs_getMountpoint(const char *path, char **remainder) {
  * @param current_node The parent node to search
  * @param next_token Next token/part of the path
  * @param flags The opening flags of the file
+ * @param depth Symlink depth
  * @returns A pointer to the next node, ready to be fed back into this function. NULL is returned on a failure.
  */
-static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned int flags) {
+static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned int flags, unsigned int depth) {
     if (!path || !current_node) {
         LOG(WARN, "Bad arguments to kopen_recur\n");
         return NULL;
     }
 
-    // TODO: Symlinks, main bulk part of this
     fs_node_t *node = fs_finddir(current_node, path);
     
     if (node) {
@@ -1125,7 +1142,7 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
 
     while (pch) {
         if (!node) break;
-        node = kopen_relative(node, pch, flags);
+        node = kopen_relative(node, pch, flags, 0);
 
         if (node && node->flags == VFS_FILE) {
             // TODO: What if the user has a REALLY weird filesystem?

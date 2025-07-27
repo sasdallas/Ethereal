@@ -304,7 +304,9 @@ static void e1000_receiverThread(void *data) {
     int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
 
     for (;;) {
-        arch_pause();
+        sleep_untilNever(current_cpu->current_thread);
+        sleep_enter();
+
         if (head == nic->rx_current) {
             // Same as before.. Try reading it one more time
             head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
@@ -316,9 +318,12 @@ static void e1000_receiverThread(void *data) {
                 // Let ethernet take care of this
                 if (!(nic->rx_descs[nic->rx_current].errors & 0x97)) {
                     // Handle this packet
+                    NIC(nic->nic)->stats.rx_dropped++;
+                    NIC(nic->nic)->stats.rx_bytes += nic->rx_descs[nic->rx_current].length;
                     ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->nic, nic->rx_descs[nic->rx_current].length);
                 } else {
                     LOG(WARN, "Packet has error bits set: 0x%x\n", nic->rx_descs[nic->rx_current].errors);
+                    NIC(nic->nic)->stats.rx_dropped++;
                 }
 
                 // Reset status
@@ -345,12 +350,9 @@ static void e1000_receiverThread(void *data) {
 
                 // Clear STATUS
                 uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-                LOG(DEBUG, "status = %08x\n", status);
                 arch_pause();
             }
         }
-
-        arch_pause();
     }
 }
 
@@ -387,6 +389,10 @@ static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *
     uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
     (void)status;
 
+    // Update statistics
+    NIC(nic->nic)->stats.tx_packets++;
+    NIC(nic->nic)->stats.tx_bytes += size;
+
     // Release
     spinlock_release(nic->lock);
     return size;
@@ -406,6 +412,11 @@ int e1000_irq(void *context) {
     if (icr) {
         uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
         LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
+        
+        if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
+            sleep_wakeup(nic->receiver->main_thread);
+        } 
+
         E1000_SENDCMD(E1000_REG_ICR, icr);
     }
 
@@ -536,8 +547,8 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     snprintf(name, 128, "enp%ds%d", dev->bus, dev->slot);
     nic_register(nic->nic, name);
 
-    process_t *e1000_proc = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
-    scheduler_insertThread(e1000_proc->main_thread);
+    nic->receiver = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
+    scheduler_insertThread(nic->receiver->main_thread);
 
     // All done
     return;

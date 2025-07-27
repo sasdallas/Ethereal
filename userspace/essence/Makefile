@@ -63,6 +63,4 @@ clean:
 	-rm -rf $(OBJ_DIR)
 	
 bash_symlink:
-	@-mkdir -p $(INITRD)/bin/
-	-ln -s $(INITRD)/bin/$(OUTPUT_FILE) $(INITRD)/bin/sh
-	-ln -s $(DESTDIR)$(OUTPUT_DIR)/$(OUTPUT_FILE) $(DESTDIR)$(OUTPUT_DIR)/sh	
+	@-mkdir -p $(INITRD)/bin/ $(DESTDIR)/bin/
