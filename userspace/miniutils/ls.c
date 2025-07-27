@@ -51,7 +51,6 @@ int term_width = 0;
 #define COLOR_SYMLINK                   "\033[1;36m"
 #define COLOR_DEVICE                    "\033[1;33;40m"
 #define COLOR_SETUID                    "\033[37;41m"
-#define COLOOR_
 
 void help() {
     printf("Usage: ls [OPTION]... [FILE]...\n");
@@ -127,7 +126,18 @@ void print_entry(char *ent) {
     if (!is_tty || list) {
         printf("%s\n", ent);
     } else {
-        printf("%s", ent);
+        // We are a TTY, print some colors
+        if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
+            printf(COLOR_DEVICE);    
+        } else if (S_ISDIR(st.st_mode)) {
+            printf(COLOR_DIRECTORY);
+        } else if (st.st_mode & S_ISUID) {
+            printf(COLOR_SETUID);
+        } else if (st.st_mode & 0111) {
+            printf(COLOR_EXECUTABLE);
+        }
+
+        printf("%s\033[0m", ent);
     
         for (int i = column_size - strlen(ent); i > 0; i--) putchar(' ');
     }
