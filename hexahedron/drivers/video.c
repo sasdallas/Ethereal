@@ -200,18 +200,8 @@ void video_switchDriver(video_driver_t *driver) {
         video_addDriver(driver);
     }
 
-    // Allocate framebuffer
-    if (kargs_has("--no-secondary-fb")) {
-        video_framebuffer = driver->videoBuffer;
-    } else {
-        if (video_framebuffer) {
-            // Reallocate
-            video_framebuffer = (uint8_t*)mem_allocate(0x0, MEM_ALIGN_PAGE((driver->screenHeight * driver->screenPitch)), MEM_ALLOC_HEAP, MEM_PAGE_WRITE_COMBINE);
-        } else {
-            // Allocate
-            video_framebuffer = (uint8_t*)mem_allocate(0x0, MEM_ALIGN_PAGE((driver->screenHeight * driver->screenPitch)), MEM_ALLOC_HEAP, MEM_PAGE_WRITE_COMBINE);
-        }
-    }
+    // Framebuffer
+    video_framebuffer = driver->videoBuffer;
 
     // Set driver
     if (current_driver && current_driver->unload) current_driver->unload(current_driver);
@@ -280,6 +270,7 @@ void video_clearScreen(color_t bg) {
  * @brief Update the screen
  */
 void video_updateScreen() {
+    // This used to be for double buffered implementations
     if (video_ks) return;
     if (video_framebuffer != current_driver->videoBuffer && current_driver && current_driver->update) {
         current_driver->update(current_driver, video_framebuffer);
@@ -294,7 +285,5 @@ void video_updateScreen() {
  * just call @c video_updateScreen when finished
  */
 uint8_t *video_getFramebuffer() {
-    if (video_ks) return current_driver->videoBuffer;
-
     return video_framebuffer;
 }
