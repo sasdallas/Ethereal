@@ -25,7 +25,10 @@ install-headers:
 	-cp -rp initrd/* $(INITRD)/
 	-cp -rp sysroot/* $(SYSROOT)/
 
-	bash -c "$(BUILDSCRIPTS_ROOT)/create-base-structure.sh"
+	-mkdir $(SYSROOT)/kernel
+	-mkdir $(SYSROOT)/tmp
+	-mkdir $(SYSROOT)/device
+	-mkdir $(SYSROOT)/comm
 
 clean:
 	-rm -rf $(INITRD)/
