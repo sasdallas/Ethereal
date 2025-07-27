@@ -1,0 +1,1 @@
+/* libpthread is already integrated into the libc */
