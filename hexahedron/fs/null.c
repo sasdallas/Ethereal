@@ -57,6 +57,7 @@ void nulldev_init() {
     strncpy(nulldev->name, "null", 256);
     nulldev->read = nulldev_read;
     nulldev->write = nulldev_write;
+    nulldev->mask = 0666;
     nulldev->flags = VFS_CHARDEVICE;
 
     // Mount the devices
@@ -75,6 +76,7 @@ void zerodev_init() {
     strncpy(zerodev->name, "zero", 256);
     zerodev->read = zerodev_read;
     zerodev->write = zerodev_write;
+    zerodev->mask = 0666;
     zerodev->flags = VFS_CHARDEVICE;
 
     // Mount the devices

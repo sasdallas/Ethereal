@@ -105,7 +105,7 @@ void log_mount() {
     log_node->open = logdev_open;
     log_node->close = logdev_close;
     log_node->write = logdev_write;
-    log_node->mask = 0001;
+    log_node->mask = 0600;
 
     vfs_mount(log_node, "/device/log");
 }

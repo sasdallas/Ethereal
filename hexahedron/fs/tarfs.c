@@ -109,9 +109,9 @@ static fs_node_t *tarfs_ustarToNode(ustar_header_t *header, uint64_t inode, fs_n
 
     // Interpret UID, GID, mode, and length.
     node->length = strtoull(header->size, NULL, 8); // i hate octal
-    node->gid = strtol(header->gid, NULL, 10);
-    node->uid = strtol(header->uid, NULL, 10);
-    node->mask = strtol(header->mode, NULL, 10);
+    node->gid = strtol(header->gid, NULL, 8);
+    node->uid = strtol(header->uid, NULL, 8);
+    node->mask = strtol(header->mode, NULL, 8);
 
     node->inode = inode;
     node->dev = parent_node->dev;

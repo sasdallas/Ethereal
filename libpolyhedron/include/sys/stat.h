@@ -26,27 +26,27 @@ _Begin_C_Header
 
 /**** DEFINITIONS ****/
 
-#define S_IFBLK         0x01000      // Block special
-#define S_IFCHR         0x02000      // Character special
-#define S_IFIFO         0x04000      // FIFO special
-#define S_IFREG         0x08000      // Regular
-#define S_IFDIR         0x10000      // Directory
-#define S_IFLNK         0x20000      // Symbolic link
-#define S_IFSOCK        0x40000      // Socket
-#define S_IFMT          0x7F000      // Format of file
+#define S_IFBLK         0x010000      // Block special
+#define S_IFCHR         0x020000      // Character special
+#define S_IFIFO         0x040000      // FIFO special
+#define S_IFREG         0x060000      // Regular
+#define S_IFDIR         0x100000      // Directory
+#define S_IFLNK         0x120000      // Symbolic link
+#define S_IFSOCK        0x140000      // Socket
+#define S_IFMT          0x170000      // Format of file
 
-#define S_IRUSR         0x001   // Read permission, owner
-#define S_IWUSR         0x002   // Write permission, owner
-#define S_IXUSR         0x004   // Execute/search permission, owner
-#define S_IRGRP         0x008   // Read permission, group
-#define S_IWGRP         0x010   // Write permission, group
-#define S_IXGRP         0x020   // Execute/search permission, group
-#define S_IROTH         0x040   // Read permission, others
-#define S_IWOTH         0x080   // Write permission, others
-#define S_IXOTH         0x100   // Execute/search permission, others
-#define S_ISUID         0x200   // Set user ID on execution
-#define S_ISGID         0x400   // Set grou ID on execution
-#define S_ISVTX         0x800   // On directories, restricted deletion flag
+#define S_IRUSR         0000400   // Read permission, owner
+#define S_IWUSR         0000200   // Write permission, owner
+#define S_IXUSR         0000100   // Execute/search permission, owner
+#define S_IRGRP         0000040   // Read permission, group
+#define S_IWGRP         0000020   // Write permission, group
+#define S_IXGRP         0000010   // Execute/search permission, group
+#define S_IROTH         0000004   // Read permission, others
+#define S_IWOTH         0000002   // Write permission, others
+#define S_IXOTH         0000001   // Execute/search permission, others
+#define S_ISUID         0004000   // Set user ID on execution
+#define S_ISGID         0002000   // Set grou ID on execution
+#define S_ISVTX         0001000   // On directories, restricted deletion flag
 
 #define S_IRWXU         (S_IRUSR | S_IWUSR | S_IXUSR)
 #define S_IRWXG         (S_IRGRP | S_IWGRP | S_IXGRP)

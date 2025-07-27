@@ -171,6 +171,7 @@ void periphfs_init() {
     memset(kbd_node, 0, sizeof(fs_node_t));
     strcpy(kbd_node->name, "keyboard");
     kbd_node->flags = VFS_CHARDEVICE;
+    kbd_node->mask = 0666;
     kbd_node->dev = (void*)kbdbuf;
     kbd_node->read = keyboard_read;
     kbd_node->ready = keyboard_ready;
@@ -181,6 +182,7 @@ void periphfs_init() {
     stdin_node = kmalloc(sizeof(fs_node_t));
     memset(stdin_node, 0, sizeof(fs_node_t));
     strcpy(stdin_node->name, "stdin");
+    stdin_node->mask = 0666;
     stdin_node->flags = VFS_CHARDEVICE;
     stdin_node->dev = (void*)stdbuf;
     stdin_node->read = stdin_read;
