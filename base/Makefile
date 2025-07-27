@@ -1,4 +1,5 @@
 # Base makefile
+include ../make.config
 
 # Target disabled
 all:
@@ -23,6 +24,8 @@ install-headers:
 	-mkdir -pv $(INITRD)
 	-cp -rp initrd/* $(INITRD)/
 	-cp -rp sysroot/* $(SYSROOT)/
+
+	$(BUILDSCRIPTS_ROOT)/create-base-structure.sh
 
 clean:
 	-rm -rf $(INITRD)/
