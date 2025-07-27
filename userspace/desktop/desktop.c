@@ -44,8 +44,9 @@ gfx_font_t *taskbar_font = NULL;
 /* Taskbar active */
 int menu_active = 0;
 
-/* Menu rectangle */
-gfx_rect_t menu_rect = { .x = 0, .y = 0, .width = 300, .height = 0 };
+/* Taskbar settings */
+#define TASKBAR_HEIGHT              40
+
 
 /**
  * @brief Usage
@@ -91,36 +92,6 @@ void create_taskbar_gradient(gfx_context_t *ctx, uint16_t start_x) {
 
         uintptr_t x = start_x;
         uintptr_t x_max = GFX_WIDTH(ctx);
-
-        for (; x < x_max; x++) {
-            GFX_PIXEL(ctx, x, y) = color;
-        }
-    }
-}
-
-/**
- * @brief Create menu gradient
- */
-void create_menu_gradient() {
-    gfx_color_t grad_start = GFX_RGB(0x66, 0x62, 0x6a);
-    gfx_color_t grad_end = GFX_RGB(0x27, 0x24, 0x29);
-    gfx_context_t *ctx = celestial_getGraphicsContext(background_window);
-
-    size_t h = menu_rect.y + menu_rect.height;
-    float step_a = (float)(GFX_RGB_A(grad_start) - GFX_RGB_A(grad_end)) / (float)h;
-    float step_r = (float)(GFX_RGB_R(grad_start) - GFX_RGB_R(grad_end)) / (float)h;
-    float step_g = (float)(GFX_RGB_G(grad_start) - GFX_RGB_G(grad_end)) / (float)h;
-    float step_b = (float)(GFX_RGB_B(grad_start) - GFX_RGB_B(grad_end)) / (float)h;
-
-    for (uintptr_t y = menu_rect.y; y < menu_rect.y + menu_rect.height; y++) {
-        gfx_color_t color = 0 |
-            ((uint8_t)(GFX_RGB_A(grad_start) - y * step_a) & 0xFF) << 24 |
-            ((uint8_t)(GFX_RGB_R(grad_start) - y * step_r) & 0xFF) << 16 |
-            ((uint8_t)(GFX_RGB_G(grad_start) - y * step_g) & 0xFF) << 8 |
-            ((uint8_t)(GFX_RGB_B(grad_start) - y * step_b) & 0xFF) << 0;
-
-        uintptr_t x = menu_rect.x;
-        uintptr_t x_max = menu_rect.x + menu_rect.width;
 
         for (; x < x_max; x++) {
             GFX_PIXEL(ctx, x, y) = color;
@@ -175,12 +146,6 @@ _fallback:
 }
 
 /**
- * @brief Render the menu for programs + apps
- * @warning The menu system will be refactored in future versions of desktop
- */
-
-
-/**
  * @brief Click event for the taskbar
  * @c menu_active controls whether the menu will spawn
  */
@@ -189,19 +154,8 @@ void mouse_event_taskbar(window_t *win, uint32_t event_type, void *event) {
         celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)event;
         if (down->x >= 0 && down->x < 150) {
             menu_active ^= 1;
-            
-            gfx_context_t *ctx = celestial_getGraphicsContext(background_window);
-
-            if (menu_active) {
-                // Make it
-                create_menu_gradient();
-            } else {
-                // Clear it
-                gfx_renderSprite(ctx, background_sprite, 0, 0); // TODO: Only redraw needed part. Use clips?
-            }
-
-            gfx_render(ctx);
-            celestial_flipRegion(background_window, menu_rect.x, menu_rect.y, menu_rect.width, menu_rect.height);
+        
+            // TODO: Menu system completion
         }
     }
 }
@@ -234,16 +188,12 @@ int main(int argc, char *argv[]) {
     // Create the background
     create_background();
 
-    // Create menu rect
-    menu_rect.height = 418;
-    menu_rect.y = celestial_getServerInformation()->screen_height - 24 - menu_rect.height;
-
     // Create the taskbar window
-    wid_t taskbar_wid = celestial_createWindowUndecorated(0, celestial_getServerInformation()->screen_width, 25);
+    wid_t taskbar_wid = celestial_createWindowUndecorated(0, celestial_getServerInformation()->screen_width, TASKBAR_HEIGHT);
     if (taskbar_wid < 0) return 1;
     taskbar_window = celestial_getWindow(taskbar_wid);
     if (!taskbar_window) return 1;
-    celestial_setWindowPosition(taskbar_window, 0, celestial_getServerInformation()->screen_height - 24);
+    celestial_setWindowPosition(taskbar_window, 0, celestial_getServerInformation()->screen_height - TASKBAR_HEIGHT);
 
     // Set event
     celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_event_taskbar);
@@ -252,15 +202,14 @@ int main(int argc, char *argv[]) {
     gfx_context_t *taskbar_ctx = celestial_getGraphicsContext(taskbar_window);
     create_taskbar_gradient(taskbar_ctx, 0);
 
-    // Make taskbar button
-    gfx_rect_t taskbar_btn_rect = { .x = 0, .y = 0, .width = 150, .height = 25 };
-    gfx_drawRectangleFilled(taskbar_ctx, &taskbar_btn_rect, GFX_RGB(26, 24, 27));
-
     // Load the fonts
     taskbar_font = gfx_loadFont(taskbar_ctx, "/usr/share/DejaVuSans.ttf");
 
+    sprite_t *start_btn = gfx_createSprite(0, 0);
+    gfx_loadSprite(start_btn, fopen("/usr/share/EtherealStartButton.bmp", "r"));
+    gfx_renderSprite(taskbar_ctx, start_btn, 10, 4);
+
     // Fonts have been loaded, draw them in
-    gfx_renderString(taskbar_ctx, taskbar_font, "Ethereal", 10, 17, GFX_RGB(255, 255, 255));
     gfx_render(taskbar_ctx);
     celestial_flip(taskbar_window);
 
@@ -290,11 +239,15 @@ int main(int argc, char *argv[]) {
         tm = localtime(&current_time);
         strftime(time_str, 9, "%I:%M %p", tm);
 
+        char date_str[15];
+        strftime(date_str, 15, "%m/%d/%Y", tm);
+        
         if (!last_time[0] || strcmp(last_time, time_str)) {
             strcpy(last_time, time_str);
             
             // Render the string
-            gfx_renderString(taskbar_ctx, taskbar_font, time_str, celestial_getServerInformation()->screen_width - 100, 15, GFX_RGB(255, 255, 255));
+            gfx_renderString(taskbar_ctx, taskbar_font, time_str, celestial_getServerInformation()->screen_width - 92, 15, GFX_RGB(255, 255, 255));
+            gfx_renderString(taskbar_ctx, taskbar_font, date_str, celestial_getServerInformation()->screen_width - 100, 30, GFX_RGB(255, 255, 255));
             gfx_render(taskbar_ctx);
             celestial_flip(taskbar_window);
 
