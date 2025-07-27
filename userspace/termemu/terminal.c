@@ -267,6 +267,17 @@ void terminal_createPTY(char *startup_program) {
         exit(1);
     }
 
+    // Setup the PTY
+    struct winsize size = {
+        .ws_col = terminal_width,
+        .ws_row = terminal_height,
+        .ws_xpixel = 0,
+        .ws_ypixel = 0
+    };
+
+
+    ioctl(pty_master, TIOCSWINSZ, &size);
+
     pid_t cpid = fork();
     if (!cpid) {
         // Spawn startup program

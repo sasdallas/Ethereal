@@ -141,7 +141,7 @@ void window_redraw() {
         uint32_t *buf = (uint32_t*)upd->win->buffer;
 
         for (uint32_t _y = upd->rect.y; _y < upd->rect.y + upd->rect.height; _y++) {
-#if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE)
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE) && !defined(__NO_ALPHA_BLENDING)
             uint32_t *src_row = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + (upd->rect.x + upd->win->x) * (WM_GFX->bpp / 8)));
             uint32_t *dst_row = &buf[upd->win->width * _y + upd->rect.x];
 
@@ -177,6 +177,14 @@ void window_redraw() {
                                 _mm_andnot_si128(mask, blended));
 
                 _mm_storeu_si128((__m128i*)& src_row[_x], result);
+            }
+
+#elif defined(__NO_ALPHA_BLENDING)
+            // Terrible and for debugging
+            for (uint32_t _x = upd->rect.x; _x < upd->rect.x + upd->rect.width; _x++) {
+                gfx_color_t *src_pixel = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + ((_x + upd->win->x) * (WM_GFX->bpp/8))));
+                gfx_color_t *dst_pixel = &buf[upd->win->width * _y + _x];
+                *src_pixel = *dst_pixel;
             }
 #else
             // Normal, loser non-SSE copy

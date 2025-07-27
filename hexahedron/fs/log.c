@@ -97,14 +97,15 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
  * @brief Mount log device
  */
 void log_mount() {
-    fs_node_t *log_node = kmalloc(sizeof(fs_node_t));
+    fs_node_t *log_node = kzalloc(sizeof(fs_node_t));
     strncpy(log_node->name, "log", 256);
     log_node->flags = VFS_CHARDEVICE;
     log_node->atime = log_node->ctime = log_node->mtime = now();
-    log_node->gid = log_node->uid = 1000;
+    log_node->gid = log_node->uid = 0;
     log_node->open = logdev_open;
     log_node->close = logdev_close;
     log_node->write = logdev_write;
+    log_node->mask = 0001;
 
     vfs_mount(log_node, "/device/log");
 }
