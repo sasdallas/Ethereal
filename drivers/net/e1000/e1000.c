@@ -304,8 +304,9 @@ static void e1000_receiverThread(void *data) {
     int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
 
     for (;;) {
-        sleep_untilNever(current_cpu->current_thread);
-        sleep_enter();
+        // sleep_untilNever(current_cpu->current_thread);
+        // sleep_enter();
+        arch_pause();
 
         if (head == nic->rx_current) {
             // Same as before.. Try reading it one more time
@@ -414,7 +415,8 @@ int e1000_irq(void *context) {
         LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
         
         if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
-            sleep_wakeup(nic->receiver->main_thread);
+            // TODO: Seems to cause issues when IRQs are allocated
+            // sleep_wakeup(nic->receiver->main_thread);
         } 
 
         E1000_SENDCMD(E1000_REG_ICR, icr);
