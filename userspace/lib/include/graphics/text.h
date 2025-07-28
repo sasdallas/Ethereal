@@ -98,4 +98,10 @@ int gfx_renderString(struct gfx_context *ctx, gfx_font_t *font, char *str, int x
  */
 int gfx_getAdvanceX(struct gfx_context *ctx, gfx_font_t *font, char ch);
 
+/**
+ * @brief Destroy a font
+ * @param font The font to destroy
+ */
+int gfx_destroyFont(gfx_font_t *font);
+
 #endif

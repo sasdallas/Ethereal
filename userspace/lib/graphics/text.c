@@ -67,6 +67,8 @@ gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
         return NULL;
     }
 
+    font->font_data = m;
+
     // Create a new memory face
     if (FT_New_Memory_Face(__gfx_library, (const FT_Byte*)m, fsize, 0, &font->face)) {
         fprintf(stderr, "graphics: FT_New_Face error\n");
@@ -199,4 +201,16 @@ int gfx_getAdvanceX(gfx_context_t *ctx, gfx_font_t *font, char ch) {
     FT_GlyphSlot slot = font->face->glyph;
 
     return (slot->advance.x >> 6);
+}
+
+/**
+ * @brief Destroy a font
+ * @param font The font to destroy
+ */
+int gfx_destroyFont(gfx_font_t *font) {
+    FT_Done_Face(font->face);
+    if (font->font_data) free(font->font_data);
+    if (font->f) fclose(font->f);
+    free(font);
+    return 0;
 }
