@@ -9,11 +9,12 @@ OUT_OBJ_LIBK = $(OUT_OBJ)/libk
 
 # SOURCE DIRECTORIES
 SOURCE_DIRECTORIES = stdlib stdio string time net
-LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread pwd termios semaphore
-LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Include the architecture Make configuration to allow it to add to DIRECTORIES
 include arch/$(BUILD_ARCH)/make.config
+
+LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread pwd termios semaphore
+LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Construct our output directories
 OUTPUT_DIRECTORIES_LIBC = $(addprefix $(OUT_OBJ_LIBC)/,$(LIBC_SOURCE_DIRECTORIES))
@@ -27,7 +28,7 @@ LIBC_ASM_SOURCES = $(shell find $(LIBC_SOURCE_DIRECTORIES) -name "*.S")
 LIBK_ASM_SOURCES = $(shell find $(LIBK_SOURCE_DIRECTORIES) -name "*.S")
 
 LIBC_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBC)/%.o, $(LIBC_C_SOURCES)) $(patsubst %.S, $(OUT_OBJ_LIBC)/%.o, $(LIBC_ASM_SOURCES))
-LIBK_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBK)/%.o, $(LIBK_C_SOURCES))
+LIBK_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBK)/%.o, $(LIBK_C_SOURCES)) $(patsubst %.S, $(OUT_OBJ_LIBK)/%.o, $(LIBK_ASM_SOURCES))
 
 CRT_SOURCES = $(ARCH_CRT_DIRECTORY)/crtn.S $(ARCH_CRT_DIRECTORY)/crti.S $(ARCH_CRT_DIRECTORY)/crt0.S
 CRT_OBJECTS = $(patsubst %.S, $(OUT_OBJ_LIBC)/%.o, $(CRT_SOURCES))

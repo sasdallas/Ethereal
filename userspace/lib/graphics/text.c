@@ -13,6 +13,10 @@
 
 #include <graphics/gfx.h>
 
+/* FT library */
+static FT_Library __gfx_library = NULL;
+static int __ft_initialized = 0;
+
 /**
  * @brief Load a font from a file into the graphics render
  * @param ctx The context to use
@@ -21,20 +25,21 @@
  */
 gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
     // TODO: Better checks..
-    if (!ctx->ft_initialized) {
-        if (FT_Init_FreeType(&ctx->ftlib)) {
+    if (!__ft_initialized) {
+        if (FT_Init_FreeType(&__gfx_library)) {
             fprintf(stderr, "graphics: FT_Init_FreeType failed\n");
             return NULL;
         }
 
-        ctx->ft_initialized = 1;
+        __ft_initialized = 1;
+        fprintf(stderr, "FT initialized\n");
     }
 
     // Create a new FreeType font
     gfx_font_t *font = malloc(sizeof(gfx_font_t));
     memset(font, 0, sizeof(gfx_font_t));
 
-    if (FT_New_Face(ctx->ftlib, filename, 0, &font->face)) {
+    if (FT_New_Face(__gfx_library, filename, 0, &font->face)) {
         fprintf(stderr, "graphics: FT_New_Face error\n");
         free(font);
         return NULL;
