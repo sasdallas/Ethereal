@@ -13,8 +13,7 @@
 
 #include <string.h>
 
-
-#ifndef MEMSET_DEFINED
+#ifndef __MEMSET_DEFINED
 
 void* memset(void* destination_ptr, int value, size_t size) {
     size_t i = 0;

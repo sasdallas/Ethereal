@@ -17,7 +17,7 @@
 #include <string.h>
 
 
-#ifndef MEMCPY_DEFINED
+#ifndef __MEMCPY_DEFINED
 
 void* memcpy(void* dest, const void*  src, size_t n) {
 	uint64_t * d_64 = dest;

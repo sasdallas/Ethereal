@@ -13,6 +13,8 @@
 
 #include <string.h>
 
+#ifndef __MEMMOVE_DEFINED
+
 void* memmove(void* destination_ptr, const void* source_ptr, size_t size) {
     unsigned char* destination = (unsigned char*)destination_ptr;
     const unsigned char* source = (const unsigned char*)source_ptr;
@@ -29,3 +31,5 @@ void* memmove(void* destination_ptr, const void* source_ptr, size_t size) {
 
     return destination_ptr;
 }
+
+#endif

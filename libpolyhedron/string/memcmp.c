@@ -13,6 +13,7 @@
 
 #include <string.h>
 
+#ifndef __MEMCMP_DEFINED
 
 int memcmp(const void* aptr, const void* bptr, size_t n) {
 	const unsigned char* a = (const unsigned char*) aptr;
@@ -25,3 +26,5 @@ int memcmp(const void* aptr, const void* bptr, size_t n) {
 
 	return 0;
 }
+
+#endif
