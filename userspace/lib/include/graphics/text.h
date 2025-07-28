@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <ft2build.h>
+#include <stdio.h>
 #include FT_FREETYPE_H
 
 /**** DEFINITIONS ****/
@@ -30,6 +31,9 @@
 
 typedef struct gfx_font {
     int type;                   // Type of font
+    FILE *f;                    // Font file
+    uint8_t *font_data;         // Buffer of file data
+
     FT_Face face;               // FreeType font face
     uint8_t *psf;               // PSF data
 } gfx_font_t;

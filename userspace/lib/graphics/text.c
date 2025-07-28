@@ -12,6 +12,10 @@
  */
 
 #include <graphics/gfx.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /* FT library */
 static FT_Library __gfx_library = NULL;
@@ -32,15 +36,42 @@ gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
         }
 
         __ft_initialized = 1;
-        fprintf(stderr, "FT initialized\n");
+        fprintf(stderr, "FT initialized to %p\n", __gfx_library);
     }
 
     // Create a new FreeType font
     gfx_font_t *font = malloc(sizeof(gfx_font_t));
     memset(font, 0, sizeof(gfx_font_t));
 
-    if (FT_New_Face(__gfx_library, filename, 0, &font->face)) {
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        fprintf(stderr, "graphics: %s: %s\n", filename, strerror(errno));
+        free(font);
+        return NULL;
+    }
+
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    font->f = f;
+
+    // Read the file in
+    uint8_t *m = malloc(fsize);
+    if (fread(m, fsize, 1, f) != 1) {
+        fprintf(stderr, "graphics: %s: %s\n", filename, strerror(errno));
+        fclose(f);
+        free(font);
+        free(m);
+        return NULL;
+    }
+
+    // Create a new memory face
+    if (FT_New_Memory_Face(__gfx_library, (const FT_Byte*)m, fsize, 0, &font->face)) {
         fprintf(stderr, "graphics: FT_New_Face error\n");
+        free(m);
+        fclose(f);
         free(font);
         return NULL;
     }
