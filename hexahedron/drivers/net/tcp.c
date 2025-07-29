@@ -515,12 +515,13 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     for (int i = 0; i < msg->msg_iovlen; i++) {
         // Read ACK packet
         sock_recv_packet_t *ack_pkt = socket_get(sock);
+        if (!ack_pkt) return -EINTR;
+        
         tcp_packet_t *ack_tcp_pkt = (tcp_packet_t*)ack_pkt->data;
         if (TCP_HAS_FLAG(ack_tcp_pkt, FIN)) {
             kfree(ack_pkt);
             return -ECONNRESET;
         }
-        if (!ack_pkt) return -EINTR;
         kfree(ack_pkt);
 
         // Read normal packet
