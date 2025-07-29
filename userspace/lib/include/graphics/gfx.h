@@ -20,6 +20,8 @@
 #include <graphics/draw.h>
 #include <graphics/sprite.h>
 #include <graphics/text.h>
+#include <graphics/pattern.h>
+#include <graphics/util.h>
 
 /**** DEFINITIONS ****/
 
@@ -63,14 +65,6 @@ typedef struct gfx_context {
 } gfx_context_t;
 
 /**** MACROS ****/
-
-/* Color manipulation */
-#define GFX_RGB_A(color) ((color & 0xFF000000) / 0x1000000)
-#define GFX_RGB_R(color) ((color & 0x00FF0000) / 0x10000)
-#define GFX_RGB_G(color) ((color & 0x0000FF00) / 0x100)
-#define GFX_RGB_B(color) ((color & 0x000000FF))
-#define GFX_RGBA(r, g, b, a) ((a << 24) | (r << 16) | (g << 8) | (b))
-#define GFX_RGB(r, g, b) GFX_RGBA(r, g, b, 255)
 
 /* Easy ways to get context variables */
 #define GFX_BACKBUFFER(ctx) (ctx->backbuffer)

@@ -16,11 +16,10 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <graphics/pattern.h>
+#include <graphics/color.h>
 
 /**** TYPES ****/
-
-/* Graphics color */
-typedef uint32_t gfx_color_t;
 
 /**
  * @brief Rectangle structure
@@ -69,12 +68,52 @@ void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t co
 void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color);
 
 /**
+ * @brief Draw a rectangle to the screen with a specific pattern
+ * @param ctx The context to draw the rectangle in
+ * @param rect The rectangle to draw
+ * @param pattern The pattern function
+ * @param data Data for the pattern function
+ */
+void gfx_drawRectangleFilledPattern(struct gfx_context *ctx, gfx_rect_t *rect, gfx_pattern_func_t pattern, void *data);
+
+/**
+ * @brief Draw rectangle with gradient
+ * @param ctx The context to draw the rectangle in
+ * @param rect The rectangle to draw
+ * @param type Type of gradient
+ * @param start The start of the gradient
+ * @param end The end of the gradient
+ */
+void gfx_drawRectangleFilledGradient(struct gfx_context *ctx, gfx_rect_t *rect, uint8_t type, gfx_color_t start, gfx_color_t end);
+
+/**
  * @brief Draw a rounded rectangle to the screen
  * @param ctx The context to draw the rectangle in
  * @param rect The rectangle to draw
- * @param color The color to draw it as
  * @param radius The radius of the arcs
+ * @param color The color to draw it as
  */
-void gfx_drawRoundedRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color, int radius);
+void gfx_drawRoundedRectangle(struct gfx_context *ctx, gfx_rect_t *rect, int radius, gfx_color_t color);
+
+/**
+ * @brief Draw a rounded rectangle to the screen with a pattern
+ * @param ctx The context to draw the rectangle in
+ * @param rect The rectangle to draw
+ * @param radius The radius of the arcs
+ * @param pattern The pattern function to use
+ * @param data Additional data to the pattern function
+ */
+void gfx_drawRoundedRectanglePattern(struct gfx_context *ctx, gfx_rect_t *rect, int radius, gfx_pattern_func_t pattern, void *data);
+
+/**
+ * @brief Draw rounded rectangle with gradient
+ * @param ctx The context to draw the rectangle in
+ * @param rect The rectangle to draw
+ * @param radius The radius of the arcs
+ * @param type Type of gradient
+ * @param start Starting color of gradient
+ * @param end Ending color of gradient
+ */
+void gfx_drawRoundedRectangleGradient(struct gfx_context *ctx, gfx_rect_t *rect, int radius, uint8_t type, gfx_color_t start, gfx_color_t end);
 
 #endif

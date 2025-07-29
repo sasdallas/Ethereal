@@ -17,8 +17,8 @@ OUTPUT_DIR = $(DESTDIR)$(LIBDIR)/
 OUTPUT_FILE = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_lib_info.py $(WORKING_DIR) NAME)
 
 # Source files
-C_SRCS = $(shell find . -name "*.c" -printf '%f ')
-C_OBJS = $(patsubst %.c, $(OBJ_DIR)/%.o, $(C_SRCS))
+C_SRCS = $(shell find . -name "*.c" -type f)
+C_OBJS = $(addprefix $(OBJ_DIR)/,$(C_SRCS:.c=.o))
 
 # freetype-specific
 # TODO: better way
@@ -31,7 +31,8 @@ MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)
 	-@mkdir -p $(OUTPUT_DIR)
 
-$(OBJ_DIR)/%.o: %.c Makefile
+$(OBJ_DIR)/%.o: %.c
+	-@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: %.S Makefile
