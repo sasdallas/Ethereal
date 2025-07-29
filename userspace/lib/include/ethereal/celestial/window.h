@@ -193,4 +193,9 @@ void celestial_closeWindow(window_t *win);
  */
 int celestial_resizeWindow(window_t *win, size_t width, size_t height);
 
+/**
+ * @brief Get whether any windows are still running (and thus you need to keep polling) in Celestial
+ */
+int celestial_running();
+
 #endif

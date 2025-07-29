@@ -26,9 +26,8 @@ extern int __celestial_window_count;
  */
 void celestial_mainLoop() {
     // For now, just collect events
-    while (1) {
-        void *resp = celestial_getResponse(-1);
-        free(resp);
+    while (celestial_running()) {
+        celestial_poll();
     }
 }
 
