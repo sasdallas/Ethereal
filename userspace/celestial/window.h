@@ -132,4 +132,11 @@ void window_close(wm_window_t *win);
  */
 int window_resize(wm_window_t *win, size_t new_width, size_t new_height);
 
+/**
+ * @brief Update an entire damaged region
+ * @param rect Rectangle encompassing the damaged region
+ * @param win A window to ignore if needed
+ */
+void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign);
+
 #endif

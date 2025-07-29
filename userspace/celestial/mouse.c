@@ -109,7 +109,9 @@ void mouse_events() {
             
             // Do we collide with our rectangles?
             gfx_rect_t collide = { .x = WM_MOUSE_WINDOW->x, .y = WM_MOUSE_WINDOW->y, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
-            if (GFX_RECT_COLLIDES(WM_GFX, old, collide)) {
+            
+            // TODO: We need to undisable this and add the ability to specify windows with alpha and windows without
+            if (GFX_RECT_COLLIDES(WM_GFX, old, collide) &&  0) {
                 // Yes, both rectangles collide.
                 // Let's get the rectangles at which we need to redraw them
                 if (GFX_RECT_TOP(WM_GFX, old) < GFX_RECT_TOP(WM_GFX, collide)) {
@@ -121,7 +123,7 @@ void mouse_events() {
                     gfx_drawRectangleFilled(WM_GFX, &top, GFX_RGB(0,255,0));
                 #endif
 
-                    window_updateRegion(top);
+                    window_updateRegionIgnoring(top, WM_MOUSE_WINDOW);
                 }
 
                 if (GFX_RECT_BOTTOM(WM_GFX, old) > GFX_RECT_BOTTOM(WM_GFX, collide)) {
@@ -133,7 +135,7 @@ void mouse_events() {
                     gfx_drawRectangleFilled(WM_GFX, &bottom, GFX_RGB(255,0,0));
                 #endif
 
-                    window_updateRegion(bottom);
+                    window_updateRegionIgnoring(bottom, WM_MOUSE_WINDOW);
                 }
 
                 if (GFX_RECT_LEFT(WM_GFX, old) < GFX_RECT_LEFT(WM_GFX, collide)) {
@@ -145,7 +147,7 @@ void mouse_events() {
                     gfx_drawRectangleFilled(WM_GFX, &left, GFX_RGB(255,0xa5,0));
                 #endif
 
-                    window_updateRegion(left);
+                    window_updateRegionIgnoring(left, WM_MOUSE_WINDOW);
                 }
 
                 if (GFX_RECT_RIGHT(WM_GFX, old) > GFX_RECT_RIGHT(WM_GFX, collide)) {
@@ -157,14 +159,12 @@ void mouse_events() {
                     gfx_drawRectangleFilled(WM_GFX, &right, GFX_RGB(0,0,255));
                 #endif
 
-                    window_updateRegion(right);
+                    window_updateRegionIgnoring(right, WM_MOUSE_WINDOW);
                 }
             } else {
                 // Nah, update the whole region
                 window_updateRegion(old);
             }
-
-            // window_updateRegion(old);
 
             gfx_rect_t upd = { .x = 0, .y = 0, .width = WM_MOUSE_WINDOW->width, .height = WM_MOUSE_WINDOW->height };
             window_update(WM_MOUSE_WINDOW, upd);

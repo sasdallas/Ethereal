@@ -138,70 +138,23 @@ void window_redraw() {
         // Now we have a rectangle and a window to draw in that rectangle. The rectangle coordinates are relative to the window's
         // Basically replicate the sprite redraw function
         gfx_createClip(WM_GFX, upd->rect.x + upd->win->x, upd->rect.y + upd->win->y, upd->rect.width, upd->rect.height);
-        uint32_t *buf = (uint32_t*)upd->win->buffer;
 
-        for (uint32_t _y = upd->rect.y; _y < upd->rect.y + upd->rect.height; _y++) {
-#if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE) && !defined(__NO_ALPHA_BLENDING)
-            uint32_t *src_row = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + (upd->rect.x + upd->win->x) * (WM_GFX->bpp / 8)));
-            uint32_t *dst_row = &buf[upd->win->width * _y + upd->rect.x];
-
-            for (uint32_t _x = 0; _x < upd->rect.width; _x += 4) {
-                __m128i src_pixels = _mm_loadu_si128((__m128i*)&src_row[_x]);
-                __m128i dst_pixels = _mm_loadu_si128((__m128i*)&dst_row[_x]);
-
-                // Extract alpha channel from destination pixels
-                __m128i alpha = _mm_srli_epi32(dst_pixels, 24);
-
-                // Check if alpha is 255 (fully opaque)
-                __m128i mask = _mm_cmpeq_epi32(alpha, _mm_set1_epi32(255));
-
-                // Extract alpha channel from source pixels
-                __m128i src_alpha = _mm_srli_epi32(src_pixels, 24);
-
-                // Compute inverse alpha (255 - alpha)
-                __m128i inv_alpha = _mm_sub_epi32(_mm_set1_epi32(255), src_alpha);
-
-                // Multiply source and destination by their respective alpha values
-                __m128i src_mul = _mm_mullo_epi16(_mm_and_si128(src_pixels, _mm_set1_epi32(0x00FF00FF)), src_alpha);
-                __m128i dst_mul = _mm_mullo_epi16(_mm_and_si128(dst_pixels, _mm_set1_epi32(0x00FF00FF)), inv_alpha);
-
-                // Add the results and normalize
-                __m128i blended = _mm_add_epi16(src_mul, dst_mul);
-                blended = _mm_srli_epi16(blended, 8);
-
-                // Combine the blended RGB channels with the source alpha channel
-                blended = _mm_or_si128(_mm_and_si128(blended, _mm_set1_epi32(0x00FF00FF)), _mm_slli_epi32(src_alpha, 24));
-
-                // Blend only where alpha is not 255
-                __m128i result = _mm_or_si128(_mm_and_si128(mask, dst_pixels),
-                                _mm_andnot_si128(mask, blended));
-
-                _mm_storeu_si128((__m128i*)& src_row[_x], result);
-            }
-
-#elif defined(__NO_ALPHA_BLENDING)
-            // Terrible and for debugging
+#if defined(__NO_ALPHA_BLENDING)
+        for (uint16_t _y = upd->rect.y; _y < upd->rect.y + upd->rect.height; _y++) {
+            // For debugging
             for (uint32_t _x = upd->rect.x; _x < upd->rect.x + upd->rect.width; _x++) {
                 gfx_color_t *src_pixel = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + ((_x + upd->win->x) * (WM_GFX->bpp/8))));
                 gfx_color_t *dst_pixel = &buf[upd->win->width * _y + _x];
                 *src_pixel = *dst_pixel;
             }
-#else
-            // Normal, loser non-SSE copy
-            for (uint32_t _x = upd->rect.x; _x < upd->rect.x + upd->rect.width; _x++) {
-                gfx_color_t *src_pixel = (uint32_t*)(WM_GFX->backbuffer + (((_y + upd->win->y) * WM_GFX->pitch) + ((_x + upd->win->x) * (WM_GFX->bpp/8))));
-                gfx_color_t *dst_pixel = &buf[upd->win->width * _y + _x];
-
-                // Blend
-                if (GFX_RGB_A(*dst_pixel) == 255) {
-                    *src_pixel = *dst_pixel;
-                } else {
-                    *src_pixel = gfx_alphaBlend(*dst_pixel, *src_pixel);
-                }
-            }
-#endif
         }
-
+#else
+        // Render the sprite
+        sprite_t sp = { .width = upd->win->width, .height = upd->win->height, .bitmap = (uint32_t*)upd->win->buffer };
+        gfx_renderSpriteRegion(WM_GFX, &sp, &upd->rect, upd->win->x, upd->win->y);
+#endif
+    
+    
         // HACK: Is the window closing?
         if (upd->win && upd->win->state == WINDOW_STATE_CLOSING) {
             close(upd->win->shmfd);
@@ -245,8 +198,9 @@ int window_update(wm_window_t *win, gfx_rect_t rect) {
 /**
  * @brief Update an entire damaged region
  * @param rect Rectangle encompassing the damaged region
+ * @param win A window to ignore if needed
  */
-void window_updateRegion(gfx_rect_t rect) {
+void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign) {
     // First, handle the background update
     foreach(win_node, WM_WINDOW_LIST_BG) {
         wm_window_t *win = (wm_window_t*)win_node->value;
@@ -263,6 +217,7 @@ void window_updateRegion(gfx_rect_t rect) {
     // Next, handle the other window updates
     foreach(win_node, WM_WINDOW_LIST) {
         wm_window_t *win = (wm_window_t*)win_node->value;
+        if (ign && win == ign) continue;
 
         // Determine if this window collides with our rectangle
         gfx_rect_t collider = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };
@@ -290,6 +245,14 @@ void window_updateRegion(gfx_rect_t rect) {
     }
 
     // TODO: Overlay
+}
+
+/**
+ * @brief Update an entire damaged region
+ * @param rect Rectangle encompassing the damaged region
+ */
+void window_updateRegion(gfx_rect_t rect) {
+    window_updateRegionIgnoring(rect, NULL);
 } 
 
 /**
