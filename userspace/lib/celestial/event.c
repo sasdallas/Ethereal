@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+extern int __celestial_window_count;
+
 /**
  * @brief Subscribe to specific events on the Celestial handler
  * @param win The window to subscribe to events on

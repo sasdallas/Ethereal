@@ -28,13 +28,13 @@ int main(int argc, char *argv[]) {
 
     // Open files
     open("/device/stdin", O_RDONLY);
-    open("/device/log", O_RDWR);
+    open("/device/console", O_RDWR);
     open("/device/log", O_RDWR);
 
+    // Setup environment variables
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
-    printf("Welcome to the Ethereal Operating System\n");
-
+    // Execute welcome script
     system("/etc/init.d/01_welcome.sh");
 
     // Read kernel command line

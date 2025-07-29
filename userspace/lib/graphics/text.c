@@ -36,7 +36,6 @@ gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
         }
 
         __ft_initialized = 1;
-        fprintf(stderr, "FT initialized to %p\n", __gfx_library);
     }
 
     // Create a new FreeType font
@@ -90,7 +89,7 @@ gfx_font_t *gfx_loadFont(struct gfx_context *ctx, char *filename) {
  * @returns 0 on success
  */
 int gfx_setFontSize(gfx_font_t *font, size_t size) {
-    return FT_Set_Pixel_Sizes(font->face, 0, size);
+    return FT_Set_Pixel_Sizes(font->face, size, size);
 }
 
 /**

@@ -19,6 +19,7 @@
 
 /* Socket for poll */
 extern int __celestial_socket;
+extern int __celestial_window_count;
 
 /**
  * @brief Main loop for a Celestial window

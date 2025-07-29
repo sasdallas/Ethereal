@@ -23,6 +23,9 @@
 /* Global celestial window map (WID -> Window object) */
 hashmap_t *celestial_window_map = NULL;
 
+/* Window count */
+int __celestial_window_count = 0;
+
 /**
  * @brief Create a new window in Ethereal (undecorated)
  * @param flags The flags to use when creating the window
@@ -62,6 +65,8 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
 
     // Ready to start receiving events
     celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
+
+    __celestial_window_count++;
 
     return wid;
 }
@@ -132,6 +137,7 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
     // Ready to start receiving events
     celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
 
+    __celestial_window_count++;
     return wid;
 }
 
@@ -459,6 +465,7 @@ void celestial_closeWindow(window_t *win) {
     close(win->shmfd);
     
     win->state = CELESTIAL_STATE_CLOSED;
+    __celestial_window_count--; // Hopefully we cleanup...
 }
 
 /**
@@ -559,3 +566,10 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
     // The resize event is complete
     close(old_shm_fd);
 } 
+
+/**
+ * @brief Get whether any windows are still running (and thus you need to keep polling) in Celestial
+ */
+int celestial_running() {
+    return __celestial_window_count > 0;
+}
