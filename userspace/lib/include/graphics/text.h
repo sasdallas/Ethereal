@@ -49,6 +49,11 @@ typedef struct gfx_psf2_header {
     uint32_t width;             // Width in pixels
 } gfx_psf2_header_t;
 
+typedef struct gfx_string_size {
+    size_t width;               // Width in pixels
+    size_t height;              // Height in pixels
+} gfx_string_size_t;
+
 
 /**** FUNCTIONS ****/
 
@@ -103,5 +108,13 @@ int gfx_getAdvanceX(struct gfx_context *ctx, gfx_font_t *font, char ch);
  * @param font The font to destroy
  */
 int gfx_destroyFont(gfx_font_t *font);
+
+/**
+ * @brief Get bounds for a string
+ * @param font The font to use
+ * @param string The string to get the bounds of
+ * @returns Allocated @c gfx_string_size_t object
+ */
+gfx_string_size_t *gfx_getStringSize(gfx_font_t *font, char *string);
 
 #endif

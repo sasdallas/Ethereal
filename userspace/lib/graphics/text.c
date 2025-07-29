@@ -204,6 +204,32 @@ int gfx_getAdvanceX(gfx_context_t *ctx, gfx_font_t *font, char ch) {
 }
 
 /**
+ * @brief Get bounds for a string
+ * @param font The font to use
+ * @param string The string to get the bounds of
+ * @returns Allocated @c gfx_string_size_t object
+ */
+gfx_string_size_t *gfx_getStringSize(gfx_font_t *font, char *string) {
+    size_t width = 0;
+    gfx_string_size_t *s = malloc(sizeof(gfx_string_size_t));
+
+    char *p = string;
+    while (*p++) {
+        FT_UInt glyph_index = FT_Get_Char_Index(font->face, *p);
+
+        if (FT_Load_Glyph(font->face, glyph_index, FT_LOAD_NO_BITMAP)) {
+            continue; // Error
+        }
+
+        width += font->face->glyph->advance.x >> 6;
+    }
+
+    s->width = width;
+    s->height = font->face->size->metrics.height >> 6;
+    return s;
+}
+
+/**
  * @brief Destroy a font
  * @param font The font to destroy
  */

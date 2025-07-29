@@ -68,4 +68,13 @@ void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t co
  */
 void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color);
 
+/**
+ * @brief Draw a rounded rectangle to the screen
+ * @param ctx The context to draw the rectangle in
+ * @param rect The rectangle to draw
+ * @param color The color to draw it as
+ * @param radius The radius of the arcs
+ */
+void gfx_drawRoundedRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color, int radius);
+
 #endif
