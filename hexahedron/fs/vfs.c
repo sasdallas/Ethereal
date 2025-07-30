@@ -968,45 +968,51 @@ int vfs_registerFilesystem(char *name, vfs_mount_callback_t mount) {
  * @param name The name of the filesystem
  * @param argp The argument you wish to provide to the mount method (fs-specific)
  * @param mountpoint Where to mount the filesystem (leave as NULL if the driver takes care of this)
- * @returns The node created or NULL if it failed
+ * @param node Optional output for node
+ * @returns Error code
  */
-fs_node_t *vfs_mountFilesystemType(char *name, char *argp, char *mountpoint) {
-    if (!name) return NULL;
+int vfs_mountFilesystemType(char *name, char *argp, char *mountpoint, fs_node_t **node_out) {
+    if (!name) return -EINVAL;
     
     vfs_filesystem_t *fs = hashmap_get(vfs_filesystems, name);
     if (!fs) {
         LOG(WARN, "VFS tried to mount unknown filesystem type: %s\n", name);
-        return NULL;
+        return -ENODEV;
     }
 
     if (!fs->mount) {
         LOG(WARN, "VFS found invalid filesystem '%s' when trying to mount\n", fs->name);
+        return -EINVAL;
     }
 
-    fs_node_t *node = fs->mount(argp, mountpoint);
-    if (!node) {
-        return NULL;
+    fs_node_t *node;
+    int ret = fs->mount(argp, mountpoint, &node);
+    if (ret) {
+        return ret;
     }
 
     // Quick hack to allow mounting by the device itself
     if (!mountpoint) {
-        return node;
+        if (node_out) *node_out = node;
+        return 0;
     }
 
     tree_node_t *tnode = vfs_mount(node, mountpoint);
     if (!tnode) {
         LOG(WARN, "VFS failed to mount filesystem '%s' - freeing node\n", name);
         kfree(node);
-        return NULL;    
+        return -EINVAL;    
     }
     
     vfs_tree_node_t *vfsnode = (vfs_tree_node_t*)tnode->value;
 
     // Copy fs_type
+    // TODO: Copy filesystem pointer? We should probably redo this entire system
     vfsnode->fs_type = strdup(name);
 
     // All done
-    return node;
+    if (node_out) *node_out = node;
+    return 0;
 }
 
 /**

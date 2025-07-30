@@ -494,10 +494,10 @@ fs_node_t *tarfs_finddir(fs_node_t *node, char *path) {
  * @brief Mount a tarfs filesystem
  * @param argp Expects a ramdev device to mount the filesystem based
  */
-fs_node_t *tarfs_mount(char *argp, char *mountpoint) {
+int tarfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
     fs_node_t *tar_file = kopen(argp, O_RDWR);
     if (tar_file == NULL) {
-        return NULL; // Failed to open
+        return -ENODEV; // Failed to open
     }
 
     // Allocate a new filesystem node for us.
@@ -514,7 +514,7 @@ fs_node_t *tarfs_mount(char *argp, char *mountpoint) {
 
     if (!header) {
         kfree(node);
-        return NULL; // Not a valid ustar filesystem
+        return -EINVAL;
     }
 
     // Now use tarfs_ustarToNode to get the new node
@@ -525,7 +525,8 @@ fs_node_t *tarfs_mount(char *argp, char *mountpoint) {
     node->readdir = tarfs_readdir_root;
 
     // All done!
-    return node;
+    *node_out = node;
+    return 0;
 }
 
 /**

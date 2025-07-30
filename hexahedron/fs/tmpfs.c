@@ -381,10 +381,11 @@ int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode) {
  * @param argp Arguments, aka name ;)
  * @returns The temporary filesystem
  */
-fs_node_t *tmpfs_mount(char *argp, char *mountpoint) {
+int tmpfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
     tmpfs_entry_t *root = tmpfs_createEntry(NULL, TMPFS_DIRECTORY, argp);
 
-    return tmpfs_convertVFS(root);
+    *node_out = tmpfs_convertVFS(root);
+    return 0;
 }
 
 /**

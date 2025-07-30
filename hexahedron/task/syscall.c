@@ -1148,12 +1148,15 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
 
 
     // Try to mount filesystem type
-    fs_node_t *node = vfs_mountFilesystemType((char*)type, (char*)src_canonicalized, (char*)dst_canonicalized);
+    fs_node_t *node = NULL;
+    int success = vfs_mountFilesystemType((char*)type, (char*)src_canonicalized, (char*)dst_canonicalized, &node);
     kfree(src_canonicalized);
     kfree(dst_canonicalized);
 
     // Success?
-    if (!node) return -ENODEV;
+    if (success != 0) {
+        return success;
+    }
 
     return 0;
 }

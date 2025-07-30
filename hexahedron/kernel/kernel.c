@@ -101,7 +101,7 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
     // Now we have to mount tarfs to it.
     char devpath[64];
     snprintf(devpath, 64, "/device/%s", initrd_ram->name);
-    if (vfs_mountFilesystemType("tarfs", devpath, "/device/initrd") == NULL) {
+    if (vfs_mountFilesystemType("tarfs", devpath, "/device/initrd", NULL) != 0) {
         // Oops, we couldn't mount it.
         LOG(ERR, "Failed to mount initial ramdisk (tarfs)\n");
         kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
@@ -168,8 +168,8 @@ void kmain() {
     log_mount();
 
     // TEMPORARY
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp");
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm");
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm", NULL);
     vfs_dump();
 
     // Networking
@@ -188,7 +188,7 @@ void kmain() {
 
     // Now we need to mount the initial ramdisk
     kernel_mountRamdisk(parameters);
-    vfs_mountFilesystemType("tarfs", "/device/ram0", "/"); // And mount to root
+    vfs_mountFilesystemType("tarfs", "/device/ram0", "/", NULL); // And mount to root
     
     // Load the INI file
     ini_t *ini = ini_load("/device/initrd/boot/conf.ini");

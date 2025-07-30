@@ -657,8 +657,9 @@ extern hashmap_t *vfs_filesystems;
 /**
  * @brief Mount KernelFS on a different directory (basically just a symlink)
  */
-fs_node_t *kernelfs_mount(char *argp, char *mountpoint) {
-    return kernelfs_parent->node;
+int kernelfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
+    *node_out =  kernelfs_parent->node;
+    return 0;
 }
 
 /**

@@ -442,29 +442,29 @@ fs_node_t *fat_finddir(fs_node_t *node, char *path) {
 /**
  * @brief FAT mount method
  */
-fs_node_t *fat_mount(char *argp, char *mountpoint) {
+int fat_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
     // Open the device
     fs_node_t *dev = kopen(argp, 0);
-    if (!dev) return NULL;
+    if (!dev) return -ENODEV;
 
     // Read in the BPB
     fat_bpb_t bpb;
     if (fs_read(dev, 0, sizeof(fat_bpb_t), (uint8_t*)&bpb) != sizeof(fat_bpb_t)) {
         LOG(WARN, "Reading disk FAILED\n");
-        return NULL;
+        return -EIO;
     }
 
     // Check BPB signature
     if (bpb.identifier[0] != 0xEB || bpb.identifier[2] != 0x90) {
         // TODO: Is there another way we can check?
         LOG(WARN, "Invalid FAT filesystem (%02x %02x %02x)\n", bpb.identifier[0], bpb.identifier[1], bpb.identifier[2]);
-        return NULL;
+        return -EINVAL;
     }
 
     // Double-check with FAT signature
     if (bpb.fat_ebpb.signature != 0xAA55) {
         LOG(WARN, "Invalid FAT signature (0x%04x)\n", bpb.fat_ebpb.signature);
-        return NULL;
+        return -EINVAL;
     }
 
     LOG(INFO, "FAT filesystem was detected\n");
@@ -485,7 +485,7 @@ fs_node_t *fat_mount(char *argp, char *mountpoint) {
     
         // Not yet
         LOG(ERR, "exFAT is not supported yet in this FAT driver\n");
-        return NULL;
+        return -ENOTSUP;
     } else if (FAT_TOTAL_CLUSTERS(bpb) < 4085) {
         fat_type = FAT_TYPE_FAT12;
         LOG(INFO, "FAT type: FAT12\n");
@@ -529,7 +529,8 @@ fs_node_t *fat_mount(char *argp, char *mountpoint) {
     LOG(DEBUG, "Root directory calculated to be at cluster %d (-1 = FAT12/FAT16)\n", node->impl);
     
     fs_open(node, 0);
-    return node;
+    *node_out = node;
+    return 0;
 }
 
 int driver_init(int argc, char *argv[]) {

@@ -130,8 +130,9 @@ typedef struct fs_node {
  * @brief VFS mount callback
  * @param argument Argument provided to VFS function
  * @param mountpoint Wherever you want to mount the system
+ * @param node_out Output node
  */
-typedef struct fs_node* (*vfs_mount_callback_t)(char *argument, char *mountpoint); // Argument can be whatever, it's fs-specific.
+typedef int (*vfs_mount_callback_t)(char *argument, char *mountpoint, struct fs_node **node_out); // Argument can be whatever, it's fs-specific.
 
 typedef struct vfs_filesystem {
     char *name;                     // Name of the filesystem
@@ -359,9 +360,10 @@ int vfs_registerFilesystem(char *name, vfs_mount_callback_t mount);
  * @param name The name of the filesystem
  * @param argp The argument you wish to provide to the mount method (fs-specific)
  * @param mountpoint Where to mount the filesystem (leave as NULL if the driver takes care of this)
- * @returns The node created or NULL if it failed
+ * @param node Optional output for node
+ * @returns Error code
  */
-fs_node_t *vfs_mountFilesystemType(char *name, char *argp, char *mountpoint);
+int vfs_mountFilesystemType(char *name, char *argp, char *mountpoint, fs_node_t **node);
 
 /**
  * @brief Kernel open method 

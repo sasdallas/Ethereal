@@ -19,6 +19,7 @@
 #include <string.h>
 #include <kernel/gfx/video.h>
 #include <kernel/gfx/term.h>
+#include <kernel/debug.h>
 
 /**
  * @brief Write method for console
@@ -26,11 +27,12 @@
 ssize_t console_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     if (!size) return 0;
 
+extern int video_ks;
     for (size_t i = 0; i < size; i++) {
-        terminal_putchar(buffer[i]);
+        if (!video_ks) terminal_putchar(buffer[i]);
+        else debug_print(NULL, buffer[i]);
     }
 
-    video_updateScreen();
     return size;
 }
 
