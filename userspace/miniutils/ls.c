@@ -205,6 +205,12 @@ void list_directory(char *dir) {
         int col = 0;
         for (int i = 0; i < entry_count; i++) {
             print_entry(ent_list[i]);
+         
+            if (!all && !almost_all) {
+                if (ent_list[i][0] == '.') continue;
+            } else if (!all) {
+                if (!strcmp(ent_list[i], ".") || !strcmp(ent_list[i], "..")) continue; 
+            }
 
             if (strlen(ent_list[i]) == (size_t)column_size) putchar(' ');
             
