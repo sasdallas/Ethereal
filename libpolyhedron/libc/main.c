@@ -68,8 +68,11 @@ void __create_environ(char **envp) {
     // Now start copying
     environ = malloc(envc * sizeof(char*));
     for (int i = 0; i < envc; i++) {
-        if (envp[i]) environ[i] = strdup(envp[i]);
-        else environ[i] = NULL;
+        if (envp[i]) {
+            environ[i] = strdup(envp[i]);
+        } else {
+            environ[i] = NULL;
+        }
     }
 
     envc--;
@@ -90,11 +93,17 @@ int __get_argc() {
 
 /* Main libc init function */
 __attribute__((constructor)) void __libc_init() {
+    int is_dynamic = !(__auxv); // Is dynamically loaded
+
     __tcb_init_dummy();
     __create_environ(__get_environ());
     __create_auxv(__get_auxv());
     __argv = __get_argv();
     __argc = __get_argc();
+
+    if (is_dynamic) {
+        __tls_init();
+    }
 }
 
 __attribute__((noreturn)) void __libc_main(int (*main)(int, char**, char**), int argc, char **argv, char **envp, __auxv_t *auxv) {

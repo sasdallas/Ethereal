@@ -60,8 +60,7 @@ $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.a: $(LIBC_C_OBJECTS) $(CRT_OBJECTS)
 
 
 $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron.so: $(LIBC_C_OBJECTS) | $(CRT_OBJECTS)
-# $(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
-	echo target disabled temporarily
+	$(CC) -nodefaultlibs -shared -fPIC -o $(DESTDIR)$(LIB_DIRECTORY)/libpolyhedron_dynamic.so $^ -lgcc
 	
 # Target disabled
 all:

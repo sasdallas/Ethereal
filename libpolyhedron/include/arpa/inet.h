@@ -22,6 +22,11 @@ _Begin_C_Header
 #include <stdint.h>
 #include <netinet/in.h>
 
+/**** DEFINITIONS ****/
+
+#define INET_ADDRSTRLEN  16
+#define INET6_ADDRSTRLEN 46
+
 /**** FUNCTIONS ****/
 
 uint32_t htonl(uint32_t hostlong);

@@ -73,6 +73,7 @@ _Begin_C_Header
 #define SIGDISPLAY          30  // (I) Display size changed (TODO: maybe just a SIGWINCH?)
 
 #define NUMSIGNALS          31
+#define NSIG                NUMSIGNALS
 
 /* sigprocmask */
 #define SIG_BLOCK           0

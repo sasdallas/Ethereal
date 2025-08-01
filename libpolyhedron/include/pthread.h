@@ -56,6 +56,9 @@ _Begin_C_Header
 #define PTHREAD_MUTEX_STALLED           0
 #define PTHREAD_MUTEX_ROBUST            1
 
+#define PTHREAD_SCOPE_SYSTEM            0
+#define PTHREAD_SCOPE_PROCESS           1
+
 #define PTHREAD_SPIN_INITIALIZER        (pthread_spinlock_t)0
 #define PTHREAD_MUTEX_INITIALIZER       (pthread_mutex_t){ .attr = { .type = PTHREAD_MUTEX_DEFAULT, .robust = PTHREAD_MUTEX_ROBUST, .pshared = PTHREAD_PROCESS_PRIVATE, .protocol = PTHREAD_PRIO_NONE }, .lock = PTHREAD_SPIN_INITIALIZER }
 #define PTHREAD_RWLOCK_INITIALIZER      (pthread_rwlock_t){ .attr = { 0 }, .lock = PTHREAD_SPIN_INITIALIZER, .writers = 0 }
