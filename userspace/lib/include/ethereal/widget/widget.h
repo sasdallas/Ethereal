@@ -26,7 +26,7 @@
 /* Types of widgets */
 #define WIDGET_TYPE_FRAME                   0
 #define WIDGET_TYPE_LABEL                   1
-
+#define WIDGET_TYPE_BUTTON                  2
 
 /**** TYPES ****/
 

@@ -55,7 +55,7 @@ typedef ssize_t (*write_t)(struct fs_node *, off_t, size_t, uint8_t*);
 typedef struct dirent* (*readdir_t)(struct fs_node *, unsigned long);
 typedef struct fs_node* (*finddir_t)(struct fs_node *, char *);
 
-typedef struct fs_node* (*create_t)(struct fs_node *, char *, mode_t);
+typedef int (*create_t)(struct fs_node *, char *, mode_t, struct fs_node **);
 typedef int (*mkdir_t)(struct fs_node *, char *, mode_t);
 typedef int (*unlink_t)(struct fs_node *, char *);
 typedef int (*readlink_t)(struct fs_node *, char *, size_t);
@@ -213,7 +213,7 @@ fs_node_t *fs_finddir(fs_node_t *node, char *path);
  * @param name The name of the new entry to create
  * @param mode The mode
  */
-fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode);
+int fs_create(fs_node_t *node, char *name, mode_t mode, fs_node_t **node_out);
 
 /**
  * @brief mmap() a file. This is done either via the VFS' internal method or the file's

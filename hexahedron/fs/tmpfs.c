@@ -38,7 +38,7 @@ ssize_t tmpfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer)
 int tmpfs_close(fs_node_t *node);
 fs_node_t *tmpfs_finddir(fs_node_t *node, char *path);
 struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index);
-fs_node_t *tmpfs_create(fs_node_t *node, char *path, mode_t mode);
+int tmpfs_create(fs_node_t *node, char *path, mode_t mode, fs_node_t **node_out);
 int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode);
 
 /**
@@ -297,7 +297,7 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
 /**
  * @brief Temporary filesystem create method
  */
-fs_node_t *tmpfs_create(fs_node_t *node, char *path, mode_t mode) {
+int tmpfs_create(fs_node_t *node, char *path, mode_t mode, fs_node_t **node_out) {
     tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
 
     // Try to make a new tmpfs entry
@@ -305,7 +305,8 @@ fs_node_t *tmpfs_create(fs_node_t *node, char *path, mode_t mode) {
     new->file->parent = node;
 
     // Return node
-    return tmpfs_convertVFS(new);
+    *node_out = tmpfs_convertVFS(new);
+    return 0;
 }
 
 /**

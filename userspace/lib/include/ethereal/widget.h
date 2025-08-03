@@ -18,5 +18,6 @@
 #include <ethereal/widget/label.h>
 #include <ethereal/widget/frame.h>
 #include <ethereal/widget/widget.h>
+#include <ethereal/widget/button.h>
 
 #endif

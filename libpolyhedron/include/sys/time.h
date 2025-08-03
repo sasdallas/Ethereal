@@ -81,7 +81,7 @@ int getitimer(int, struct itimerval *);
 int setitimer(int, const struct itimerval *, struct itimerval*);
 int utimes(const char *, const struct timeval[2]);
 
-#ifdef __LIBK
+#ifdef __KERNEL__
 extern unsigned long long now();
 #endif
 

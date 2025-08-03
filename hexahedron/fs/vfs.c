@@ -178,15 +178,16 @@ int fs_readlink(fs_node_t *node, char *buf, size_t size) {
  * @param node The node to run create() on
  * @param name The name of the new entry to create
  * @param mode The mode
+ * @param node_out Output node
  */
-fs_node_t *fs_create(fs_node_t *node, char *name, mode_t mode) {
-    if (!node) return NULL;
+int fs_create(fs_node_t *node, char *name, mode_t mode, fs_node_t **node_out) {
+    if (!node) return -EINVAL;
 
     if (node->flags == VFS_DIRECTORY && node->create) {
-        return node->create(node, name, mode);
+        return node->create(node, name, mode, node_out);
     }
 
-    return NULL;
+    return -EINVAL;
 }
 
 /**
@@ -627,12 +628,10 @@ int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
 
     // Check to see if we can create the file
     if (parent->create) {
-        *node = parent->create(parent, last_slash, mode);
-        if (*node) {
-            kfree(path_full);
-            fs_close(parent);
-            return 0;
-        }
+        int error = parent->create(parent, last_slash, mode, node);
+        kfree(path_full);
+        fs_close(parent);
+        return error;
     }
 
     kfree(path_full);
