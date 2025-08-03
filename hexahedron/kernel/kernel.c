@@ -42,6 +42,7 @@
 #include <kernel/fs/log.h>
 #include <kernel/fs/shared.h>
 #include <kernel/fs/console.h>
+#include <kernel/fs/random.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -166,6 +167,7 @@ void kmain() {
     arch_mount_kernelfs();
     console_mount();
     log_mount();
+    random_mount();
 
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);
