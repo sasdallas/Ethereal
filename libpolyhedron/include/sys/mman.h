@@ -43,11 +43,26 @@ _Begin_C_Header;
 #define MS_SYNC         0x02
 #define MS_INVALIDATE   0x04
 
+/* madvise flags */
+#define POSIX_MADV_DONTNEED		1
+#define POSIX_MADV_NORMAL		2
+#define POSIX_MADV_RANDOM		3
+#define POSIX_MADV_SEQUENTIAL	4
+#define POSIX_MADV_WILLNEED		5
+
+#define MADV_DONTNEED	POSIX_MADV_DONTNEED
+#define MADV_NORMAL		POSIX_MADV_NORMAL
+#define MADV_RANDOM		POSIX_MADV_RANDOM
+#define MADV_SEQUENTIAL	POSIX_MADV_SEQUENTIAL
+#define MADV_WILLNEED	POSIX_MADV_WILLNEED
+
+
 /**** FUNCTIONS ****/
 void *mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
 int munmap(void *addr, size_t len);
 int mprotect(void *addr, size_t len, int prot);
 int msync(void *addr, size_t len, int flags);
+int madvise(void *addr, size_t len, int advice);
 
 #endif
 

@@ -18,6 +18,10 @@ int pthread_attr_init(pthread_attr_t *attr) {
     return 0;
 }
 
+int pthread_attr_destroy(pthread_attr_t *attr) {
+    return 0;
+}
+
 int pthread_attr_getschedparam(const pthread_attr_t *__restrict attr, struct sched_param *__restrict param) {
     param->sched_priority = attr->sched;
     return 0;

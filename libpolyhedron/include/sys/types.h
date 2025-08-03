@@ -59,6 +59,8 @@ typedef unsigned short u_int16_t;
 typedef unsigned long u_int32_t;
 typedef unsigned long long u_int64_t;
 
+typedef int clockid_t;
+
 #endif
 
 _End_C_Header

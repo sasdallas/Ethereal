@@ -86,6 +86,7 @@ _Begin_C_Header
 #define SA_RESETHAND        0x4     // Causes signal dispositions to be set to SIG_DFL on entry to handlers
 #define SA_RESTART          0x8     // Causes certain functions to become restartable
 #define SA_SIGINFO          0x10    // Causes extra information to be passed to signal handlers at the time of receipt of a signal
+#define SA_NODEFER          0x20    // No defer
 
 /* SIGILL codes */
 #define ILL_ILLOPC          1

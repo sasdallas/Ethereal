@@ -34,6 +34,10 @@ _Begin_C_Header
 #define PRIx16          "x"
 #define PRIx32          "x"
 #define PRIx64          "lx"
+#define PRIX8           "X"
+#define PRIX16          "X"
+#define PRIX32          "X"
+#define PRIX64          "lX"
 
 /* Unsigned format specifiers */
 #define PRIu8           "u"
@@ -52,6 +56,12 @@ _Begin_C_Header
 #define PRIo16    "ho"
 #define PRIo32    "lo"
 #define PRIo64    "llo"
+
+#ifdef __x86_64__
+#define PRIxPTR         "llx"
+#else
+#define PRIxPTR         "lx"
+#endif
 
 /**** FUNCTIONS ****/
 

@@ -153,6 +153,7 @@ pid_t getpgid(pid_t pid);
 gid_t getgid();
 pid_t getppid();
 uid_t getuid();
+pid_t getpgrp(void);
 int setuid(uid_t uid);
 int setgid(gid_t gid);
 pid_t setpgrp();
@@ -171,6 +172,9 @@ int gethostname(char *name, size_t size);
 int sethostname(const char *name, size_t size);
 unsigned alarm(unsigned seconds);
 int getpagesize();
+ssize_t readlink(const char *restrict pathname, char *buf, size_t bufsiz);
+void sync();
+int ftruncate(int fd, off_t length);
 
 #endif
 

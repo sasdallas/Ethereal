@@ -74,7 +74,10 @@ struct itimerspec {
 
 /**** VARIABLES ****/
 
-extern long timezone;
+extern int	daylight;
+extern long	timezone;
+extern char* tzname[];
+
 
 /**** FUNCTIONS ****/
 
@@ -89,6 +92,10 @@ extern time_t time(time_t *out);
 extern double difftime(time_t a, time_t b);
 extern char *asctime(const struct tm *tm);
 extern char *ctime(const time_t *ptr);
+
+void tzset();
+
+int clock_gettime(clockid_t clockid, struct timespec *res);
 
 clock_t clock();
 

@@ -15,8 +15,8 @@
 
 _Begin_C_Header
 
-#ifndef STRINGS_H
-#define STRINGS_H
+#ifndef _STRINGS_H
+#define _STRINGS_H
 
 /**** INCLUDES ****/
 #include <stdint.h>
