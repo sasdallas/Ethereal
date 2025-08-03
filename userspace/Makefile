@@ -2,10 +2,10 @@
 include ./make.config
 
 # List of apps to compile
-APPS = init miniutils essence dhcpcli celestial wmtest dynlinker terminal termemu desktop etherealver
+APPS = init miniutils essence dhcpcli celestial wmtest dynlinker terminal termemu desktop etherealver font-viewer
 
-APPS_TARGETS_INSTALL := $(patsubst %, install-%, $(APPS))
-APPS_TARGETS_CLEAN := $(patsubst %, clean-%, $(APPS))
+APPS_TARGETS_INSTALL := $(patsubst %, install?%, $(APPS))
+APPS_TARGETS_CLEAN := $(patsubst %, clean?%, $(APPS))
 
 USERSPACE_LIB_DIRECTORY = lib
 
@@ -20,11 +20,11 @@ install-lib:
 clean-lib:
 	$(MAKE) -C $(USERSPACE_LIB_DIRECTORY) clean
 
-install-%:
-	$(MAKE) -C $(subst $e-,/,$(patsubst install-%, %, $@)) install
+install?%:
+	$(MAKE) -C $(subst $e?,/,$(patsubst install?%, %, $@)) install
 
-clean-%:
-	$(MAKE) -C $(subst $e-,/,$(patsubst clean-%, %, $@)) clean
+clean?%:
+	$(MAKE) -C $(subst $e?,/,$(patsubst clean?%, %, $@)) clean
 
 # Create build directories
 MAKE_DIRS:
