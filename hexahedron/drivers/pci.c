@@ -451,7 +451,7 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->subclass_code = pci_readConfigOffset(bus, slot, function, PCI_SUBCLASS_OFFSET, 1);
     dev->driver = NULL;
     
-    LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
+    // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
 
     // Do we need to initialize another bus?
     if (dev->class_code == 0x06 && dev->subclass_code == 0x04) {

@@ -348,9 +348,11 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         LOG(ERR, "USB_REQ_GET_DESC did not succeed\n");
         return USB_FAILURE;
     }
+        
+    // Set the maximum packet size
+    dev->mps = dev->device_desc.bMaxPacketSize0;
 
-    // xHCI specific
-    if (dev->mps != dev->device_desc.bMaxPacketSize0 && dev->evaluate) {
+    if (dev->evaluate) {
         // Evaluate the endpoint context (and update the internal Input Context mps)
         if (dev->evaluate(dev->c, dev) != USB_SUCCESS) {
             LOG(ERR, "Device initialization failed - Evaluate command did not succeed\n");
@@ -358,10 +360,7 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         }
     }
 
-    // Set the maximum packet size
-    dev->mps = dev->device_desc.bMaxPacketSize0;
-
-    if (!dev->setaddr) {
+    if (!dev->setaddr && !dev->evaluate) {
         // Get an address for it 
         uint32_t address = dev->c->last_address;
         dev->c->last_address++;

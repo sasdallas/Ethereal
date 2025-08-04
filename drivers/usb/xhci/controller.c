@@ -183,8 +183,8 @@ int xhci_irq(void *context) {
             xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
             LOG(INFO, "Transfer completed on slot %d endp %d cc %d\n", trb->slot_id, trb->endpoint_id, trb->completion_code);
             
-            xhci->slots[trb->slot_id]->endpoints[trb->endpoint_id-1].ctr = trb;
-            __atomic_store_n(&xhci->slots[trb->slot_id]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
+            xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr = trb;
+            __atomic_store_n(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
         } else {
             LOG(WARN, "Unrecognized event TRB: %d\n", t->type);
         }

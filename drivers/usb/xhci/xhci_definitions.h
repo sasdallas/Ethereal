@@ -472,6 +472,26 @@ typedef struct xhci_status_stage_trb {
 
 STATIC_ASSERT(sizeof(xhci_status_stage_trb_t) == 0x10);
 
+typedef struct xhci_evaluate_context_trb {
+    uint64_t input_context;
+    uint32_t rsvd0;
+
+    union {
+        struct {
+            uint32_t c:1;
+            uint32_t rsvd1:8;
+            uint32_t bsr:1;
+            uint32_t type:6;
+            uint32_t rsvd2:8;
+            uint32_t slot_id:8;
+        };
+
+        uint32_t control;
+    };
+} xhci_evaluate_context_trb_t;
+
+STATIC_ASSERT(sizeof(xhci_evaluate_context_trb_t) == 0x10);
+
 
 typedef struct xhci_event_ring_entry {
     uint64_t rsba;

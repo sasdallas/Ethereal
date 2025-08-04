@@ -134,7 +134,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
             .transfer_length = transfer->length,
             .td_size = 0,
             .interrupter = 0,
-            .dir = 1,
+            .dir = !!(transfer->req->bmRequestType & USB_RT_D2H),
             .ch = 0,
             .ioc = 0,
             .idt = 0,
@@ -150,7 +150,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
         .interrupter = 0,
         .ch = 0,
         .ioc = 1,
-        .dir = (setup_trb.trt ? 0 : 1)
+        .dir = !((transfer->req->wLength > 0) && (transfer->req->bmRequestType & USB_RT_D2H)),
     };
 
     xhci_enqueueTransferTRB(dev->endpoints[0].tr, (xhci_trb_t*)&status_trb);
@@ -174,6 +174,39 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     mutex_release(dev->mutex);
     transfer->status = USB_TRANSFER_SUCCESS;
     return USB_TRANSFER_SUCCESS;
+}
+
+/**
+ * @brief Evaluate xHCI context
+ */
+int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
+    xhci_device_t *dev = (xhci_device_t*)(device->dev);
+    if (device->mps == dev->endpoints[0].mps) return USB_SUCCESS; // No need
+
+    // Let's reconfigure the context
+    xhci_input_context_t *input_context = XHCI_INPUT_CONTEXT(dev);
+    xhci_endpoint_context_t *ep_ctx = XHCI_ENDPOINT_CONTEXT(dev, 1);
+    memset((void*)input_context, 0, XHCI_CONTEXT_SIZE(dev->parent));
+    input_context->add_flags = 0x1;
+    ep_ctx->max_packet_size = device->mps;
+    dev->endpoints[0].mps = device->mps;
+
+    // Send evaluate context
+    xhci_evaluate_context_trb_t eval = {
+        .type = XHCI_CMD_EVALUATE_CONTEXT,
+        .bsr = 0,
+        .input_context = dev->input_ctx_phys,
+        .slot_id = dev->slot_id,
+        .rsvd0 = 0,
+        .rsvd1 = 0,
+        .rsvd2 = 0,
+    };
+
+    if (!xhci_sendCommand(dev->parent, (xhci_trb_t*)&eval)) {
+        return USB_FAILURE;
+    }
+
+    return USB_SUCCESS;
 }
 
 /**
@@ -206,7 +239,7 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     dev->mutex = mutex_create("xhci device mutex");
 
     // Register ourselves
-    xhci->slots[dev->slot_id] = dev;
+    xhci->slots[dev->slot_id-1] = dev;
 
     // Initialize input context
     // TODO: DO NOT WASTE TWO WHOLE PAGES
@@ -257,9 +290,9 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
 
     // Prepare slot context
     slot_ctx->context_entries = 1;
-    slot_ctx->root_hub_port_num = port+1; // TODO
+    slot_ctx->root_hub_port_num = (port+1) & 0x0F; // TODO
     slot_ctx->speed = spd;
-    slot_ctx->route_string = 0; // TODO
+    slot_ctx->route_string = (port+1)>>4; // TODO
     slot_ctx->interrupter_target = 0;
 
     // Prepare endpoint context
@@ -314,10 +347,13 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     LOG(INFO, "!!!!!!!!!!!!!! BEGIN INIT OF USB DEVICE !!!!!!!!!!!!!!\n");
     USBDevice_t *usbdev = usb_createDevice(xhci->controller, port, speed, NULL, xhci_control, NULL);   
     usbdev->dev = (void*)dev;
+    usbdev->evaluate = xhci_evaluateContext;
 
-    usb_initializeDevice(usbdev);
-    // LOG(DEBUG, "Request status: %d", usb_requestDevice(usbdev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, USB_REQ_GET_DESC, (USB_DESC_DEVICE << 8) | 0, 0, 8, &usbdev->device_desc));
-    // LOG(DEBUG, "bLength = %d\n", usbdev->device_desc.bLength);
+
+    // usb_initializeDevice(usbdev);
+    LOG(DEBUG, "Request status: %d", usb_requestDevice(usbdev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, USB_REQ_GET_DESC, (USB_DESC_DEVICE << 8) | 0, 0, 8, &usbdev->device_desc));
+    LOG(DEBUG, "bLength = %d\n", usbdev->device_desc.bLength);
+
 
     return 0;
 }
