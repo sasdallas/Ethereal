@@ -242,6 +242,71 @@ uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func) {
 /* NOTE: The below will be rewritten once the Hexahedron IRQ handler rewrite is finished */
 
 /**
+ * @brief Disable MSI for a device
+ * @param bus The bus of the PCI device
+ * @param slot The slot of the PCI device
+ * @param func The function of the PCI device
+ * @returns 0 on success
+ */
+int pci_disableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
+    // Get a pointer to the capability list
+    uint8_t cap_list_off = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_CAPABILITIES_OFFSET, 1);
+
+    // Start parsing
+    while (cap_list_off) {
+        uint16_t cap = pci_readConfigOffset(bus, slot, func, cap_list_off, 2);
+        if ((cap & 0xFF) == 0x05) {
+            break;
+        }
+
+        cap_list_off = (cap >> 8) & 0xFC;
+    }
+
+    if (!cap_list_off) {
+        return 0; // No MSI support
+    }
+
+    // Disable MSI
+    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, cap_list_off + 0x02, 2);
+    ctrl &= ~(1 << 0);
+    pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x02, ctrl, 2);
+    return 0;
+}
+
+/**
+ * @brief Disable MSI-X for a device
+ * @param bus The bus of the PCI device
+ * @param slot The slot of the PCI device
+ * @param func The function of the PCI device
+ * @returns 0 on success
+ */
+int pci_disableMSIX(uint8_t bus, uint8_t slot, uint8_t func) {
+    // Get a pointer to the capability list
+    uint8_t cap_list_off = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_CAPABILITIES_OFFSET, 1);
+
+    // Start parsing
+    while (cap_list_off) {
+        uint16_t cap = pci_readConfigOffset(bus, slot, func, cap_list_off, 2);
+        if ((cap & 0xFF) == 0x11) {
+            // MSI-X
+            break;
+        }
+
+        cap_list_off = (cap >> 8) & 0xFC;
+    }
+
+    if (!cap_list_off) {
+        return 0; // No MSI-X support
+    }
+
+    // Disable MSI-X
+    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, cap_list_off + 0x02, 2);
+    ctrl &= ~(1 << 15);
+    pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x02, ctrl, 2);
+    return 0;
+}
+
+/**
  * @brief Get the interrupt registered to a PCI device
  * 
  * @param bus The bus of the PCI device
@@ -251,6 +316,10 @@ uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func) {
  * @returns PCI_NONE or the interrupt ID
  */
 uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
+    // Disable MSI and MSI-X
+    pci_disableMSI(bus, slot, func);
+    pci_disableMSIX(bus, slot, func);
+
     // TODO: Make sure header type is 1?
 #if !defined(__ARCH_I386__) && !defined(__ARCH_X86_64__)
     return pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
@@ -259,8 +328,8 @@ uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
     uint32_t irq = pic_allocate();
     LOG(DEBUG, "PCI allocated IRQ%d\n", irq);
     if (irq == 0xFFFFFFFF) return 0xFF;
-
     pci_writeConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, irq, 1);
+    
     return irq;    
 #endif
 }
