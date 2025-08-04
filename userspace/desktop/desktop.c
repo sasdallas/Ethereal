@@ -19,6 +19,7 @@
 #include <getopt.h>
 #include <time.h>
 #include <unistd.h>
+#include <structs/ini.h>
 
 /* Disable background drawing */
 int disable_bg = 0;
@@ -47,6 +48,55 @@ int menu_active = 0;
 /* Taskbar settings */
 #define TASKBAR_HEIGHT              40
 
+/* Current wallpaper */
+char *wallpaper = DEFAULT_WALLPAPER;
+
+void config_load();
+
+/**
+ * @brief Reload signal
+ * 
+ * Desktop uses SIGUSR2 to signal a reload
+ */
+void reload_signal(int signum) {
+    // Refresh signal means we should check /tmp/wallpaper to see if it 1. exists and 2. has a valid wallpaper
+    fprintf(stderr, "Reloading desktop environment\n");
+    FILE *wallpaper_file = fopen("/tmp/wallpaper", "r");
+    if (wallpaper_file) {
+        char tmp_buffer[256] = { 0 };
+        fread(tmp_buffer, 256, 1, wallpaper_file);
+        wallpaper = strdup(tmp_buffer); 
+        fclose(wallpaper_file);
+    }
+
+    gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
+
+    fprintf(stderr, "Loading wallpaper: %s\n", wallpaper);
+    FILE *bg_file = fopen(wallpaper, "r");
+    if (!bg_file) {
+        fprintf(stderr, "Error loading wallpaper %s, fallback to default wallpaper\n", wallpaper);
+
+        bg_file = fopen(DEFAULT_WALLPAPER, "r");
+        if (!bg_file) goto _fallback;
+    }
+
+    // Load from file
+    if (gfx_loadSprite(background_sprite, bg_file)) {
+        fclose(bg_file);
+        goto _fallback;
+    }
+
+    fclose(bg_file);
+    gfx_renderSprite(bg_ctx, background_sprite, 0, 0); // TODO: SCALING!
+    gfx_render(bg_ctx);
+    celestial_flip(background_window);
+    return;
+
+_fallback:
+    gfx_clear(bg_ctx, GFX_RGB(0, 0, 0));
+    gfx_render(bg_ctx);
+    celestial_flip(background_window);
+}
 
 /**
  * @brief Usage
@@ -100,6 +150,29 @@ void create_taskbar_gradient(gfx_context_t *ctx, uint16_t start_x) {
 }
 
 /**
+ * @brief Load configuration method
+ */
+void config_load() {
+    ini_t *ini = ini_load("/etc/desktop.ini");
+    if (!ini) {
+        fprintf(stderr, "Error loading /etc/desktop.ini\n");
+        return; // Hopefully default values are enough
+    }
+
+
+    // Load sections
+    char *wp = ini_get(ini, "wallpaper", "file");
+    if (wp) wallpaper = wp;
+    else fprintf(stderr, "Missing directive: section=\"wallpaper\" value=\"file\"\n");
+
+    // TODO: More stuff
+
+    free(ini);
+    hashmap_free(ini->sections);
+}
+
+
+/**
  * @brief Background method
  */
 void create_background() {
@@ -120,10 +193,12 @@ void create_background() {
 
     gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
 
-    // TODO: Allow wallpaper customization
-    FILE *bg_file = fopen(DEFAULT_WALLPAPER, "r");
+    FILE *bg_file = fopen(wallpaper, "r");
     if (!bg_file) {
-        goto _fallback;
+        fprintf(stderr, "Error loading wallpaper %s, fallback to default wallpaper\n", wallpaper);
+
+        bg_file = fopen(DEFAULT_WALLPAPER, "r");
+        if (!bg_file) goto _fallback;
     }
 
     // Load from file
@@ -184,6 +259,21 @@ int main(int argc, char *argv[]) {
                 break;
         }
     }
+
+    // Create helpful little file
+    FILE *pid_file = fopen("/comm/desktop.pid", "w+");
+    if (pid_file) {
+        char buf[25] = { 0 };
+        snprintf(buf, 25, "%ld", getpid());
+        fwrite(buf, strlen(buf), 1, pid_file);
+        fclose(pid_file);
+    }
+
+    // Set reload signal
+    signal(SIGUSR2, reload_signal);
+
+    // Load config
+    config_load();
 
     // Create the background
     create_background();
