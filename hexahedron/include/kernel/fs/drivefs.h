@@ -43,8 +43,6 @@ typedef struct fs_drive {
     fs_node_t *node;            // Filesystem node of the actual drive
     int type;                   // Type of the drive (e.g. DRIVE_TYPE_SATA)
     char name[256];             // Full filesystem name (e.g. "/device/cdrom0")
-    int last_partition;         // Last partition given
-    list_t *partition_list;     // List of drive partitions
 } fs_drive_t;
 
 /**** FUNCTIONS ****/

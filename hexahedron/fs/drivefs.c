@@ -135,4 +135,3 @@ fs_drive_t *drive_mountNode(fs_node_t *node, int type) {
     LOG(INFO, "Successfully mounted new drive \"%s\"\n", drive->name);
     return drive;
 }
-

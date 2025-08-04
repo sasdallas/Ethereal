@@ -16,6 +16,9 @@
 
 /**** INCLUDES ****/
 #include <kernel/fs/vfs.h>
+#include <kernel/drivers/storage/partition.h>
+#include <kernel/drivers/storage/mbr.h>
+#include <kernel/fs/drivefs.h>
 
 /**** DEFINITIONS ****/
 
@@ -57,6 +60,7 @@ typedef ssize_t (*drive_write_sectors_t)(struct drive*, uint64_t, size_t, uint8_
 
 typedef struct drive {
     fs_node_t *node;                        // Mounted filesystem node for the drive
+    struct fs_drive *drivefs;               // DriveFS object
     int type;                               // Drive type
     size_t sectors;                         // Sectors of the drive
     size_t sector_size;                     // Sector size
@@ -68,6 +72,9 @@ typedef struct drive {
 
     drive_read_sectors_t read_sectors;      // Read sectors method
     drive_write_sectors_t write_sectors;    // Write sectors method
+
+    list_t *partitions;                     // Partitions
+    unsigned long last_part_index;          // Last partition index
 
     void *driver;                           // Driver-specific field
 } drive_t;

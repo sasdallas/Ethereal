@@ -12,6 +12,7 @@
  */
 
 #include <kernel/drivers/storage/drive.h>
+#include <kernel/drivers/storage/mbr.h>
 #include <kernel/fs/drivefs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
@@ -134,6 +135,9 @@ drive_t *drive_create(int type) {
     r->node->write = drive_write;
     r->node->dev = (void*)r;
 
+    r->partitions = list_create("part list");
+    r->last_part_index = 0;
+
     return r;
 }
 
@@ -148,6 +152,12 @@ int drive_mount(drive_t *drive) {
 
     // Mount node using DriveFS
     // TODO: Kill DriveFS
-    drive_mountNode(drive->node, drive->type);
+    drive->drivefs = drive_mountNode(drive->node, drive->type);
+    
+    // Init MBR
+    if (mbr_init(drive) != 1) {
+        LOG(DEBUG, "MBR initialization failed. GPT support is TODO\n");
+    }
+
     return 0;
 }
