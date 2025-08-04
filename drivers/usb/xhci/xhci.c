@@ -21,10 +21,10 @@
 int xhci_scan(pci_device_t *dev, void *data) {
     if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) == 0x30) {
         // xHCI controller found
-        xhci_initController(dev);
+        return xhci_initController(dev);
     }
 
-    return 0; // return 0 to find more
+    return 0;
 }
 
 /**
@@ -38,7 +38,15 @@ int driver_init(int argc, char **argv) {
         .id_list = NULL
     };
 
-    return pci_scanDevice(xhci_scan, &params, NULL);
+    if (pci_scanDevice(xhci_scan, &params, NULL)) {
+        return DRIVER_STATUS_ERROR;
+    }
+
+    if (xhci_controller_count) {
+        return DRIVER_STATUS_SUCCESS;
+    } else {
+        return DRIVER_STATUS_NO_DEVICE;
+    }
 }
 
 /**

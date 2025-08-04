@@ -1,6 +1,6 @@
 /**
  * @file drivers/usb/xhci/controller.c
- * @brief xHCI controller handler
+ * @brief xHCI controller code
  * 
  * 
  * @copyright
@@ -12,238 +12,342 @@
  */
 
 #include "xhci.h"
-#include <kernel/arch/arch.h>
-#include <kernel/drivers/clock.h>
-#include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/drivers/pci.h>
+#include <kernel/mem/mem.h>
 #include <kernel/debug.h>
+#include <kernel/misc/mutex.h>
 #include <string.h>
-#include <kernel/misc/args.h>
+#include <kernel/mem/pmm.h>
 
-#ifdef __ARCH_I386__
-#include <kernel/arch/i386/hal.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#else
-#error "HAL"
-#endif
+/* xHCI controller count */
+int xhci_controller_count = 0;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:CON ] " __VA_ARGS__);
 
 /**
- * @brief Reset an xHCI controller
- * @param xhci The controller that needs to be reset
- * @returns 0 on success
+ * @brief Reset xHCI controller
+ * @param xhci The controller to reset
  */
-static int xhci_resetController(xhci_t *xhci) {
-    // To reset the xHCI controller, we have to:
-    // 1. Clear the R/S bit in USBCMD
-    // 2. Wait for HCHalted to set
-    // 3. Set HCRST
-    // 4. Wait for HCRST to clear
-
-    // Clear the R/S bit
-    xhci->opregs->usbcmd &= ~(XHCI_USBCMD_RUN_STOP);
-
-    // Wait for HCHalted to set 
-    // if (XHCI_TIMEOUT((xhci->opregs->usbsts & XHCI_USBSTS_HCH), 200)) {
-    //     LOG(ERR, "Controller reset failed: HCHalted timeout expired\n");
-    //     return 1;
-    // }
-
-    // TEMPORARY
-    while (1) {
-        uint32_t usbsts = xhci->opregs->usbsts;
-        if (usbsts & XHCI_USBSTS_HCH) {
-            break;
-        }
-
-        LOG(DEBUG, "Waiting on HCH: %x\n", usbsts);
+int xhci_resetController(xhci_t *xhci) {
+    if (TIMEOUT(!(xhci->op->usbsts & XHCI_USBSTS_CNR), 500)) {
+        LOG(ERR, "CNR in xHCI controller did not clear\n");
+        return 1;
     }
 
-    // Set HCRST
-    xhci->opregs->usbcmd |= XHCI_USBCMD_HCRESET;
+    // Issue software reset
+    xhci->op->usbcmd |= XHCI_USBCMD_HCRST;
 
-    // Wait for HCRESET to clear
-    // if (XHCI_TIMEOUT(!(xhci->opregs->usbcmd & XHCI_USBCMD_HCRESET), 1000)) {
-        // LOG(ERR, "Controller reset failed: Timeout expired while waiting for completion\n");
-        // return 1;
-    // }
-
-    // TEMPORARY
-    while (1) {
-        uint32_t usbcmd = xhci->opregs->usbcmd;
-        if (!(usbcmd & XHCI_USBCMD_HCRESET)) break;
-
-        LOG(DEBUG, "Waiting on HCRESET: %x\n", usbcmd);
-    }
-
-    LOG(INFO, "Reset controller success\n");;
-    return 0;
-}
-
-/**
- * @brief Acknowledge an IRQ released by a controller
- * @param xhci The controller to acknowledge
- * @param interrupter The interrupter to acknowledge
- */
-void xhci_acknowledge(xhci_t *xhci, int interrupter) {
-    // Clear EINT bit by writing a one to it
-    xhci->opregs->usbsts = XHCI_USBSTS_EINT;
-    
-    // Get the interrupter's IMAN
-    uint32_t iman = xhci->runtime->ir[interrupter].iman;
-
-    // Write the IP bit
-    iman |= XHCI_IMAN_INTERRUPT_PENDING | XHCI_IMAN_INTERRUPT_ENABLE;
-    xhci->runtime->ir[interrupter].iman = iman;
-}
-
-/**
- * @brief Determine whether a port is USB3 or not
- * @param xhci The xHCI to use
- * @param port Zero-based port number to check
- * @returns 0 on USB2, 1 on USB3
- */
-int xhci_portUSB3(xhci_t *xhci, int port) {
-    // TODO: This requires parsing the extended capabilities, which is broken right now
-    return 0;
-}
-
-/**
- * @brief Poll the event ring for completion events
- * @param xhci The XHCI to poll
- */
-void xhci_pollEventRing(xhci_t *xhci) {
-    // Start reading
-    while (XHCI_EVENT_RING_AVAILABLE(xhci)) {
-        // !!!: probably wasteful and stupid
-        xhci_trb_t *trb = xhci_dequeueTRB(xhci);
-        if (!trb) {
-            LOG(ERR, "Could not get TRB\n");
-            return;
-        };
-
-        LOG(DEBUG, "Dequeued TRB: type=%d parameter=%p\n", trb->control.type, trb->specific);
-        // Check to see if the TRB is a oprt status change event
-        if (trb->control.type == XHCI_TRB_TYPE_PORT_STATUS_CHANGE_EVENT) {
-            // We need to handle this one
-            xhci_port_status_change_trb_t *port_trb = (xhci_port_status_change_trb_t*)trb;
-            uint8_t port_num = port_trb->port_id - 1;
-            LOG(INFO, "Port status change detected for port %d\n", port_num);
-
-            // xhci_portInitialize(xhci, port_num);
-            list_append(xhci->port_queue, (void*)port_trb);
-        }
-        
-        if (trb->control.type == XHCI_TRB_TYPE_CMD_COMPLETION_EVENT) {
-            // Add to command completion queue
-            xhci_command_completion_trb_t *cc = (xhci_command_completion_trb_t*)trb;
-            LOG(INFO, "An xHCI command was completed with completion code %d\n", cc->completion_code);
-            list_append(xhci->command_queue, (void*)trb);
-        } else if (trb->control.type == XHCI_TRB_TYPE_TRANSFER_EVENT) {
-            list_append(xhci->transfer_queue, (void*)trb);
-        } else {
-            list_append(xhci->event_queue, (void*)trb);
-        }
-    }
-
-    // Update ERDP and clear event handler busy
-    xhci->event_ring->regs->erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
-}
-
-/**
- * @brief xHCI IRQ handler
- * @param context The xHCI controller
- */
-int xhci_irqHandler(void *context) {
-    xhci_t *xhci = (xhci_t*)context;
-    if (xhci) {
-        // Acknowledge
-        xhci_acknowledge(xhci, 0);
-
-        LOG(DEBUG, "XHCI %p IRQ detected (event queue dq=%d, usbsts=%08x)\n", xhci, xhci->event_ring->dequeue, xhci->opregs->usbsts);
-
-        // Poll event ring for port status change event IRQs
-        // !!!: Because some real hardware doesn't support IRQs that well with xHCI (and we dont have MSI),
-        // !!!: I use event queue polling sometimes.
-        // !!!: If the events do get dequeued here, the waiters should have fallback code - but we need to pick a side.
-        // !!!: (also should probably wake a thread up here rather than poll during the IRQ and stall the CPU)
-        xhci_pollEventRing(xhci);
-    }
-
-    return 0;
-}
-
-/**
- * @brief Start xHCI controller
- * @param xhci The controller to start
- */
-int xhci_startController(xhci_t *xhci) {
-    // To start the controller, we need to set R/S, IE, and HOSTSYS_EE
-    xhci->opregs->usbcmd |= XHCI_USBCMD_RUN_STOP;
-    xhci->opregs->usbcmd |= XHCI_USBCMD_INTERRUPTER_ENABLE;
-    xhci->opregs->usbcmd |= XHCI_USBCMD_HOSTSYS_ERROR_ENABLE;
-
-    // Wait
-    while (1) {
-        uint32_t usbsts = xhci->opregs->usbsts;
-        if (!(usbsts & XHCI_USBSTS_HCH)) break;
-
-        LOG(DEBUG, "Waiting on HCH: %x\n", usbsts);
-    }
-
-    // If CNR is still set (Controller Not Ready) then we failed
-    if (xhci->opregs->usbsts & XHCI_USBSTS_CNR) {
-        LOG(ERR, "CNR still set: Start failed\n");
+    if (TIMEOUT(!(xhci->op->usbcmd & XHCI_USBCMD_HCRST), 500)) {
+        LOG(ERR, "HCRST in xHCI controller did not clear\n");
         return 1;
     }
 
     return 0;
 }
 
-
 /**
- * @brief Thread
+ * @brief Process extended capabilities
+ * @param xhci Controller
  */
-void xhci_thread(void *context) {
-    xhci_t *xhci = (xhci_t*)context;
-    for (;;) {
-        if (xhci->port_queue->length) {
-            node_t *n = list_popleft(xhci->port_queue);
-            while (n) {
-                xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)n->value;
-                kfree(n);
-                
-                xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, (trb->port_id-1));
-                if (port->portsc & XHCI_PORTSC_CSC && port->portsc & XHCI_PORTSC_CCS) {
-                    LOG(INFO, "Port %d connected\n", trb->port_id-1);
-                    xhci_portInitialize(xhci, trb->port_id-1);
-                } else {
-                    LOG(INFO, "Port %d disconnected\n", trb->port_id-1);
-                }
+int xhci_processExtendedCapabilities(xhci_t *xhci) {
+    uint16_t xECP = xhci->cap->extended_cap_pointer;
+    if (!xECP) {
+        LOG(WARN, "xECP not found\n");
+        return 0; // TODO: Fatal?
+    }
 
-                n = list_popleft(xhci->port_queue);
+    uintptr_t ext = (uintptr_t)((uint8_t*)xhci->mmio_addr + xECP*4);   
+
+    while (1) {
+        volatile xhci_extended_capability_t *cap = (xhci_extended_capability_t*)ext;
+        
+        if (cap->id == XHCI_EXT_CAP_USBLEGSUP) {
+            volatile xhci_legsup_capability_t *leg = (xhci_legsup_capability_t*)cap;
+
+            leg->os_sem = 1;
+            
+            // Timeout until BIOS sem clears
+            if (TIMEOUT(!(leg->bios_sem), 2000)) {
+                LOG(ERR, "BIOS/OS handoff failure (BIOS did not release semaphore)\n");
+                return 1;
+            }
+
+            LOG(DEBUG, "OS handoff success\n");
+        } else if (cap->id == XHCI_EXT_CAP_SUPPORTED) {
+            // Supported protocol list
+            volatile xhci_supported_prot_capability_t *sup = (xhci_supported_prot_capability_t*)cap;
+
+            if (sup->name_string != 0x20425355) {
+                LOG(ERR, "ERROR: Supported capability ECP has invalid name string %08x\n", sup->name_string);
+                return 1;
+            }
+
+            for (int i = sup->compat_port_offset; i < sup->compat_port_offset + sup->compat_port_count; i++) {
+                // TODO: Apply this data to xhci->ports
+                LOG(DEBUG, "Port %d has revision %d.%d\n", i, sup->major, sup->minor);
+                xhci->ports[i-1].rev_major = sup->major;
+                xhci->ports[i-1].rev_minor = sup->minor;
             }
         }
 
-        process_yield(1);
+        if (!cap->next) break;
+        ext += cap->next*4;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Initialize xHCI command ring
+ * @param xhci The xHCI to init the command ring on
+ */
+void xhci_initCommandRing(xhci_t *xhci) {
+    xhci->cmd_ring = kzalloc(sizeof(xhci_cmd_ring_t));
+    xhci->cmd_ring->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    xhci->cmd_ring->cycle = 1;
+    memset(xhci->cmd_ring->trb_list, 0, XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
+
+    // Setup a link TRB to form a big chain
+    xhci_link_trb_t *link = (xhci_link_trb_t*)(&xhci->cmd_ring->trb_list[XHCI_COMMAND_RING_TRB_COUNT-1]);
+    link->ring_segment = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
+    link->type = XHCI_TRB_TYPE_LINK;
+    link->interrupter_target = 0;
+    link->c = 1;
+    link->tc = 1;
+    link->ch = 0;
+    link->ioc = 0;
+
+    xhci->cmd_ring->enqueue = 0;
+
+    // Set command ring in CRCR
+    xhci->op->crcr = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list) | xhci->cmd_ring->cycle;
+}
+
+/**
+ * @brief Initialize the xHCI event ring
+ * @param xhci The controller
+ */
+void xhci_initEventRing(xhci_t *xhci) {
+    xhci->event_ring = kzalloc(sizeof(xhci_event_ring_t));
+    xhci->event_ring->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t) + sizeof(xhci_event_ring_entry_t));
+    xhci->event_ring->ent = (xhci_event_ring_entry_t*)((uintptr_t)xhci->event_ring->trb_list + (XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t)));
+    memset(xhci->event_ring->trb_list, 0, XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t) + sizeof(xhci_event_ring_entry_t));
+    xhci->event_ring->cycle = 1;
+    
+    // Configure first entry in the list
+    uintptr_t trb_list_phys = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->event_ring->trb_list);
+    xhci->event_ring->ent->rsba = trb_list_phys;
+    xhci->event_ring->ent->rsz = XHCI_EVENT_RING_TRB_COUNT;
+    xhci->event_ring->ent->rsvd0 = 0;
+
+    // Setup registers
+    xhci->run->irs[0].erstsz = 1;
+    xhci->run->irs[0].erdp = trb_list_phys | (1 << 3);
+    xhci->run->irs[0].erstba = trb_list_phys + (XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t));
+
+    xhci->event_ring->trb_list_phys = trb_list_phys;
+    LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", trb_list_phys);
+}
+
+/**
+ * @brief IRQ handler
+ * @param context xHCI
+ */
+int xhci_irq(void *context) {
+    xhci_t *xhci = (xhci_t*)context;
+
+    // Acknowledge
+    XHCI_ACKNOWLEDGE(xhci);
+
+    // Clear EINT
+    if (!(xhci->op->usbsts & XHCI_USBSTS_EINT)) return 0;
+    xhci->op->usbsts = XHCI_USBSTS_EINT;
+
+    while (1) {
+        xhci_trb_t *t = xhci_dequeueEventTRB(xhci);
+        if (!t) break;
+        
+        if (t->type == XHCI_EVENT_PORT_STATUS_CHANGE) {
+            xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)t;
+            LOG(INFO, "Port status change event detected on port %d\n", trb->port_id);
+
+            // Wakeup poller thread
+            if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+        } else if (t->type == XHCI_EVENT_COMMAND_COMPLETION) {
+            xhci_command_completion_trb_t *trb = (xhci_command_completion_trb_t*)t;
+            LOG(INFO, "Command completion event detected\n");
+            xhci->ctr = trb;
+            __atomic_store_n(&xhci->flag, 1, __ATOMIC_SEQ_CST);
+        } else if (t->type == XHCI_EVENT_TRANSFER) {
+            xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
+            LOG(INFO, "Transfer completed on slot %d endp %d cc %d\n", trb->slot_id, trb->endpoint_id, trb->completion_code);
+            
+            xhci->slots[trb->slot_id]->endpoints[trb->endpoint_id-1].ctr = trb;
+            __atomic_store_n(&xhci->slots[trb->slot_id]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
+        } else {
+            LOG(WARN, "Unrecognized event TRB: %d\n", t->type);
+        }
+    }
+
+
+    // Reprogram ERDP without EHB
+    xhci->run->irs[0].erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
+
+    return 0;
+}
+
+/**
+ * @brief Initialize interrupts
+ * @param xhci The controller
+ */
+int xhci_initInterrupt(xhci_t *xhci) {
+    uint8_t irq = pci_enableMSI(xhci->dev->bus, xhci->dev->slot, xhci->dev->function);
+    if (irq == 0xFF) {
+        LOG(INFO, "Using PCI pin interrupts\n");
+        irq = pci_getInterrupt(xhci->dev->bus, xhci->dev->slot, xhci->dev->function);
+
+        if (irq == 0xFF) {
+            LOG(ERR, "xHCI could not find a valid interrupt\n");
+            return 1;
+        }
+    } else {
+        LOG(INFO, "Using MSI interrupt\n");
+    }
+
+    hal_registerInterruptHandler(irq, xhci_irq, (void*)xhci);
+    LOG(DEBUG, "IRQ%d in use for xHCI controller\n", irq);
+
+    // Enable IRQs in the PCI device
+    return 0;
+}
+
+/**
+ * @brief Initialize scratchpad registers
+ * @param xhci The controller
+ */
+void xhci_initScratchpad(xhci_t *xhci) {
+    uint32_t scratchpads = (xhci->cap->max_scratchpad_buffers_hi << 5) | (xhci->cap->max_scratchpad_buffers_lo);
+    xhci->scratchpad = mem_allocateDMA(scratchpads * sizeof(uint64_t));
+    uintptr_t phys = mem_getPhysicalAddress(NULL, xhci->scratchpad);
+
+    // Fill scratchpad buffers
+    for (size_t i = 0; i < scratchpads; i++) {
+        uintptr_t pg = pmm_allocateBlock();
+        ((uint64_t*)xhci->scratchpad)[i] = pg;
+    }
+
+    *(uint64_t*)(xhci->dcbaa) = mem_getPhysicalAddress(NULL, xhci->scratchpad);
+}
+
+/**
+ * @brief xHCI port thread
+ */
+void xhci_thread(void *context) {
+    xhci_t *xhci = (xhci_t*)context;
+
+    // Bug (QEMU): We run an initial pass on xHCI devices since (while the controller is *supposed* to send us Port Status Change TRBs, it doesn't.)
+    for (;;) {
+        for (unsigned i = 0; i < xhci->cap->max_ports; i++) {
+            if (xhci->ports[i].rev_major) {
+                // We have a port
+                volatile xhci_port_regs_t *r = (xhci_port_regs_t*)&xhci->op->ports[i];
+                
+                // Check flags
+                uint32_t portsc_saved = r->portsc;
+                r->portsc = XHCI_PORTSC_CSC | XHCI_PORTSC_PRC | XHCI_PORTSC_PP;
+
+                // If we are not connected, then.
+                if (!(r->portsc & XHCI_PORTSC_CCS)) {
+                    continue;
+                }
+
+                // Check revision
+                if (xhci->ports[i].rev_major == 2) {
+                    // USB2 port requires reset first
+                    if (!(portsc_saved & XHCI_PORTSC_PED && portsc_saved & XHCI_PORTSC_PRC)) {
+                        // Port needs a reset
+                        r->portsc = XHCI_PORTSC_PR | XHCI_PORTSC_PP;
+                        continue;
+                    }
+                } else if (xhci->ports[i].rev_major == 3) {
+                    // USB3 ports are fine
+                    if (!(portsc_saved & XHCI_PORTSC_CSC && portsc_saved & XHCI_PORTSC_PED)) {
+                        continue;
+                    }
+                }
+
+                LOG(INFO, "Device detected on port %d\n", i);
+                xhci_initializeDevice(xhci, i);
+            }
+        }
+
+        sleep_untilNever(current_cpu->current_thread);
+        sleep_enter();
     }
 }
 
 /**
- * @brief Initialize an xHCI controller
- * @param device The PCI device of the xHCI controller
+ * @brief Dequeue event TRB
+ * @param xhci The xHCI controller
+ * @returns TRB on success or NULL
+ */
+xhci_trb_t *xhci_dequeueEventTRB(xhci_t *xhci) {
+    if (XHCI_EVENT_RING_DEQUEUE(xhci)->c != xhci->event_ring->cycle) return NULL; // No content available
+    xhci_trb_t *trb = XHCI_EVENT_RING_DEQUEUE(xhci);
+    
+    // Wrap dequeue
+    xhci->event_ring->dequeue++;
+    if (xhci->event_ring->dequeue >= XHCI_EVENT_RING_TRB_COUNT) {
+        xhci->event_ring->dequeue = 0;
+        xhci->event_ring->cycle ^= 1;
+    }
+
+    return trb;
+}
+
+/**
+ * @brief Enqueue command TRB
+ * @param xhci The xHCI controller
+ * @param trb The TRB to enqueue
+ * @returns 0 on success
+ */
+int xhci_enqueueCommandTRB(xhci_t *xhci, xhci_trb_t *trb) {
+    // Place our current TRB
+    trb->c = xhci->cmd_ring->cycle;
+    memcpy(&xhci->cmd_ring->trb_list[xhci->cmd_ring->enqueue], trb, sizeof(xhci_trb_t));
+
+    // Next enqueue
+    xhci->cmd_ring->enqueue++;
+    if (xhci->cmd_ring->enqueue >= XHCI_COMMAND_RING_TRB_COUNT-1) {
+        // Update link TRB
+        xhci_link_trb_t *link = (xhci_link_trb_t*)(&xhci->cmd_ring->trb_list[XHCI_COMMAND_RING_TRB_COUNT-1]);
+        link->type = XHCI_TRB_TYPE_LINK;
+        link->tc = 1;
+        link->c = xhci->cmd_ring->cycle;
+        
+        xhci->cmd_ring->enqueue = 0;
+        xhci->cmd_ring->cycle ^= 1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Initialize xHCI controller
+ * @param device The PCI device
  */
 int xhci_initController(pci_device_t *device) {
-    LOG(INFO, "Initializing xHCI controller (bus %d, slot %d, function %d)\n", device->bus, device->slot, device->function);
+    LOG(INFO, "xHCI initializing controller: bus %d, slot %d, func %d\n", device->bus, device->slot, device->function);
 
-    // Start by making a new xhci_t structure
+    // First, enable bus mastering + MMIO, disable IRQs
+    uint16_t cmd = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, ((cmd & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE))) | PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_INTERRUPT_DISABLE, 2);
+
+    // Make xHCI structure
     xhci_t *xhci = kzalloc(sizeof(xhci_t));
-    xhci->pci = device;
-    
+    xhci->dev = device;
+
     // Read in BAR0
     pci_bar_t *bar = pci_readBAR(device->bus, device->slot, device->function, 0);
     if (!bar) {
@@ -251,232 +355,138 @@ int xhci_initController(pci_device_t *device) {
         kfree(xhci);
         return 1;
     }
-
+    
+    // Check BAR type
     if (bar->type != PCI_BAR_MEMORY32 && bar->type != PCI_BAR_MEMORY64) {
         // BAR is not valid type
         LOG(ERR, "xHCI BAR0 is of unrecognized type %d\n", bar->type);
         kfree(xhci);
+        kfree(bar);
         return 1;
     }
 
-    // Enable IRQs in PCI command
-    uint16_t xhci_pci_command = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
-    xhci_pci_command &= ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE); // Enable interrupts and disable I/O space
-    xhci_pci_command |= (PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE);
-    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, xhci_pci_command, 2);
+    LOG(DEBUG, "xHCI MMIO is located at %016llX - %016llX\n", bar->address, bar->address + bar->size);
 
-    // Try to enable MSI
-    uint8_t irq = pci_enableMSI(device->bus, device->slot, device->function);
-    if (irq != 0xFF) {
-        if (hal_registerInterruptHandler(irq, xhci_irqHandler, (void*)xhci)) {
-            LOG(ERR, "Error while registering IRQ%d\n", irq);
-            return 1;
-        }
-    } else {
-        LOG(WARN, "This xHCI controller does not support MSI - fallback to pin interrupt\n");
-        irq = pci_getInterrupt(device->bus, device->slot, device->function);
-        if (hal_registerInterruptHandler(irq, xhci_irqHandler, (void*)xhci)) {
-            LOG(ERR, "Error while registering IRQ%d\n", irq);
-            return 1;
-        }
-    }
-
-    // Map it in
-    LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
+    // Map BAR region
+    xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
+    xhci->cap = (xhci_cap_regs_t*)xhci->mmio_addr;
+    xhci->op = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->cap->caplength);
+    xhci->run = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->cap->rtsoff);
+    xhci->mutex = mutex_create("xhci mutex");
     
-    // !!!!: BUG BUG BUG IN THE PCI SYSTEM!!!!!!!!!!!!!
-    if (!kargs_has("--xhci-fix-pci")) {
-        xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
-    } else {
-        xhci->mmio_addr = mem_mapMMIO((uint32_t)bar->address, (uint32_t)bar->size);
-    }
-
-    // Get some registers
-    xhci->capregs = (xhci_cap_regs_t*)xhci->mmio_addr;
-    xhci->opregs = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->capregs->caplength);
-    xhci->runtime = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->capregs->rtsoff);
-    LOG(DEBUG, "xHCI mapped MMIO to %p: capregs=%p opregs=%p runtime=%p\n", xhci->mmio_addr, xhci->capregs, xhci->opregs, xhci->runtime);
-
-    // xhci_parseExtendedCapabilities(xhci);
-
-    if (kargs_has("--xhci-fix-pci")) {
-        xhci->bit64 = 0;
-    } else {
-        xhci->bit64 = XHCI_CSZ(xhci->capregs);
-    }
-
-    memcpy(&xhci->capregs_save, xhci->capregs, sizeof(xhci_cap_regs_t));
-
-    LOG(DEBUG, "This controller supports up to %d devices, %d interrupts, and has %d ports\n", XHCI_MAX_DEVICE_SLOTS(xhci->capregs), XHCI_MAX_INTERRUPTERS(xhci->capregs), XHCI_MAX_PORTS(xhci->capregs));
-
-    // Reset the controller
+    // Reset xHCI controller
     if (xhci_resetController(xhci)) {
+        LOG(ERR, "xHCI controller reset failed\n");
         mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
-        return 1;
-    } 
-
-
-    // Enable device notifications
-    xhci->opregs->dnctrl = 0xFFFF;
-
-    // Program the max number of slots
-    uint32_t config = xhci->opregs->config;
-    config &= ~0xFF;
-    config |= XHCI_MAX_DEVICE_SLOTS(xhci->capregs);
-    xhci->opregs->config = config;
-
-    // Now, let's setup the DCBAA (Device Context Base Address Array)
-    size_t dcbaa_size = sizeof(xhci_dcbaa_t) * (XHCI_MAX_DEVICE_SLOTS(xhci->capregs)-1);
-    xhci->dcbaa = (xhci_dcbaa_t*)mem_allocateDMA(dcbaa_size);
-    xhci->dcbaa_virt = kzalloc(dcbaa_size);
-
-    // Zero DMA
-    memset(xhci->dcbaa, 0, sizeof(xhci_dcbaa_t) * (XHCI_MAX_DEVICE_SLOTS(xhci->capregs)-1));
-
-    // Setup scratchpad buffers
-    if (XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs)) {
-        // xHCI spec says we need to allocate a scratchpad array as the 0th entry in the DCBAA.
-        // Allocate memory for the scratchpad array
-        // !!!: Waste of memory.. this probably uses a whole page. We can maybe fit this in with the DCBAA?
-        uintptr_t *scratchpad = (uintptr_t*)mem_allocateDMA(XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs) * sizeof(uintptr_t*));
-        memset(scratchpad, 0, XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs) * sizeof(uintptr_t*));
-
-        // Allocate scratchpad pages
-        for (size_t i = 0; i < XHCI_MAX_SCRATCHPAD_BUFFERS(xhci->capregs); i++) {
-            uintptr_t page = mem_allocateDMA(PAGE_SIZE);
-            scratchpad[i] = mem_getPhysicalAddress(NULL, page);
-        }
-
-        // Configure it in the DCBAA
-        xhci->dcbaa[0] = mem_getPhysicalAddress(NULL, (uintptr_t)scratchpad);
-        xhci->dcbaa_virt[0] = (xhci_dcbaa_t)scratchpad;
-    }
-
-    // Program it in
-    xhci->opregs->dcbaap = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->dcbaa);
-    LOG(DEBUG, "DCBAA: %016llX (entry 0/scratchpad array: %016llX)\n", xhci->opregs->dcbaap, xhci->dcbaa_virt[0]);
-
-    // Enable the command ring
-    if (xhci_initializeCommandRing(xhci)) {
-        LOG(ERR, "Error while initializing command ring\n");
-        
-        // TODO: Free scratcpad
-        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
-        kfree(xhci->dcbaa_virt);
-        mem_unmapMMIO(xhci->mmio_addr, bar->size);
-        kfree(xhci);
+        kfree(bar);
         return 1;
     }
 
-    // Create the event lists
-    xhci->event_queue = list_create("xhci event queue");
-    xhci->command_queue = list_create("xhci command queue");
-    xhci->transfer_queue = list_create("xhci transfer queue");
-    xhci->port_queue = list_create("xhci port queue");
+    LOG(INFO, "xHCI controller: version %d.%d.%d\n", +xhci->cap->revision_major, xhci->cap->revision_minor >> 4, xhci->cap->revision_minor & 0xF);
+    LOG(INFO, "\tMaximum ports: %d Maximum slots: %d Maximum interrupters: %d\n", xhci->cap->max_slots, xhci->cap->max_slots, xhci->cap->max_interrupters);
 
-    // Enable IRQs
-    xhci->runtime->ir[0].iman |= XHCI_IMAN_INTERRUPT_ENABLE;
+    // Allocate ports and slots array
+    xhci->ports = kzalloc(sizeof(xhci_port_info_t) * xhci->cap->max_ports);
+    xhci->slots = kzalloc(sizeof(xhci_device_t*) * xhci->cap->max_slots);
 
-    // Enable the event ring
-    if (xhci_initializeEventRing(xhci)) {
-        LOG(ERR, "Error while initializing command ring\n");
-        
-        // TODO: Free scratcpad and cmd/event ring
-        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
-        kfree(xhci->dcbaa_virt);
+    // Process xECP
+    if (xhci_processExtendedCapabilities(xhci)) {
+        LOG(ERR, "xHCI ECP parse error failed\n");
         mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
+        kfree(bar);
         return 1;
     }
 
-    // Clear pending
-    xhci_acknowledge(xhci, 0);
+    // Now, allocate the DCBAA
+    xhci->dcbaa = mem_allocateDMA(xhci->cap->max_slots * 8);
+    memset((void*)xhci->dcbaa, 0, xhci->cap->max_slots * 8);
+    xhci->op->dcbaap = mem_getPhysicalAddress(NULL, xhci->dcbaa);
+    LOG(DEBUG, "DCBAA @ %p\n", xhci->op->dcbaap);
 
-    // Take over control (Panther Point)
-    pci_writeConfigOffset(device->bus, device->slot, device->function, 0xD0, 0xFFFFFFFF, 4);
-    pci_writeConfigOffset(device->bus, device->slot, device->function, 0xD8, 0xFFFFFFFF, 4);
+    // Init command ring
+    xhci_initCommandRing(xhci);
 
-    // Start the controller
-    if (xhci_startController(xhci)) {
-        LOG(ERR, "Error while starting controller\n");
-        
-        // TODO: Free scratcpad and cmd/event ring
-        mem_freeDMA((uintptr_t)xhci->dcbaa, dcbaa_size);
-        kfree(xhci->dcbaa_virt);
+    // Init interrupt
+    if (xhci_initInterrupt(xhci)) {
+        // TODO: Free all memory
+        LOG(ERR, "xHCI interrupter init failed\n");
         mem_unmapMMIO(xhci->mmio_addr, bar->size);
         kfree(xhci);
+        kfree(bar);
         return 1;
     }
 
-    // Create pool
-    // TODO: Make pool size consistent with xHC
-    xhci->ctx_pool = pool_create("xhci devctx pool", 64, PAGE_SIZE, 0, POOL_DMA);
-    xhci->input_ctx_pool = pool_create("xhci inputctx pool", 64, PAGE_SIZE, 0, POOL_DMA);
+    // Initialize event ring
+    xhci_initEventRing(xhci);
 
-    // Build the USB controller
+    // Initialize scratchpad
+    xhci_initScratchpad(xhci);
+    
+    // Enable interrupters
+    XHCI_ACKNOWLEDGE(xhci);
+    xhci->op->usbcmd |= XHCI_USBCMD_INTE;
+
+    // Run controller
+    xhci->op->usbcmd |= XHCI_USBCMD_RS;
+    while (xhci->op->usbsts & XHCI_USBSTS_HCH) arch_pause_single();
+    LOG(INFO, "xHCI controller started\n");
+
+    // Prepare controller
     xhci->controller = usb_createController((void*)xhci, NULL);
 
-    // Start probing
-    LOG(INFO, "xHCI controller started successfully\n");
-    for (uint8_t i = 0; i < 8; i++) {
-        xhci_port_registers_t *port = (xhci_port_registers_t*)XHCI_PORT_REGISTERS(xhci->opregs, i);
+    // Spawn poller thread
+    xhci->poller = process_createKernel("xhci poller", PROCESS_KERNEL, PRIORITY_LOW, xhci_thread, (void*)xhci);
+    scheduler_insertThread(xhci->poller->main_thread);
 
-        if (port->portsc & XHCI_PORTSC_CCS && port->portsc & XHCI_PORTSC_CSC) {
-            LOG(DEBUG, "xHCI USB device detected on port %d\n", i);
-            // xhci_portReset(xhci, i);
-        }
-    }
-
-    // Spawn
-    // TODO: This is temporary, and slow
-    process_t *xhciproc = process_createKernel("xhci poller", PROCESS_KERNEL, PRIORITY_LOW, xhci_thread, (void*)xhci);
-    scheduler_insertThread(xhciproc->main_thread);
-
+    // Controller initialized successfully
+    xhci_controller_count++;
     return 0;
 }
 
 /**
- * @brief Send a command TRB to a controller
- * @param xhci The controller to send the command TRB to
- * @param trb The TRB to send to the controller
- * @returns 0 on success
+ * @brief Send a command to the xHCI controller
+ * @param xhci The xHCI controller
+ * @param trb The command TRB
+ * @returns TRB on success, NULL is an error
  */
-xhci_command_completion_trb_t *xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
-    // !!!: LOCK!
-    // LOG(DEBUG, "Command send: type=%d\n", trb->control.type);
-    spinlock_acquire(&xhci->cmd_lock);
+xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
+    mutex_acquire(xhci->mutex);
+    xhci->ctr = NULL;
 
-    // Enqueue the TRB
-    if (xhci_enqueueTRB(xhci, trb)) {
-        LOG(ERR, "Failed to enqueue TRB %p (type=0x%x)\n", trb, trb->control.type);
-        spinlock_release(&xhci->cmd_lock);
+    __atomic_store_n(&xhci->flag, 0, __ATOMIC_SEQ_CST);
+
+    // Enqueue, please.
+    xhci_enqueueCommandTRB(xhci, trb);
+
+    // Ring ring
+    XHCI_DOORBELL(xhci, 0) = 0;
+    
+    // TODO: This was too slow..
+    // if (TIMEOUT(__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) == 1, 2500)) {
+    //     LOG(ERR, "Timed out while waiting for xHC to handle command of type %d\n", trb->type);
+    //     mutex_release(xhci->mutex);
+    //     return NULL;
+    // }
+
+    while (__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) != 1) {
+        if (current_cpu->current_thread) {
+            process_yield(1);
+        } else {
+            arch_pause_single();
+        }
+    }
+
+    xhci_command_completion_trb_t *ctrb = xhci->ctr;
+    LOG(DEBUG, "TRB complete\n");
+
+    if (!TRB_SUCCESS(ctrb)) {
+        LOG(ERR, "TRB failed with completion code: %d\n", ctrb->cc);
+        mutex_release(xhci->mutex);
         return NULL;
     }
 
-    // Ring the doorbell    
-    XHCI_RING_DOORBELL(xhci->capregs, 0, XHCI_DOORBELL_TARGET_COMMAND_RING);
-
-    // Wait until we can pop from the queue
-    // TODO: this sucks
-    while (!xhci->command_queue->length) {
-        LOG(DEBUG, "Waiting for xHCI %p to handle command IRQ: trb->type=%d usbsts=0x%08x\n", xhci, trb->control.type, xhci->opregs->usbsts);
-        arch_pause();
-    }
-
-    // Pop the TRB from the queue
-    node_t *node = list_popleft(xhci->command_queue);
-    if (!node) {
-        LOG(ERR, "Command IRQ handled but no TRB was found in the queue\n");
-        spinlock_release(&xhci->cmd_lock);
-        return NULL;
-    }
-
-    xhci_command_completion_trb_t *ctrb = (xhci_command_completion_trb_t*)node->value;
-    kfree(node);
-
-    LOG(INFO, "Command type=%d was completed with success code %d\n", trb->control.type, ctrb->completion_code);
-
-    spinlock_release(&xhci->cmd_lock);
+    mutex_release(xhci->mutex);
     return ctrb;
 }
