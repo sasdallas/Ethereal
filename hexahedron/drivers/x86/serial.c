@@ -164,20 +164,6 @@ int serial_initialize() {
     // Sleep for just an eency weency bit (Bochs)
     for (int i = 0; i < 10000; i++);
 
-    // Now try to test the serial port. Configure the chip in loopback mode
-    outportb(serial_defaultPort + SERIAL_MODEM_CONTROL, 
-                SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2 | SERIAL_MODEMCTRL_LOOPBACK);
-
-    // Now send a byte and check if we get it back.
-    outportb(serial_defaultPort + SERIAL_TRANSMIT_BUFFER, 0xAE);
-    if (inportb(serial_defaultPort + SERIAL_TRANSMIT_BUFFER) != 0xAE) {
-        return -1; // The chip must be faulty :(
-    } 
-
-    // Not faulty! Reset in normal mode, aka RTS/DTR/OUT2
-    outportb(serial_defaultPort + SERIAL_MODEM_CONTROL,
-                SERIAL_MODEMCTRL_DTR | SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2);
-
     // Clear RBR
     inportb(serial_defaultPort + SERIAL_RECEIVE_BUFFER);
 
