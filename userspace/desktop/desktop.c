@@ -31,7 +31,7 @@ window_t *background_window = NULL;
 #define DEFAULT_STARTUP         "termemu"
 
 /* Default wallpaper */
-#define DEFAULT_WALLPAPER       "/usr/share/lines.bmp"
+#define DEFAULT_WALLPAPER       "/usr/share/wallpapers/lines.bmp"
 
 /* Current wallpaper sprite */
 sprite_t *background_sprite = NULL;
