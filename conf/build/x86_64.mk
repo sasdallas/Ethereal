@@ -8,7 +8,8 @@ ifeq ($(USE_ACPICA), 1)
 CFLAGS += -DACPICA_ENABLED
 endif
 
-CFLAGS += -mcmodel=large
+# Add additional x86_64 CFLAGS
+CFLAGS += -mcmodel=large -fstrict-volatile-bitfields
 
-# !!!: HACK
+# !!!: HACK FOR FREETYPE
 CFLAGS += -I$(PROJECT_ROOT)/build-output/sysroot/usr/include/freetype2/
