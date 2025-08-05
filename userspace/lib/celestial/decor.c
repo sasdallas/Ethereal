@@ -58,6 +58,9 @@ int celestial_initDecorations(struct window *win, decor_handler_t *decor) {
     // Setup titlebar too
     win->decor->titlebar = "Celestial Window";
 
+    // By default, Celestial focuses us
+    win->decor->focused = 1;
+
     // Initialize decorations
     win->decor->init(win);
     win->decor->render(win);
