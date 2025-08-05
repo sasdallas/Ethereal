@@ -376,7 +376,8 @@ int driver_loadConfiguration(fs_node_t *file) {
             // Load the driver
 
             printf("Loading driver: %s%s", filename, spaces);
-            if (driver_load(driver_file, priority, filename, 1, arguments) >= 0) {
+            int load_status = driver_load(driver_file, priority, filename, 1, arguments);
+            if (load_status >= 0 || load_status == -ENODEV) {
                 drivers++;
                 printf(" [" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
             } else {
