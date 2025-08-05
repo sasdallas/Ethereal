@@ -146,7 +146,7 @@ void print_entry(char *ent) {
 
 
 int sort_fn(const void *s1, const void *s2) {
-    return strcmp((const char*)s1, (const char*)s2);
+    return strcmp(*(const char**)s1, *(const char**)s2);
 }
 
 void list_directory(char *dir) {
