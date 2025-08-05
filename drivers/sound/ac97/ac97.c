@@ -306,10 +306,15 @@ int ac97_scan(pci_device_t *dev, void *data) {
  * @brief Driver init method
  */
 int driver_init(int argc, char *argv[]) {
+    pci_id_mapping_t id_list[] = {
+        { .vid = 0x8086, .pid = { 0x2415, PCI_NONE } },
+        PCI_ID_MAPPING_END
+    };
+
     pci_scan_parameters_t params = {
         .class_code = 0x04,
         .subclass_code = 0x01,
-        .id_list = NULL,
+        .id_list = id_list,
     };
 
     return pci_scanDevice(ac97_scan, &params, NULL);

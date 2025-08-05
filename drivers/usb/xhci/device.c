@@ -128,9 +128,10 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     xhci_enqueueTransferTRB(dev->endpoints[0].tr, (xhci_trb_t*)&setup_trb);
 
     // Build the data TRB
+    uintptr_t temp = mem_allocateDMA(4096);
     if (transfer->length) {
         xhci_data_stage_trb_t data_trb = {
-            .buffer = mem_getPhysicalAddress(NULL, (uintptr_t)transfer->data),
+            .buffer = mem_getPhysicalAddress(NULL, (uintptr_t)temp),
             .transfer_length = transfer->length,
             .td_size = 0,
             .interrupter = 0,
@@ -168,6 +169,8 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
         transfer->status = USB_TRANSFER_FAILED;
         return USB_TRANSFER_FAILED;
     }
+
+    if (transfer->req->bmRequestType & USB_RT_D2H) memcpy(transfer->data, (void*)temp, transfer->length);
 
 
     // Done!
@@ -301,11 +304,13 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     ep_ctx->max_burst_size = 0;
     ep_ctx->max_esit_payload_hi = 0;
     ep_ctx->max_esit_payload_lo = 0;
-    ep_ctx->average_trb_length = 8;
+    ep_ctx->average_trb_length = 0;
     ep_ctx->error_count = 3;
     ep_ctx->state = 0;
     ep_ctx->transfer_ring_dequeue_ptr = dev->endpoints[0].tr->trb_list_phys | 1;
 
+    LOG(DEBUG, "TR dequeue pointer is at %p\n", dev->endpoints[0].tr->trb_list_phys);
+;
     // Set DCBAA
     ((uint64_t*)xhci->dcbaa)[dev->slot_id] = dev->output_ctx_phys;
 
@@ -350,10 +355,7 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     usbdev->evaluate = xhci_evaluateContext;
 
 
-    // usb_initializeDevice(usbdev);
-    LOG(DEBUG, "Request status: %d", usb_requestDevice(usbdev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, USB_REQ_GET_DESC, (USB_DESC_DEVICE << 8) | 0, 0, 8, &usbdev->device_desc));
-    LOG(DEBUG, "bLength = %d\n", usbdev->device_desc.bLength);
-
+    usb_initializeDevice(usbdev);
 
     return 0;
 }

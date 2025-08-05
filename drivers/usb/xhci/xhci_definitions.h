@@ -584,47 +584,27 @@ typedef struct xhci_endpoint_context {
 STATIC_ASSERT(sizeof(xhci_endpoint_context_t) == 0x20);
 
 typedef struct xhci_slot_context {
+    uint32_t route_string   : 20;
+    uint32_t speed          : 4;
+    uint32_t rz             : 1;
+    uint32_t mtt            : 1;
+    uint32_t hub            : 1;
+    uint32_t context_entries : 5;
 
-    union {
-        struct {
-            uint32_t route_string   : 20;
-            uint32_t speed          : 4;
-            uint32_t rz             : 1;
-            uint32_t mtt            : 1;
-            uint32_t hub            : 1;
-            uint32_t context_entries : 5;
-        };
-        uint32_t dword0;
-    };
 
-    union {
-        struct {
-            uint16_t    max_exit_latency;
-            uint8_t     root_hub_port_num;
-            uint8_t     port_count;
-        };
-        uint32_t dword1;
-    };
+    uint16_t    max_exit_latency;
+    uint8_t     root_hub_port_num;
+    uint8_t     port_count;
 
-    union {
-        struct {
-            uint32_t parent_hub_slot_id  : 8;
-            uint32_t parent_port_number  : 8;
-            uint32_t tt_think_time       : 2;
-            uint32_t rsvd0               : 4;
-            uint32_t interrupter_target  : 10;
-        };
-        uint32_t dword2;
-    };
+    uint32_t parent_hub_slot_id  : 8;
+    uint32_t parent_port_number  : 8;
+    uint32_t tt_think_time       : 2;
+    uint32_t rsvd0               : 4;
+    uint32_t interrupter_target  : 10;
 
-    union {
-        struct {
-            uint32_t device_address  : 8;
-            uint32_t rsvd1           : 19;
-            uint32_t slot_state      : 5;
-        };
-        uint32_t dword3;
-    };
+    uint32_t device_address  : 8;
+    uint32_t rsvd1           : 19;
+    uint32_t slot_state      : 5;
     
     uint32_t rsvd2;
     uint32_t rsvd3;

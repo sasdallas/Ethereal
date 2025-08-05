@@ -265,7 +265,7 @@ void ehci_destroyQH(USBController_t *controller, ehci_qh_t *qh) {
         }
     }
 
-    list_destroy(qh->td_list, false);
+    // list_destroy(qh->td_list, false);
 
     // Free the queue head
     LOG(DEBUG, "[QH:FREE] QH at %p destroyed\n", qh);
