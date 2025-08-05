@@ -18,6 +18,9 @@
 #include <kernel/debug.h>
 #include <string.h>
 
+/* Last TID */
+unsigned long long last_tid = 1; // 0 is a kernel reserved TID
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:THREAD", __VA_ARGS__)
 
@@ -37,7 +40,7 @@ static thread_t *thread_createStructure(process_t *parent, page_t *dir, int stat
     thr->status = status;
     thr->dir = dir;
     thr->flags = flags;
-    thr->tid = parent->tid_next++;
+    thr->tid = last_tid++;
 
     // Thread ticks aren't updated because they should ONLY be updated when scheduler_insertThread is called
     return thr;
