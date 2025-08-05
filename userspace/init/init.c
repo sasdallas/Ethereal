@@ -34,9 +34,6 @@ int main(int argc, char *argv[]) {
     // Setup environment variables
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
-    // Execute welcome script
-    system("/etc/init.d/01_welcome.sh");
-
     // Read kernel command line
     FILE *f = fopen("/kernel/cmdline", "r");
     fseek(f, 0, SEEK_END);
@@ -46,9 +43,25 @@ int main(int argc, char *argv[]) {
     char *cmdline = malloc(size);
     fread(cmdline, size, 1, f);
 
+
+    // Execute welcome script
+    if (!strstr(cmdline, "--skip-startup")) {
+        system("/etc/init.d/01_welcome.sh");
+    }
+
+    printf("Welcome to the Ethereal Operating System\n");
+    
     pid_t cpid = fork();
 
     if (!cpid) {
+        if (strstr(cmdline, "--old-kernel-terminal")) {
+            // Oof, here we go.
+            char *nargv[3] = { "terminal", NULL };
+            execvpe("terminal", (const char**)nargv, environ);
+
+            printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
+        }
+
         if (strstr(cmdline, "--single-user")) {
             // Launch single-user mode
             char *nargv[3] = { "termemu", "-f", NULL };

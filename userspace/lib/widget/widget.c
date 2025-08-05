@@ -38,20 +38,17 @@ int widget_render(gfx_context_t *ctx, widget_t *widget) {
         return -1;
     }
 
-    // First get the widget geometry
-    if (widget->geometry->type == GEOMETRY_TYPE_XY) {
-        // XY geometry! Easy!
-        widget_geometry_xy_t *geometry = (widget_geometry_xy_t*)widget->geometry;
-        widget->render(widget, ctx, geometry->x, geometry->y); 
-    } else {
-        errno = ENOSYS;
-        return -1;
-    }
+    int geometry_x = 0;
+    int geometry_y = 0;
+    widget_getCoordinates(widget, &geometry_x, &geometry_y);
+    widget->render(widget, ctx, geometry_x, geometry_y); 
 
     // Any children?
     if (widget->children) {
         foreach(child_node, widget->children) {
             widget_t *child = (widget_t*)child_node->value;
+            
+            // TODO: Create sub-context or rebase X and Y. Critical!
             widget_render(ctx, child);
         }
     }

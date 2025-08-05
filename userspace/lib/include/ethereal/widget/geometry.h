@@ -53,4 +53,12 @@ struct widget;
  */
 int widget_renderAtCoordinates(struct widget *widget, int32_t x, int32_t y);
 
+/**
+ * @brief Get the coordinates of a specific widget
+ * @param widget The widget to get coords of
+ * @param x_out Out X
+ * @param y_out Out Y
+ */
+void widget_getCoordinates(struct widget *widget, int *x_out, int *y_out);
+
 #endif

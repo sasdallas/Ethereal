@@ -19,5 +19,6 @@
 #include <ethereal/widget/frame.h>
 #include <ethereal/widget/widget.h>
 #include <ethereal/widget/button.h>
+#include <ethereal/widget/event.h>
 
 #endif

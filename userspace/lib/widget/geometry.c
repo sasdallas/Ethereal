@@ -34,3 +34,16 @@ int widget_renderAtCoordinates(struct widget *widget, int32_t x, int32_t y) {
     widget->geometry = (widget_geometry_t*)geometry;
     return 0;
 }
+
+/**
+ * @brief Get the coordinates of a specific widget
+ * @param widget The widget to get coords of
+ * @param x_out Out X
+ * @param y_out Out Y
+ */
+void widget_getCoordinates(widget_t *widget, int *x_out, int *y_out) {
+    assert(widget->geometry->type == GEOMETRY_TYPE_XY); // TODO
+
+    *x_out = ((widget_geometry_xy_t*)widget->geometry)->x;
+    *y_out = ((widget_geometry_xy_t*)widget->geometry)->y;
+}

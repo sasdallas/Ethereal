@@ -31,7 +31,7 @@ widget_t *frame_createRoot(window_t *window) {
     widget_t *w = widget_createEmpty();
 
     widget_frame_t *frame = malloc(sizeof(widget_frame_t));
-    frame->bg_color = GFX_RGB(0xfe, 0xfc, 0xff);
+    frame->bg_color = GFX_RGB(0xfb, 0xfb, 0xfb);
     frame->window = window;
 
     w->type = WIDGET_TYPE_FRAME;
@@ -43,6 +43,23 @@ widget_t *frame_createRoot(window_t *window) {
 
     // Create our own geometry that fits the entire window
     widget_renderAtCoordinates(w, 0, 0);
+    widget_initEvents(w);
+
+    // Set us as the window driver object
+    window->d = (void*)w;
 
     return w;
+}
+
+/**
+ * @brief Get context for frame
+ * @param frame The frame to get graphics context for
+ */
+gfx_context_t *frame_getContext(widget_t *w) {
+    widget_frame_t *frame = (widget_frame_t*)w->impl;
+    if (frame->window) return celestial_getGraphicsContext(frame->window);
+
+    // TODO
+    assert(0);
+    return NULL;
 }

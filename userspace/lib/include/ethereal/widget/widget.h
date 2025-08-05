@@ -42,6 +42,51 @@ struct widget;
 typedef void (*widget_render_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y);
 
 /**
+ * @brief Widget mouse down function
+ * @param widget The widget that was clicked
+ * @param ctx To render to
+ * @param x The X position, widget-relative
+ * @param y The Y position, widget-relative
+ * @param held Held buttons. These are @c CELESTIAL_MOUSE_BUTTON_... types
+ */
+typedef void (*widget_mouse_down_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y, int held);
+
+/**
+ * @brief Widget mouse up function
+ * @param widget The widget that was released
+ * @param ctx To render to
+ * @param x The X position, widget-relative
+ * @param y The Y position, widget-relative
+ * @param release Released button, @c CELESTIAL_MOUSE_BUTTON_... type
+ */
+typedef void (*widget_mouse_up_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y, int released);
+
+/**
+ * @brief Widget mouse enter function
+ * @param widget The widget that was entered
+ * @param ctx To render to
+ * @param x The X position, widget-relative
+ * @param y The Y position, widget-relative
+ */
+typedef void (*widget_mouse_enter_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y);
+
+/**
+ * @brief Widget mouse exit function
+ * @param widget The widget that was exited
+ * @param ctx To render to
+ */
+typedef void (*widget_mouse_exit_t)(struct widget *widget, gfx_context_t *ctx);
+
+/**
+ * @brief Widget mouse motion function
+ * @param widget The widget that was moved in
+ * @param ctx To render to
+ * @param x The X position, widget-relative
+ * @param y The Y position, widget-relative
+ */
+typedef void (*widget_mouse_motion_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y);
+
+/**
  * @brief Widget structure
  */
 typedef struct widget {
@@ -53,8 +98,16 @@ typedef struct widget {
 
     // Virtual table
     widget_render_t render;         // Render the widget
+    widget_mouse_down_t down;       // Mouse down callback
+    widget_mouse_up_t up;           // Mouse up callback
+    widget_mouse_enter_t enter;     // Mouse enter callback
+    widget_mouse_exit_t exit;       // Mouse exit callback
+    widget_mouse_motion_t motion;   // Mouse motion callback
+
+    // User callbacks
 
     void *impl;                     // Implementation/widget specific field
+    void *user;                     // User-specific field (YOU CAN USE THIS ONE)
 } widget_t;
 
 /**** FUNCTIONS ****/
