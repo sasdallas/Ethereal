@@ -693,6 +693,7 @@ static int pci_kernelFSScan(pci_device_t *dev, void *data) {
  */
 static int pci_fillKernelFS(struct kernelfs_entry *entry, void *data) {
     pci_scanDevice(pci_kernelFSScan, NULL, (void*)entry);
+    entry->finished = 1;
     return 0;
 }
 
