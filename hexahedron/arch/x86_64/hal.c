@@ -320,7 +320,6 @@ int hal_setPowerState(int state) {
             outportw(0x600, 0x34);      // Cloud Hypervisor
 
             printf(WARN_COLOR_CODE "WARNING: No good way of powering the computer off" COLOR_CODE_RESET);
-            smp_disableCores();
             asm volatile ("hlt");
         }
     } else if (state == HAL_POWER_REBOOT) {
@@ -343,7 +342,6 @@ int hal_setPowerState(int state) {
             outportb(0x64, 0xFE);
             
             printf(WARN_COLOR_CODE "WARNING: No good way of rebooting the computer" COLOR_CODE_RESET);
-            smp_disableCores();
             asm volatile ("hlt");
         } 
     } else if (state == HAL_POWER_HIBERNATE) {
@@ -353,6 +351,18 @@ int hal_setPowerState(int state) {
     }
 
     return -ENOTSUP;
+}
+
+/**
+ * @brief Prepare for power state change
+ * @param state The state
+ */
+void hal_prepareForPowerState(int state) {
+    if (state == HAL_POWER_SHUTDOWN || state == HAL_POWER_REBOOT) {
+        smp_disableCores();
+    } 
+
+    dprintf(ERR, "All cores disabled. Ready to reboot.\n");
 }
 
 /**

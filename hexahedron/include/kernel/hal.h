@@ -69,4 +69,10 @@ int hal_getInterruptState();
  */
 int hal_setPowerState(int state);
 
+/**
+ * @brief Prepare for power state change
+ * @param state The state
+ */
+void hal_prepareForPowerState(int state);
+
 #endif

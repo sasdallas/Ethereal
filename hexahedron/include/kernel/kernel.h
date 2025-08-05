@@ -14,11 +14,22 @@
 #ifndef KERNEL_KERNEL_H
 #define KERNEL_KERNEL_H
 
+
+/**** VARIABLES ****/
+
+/* Set when the kernel is beginning to shutdown */
+extern int kernel_shutdown;
+
 /**** FUNCTIONS ****/
 
 /**
  * @brief Main kernel function - start of generic routines
  */
 void kmain();
+
+/**
+ * @brief Kernel prepare for new power state
+ */
+void kernel_prepareForPowerState(int state);
 
 #endif

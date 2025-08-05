@@ -254,7 +254,7 @@ int driver_deinit() {
 }
 
 struct driver_metadata driver_metadata = { 
-    .name = "NVMe driver",
+    .name = "NVMe Driver",
     .author = "Samuel Stuart",
     .init = driver_init,
     .deinit = driver_deinit

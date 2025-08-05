@@ -73,6 +73,9 @@
 /* Log method of generic */
 #define LOG(status, ...) dprintf_module(status, "GENERIC", __VA_ARGS__)
 
+/* Set when the kernel is beginning to shutdown */
+int kernel_shutdown = 0;
+
 /**
  * @brief Mount the initial ramdisk to /device/initrd/
  */
@@ -303,4 +306,62 @@ void kmain() {
         process_switchNextThread();
     }
 
+}
+
+/**
+ * @brief Kernel prepare for new power state
+ */
+void kernel_prepareForPowerState(int state) {
+    if (!(state == HAL_POWER_SHUTDOWN || state == HAL_POWER_REBOOT)) {
+        return;
+    }
+
+    hal_prepareForPowerState(state);
+
+    // Enter shutdown state
+    kernel_shutdown = 1;
+
+extern int video_ks;
+    video_ks = 0;
+
+    video_clearScreen(RGB(0,0,0));
+    terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
+
+    printf(COLOR_CODE_YELLOW "System is preparing to enter power state: %s\n" COLOR_CODE_RESET, (state == HAL_POWER_SHUTDOWN) ? "SHUTDOWN" : "REBOOT");
+    printf("Waiting for all processes to exit\t\t\t\t\t\t\t\t\t\t\t\t\t");
+
+    // Exit all other processes
+extern list_t *process_list;
+    foreach(process, process_list) {
+        if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL)) {
+            dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
+            process_exit((process_t*)process->value, 0);
+        }
+    }
+
+    printf("[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
+
+    // Syncronize
+    // TODO: Syncronize
+    printf("Syncronizing disk cache\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t" "[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
+
+    // Deinitialize all drivers
+    foreach(d, driver_list) {
+        loaded_driver_t *driver = (loaded_driver_t*)d->value;
+
+        // Print status
+        char *filename = driver->filename;
+        char spaces[63] = { 0 };
+        for (unsigned i = 0; i < 63 - strlen(filename); i++) spaces[i] = ' ';            
+
+        // Unload the driver
+        printf("Unloading driver: %s%s", filename, spaces);
+        if (driver->metadata->deinit() != DRIVER_STATUS_SUCCESS) {
+            printf("   [" COLOR_CODE_RED "FAIL" COLOR_CODE_RESET "]\n");
+        } else {
+            printf("   [" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
+        }
+    }
+
+    printf(COLOR_CODE_GREEN "System is ready to exit Ethereal. Bye!\n");
 }

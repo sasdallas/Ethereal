@@ -85,6 +85,10 @@ typedef struct loaded_driver {
 // IMPORTANT: Current version of the Hexahedron driver loader
 #define DRIVER_CURRENT_VERSION          1
 
+/**** VARIABLES ****/
+
+extern list_t *driver_list;
+
 /**** FUNCTIONS ****/
 
 /**

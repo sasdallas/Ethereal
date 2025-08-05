@@ -18,6 +18,7 @@
 #include <kernel/debug.h>
 #include <kernel/loader/driver.h>
 #include <sys/ethereal/driver.h>
+#include <kernel/kernel.h>
 #include <sys/ethereal/reboot.h>
 #include <kernel/hal.h>
 #include <fcntl.h>
@@ -188,14 +189,22 @@ long sys_reboot(int operation) {
     if (operation < 0 || operation > REBOOT_TYPE_HIBERNATE) return -EINVAL;
     if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
 
-    // Try reboot
+    // Disable interrupts
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
+    int state = 0;
     if (operation == REBOOT_TYPE_DEFAULT) {
-        return hal_setPowerState(HAL_POWER_REBOOT);
+        state = HAL_POWER_REBOOT;
     } else if (operation == REBOOT_TYPE_POWEROFF) {
-        return hal_setPowerState(HAL_POWER_SHUTDOWN);
+        state = HAL_POWER_SHUTDOWN;
     } else if (operation == REBOOT_TYPE_HIBERNATE) {
-        return hal_setPowerState(HAL_POWER_HIBERNATE);
+        state = HAL_POWER_HIBERNATE;
     }
 
-    return -EINVAL;
+    kernel_prepareForPowerState(state);
+    int r = hal_setPowerState(state);
+
+    // Reboot failure
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+    return r;
 }

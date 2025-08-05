@@ -390,7 +390,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
  * @returns Process structure
  */
 process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data){
-    process_t *proc = process_create(NULL, name, flags, priority);
+    process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL, priority);
     proc->main_thread = thread_create(proc, proc->dir, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
 
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, data);
@@ -839,7 +839,7 @@ void process_exit(process_t *process, int status_code) {
     spinlock_release(&reap_queue_lock);
 
     // To the next process we go
-    process_switchNextThread();
+    if (process == current_cpu->current_process) process_switchNextThread();
 }
 
 /**
