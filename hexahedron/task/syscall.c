@@ -659,6 +659,8 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     if (!nfds) return 0;
     SYSCALL_VALIDATE_PTR_SIZE(fds, sizeof(struct pollfd) * nfds);
 
+    int have_hit = 0;
+
     for (size_t i = 0; i < nfds; i++) {
         // Check the file descriptor
         fds[i].revents = 0;
@@ -675,9 +677,11 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
             // Oh, we already have a hit! :D
             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-            return 1;
+            have_hit++;
         } 
     }
+
+    if (have_hit) return have_hit;
 
     // We didn't get anything. Did they want us to wait?
     if (timeout == 0) return 0;
@@ -711,10 +715,11 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         if (ready & events) {
             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+            have_hit++;
         } 
     }
 
-    return 1;   // At least one thread woke us up
+    return have_hit;   // At least one thread woke us up
 }
 
 long sys_pselect(sys_pselect_context_t *ctx) {
