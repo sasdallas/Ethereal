@@ -57,7 +57,6 @@ void version() {
     exit(1);
 }
 
-
 /**
  * @brief Main redraw function of Celestial
  */
@@ -76,29 +75,30 @@ void celestial_redraw() {
  * @brief Main loop of Celestial
  */
 void celestial_main() {
+    list_t *socket_keys = NULL;
+
     while (1) {
-        // Reset graphics clips
+        // Reset graphics clips once per frame
         gfx_resetClips(WM_GFX);
 
-        // Accept new sockets
+        // Handle input devices and window management
         socket_accept();
-
-        // Update the mouse cursor (to make clips)
         mouse_update();
-
-        // Update keyboard
         kbd_update();
 
-        // Redraw
-        // if (WM_GFX->clip || WM_UPDATE_QUEUE->length) {
-            celestial_redraw();
-        // }
-
-        list_t *keys = hashmap_keys(WM_SW_MAP);
-        foreach(kn, keys) {
+        // Process all socket events
+        socket_keys = hashmap_keys(WM_SW_MAP);
+        
+        
+        foreach(kn, socket_keys) {
             socket_handle((int)(uintptr_t)kn->value);
         }
-        list_destroy(keys,false);
+
+        // Redraw only if there were changes
+        celestial_redraw();
+
+        // Control frame rate to reduce CPU usage
+        usleep(16667); // ~60 FPS (1000000 microseconds / 60)
     }
 }
 
