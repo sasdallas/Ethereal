@@ -55,3 +55,25 @@ int widget_render(gfx_context_t *ctx, widget_t *widget) {
 
     return 0;
 }
+
+/**
+ * @brief Set widget event handler
+ * @param widget The widget to set the event handler of
+ * @param event The event
+ * @param handler The handler
+ * @param d Data variable
+ */
+int widget_setHandler(widget_t *widget, uint32_t event, void *handler, void *d) {
+    switch (event) {
+        case WIDGET_EVENT_CLICK:
+            widget->user.click.fn = handler;
+            widget->user.click.d = d;
+            break;
+
+        default:
+            errno = EINVAL;
+            return -1;
+    }
+
+    return 0;
+}

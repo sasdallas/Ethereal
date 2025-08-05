@@ -28,6 +28,9 @@
 #define WIDGET_TYPE_LABEL                   1
 #define WIDGET_TYPE_BUTTON                  2
 
+/* Events */
+#define WIDGET_EVENT_CLICK                  0
+
 /**** TYPES ****/
 
 struct widget;
@@ -86,6 +89,28 @@ typedef void (*widget_mouse_exit_t)(struct widget *widget, gfx_context_t *ctx);
  */
 typedef void (*widget_mouse_motion_t)(struct widget *widget, gfx_context_t *ctx, int32_t x, int32_t y);
 
+
+/**
+ * @brief Widget click function
+ * @param widget The widget that was clicked
+ * @param d Data parameter
+ */
+typedef void (*widget_user_click_t)(struct widget *widget, void *d);
+
+
+typedef struct widget_user_callback {
+    void (*fn)(struct widget*, void *d);
+    void *d;
+} widget_user_callback_t;
+
+
+/**
+ * @brief Widget user callback list
+ */
+typedef struct widget_user_callbacks {
+    widget_user_callback_t click;
+} widget_user_callbacks_t;
+
 /**
  * @brief Widget structure
  */
@@ -105,9 +130,10 @@ typedef struct widget {
     widget_mouse_motion_t motion;   // Mouse motion callback
 
     // User callbacks
+    widget_user_callbacks_t user;   // User callbacks
 
     void *impl;                     // Implementation/widget specific field
-    void *user;                     // User-specific field (YOU CAN USE THIS ONE)
+    void *d;                        // User-specific field (YOU CAN USE THIS ONE)
 } widget_t;
 
 /**** FUNCTIONS ****/
@@ -125,5 +151,14 @@ widget_t *widget_createEmpty();
  * @returns 0 on success or -1 on failure with errno set
  */
 int widget_render(gfx_context_t *ctx, widget_t *widget);
+
+/**
+ * @brief Set widget event handler
+ * @param widget The widget to set the event handler of
+ * @param event The event
+ * @param handler The handler
+ * @param d Additional data parameter
+ */
+int widget_setHandler(widget_t *widget, uint32_t event, void *handler, void *d);
 
 #endif

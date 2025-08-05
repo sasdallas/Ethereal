@@ -85,6 +85,7 @@ static void widget_mouseCallback(window_t *win, uint32_t event_type, void *event
         widget_getCoordinates(w, &geom_x, &geom_y);
 
         if (w->up) w->up(w, frame_getContext((widget_t*)win->d), ev->x - geom_x, ev->y - geom_y, ev->released);
+        if (w->user.click.fn) w->user.click.fn(w, w->user.click.d);
     } else if (event_type == CELESTIAL_EVENT_MOUSE_MOTION) {
         celestial_event_mouse_motion_t *ev = (celestial_event_mouse_motion_t*)event;
 
@@ -110,6 +111,10 @@ static void widget_mouseCallback(window_t *win, uint32_t event_type, void *event
             if (w->enter) w->enter(w, frame_getContext((widget_t*)win->d), ev->x - geom_x, ev->y - geom_y);
         }
     }
+
+    // TODO: Only update when needed
+    gfx_render(celestial_getGraphicsContext(win));
+    celestial_flip(win);
 }
 
 /**
