@@ -23,6 +23,10 @@
 #define HAL_INTERRUPTS_DISABLED         0
 #define HAL_INTERRUPTS_ENABLED          1
 
+#define HAL_POWER_SHUTDOWN              1
+#define HAL_POWER_REBOOT                2
+#define HAL_POWER_HIBERNATE             3
+
 /**** TYPES ****/
 
 /**
@@ -57,5 +61,12 @@ void hal_setInterruptState(int state);
  * @brief Get the interrupt state on the current CPU
  */
 int hal_getInterruptState();
+
+/**
+ * @brief Set power state
+ * @param state The power state to set
+ * @returns Error code
+ */
+int hal_setPowerState(int state);
 
 #endif

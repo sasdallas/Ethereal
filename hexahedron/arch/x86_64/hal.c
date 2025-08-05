@@ -27,6 +27,8 @@
 #include <kernel/debugger.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
+#include <kernel/mem/mem.h>
+#include <kernel/mem/pmm.h>
 
 // Drivers (generic)
 #include <kernel/drivers/serial.h>
@@ -253,6 +255,105 @@ void hal_init(int stage) {
     }
 }
 
+
+#ifdef ACPICA_ENABLED
+
+/**
+ * @brief HAL do ACPICA shutdown
+ */
+int hal_acpicaShutdown() {
+    if (!hal_getACPICA()) return 1;
+
+    AcpiEnterSleepStatePrep(ACPI_STATE_S5);
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    AcpiEnterSleepState(ACPI_STATE_S5);
+
+    return 1;
+}
+
+/**
+ * @brief HAL do ACPICA reboot
+ */
+int hal_acpicaReboot() {
+    dprintf(ERR, "ACPICA reboot not supported\n");
+    return 1;
+}
+
+/**
+ * @brief HAL do ACPICA hibernate
+ */
+int hal_acpicaHibernate() {
+    if (!hal_getACPICA()) return 1;
+
+    AcpiEnterSleepStatePrep(ACPI_STATE_S4);
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    AcpiEnterSleepState(ACPI_STATE_S4);
+
+    dprintf(DEBUG, "Resuming from sleep state!\n");
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+
+    return 1;
+}
+
+#else
+
+int hal_acpicaShutdown() { return 1; }
+int hal_acpicaReboot() { return 1; }
+int hal_acpicaHibernate() { return 1; }
+
+#endif
+
+/**
+ * @brief Set power state
+ * @param state The power state to set
+ * @returns Error code
+ */
+int hal_setPowerState(int state) {
+    if (state == HAL_POWER_SHUTDOWN) {
+        if (hal_acpicaShutdown()) {
+            // TODO: APM driver
+
+            // Try emulator shutdown
+            outportw(0xB004, 0x2000);   // Older versions of QEMU
+            outportw(0x604, 0x2000);    // Newer versions of QEMU
+            outportw(0x4004, 0x3400);   // VirtualBox
+            outportw(0x600, 0x34);      // Cloud Hypervisor
+
+            printf(WARN_COLOR_CODE "WARNING: No good way of powering the computer off" COLOR_CODE_RESET);
+            smp_disableCores();
+            asm volatile ("hlt");
+        }
+    } else if (state == HAL_POWER_REBOOT) {
+        if (hal_acpicaReboot()) {
+            // Fuck it, we ball with the IDT
+            dprintf(WARN, "ACPICA reboot failure: Using backup method\n");
+            uintptr_t frame = pmm_allocateBlock();
+            uintptr_t fr = mem_remapPhys(frame, 4096);
+            memset((void*)fr, 0, 4096);
+
+            asm volatile (
+                "lidt (%0)" :: "r"(fr)
+            );
+
+            uint8_t out;
+            do {
+                out = inportb(0x64);
+            } while (out & 0x02);
+
+            outportb(0x64, 0xFE);
+            
+            printf(WARN_COLOR_CODE "WARNING: No good way of rebooting the computer" COLOR_CODE_RESET);
+            smp_disableCores();
+            asm volatile ("hlt");
+        } 
+    } else if (state == HAL_POWER_HIBERNATE) {
+        if (hal_acpicaHibernate()) {
+            return -ENOSYS;
+        }
+    }
+
+    return -ENOTSUP;
+}
 
 /**
  * @brief Get whether ACPICA is in use and callable

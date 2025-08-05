@@ -438,4 +438,9 @@ ACPI_STATUS AcpiOsSignal(UINT32 Function, void *Info) {
     return AE_OK;
 }
 
+ACPI_STATUS AcpiOsEnterSleep (UINT8 SleepState, UINT32 RegaValue, UINT32 RegbValue) {
+    LOG(INFO, "Preparing to enter sleep state S%d\n", SleepState);
+    return AE_OK;
+}
+
 #endif

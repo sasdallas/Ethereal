@@ -210,5 +210,6 @@ long sys_load_driver(char *filename, int priority, char **argv);
 long sys_unload_driver(pid_t id);
 long sys_get_driver(pid_t id, ethereal_driver_t *driver);
 
+long sys_reboot(int operation);
 
 #endif

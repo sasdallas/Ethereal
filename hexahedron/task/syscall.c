@@ -130,6 +130,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_GET_DRIVER]        = (syscall_func_t)(uintptr_t)sys_get_driver,
     [SYS_SETITIMER]         = (syscall_func_t)(uintptr_t)sys_setitimer,
     [SYS_PTRACE]            = (syscall_func_t)(uintptr_t)sys_ptrace,
+    [SYS_REBOOT]            = (syscall_func_t)(uintptr_t)sys_reboot,
 }; 
 
 

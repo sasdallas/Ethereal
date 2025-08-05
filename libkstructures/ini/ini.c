@@ -47,7 +47,7 @@ ini_t *ini_load(char *filename) {
     fseek(f, 0, SEEK_SET);
 
     char *buffer = malloc(fsize);
-    if (fread(buffer, fsize, 1, f) != (size_t)fsize) {
+    if (fread(buffer, fsize, 1, f) != 1) {
         fclose(f);
         free(buffer);
         return NULL;

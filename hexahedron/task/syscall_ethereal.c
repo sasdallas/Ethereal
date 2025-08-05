@@ -18,6 +18,8 @@
 #include <kernel/debug.h>
 #include <kernel/loader/driver.h>
 #include <sys/ethereal/driver.h>
+#include <sys/ethereal/reboot.h>
+#include <kernel/hal.h>
 #include <fcntl.h>
 #include <string.h>
 
@@ -179,3 +181,21 @@ long sys_get_driver(pid_t id, ethereal_driver_t *driver) {
     
     return 0;
 } 
+
+/**** REBOOT API ****/
+
+long sys_reboot(int operation) {
+    if (operation < 0 || operation > REBOOT_TYPE_HIBERNATE) return -EINVAL;
+    if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+
+    // Try reboot
+    if (operation == REBOOT_TYPE_DEFAULT) {
+        return hal_setPowerState(HAL_POWER_REBOOT);
+    } else if (operation == REBOOT_TYPE_POWEROFF) {
+        return hal_setPowerState(HAL_POWER_SHUTDOWN);
+    } else if (operation == REBOOT_TYPE_HIBERNATE) {
+        return hal_setPowerState(HAL_POWER_HIBERNATE);
+    }
+
+    return -EINVAL;
+}
