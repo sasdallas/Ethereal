@@ -287,7 +287,7 @@ void *PREFIX(malloc)(size_t req_size)
 	{
 		l_warningCount += 1;
 		#if defined LIBALLOC_DEBUG || defined LIBALLOC_INFO
-		LOG(WARN, "WARNING: alloc( 0 ) called from %x\n",
+		LOG(WARN, "WARNING: alloc( 0 ) called from %p\n",
 							__builtin_return_address(0) );
 		FLUSH();
 		#endif
@@ -625,7 +625,7 @@ void PREFIX(free)(void *ptr)
 	{
 		l_warningCount += 1;
 		#if defined LIBALLOC_DEBUG || defined LIBALLOC_INFO
-		LOG(WARN, "WARNING: PREFIX(free)( NULL ) called from %x\n",
+		LOG(WARN, "WARNING: PREFIX(free)( NULL ) called from %p\n",
 							__builtin_return_address(0) );
 		FLUSH();
 		#endif
@@ -664,7 +664,7 @@ void PREFIX(free)(void *ptr)
 		if ( min->magic == LIBALLOC_DEAD )
 		{
 			#if defined LIBALLOC_DEBUG || defined LIBALLOC_INFO
-			LOG(ERR, "ERROR: multiple PREFIX(free)() attempt on %x from %x.\n", 
+			LOG(ERR, "ERROR: multiple PREFIX(free)() attempt on %p from %p.\n", 
 									ptr,
 									__builtin_return_address(0) );
 			FLUSH();
@@ -673,7 +673,7 @@ void PREFIX(free)(void *ptr)
 		else
 		{
 			#if defined LIBALLOC_DEBUG || defined LIBALLOC_INFO
-			LOG(ERR, "ERROR: Bad PREFIX(free)( %x ) called from %x\n",
+			LOG(ERR, "ERROR: Bad PREFIX(free)( %p ) called from %p\n",
 								ptr,
 								__builtin_return_address(0) );
 			FLUSH();
@@ -686,7 +686,7 @@ void PREFIX(free)(void *ptr)
 	}
 
 	#ifdef LIBALLOC_DEBUG
-	LOG(DEBUG, "%x PREFIX(free)( %x ): ", 
+	LOG(DEBUG, "%p PREFIX(free)( %p ): ", 
 				__builtin_return_address( 0 ),
 				ptr );
 	FLUSH();

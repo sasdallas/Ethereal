@@ -536,7 +536,7 @@ int pci_scanFunction(uint8_t bus, uint8_t slot, uint8_t function, pci_scan_callb
     if (dev->class_code == 0x06 && dev->subclass_code == 0x04) {
         // PCI-to-PCI bridge
         uint8_t secondary_bus = pci_readConfigOffset(bus, slot, function, 0x19, 1);
-        pci_probeBus(secondary_bus);
+        pci_scanBus(secondary_bus, callback, parameters, data);
     }
 
     // Check to see if this matches parameters
@@ -677,7 +677,7 @@ static int pci_kernelFSScan(pci_device_t *dev, void *data) {
         " IRQ: %d Pin: %d\n"
         " BAR0: 0x%08x BAR1: 0x%08x BAR2: 0x%08x BAR3: 0x%08x BAR4: 0x%08x BAR5: 0x%08x\n", 
             dev->bus, dev->slot, dev->function, pci_readType(dev->bus, dev->slot, dev->function), dev->vid, dev->pid,
-            pci_getInterrupt(dev->bus, dev->slot, dev->function), pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
+            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_OFFSET, 1), pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
             pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR0_OFFSET, 4),
             pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR1_OFFSET, 4),
             pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR2_OFFSET, 4),
