@@ -132,6 +132,9 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                     return 0;
                 }
             } else {
+
+                down->x -= win->decor->borders.left_width;
+                down->y -= win->decor->borders.top_height;
                 return 1;
             }
             return 0;
