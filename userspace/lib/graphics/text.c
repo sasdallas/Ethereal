@@ -208,9 +208,9 @@ int gfx_getAdvanceX(gfx_context_t *ctx, gfx_font_t *font, char ch) {
  * @param string The string to get the bounds of
  * @returns Allocated @c gfx_string_size_t object
  */
-gfx_string_size_t *gfx_getStringSize(gfx_font_t *font, char *string) {
+int gfx_getStringSize(gfx_font_t *font, char *string, gfx_string_size_t *s) {
     size_t width = 0;
-    gfx_string_size_t *s = malloc(sizeof(gfx_string_size_t));
+
 
     char *p = string;
     while (*p++) {
@@ -225,7 +225,7 @@ gfx_string_size_t *gfx_getStringSize(gfx_font_t *font, char *string) {
 
     s->width = width;
     s->height = font->face->size->metrics.height >> 6;
-    return s;
+    return 0;
 }
 
 /**

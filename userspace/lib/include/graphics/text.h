@@ -115,6 +115,6 @@ int gfx_destroyFont(gfx_font_t *font);
  * @param string The string to get the bounds of
  * @returns Allocated @c gfx_string_size_t object
  */
-gfx_string_size_t *gfx_getStringSize(gfx_font_t *font, char *string);
+int gfx_getStringSize(gfx_font_t *font, char *string, gfx_string_size_t *s);
 
 #endif

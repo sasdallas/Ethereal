@@ -38,6 +38,8 @@ gfx_font_t *button_default_font = NULL;
 #define BUTTON_MIN_WIDTH                        50
 #define BUTTON_MIN_HEIGHT                       21
 
+#define STR_OFFSETX                             1
+
 /**
  * @brief Render the button object
  */
@@ -51,10 +53,10 @@ static void button_render(widget_t *widget, gfx_context_t *ctx, int32_t x, int32
     gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x + 2, r.y + 2, r.width - 4, r.height - 3), 2, GFX_GRADIENT_VERTICAL, BUTTON_MAIN_COLOR_START, BUTTON_MAIN_COLOR_END);
     
     // Now render the text using cursed math
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, btn->text);
-    int strx = ((r.width - 4 - s->width) / 2);
-    int stry = ((r.height - 3 - s->height) / 2);
-    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + 2, r.y - 3 + r.height - stry, GFX_RGB(0,0,0));
+    gfx_string_size_t s; gfx_getStringSize(button_default_font, btn->text, &s);
+    int strx = ((r.width - 4 - s.width) / 2);
+    int stry = ((r.height - 3 - s.height) / 2);
+    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + STR_OFFSETX, r.y - 3 + r.height - stry, btn->color);
 }
 
 
@@ -82,10 +84,10 @@ static void button_down(widget_t *widget, gfx_context_t *ctx, int32_t _x, int32_
     gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x + 2, r.y + 2, r.width - 4, r.height - 3), 2, GFX_GRADIENT_VERTICAL, BUTTON_HOLD_COLOR_START, BUTTON_HOLD_COLOR_END);
 
     // Now render the text using cursed math
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, btn->text);
-    int strx = ((r.width - 4 - s->width) / 2);
-    int stry = ((r.height - 3 - s->height) / 2);
-    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + 2, r.y - 3 + r.height - stry, GFX_RGB(0,0,0));
+    gfx_string_size_t s; gfx_getStringSize(button_default_font, btn->text, &s);
+    int strx = ((r.width - 4 - s.width) / 2);
+    int stry = ((r.height - 3 - s.height) / 2);
+    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + STR_OFFSETX, r.y - 3 + r.height - stry, btn->color);
 }
 
 /**
@@ -111,10 +113,10 @@ static void button_up(widget_t *widget, gfx_context_t *ctx, int32_t _x, int32_t 
     gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x + 2, r.y + 2, r.width - 4, r.height - 3), 2, GFX_GRADIENT_VERTICAL, BUTTON_HIGHLIGHT_COLOR_START, BUTTON_HIGHLIGHT_COLOR_END);
     
     // Now render the text using cursed math
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, btn->text);
-    int strx = ((r.width - 4 - s->width) / 2);
-    int stry = ((r.height - 3 - s->height) / 2);
-    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + 2, r.y - 3 + r.height - stry, GFX_RGB(0,0,0));
+    gfx_string_size_t s; gfx_getStringSize(button_default_font, btn->text, &s);
+    int strx = ((r.width - 4 - s.width) / 2);
+    int stry = ((r.height - 3 - s.height) / 2);
+    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + STR_OFFSETX, r.y - 3 + r.height - stry, btn->color);
 }
 
 /**
@@ -139,10 +141,10 @@ static void button_enter(widget_t *widget, gfx_context_t *ctx, int32_t _x, int32
     gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x + 2, r.y + 2, r.width - 4, r.height - 3), 2, GFX_GRADIENT_VERTICAL, BUTTON_HIGHLIGHT_COLOR_START, BUTTON_HIGHLIGHT_COLOR_END);
     
     // Now render the text using cursed math
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, btn->text);
-    int strx = ((r.width - 4 - s->width) / 2);
-    int stry = ((r.height - 3 - s->height) / 2);
-    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + 2, r.y - 3 + r.height - stry, GFX_RGB(0,0,0));
+    gfx_string_size_t s; gfx_getStringSize(button_default_font, btn->text, &s);
+    int strx = ((r.width - 4 - s.width) / 2);
+    int stry = ((r.height - 3 - s.height) / 2);
+    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + STR_OFFSETX, r.y - 3 + r.height - stry, btn->color);
 
 }
 
@@ -166,10 +168,11 @@ static void button_exit(widget_t *widget, gfx_context_t *ctx) {
     gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x + 2, r.y + 2, r.width - 4, r.height - 3), 2, GFX_GRADIENT_VERTICAL, BUTTON_MAIN_COLOR_START, BUTTON_MAIN_COLOR_END);
     
     // Now render the text using cursed math
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, btn->text);
-    int strx = ((r.width - 4 - s->width) / 2);
-    int stry = ((r.height - 3 - s->height) / 2);
-    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + 2, r.y - 3 + r.height - stry, GFX_RGB(0,0,0));
+    gfx_string_size_t s; 
+    gfx_getStringSize(button_default_font, btn->text, &s);
+    int strx = ((r.width - 4 - s.width) / 2);
+    int stry = ((r.height - 3 - s.height) / 2);
+    gfx_renderString(ctx, button_default_font, btn->text, r.x + strx + STR_OFFSETX, r.y - 3 + r.height - stry, btn->color);
 }
 
 /**
@@ -194,11 +197,12 @@ widget_t *button_create(widget_t *frame, char *text, gfx_color_t color, int stat
     button->enabled = state;
 
     // Get bounding box for the text
-    gfx_string_size_t *s = gfx_getStringSize(button_default_font, text);
+    gfx_string_size_t s;
+    gfx_getStringSize(button_default_font, text, &s);
 
     // Set components up
-    w->width = s->width + 20;
-    w->height = s->height + 10;
+    w->width = s.width + 20;
+    w->height = s.height + 10;
     w->type = WIDGET_TYPE_BUTTON;
     w->impl = (void*)button;
     w->render = button_render;
@@ -211,7 +215,6 @@ widget_t *button_create(widget_t *frame, char *text, gfx_color_t color, int stat
     if (w->width < BUTTON_MIN_WIDTH) w->width = BUTTON_MIN_WIDTH;
     if (w->height < BUTTON_MIN_HEIGHT) w->height = BUTTON_MIN_HEIGHT;
 
-    free(s);
     list_append(frame->children, w);
     return w;
 }
