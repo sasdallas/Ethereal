@@ -98,14 +98,24 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
 
     CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
 
-    node_t *n = malloc(sizeof(node_t));
-    n->value = win;
-    n->owner = WM_WINDOW_LIST;
-    n->next = WM_WINDOW_LIST->head;
-    n->prev = NULL;
-    if (WM_WINDOW_LIST->head) WM_WINDOW_LIST->head->prev = n;
-    WM_WINDOW_LIST->head = n;
-    if (!WM_WINDOW_LIST->tail) WM_WINDOW_LIST->tail = n;
+    // Notify that we have unfocused the previous window
+    if (WM_FOCUSED_WINDOW) {
+        celestial_event_unfocused_t unfocus = {
+            .magic = CELESTIAL_MAGIC_EVENT,
+            .size = sizeof(celestial_event_unfocused_t),
+            .type = CELESTIAL_EVENT_UNFOCUSED,
+            .wid = WM_FOCUSED_WINDOW->id,
+        };
+
+        event_send(WM_FOCUSED_WINDOW, &unfocus);
+    }
+
+
+    // Reorder
+    WM_FOCUSED_WINDOW = win;
+    list_append(WM_WINDOW_LIST, win);
+
+    // TODO: Maybe we should send FOCUS event? This resulted in instability last I tried. Decorations work fine :D
 
     hashmap_set(WM_WINDOW_MAP, (void*)(uintptr_t)win->id, win);
     return win;
