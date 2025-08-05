@@ -26,6 +26,8 @@
 #include <kernel/drivers/usb/status.h>
 #include <kernel/drivers/usb/api.h>
 
+#include <kernel/fs/kernelfs.h>
+
 /**** TYPES ****/
 
 // Prototype
@@ -47,12 +49,16 @@ typedef void (*usb_poll_t)(struct USBController *controller);
  * drivers, such as xHCI/EHCI
  */
 typedef struct USBController {
+    uint32_t id;            // ID of this USB controller
     void *hc;               // Pointer to the host controller structure
     usb_poll_t poll;        // Poll method, will be called once every tick
     list_t *devices;        // List of USB devices with a maximum of 127
     uint32_t last_address;  // Last address given to a device. Starts at 0x1
 } USBController_t;
 
+/**** VARIABLES ****/
+
+extern kernelfs_dir_t *usb_kernelfs;
 
 /**** FUNCTIONS ****/
 
@@ -115,5 +121,10 @@ USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int sp
  * @warning Does not shut the device down, just frees it from memory. Call @c usb_deinitializeDevice first
  */
 void usb_destroyDevice(USBController_t *controller, USBDevice_t *dev);
+
+/**
+ * @brief Mount USB KernelFS node 
+ */
+void usb_mount();
 
 #endif

@@ -30,7 +30,7 @@ int xhci_controller_count = 0;
  * @param xhci The controller to reset
  */
 int xhci_resetController(xhci_t *xhci) {
-    if (TIMEOUT(!(xhci->op->usbsts & XHCI_USBSTS_CNR), 500)) {
+    if (TIMEOUT(!(xhci->op->usbsts & XHCI_USBSTS_CNR), 10000)) {
         LOG(ERR, "CNR in xHCI controller did not clear\n");
         return 1;
     }
@@ -38,7 +38,7 @@ int xhci_resetController(xhci_t *xhci) {
     // Issue software reset
     xhci->op->usbcmd |= XHCI_USBCMD_HCRST;
 
-    if (TIMEOUT(!(xhci->op->usbcmd & XHCI_USBCMD_HCRST), 500)) {
+    if (TIMEOUT(!(xhci->op->usbcmd & XHCI_USBCMD_HCRST), 10000)) {
         LOG(ERR, "HCRST in xHCI controller did not clear\n");
         return 1;
     }
@@ -68,7 +68,7 @@ int xhci_processExtendedCapabilities(xhci_t *xhci) {
             leg->os_sem = 1;
             
             // Timeout until BIOS sem clears
-            if (TIMEOUT(!(leg->bios_sem), 2000)) {
+            if (TIMEOUT(!(leg->bios_sem), 10000)) {
                 LOG(ERR, "BIOS/OS handoff failure (BIOS did not release semaphore)\n");
                 return 1;
             }

@@ -71,7 +71,7 @@ static spinlock_t *ata_lock = NULL;
  */
 int ata_find(pci_device_t *dev, void *data) {
     if (dev->class_code != 0x01) return 0;
-    if (dev->subclass_code != 0x01 && dev->subclass_code != 0x05 && dev->subclass_code != 0x06) return 0;
+    if (dev->subclass_code != 0x01 && dev->subclass_code != 0x05) return 0;
 
     // !!!: Ugh, why did I think only one ATA controller could be present? That was a while ago and now I hate myself for it.
     if (ide_pci) {
@@ -793,10 +793,27 @@ int ata_initialize() {
     }
 
     // Make sure primary and secondary channels are operating in compatibility
-    if ((progif & (1 << 0)) || (progif & (1 << 2))) {
-        LOG(WARN, "Both channels need to be operating in compatibility mode (switching not implemented).\n");
-        return 0;
-    } 
+    if ((progif & (1 << 0))) {
+        if ((progif & (1 << 1))) {
+            // Can change
+            progif &= ~(1 << 0);
+            pci_writeConfigOffset(ide_pci->bus, ide_pci->slot, ide_pci->function, PCI_PROGIF_OFFSET, progif, 1);
+        } else {
+            LOG(ERR, "Cannot change primary channel mode.\n");
+            return -EIO;
+        }
+    }
+
+    if ((progif & (1 << 2))) {
+        if ((progif & (1 << 3))) {
+            // Can change
+            progif &= ~(1 << 2);
+            pci_writeConfigOffset(ide_pci->bus, ide_pci->slot, ide_pci->function, PCI_PROGIF_OFFSET, progif, 1);
+        } else {
+            LOG(ERR, "Cannot change secondary channel mode.\n");
+            return -EIO;
+        }
+    }
 
     // DMA not supported? Use PIO mode
     if (!(progif & (1 << 7))) pio_only = 1;

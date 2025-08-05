@@ -440,21 +440,6 @@ int rtl8169_init(pci_device_t *device) {
     return 0;
 }
 
-// /**
-//  * @brief PCI scan method
-//  */
-// int rtl8169_scan(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data) {
-//     if (vendor_id == 0x10ec && (device_id == 0x8161 || device_id == 0x8168 || device_id == 0x8169 || device_id == 0x2600)) {
-//         // RTL8169
-//         return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
-//     }
-
-//     if ((vendor_id == 0x1259 && device_id == 0xc107) || (vendor_id == 0x1737 && device_id == 0x1032) || (vendor_id == 0x16ec && device_id == 0x0116)) {
-//         return rtl8169_init(PCI_ADDR(bus, slot, function, 0));
-//     }
-
-//     return 0;
-// }
 
 /**
  * @brief PCI scan method

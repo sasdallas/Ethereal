@@ -17,10 +17,17 @@
 
 int ide_initialize(int argc, char **argv) {
     // Initialize and load the main sections of the IDE ATA driver
-    ata_initialize();
+    int status = ata_initialize();
     
-    LOG(INFO, "IDE driver online and initialized\n");
-    return 0;
+    if (!status) {
+        return DRIVER_STATUS_SUCCESS;
+    } else if (status == -ENODEV) {
+        return DRIVER_STATUS_NO_DEVICE;
+    } else if (status == -ENOTSUP) {
+        return DRIVER_STATUS_UNSUPPORTED;
+    }
+
+    return DRIVER_STATUS_ERROR;
 }
 
 int ide_deinit() {

@@ -19,6 +19,7 @@
 #include <kernel/drivers/usb/desc.h>
 #include <kernel/drivers/usb/req.h>
 #include <structs/list.h>
+#include <kernel/fs/kernelfs.h>
 
 /**** DEFINITIONS ****/
 
@@ -177,6 +178,8 @@ typedef struct USBDevice {
     hc_interrupt_t      interrupt;          // Interrupt transfer request
 
     // Other
+    uint32_t dev_id;                        // Hexahedron-chosen device ID (don't worry, this doesn't affect you)
+    kernelfs_dir_t *dir;                    // KernelFS directory
     void *dev;                              // Controller-defined device structure
 } USBDevice_t;
 

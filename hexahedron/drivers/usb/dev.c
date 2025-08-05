@@ -19,11 +19,14 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/fs/kernelfs.h>
 #include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB:DEV", __VA_ARGS__)
 
+/* Last device ID */
+static volatile uint32_t usb_last_device_id = 0;
 
 /**
  * @brief Create a new USB device structure for initialization
@@ -229,6 +232,31 @@ static char *usb_getStringIndex(USBDevice_t *device, int idx, uint16_t lang) {
     return string_output;
 }
 
+/**
+ * @brief Read model of device
+ */
+static int usb_readModelFS(kernelfs_entry_t *ent, void *d) {
+    USBDevice_t *dev = (USBDevice_t*)d;
+    char *product_str = usb_getStringIndex(dev, dev->device_desc.iProduct, dev->chosen_language);
+    
+    if (product_str) {
+        kernelfs_writeData(ent, "%s\n", product_str);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Create the KernelFS node for a device
+ * @param dev The device to create the KernelFS node for
+ */
+static int usb_createKernelFS(USBDevice_t *dev) {
+    char name[64] = { 0 };
+    snprintf(name, 64, "%d-%d", dev->c->id, dev->dev_id);
+    dev->dir = kernelfs_createDirectory(usb_kernelfs, name, 1);
+    kernelfs_createEntry(dev->dir, "model", usb_readModelFS, (void*)dev);
+    return 0;
+}
 
 
 /**
@@ -464,6 +492,10 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         LOG(ERR, "USB initialization failed - could not set configuration\n");
         return USB_FAILURE;
     }
+
+    // Create KernelFS
+    dev->dev_id = usb_last_device_id++;
+    usb_createKernelFS(dev);
 
     // Try to find a driver
     usb_initializeDeviceDriver(dev);

@@ -57,6 +57,7 @@
 #include <kernel/drivers/net/tcp.h>
 #include <kernel/drivers/net/unix.h>
 #include <kernel/drivers/sound/mixer.h>
+#include <kernel/drivers/usb/usb.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -153,13 +154,13 @@ void kmain() {
     vfs_init();
 
     // Startup the builtin filesystem drivers    
+    kernelfs_init();
     tarfs_init();
     nulldev_init();
     zerodev_init();
     debug_mountNode();
     periphfs_init();
     pty_init();
-    kernelfs_init();
     tmpfs_init();
     driverfs_init();
     nic_init(); // This initializes the network kernelfs directory
@@ -171,6 +172,7 @@ void kmain() {
     console_mount();
     log_mount();
     random_mount();
+    usb_mount();
 
     // TEMPORARY
     vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);

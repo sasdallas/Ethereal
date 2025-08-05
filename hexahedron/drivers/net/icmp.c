@@ -127,7 +127,10 @@ int icmp_handle(fs_node_t *nic_node, void *frame, size_t size) {
     
         // Resolve the socket
         sock_t *sock = socket_fromID(ntohs(packet->varies & 0xFFFF));
-        if (!sock) return 0;
+        if (!sock) {
+            LOG(ERR, "Socket not found\n");
+            return 0;
+        }
 
         socket_received(sock, frame, size); // Drop entire IPv4 packet
     }
@@ -182,7 +185,7 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         sent_bytes += msg->msg_iov[i].iov_len;
         kfree(pkt);
     }
-
+    
     return sent_bytes;
 }
 

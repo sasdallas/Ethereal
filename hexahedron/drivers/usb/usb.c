@@ -17,12 +17,20 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
+#include <kernel/fs/kernelfs.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB", __VA_ARGS__)
 
 /* List of USB controllers */
 list_t *usb_controller_list = NULL;
+
+/* USB kernelfs node */
+kernelfs_dir_t *usb_kernelfs = NULL;
+
+/* Last controller ID */
+static volatile uint32_t usb_last_controller_id = 0;
+
 
 /**
  * @brief Poll method (done once per tick)
@@ -68,6 +76,7 @@ USBController_t *usb_createController(void *hc, usb_poll_t poll) {
     controller->poll = poll;
     controller->devices = list_create("usb devices");
     controller->last_address = 1;   // Always start at 1 - default address is 0x0
+    controller->id = usb_last_controller_id++;
 
     return controller;
 }
@@ -83,4 +92,9 @@ void usb_registerController(USBController_t *controller) {
     list_append(usb_controller_list, controller);
 }
 
-
+/**
+ * @brief Mount USB KernelFS node 
+ */
+void usb_mount() {
+    usb_kernelfs = kernelfs_createDirectory(NULL, "usb", 1);
+}

@@ -35,8 +35,11 @@
  * @param data Pointer to PCI out
  */
 int ahci_scan(pci_device_t *dev, void *data) {
-    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) != 0x01) return 0; // Not an AHCI device
+    if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) != 0x01) {
+        return 0; // Not an AHCI device
+    }
 
+    
     // TODO: Check ven/dev id
     *(pci_device_t**)data = dev; 
     return 1;

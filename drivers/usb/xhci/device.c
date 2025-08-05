@@ -222,11 +222,9 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     LOG(INFO, "Initializing device on port %d\n", port);
 
     // Enable a slot for the device 
-    xhci_enable_slot_trb_t slot = {
-        .type = XHCI_CMD_ENABLE_SLOT,
-        .slot_type = 0,
-        0
-    };
+    xhci_enable_slot_trb_t slot;
+    memset(&slot, 0, sizeof(xhci_enable_slot_trb_t));
+    slot.type = XHCI_CMD_ENABLE_SLOT;
 
     xhci_command_completion_trb_t *completion = xhci_sendCommand(xhci, (xhci_trb_t*)&slot);
     if (!completion) {
@@ -320,7 +318,10 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
         .bsr = 1,
         .slot_id = dev->slot_id,
         .input_ctx = dev->input_ctx_phys,
-        0,
+        .c = 0,
+        .rsvd0 = 0,
+        .rsvd1 = 0,
+        .rsvd2 = 0,
     };
 
     if (xhci_sendCommand(xhci, (xhci_trb_t*)&address_device) == NULL) {
