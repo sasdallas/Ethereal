@@ -55,4 +55,10 @@ hashmap_t *ini_getSectionValues(ini_t *ini, char *section);
  */
 char *ini_get(ini_t *ini, char *section, char *key);
 
+/**
+ * @brief Destroy INI object
+ * @param ini The INI object to destroy
+ */
+void ini_destroy(ini_t *ini);
+
 #endif

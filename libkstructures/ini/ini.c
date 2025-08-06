@@ -100,8 +100,8 @@ ini_t *ini_load(char *filename) {
             while (*value == ' ') value++;
             if (*value == '"') {
                 // We have to parse the string
-                real_value = value+1;
-
+                value++;
+                real_value = value;
                 while (*value && *value != '"') value++;
                 if (!(*value)) goto _next_token;
                 *value = 0;
@@ -141,4 +141,14 @@ char *ini_get(ini_t *ini, char *section, char *key) {
     hashmap_t *map = ini_getSectionValues(ini, section);
     if (!map) return NULL;
     return hashmap_get(map, key);
+}
+
+/**
+ * @brief Destroy INI object
+ * @param ini The INI object to destroy
+ */
+void ini_destroy(ini_t *ini) {
+    if (!ini) return;
+    if (ini->sections) hashmap_free(ini->sections);
+    free(ini);
 }
