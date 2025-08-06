@@ -28,11 +28,11 @@ const char *__kernel_build_time = __TIME__;
 
 // Versioning information
 const int __kernel_version_major = 1;
-const int __kernel_version_minor = 7;
+const int __kernel_version_minor = 8;
 const int __kernel_version_lower = 0;
 
 // Codename
-const char *__kernel_version_codename = "Phoenix";
+const char *__kernel_version_codename = "Neutron";
 
 // ASCII art (looks weird because fmting)
 const char *__kernel_ascii_art_formatted = "\

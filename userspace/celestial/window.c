@@ -113,6 +113,7 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
 
     // Reorder
     WM_FOCUSED_WINDOW = win;
+    WM_MOUSE_WINDOW = window_top(WM_MOUSEX, WM_MOUSEY);
     list_append(WM_WINDOW_LIST, win);
 
     // TODO: Maybe we should send FOCUS event? This resulted in instability last I tried. Decorations work fine :D

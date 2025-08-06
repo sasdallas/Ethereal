@@ -195,7 +195,7 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
 
         // Now actually do the SSE drawing
         for (; _x < rect->x + rect->width - 3 && _x + x + 3 <= _right; _x += 4) {
-            __m128i d = _mm_load_si128((void*)&GFX_PIXEL(ctx, x + _x, y + _y));
+            __m128i d = _mm_loadu_si128((void*)&GFX_PIXEL(ctx, x + _x, y + _y));
             __m128i s = _mm_loadu_si128((void*)&SPRITE_PIXEL(sprite, _x, _y));
 
             __m128i d_l, d_h;

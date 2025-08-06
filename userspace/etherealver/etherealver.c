@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 
     // TODO: Way to get Ethereal version. Perhaps command, perhaps otherwise
     char kernel_build_str[256] = { 0 };
-    snprintf(kernel_build_str, 256, "Version 1.0.0 (Kernel Build %s)", name.release);
+    snprintf(kernel_build_str, 256, "Version 1.1.0 (Kernel Build %s)", name.release);
 
     // Draw info lines
     gfx_renderString(ctx, f, "Ethereal Operating System", 10, 100, GFX_RGB(0,0,0));
