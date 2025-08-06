@@ -20,12 +20,18 @@
 #include <ethereal/widget/event.h>
 #include <ethereal/celestial/window.h>
 
+/**** DEFINITIONS ****/
+
+#define FRAME_DEFAULT           0x0
+#define FRAME_NO_BG             0x1 // Don't draw background, so you can render other things
+
 /**** TYPES ****/
 
 typedef struct widget_frame {
     window_t *window;                   // The window (if this is a root frame)
     gfx_color_t bg_color;               // Background color
     widget_event_state_t *event;        // Widget event state
+    int flags;
 } widget_frame_t;
 
 /**** FUNCTIONS ****/
@@ -33,8 +39,9 @@ typedef struct widget_frame {
 /**
  * @brief Create a new frame window based off of the root window
  * @param window The Celestial window to create the frame on
+ * @param flags Creation flags
  */
-widget_t *frame_createRoot(window_t *window);
+widget_t *frame_createRoot(window_t *window, int flags);
 
 /**
  * @brief Get context for frame

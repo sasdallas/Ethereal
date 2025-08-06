@@ -15,6 +15,7 @@
 #include <ethereal/celestial.h>
 #include <ethereal/widget.h>
 #include <stdio.h>
+#include <errno.h>
 #include <getopt.h>
 
 #define DIALOG_TYPE_NONE            0
@@ -29,6 +30,7 @@ enum {
     OPT_QUESTION,
     OPT_TEXT,
     OPT_TITLE,
+    OPT_ICON,
     OPT_HELP,
     OPT_VERSION
 };
@@ -42,8 +44,17 @@ char *dialog_text = "You forgot --text lmao";
 /* Dialog title */
 char *dialog_title = NULL;
 
+/* Icon path */
+char *icon_path = NULL;
+
 /* Font */
 gfx_font_t *font = NULL;
+
+/* X offset for text */
+int text_x_offset = 10;
+
+/* Button sprite */
+sprite_t *btn_sp = NULL;
 
 /**
  * @brief Usage function
@@ -117,6 +128,29 @@ void create_buttons(widget_t *root, window_t *win) {
     }
 }
 
+/**
+ * @brief Load icon
+ */
+void load_icon(widget_t *root, window_t *win) {
+    if (icon_path) {
+        if (!strlen(icon_path)) return; // User can specify --icon= to avoid icon
+
+        FILE *f = fopen(icon_path, "r");
+        if (!f) {
+            fprintf(stderr, "show-dialog: %s: %s\n", icon_path, strerror(errno));
+            return;
+        }
+
+        sprite_t *sp = gfx_createSprite(0,0);
+        if (gfx_loadSprite(sp, f)) {
+            fprintf(stderr, "show-dialog: %s: Error loading\n", icon_path);
+            return;
+        }
+
+        text_x_offset += 40; // Icon is 24 in size        
+        gfx_renderSpriteRegion(celestial_getGraphicsContext(win), sp, &GFX_RECT(0,0,24,24), 10, 26);
+    }
+}
 
 int main(int argc, char *argv[]) {
     struct option options[] = {
@@ -125,6 +159,7 @@ int main(int argc, char *argv[]) {
         { .name = "question", .flag = NULL, .has_arg = no_argument, .val = OPT_QUESTION, },
         { .name = "text", .flag = NULL, .has_arg = required_argument, .val = OPT_TEXT },
         { .name = "title", .flag = NULL, .has_arg = required_argument, .val = OPT_TITLE },
+        { .name = "icon", .flag = NULL, .has_arg = required_argument, .val = OPT_ICON }, 
         { .name = "help", .flag = NULL, .has_arg = no_argument, .val = OPT_HELP },
         { .name = "version", .flag = NULL, .has_arg = no_argument, .val = OPT_VERSION, },
     };
@@ -160,6 +195,10 @@ int main(int argc, char *argv[]) {
                 dialog_title = strdup(optarg);
                 break;
 
+            case OPT_ICON:
+                icon_path = strdup(optarg);
+                break;
+
             case OPT_VERSION:
                 version();
                 break;
@@ -188,15 +227,19 @@ int main(int argc, char *argv[]) {
     window_t *win = celestial_getWindow(wid);
     set_title(win);
     gfx_context_t *ctx = celestial_getGraphicsContext(win);
-    
-    widget_t *root = frame_createRoot(win);
+    gfx_clear(ctx, GFX_RGB(0xfb, 0xfb, 0xfb));
+
+    widget_t *root = frame_createRoot(win, FRAME_NO_BG);
 
     // Start making buttons
     create_buttons(root, win);
 
+    // Load icon
+    load_icon(root, win);
+
     // Label
     widget_t *lbl = label_create(root, dialog_text, 13);
-    widget_renderAtCoordinates(lbl, 10, 43);
+    widget_renderAtCoordinates(lbl, text_x_offset, 43);
 
     // Render
     widget_render(ctx, root);

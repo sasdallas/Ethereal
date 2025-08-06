@@ -19,20 +19,25 @@
  */
 static void frame_render(widget_t *widget, gfx_context_t *ctx, int32_t x, int32_t y) {
     widget_frame_t *frame = (widget_frame_t*)widget->impl;
-    gfx_rect_t r = { .x = x, .y = y, .width = widget->width, .height = widget->height };
-    gfx_drawRectangleFilled(ctx, &r, frame->bg_color);
+    
+    if (!(frame->flags & FRAME_NO_BG)) {
+        gfx_rect_t r = { .x = x, .y = y, .width = widget->width, .height = widget->height };
+        gfx_drawRectangleFilled(ctx, &r, frame->bg_color);
+    }
 }
 
 /**
  * @brief Create a new frame window based off of the root window
  * @param window The Celestial window to create the frame on
+ * @param flags Creation flags
  */
-widget_t *frame_createRoot(window_t *window) {
+widget_t *frame_createRoot(window_t *window, int flags) {
     widget_t *w = widget_createEmpty();
 
     widget_frame_t *frame = malloc(sizeof(widget_frame_t));
     frame->bg_color = GFX_RGB(0xfb, 0xfb, 0xfb);
     frame->window = window;
+    frame->flags = flags;
 
     w->type = WIDGET_TYPE_FRAME;
     w->width = window->width;
