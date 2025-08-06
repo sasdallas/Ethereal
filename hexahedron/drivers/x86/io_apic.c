@@ -106,8 +106,8 @@ int ioapic_enableIRQ(uintptr_t irq) {
     }
 
     if (!apic) {
-        LOG(WARN, "Mapping IRQ%d failed: No corresponding APIC was found\n", irq);
-        return 1;
+        LOG(WARN, "Mapping IRQ%d failed: No corresponding APIC was found. (This is probably OK)\n", irq);
+        return 0;
     }
 
     int pin = gsi - apic->interrupt_base;

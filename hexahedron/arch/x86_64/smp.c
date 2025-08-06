@@ -195,12 +195,19 @@ int smp_init(smp_info_t *info) {
     // Local APIC region is finite size - at least I hope.
     lapic_remapped = mem_mapMMIO((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
 
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
+    // Initialize I/O APIC first
+    if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
+
     // Initialize the local APIC
     int lapic = lapic_initialize(lapic_remapped);
     if (lapic != 0) {
         LOG(ERR, "Failed to initialize local APIC");
         return -EIO;
     }
+
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 
     if (info->processor_count == 1 || kargs_has("--disable-smp")) goto _finish_collection;
 
@@ -237,9 +244,6 @@ int smp_init(smp_info_t *info) {
 _finish_collection:
     // Register TLB shootdown IRQ
     hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
-
-    // Initialize I/O APIC
-    if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
 
     processor_count = smp_data->processor_count;
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);

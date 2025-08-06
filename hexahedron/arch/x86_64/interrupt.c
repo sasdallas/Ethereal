@@ -352,6 +352,10 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         current_cpu->current_thread->regs = regs;
         current_cpu->current_thread->syscall = &syscall;
 
+        // End the interrupt now
+        hal_endInterrupt(int_number);
+
+        // Handle system call
         syscall_handle(&syscall);
         regs->rax = syscall.return_value;
 
@@ -363,6 +367,9 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
     // Call any handler registered
     if (hal_handler_table[int_number] != NULL || hal_handler_context_table[int_number] != NULL) {
         int return_value = 1;
+
+        // End the interrupt now
+        hal_endInterrupt(int_number);
 
         // Context specified?
         if (hal_handler_context_table[int_number] != NULL) {
@@ -377,13 +384,14 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
             kernel_panic(IRQ_HANDLER_FAILED, "hal");
             __builtin_unreachable();
         }
+    } else {
+        // End the interrupt now
+        hal_endInterrupt(int_number);
     }
 
     if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
     }
-    
-    hal_endInterrupt(int_number);
 }
 
 /**
@@ -398,8 +406,11 @@ int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handl
         return -EINVAL;
     }
 
-    int umask = pic_unmask(int_no);
-    if (umask) return umask;
+    // !!!
+    if (int_no < HAL_IRQ_MSI_BASE-HAL_IRQ_BASE) {
+        int umask = pic_unmask(int_no);
+        if (umask) return umask;
+    }
 
     hal_handler_table[int_no] = handler;
     hal_interrupt_context_table[int_no] = NULL;
@@ -452,7 +463,8 @@ int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t h
     }
 
     // Unmask the IRQ in the PIC, if it's not MSI
-    if (!(int_number >= HAL_IRQ_MSI_BASE - HAL_IRQ_BASE && int_number < HAL_IRQ_MSI_BASE + HAL_IRQ_MSI_COUNT - HAL_IRQ_BASE )) {
+    // !!!
+    if (int_number < HAL_IRQ_MSI_BASE-HAL_IRQ_BASE) {
         int umask = pic_unmask(int_number);
         if (umask) return umask;
     }

@@ -23,6 +23,7 @@
 #include <kernel/drivers/clock.h>
 
 #include <kernel/drivers/x86/pit.h>
+#include <kernel/drivers/x86/pic.h>
 #include <kernel/arch/arch.h>
 
 /* APIC base */
@@ -160,9 +161,6 @@ int lapic_timer_irq(uintptr_t exception_index, uintptr_t irq_number, registers_t
         // Is it time to switch processes?
         if (scheduler_update(clock_getTickCount()) == 1) {
             // LOG(DEBUG, "Process is out of timeslice - yielding (LAPIC)\n");
-            
-            // End interrupt
-            // hal_endInterrupt(irq_number);
 
             // Yes, it is. Switch to next process
             process_yield(1);
