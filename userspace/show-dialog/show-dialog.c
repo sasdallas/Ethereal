@@ -20,6 +20,18 @@
 #define DIALOG_TYPE_NONE            0
 #define DIALOG_TYPE_INFO            1
 #define DIALOG_TYPE_ERROR           2
+#define DIALOG_TYPE_QUESTION        3
+
+/* Possible getopt options */
+enum {
+    OPT_INFO = 0,
+    OPT_ERR,
+    OPT_QUESTION,
+    OPT_TEXT,
+    OPT_TITLE,
+    OPT_HELP,
+    OPT_VERSION
+};
 
 /* Dialog type */
 int dialog_type = DIALOG_TYPE_NONE;
@@ -41,6 +53,7 @@ void usage() {
     fprintf(stderr, "Show a dialog box of your choosing\n");
     fprintf(stderr, " --info                Display an info dialog\n");
     fprintf(stderr, " --error               Display an error dialog\n");
+    fprintf(stderr, " --question            Display a yes/no dialog\n");
     fprintf(stderr, " --text=TEXT           Set the text of the dialog\n");
     fprintf(stderr, " --title=TITLE         Set the title of the dialog\n");
     fprintf(stderr, " --help                Show this help message\n");
@@ -72,22 +85,48 @@ void set_title(window_t *win) {
             return celestial_setTitle(win, "Information");
         case DIALOG_TYPE_ERROR:
             return celestial_setTitle(win, "Error");
+        case DIALOG_TYPE_QUESTION:
+            return celestial_setTitle(win, "Confirmation");
     }
 }
 
+/**
+ * @brief Button callack
+ */
 void btn_callback(widget_t *w, void *d) {
-    celestial_closeWindow((window_t*)d);
+    exit((int)(uintptr_t)d);
+}
+
+/**
+ * @brief Create buttons
+ */
+void create_buttons(widget_t *root, window_t *win) {
+    gfx_context_t *ctx = celestial_getGraphicsContext(win);
+    if (dialog_type == DIALOG_TYPE_ERROR || dialog_type == DIALOG_TYPE_INFO) {
+        widget_t *btn = button_create(root, "OK", GFX_RGB(0, 0, 0), BUTTON_ENABLED);    
+        widget_renderAtCoordinates(btn, GFX_WIDTH(ctx) - btn->width - 18, GFX_HEIGHT(ctx) - btn->height - 18);
+        widget_setHandler(btn, WIDGET_EVENT_CLICK, btn_callback, (void*)(uintptr_t)0);
+    } else if (dialog_type == DIALOG_TYPE_QUESTION) {
+        widget_t *yes_btn = button_create(root, "Yes", GFX_RGB(0, 0, 0), BUTTON_ENABLED);    
+        widget_renderAtCoordinates(yes_btn, GFX_WIDTH(ctx) - yes_btn->width - 18, GFX_HEIGHT(ctx) - yes_btn->height - 18);
+        widget_setHandler(yes_btn, WIDGET_EVENT_CLICK, btn_callback, (void*)(uintptr_t)0);
+
+        widget_t *no_btn = button_create(root, "No", GFX_RGB(0, 0, 0), BUTTON_ENABLED);
+        widget_renderAtCoordinates(no_btn, GFX_WIDTH(ctx) - no_btn->width - yes_btn->width - 36, GFX_HEIGHT(ctx) - yes_btn->height - 18);
+        widget_setHandler(no_btn, WIDGET_EVENT_CLICK, btn_callback, (void*)(uintptr_t)1);
+    }
 }
 
 
 int main(int argc, char *argv[]) {
     struct option options[] = {
-        { .name = "info", .flag = NULL, .has_arg = no_argument, .val = 'i', },
-        { .name = "error", .flag = NULL, .has_arg = no_argument, .val = 'e', },
-        { .name = "text", .flag = NULL, .has_arg = required_argument, .val = 't' },
-        { .name = "title", .flag = NULL, .has_arg = required_argument, .val = 'T' },
-        { .name = "help", .flag = NULL, .has_arg = no_argument, .val = 'h' },
-        { .name = "version", .flag = NULL, .has_arg = no_argument, .val = 'v'},
+        { .name = "info", .flag = NULL, .has_arg = no_argument, .val = OPT_INFO, },
+        { .name = "error", .flag = NULL, .has_arg = no_argument, .val = OPT_ERR, },
+        { .name = "question", .flag = NULL, .has_arg = no_argument, .val = OPT_QUESTION, },
+        { .name = "text", .flag = NULL, .has_arg = required_argument, .val = OPT_TEXT },
+        { .name = "title", .flag = NULL, .has_arg = required_argument, .val = OPT_TITLE },
+        { .name = "help", .flag = NULL, .has_arg = no_argument, .val = OPT_HELP },
+        { .name = "version", .flag = NULL, .has_arg = no_argument, .val = OPT_VERSION, },
     };
 
     int ch;
@@ -98,29 +137,34 @@ int main(int argc, char *argv[]) {
         }
         
         switch (ch) {
-            case 'i':
+            case OPT_INFO:
                 if (dialog_type) { fprintf(stderr, "show-dialog: error: Two or more dialog types specified.\n"); exit(1); }
                 dialog_type = DIALOG_TYPE_INFO;
                 break;
 
-            case 'e':
+            case OPT_ERR:
                 if (dialog_type) { fprintf(stderr, "show-dialog: error: Two or more dialog types specified.\n"); exit(1); }
                 dialog_type = DIALOG_TYPE_ERROR;
                 break;
+        
+            case OPT_QUESTION:
+                if (dialog_type) { fprintf(stderr, "show-dialog: error: Two or more dialog types specified.\n"); exit(1); }
+                dialog_type = DIALOG_TYPE_QUESTION;
+                break;
 
-            case 't':
+            case OPT_TEXT:
                 dialog_text = strdup(optarg);
                 break;
 
-            case 'T':
+            case OPT_TITLE:
                 dialog_title = strdup(optarg);
                 break;
 
-            case 'v':
+            case OPT_VERSION:
                 version();
                 break;
 
-            case 'h':
+            case OPT_HELP:
             default:
                 usage();
                 break;
@@ -148,10 +192,9 @@ int main(int argc, char *argv[]) {
     widget_t *root = frame_createRoot(win);
 
     // Start making buttons
-    widget_t *btn = button_create(root, "OK", GFX_RGB(0, 0, 0), BUTTON_ENABLED);    
-    widget_renderAtCoordinates(btn, GFX_WIDTH(ctx) - btn->width - 18, GFX_HEIGHT(ctx) - btn->height - 18);
-    widget_setHandler(btn, WIDGET_EVENT_CLICK, btn_callback, (void*)win);
+    create_buttons(root, win);
 
+    // Label
     widget_t *lbl = label_create(root, dialog_text, 13);
     widget_renderAtCoordinates(lbl, 10, 43);
 
