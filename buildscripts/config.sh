@@ -4,7 +4,7 @@ HEADER_PROJECTS="base libpolyhedron libkstructures external hexahedron userspace
 PROJECTS="libpolyhedron libkstructures external drivers hexahedron userspace base"           # Projects to enter and run make install.
 
 # !! EDIT THIS TO CHANGE BUILD CONFIGURATION !!
-export KERNEL_BUILD_CONF="DEBUG";
+export KERNEL_BUILD_CONF="RELEASE";
 
 
 export MAKE=${MAKE:-make}
