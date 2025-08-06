@@ -40,11 +40,16 @@ void sleep_callback(uint64_t ticks) {
     clock_getCurrentTime(&seconds, &subseconds);
     
     spinlock_acquire(&sleep_queue_lock);
-    foreach(node, sleep_queue) {
+    node_t *node = sleep_queue->head;
+    while (node) {
         if (!node) continue;
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;
         if (!sleep || !sleep->thread) {
             LOG(WARN, "Corrupt node in sleep queue %p (sleep: %p)\n", node, sleep);
+            node_t *old = node;
+            node = old->next;
+            list_delete(sleep_queue, old);
+            kfree(old);
             continue;
         }
 
@@ -57,6 +62,7 @@ void sleep_callback(uint64_t ticks) {
             // Yes, get out!
             wakeup = WAKEUP_SIGNAL;
         } else if (sleep->sleep_state == SLEEP_FLAG_NOCOND) {
+            node = node->next;
             continue; // Thread doesn't need to wakeup
         } else if (sleep->sleep_state == SLEEP_FLAG_TIME) {
             // We're sleeping on time.
@@ -83,10 +89,15 @@ void sleep_callback(uint64_t ticks) {
 
         if (wakeup) {
             sleep->sleep_state = wakeup;
-            list_delete(sleep_queue, node);
+            node_t *old = node;
+            node = old->next;
+            list_delete(sleep_queue, old);
+            kfree(old);
             __sync_and_and_fetch(&sleep->thread->status, ~(THREAD_STATUS_SLEEPING));
             scheduler_insertThread(sleep->thread);
-            kfree(node);
+        } else {
+            // Condition not yet met
+            node = node->next;
         }
     }
 
