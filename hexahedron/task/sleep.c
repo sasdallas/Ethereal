@@ -62,7 +62,7 @@ void sleep_callback(uint64_t ticks) {
             // We're sleeping on time.
             if ((sleep->seconds == seconds && sleep->subseconds <= subseconds) || (sleep->seconds < seconds)) {
                 // Wakeup now
-                LOG(DEBUG, "WAKEUP: Time passed, waking up thread %p\n", sleep->thread);
+                // LOG(DEBUG, "WAKEUP: Time passed, waking up thread %p\n", sleep->thread);
                 wakeup = WAKEUP_TIME;
             }
         } else if (sleep->sleep_state == SLEEP_FLAG_COND) {
