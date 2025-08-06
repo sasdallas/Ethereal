@@ -49,7 +49,10 @@ x86_64_gdt_t gdt[MAX_CPUS] __attribute__((used)) = {{
 x86_64_interrupt_descriptor_t hal_idt_table[X86_64_MAX_INTERRUPTS];
 
 /* Interrupt handler table - TODO: More than one handler per interrupt? */
-void *hal_handler_table[X86_64_MAX_INTERRUPTS] = { 0 }; // Looks ugly as there are two types of interrupt handlers (context and registers)
+void *hal_handler_table[X86_64_MAX_INTERRUPTS] = { 0 };
+
+/* Interrupt handler with context table */
+hal_interrupt_handler_t hal_handler_context_table[X86_64_MAX_INTERRUPTS] = { 0 };
 
 /* Exception handler table - TODO: More than one handler per exception? */
 exception_handler_t hal_exception_handler_table[X86_64_MAX_EXCEPTIONS] = { 0 };
@@ -358,12 +361,12 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
     }
 
     // Call any handler registered
-    if (hal_handler_table[int_number] != NULL) {
+    if (hal_handler_table[int_number] != NULL || hal_handler_context_table[int_number] != NULL) {
         int return_value = 1;
 
         // Context specified?
-        if (hal_interrupt_context_table[int_number] != NULL) {
-            interrupt_handler_context_t handler = (interrupt_handler_context_t)(hal_handler_table[int_number]);
+        if (hal_handler_context_table[int_number] != NULL) {
+            interrupt_handler_context_t handler = (interrupt_handler_context_t)(hal_handler_context_table[int_number]);
             return_value = handler(hal_interrupt_context_table[int_number]);
         } else {
             interrupt_handler_t handler = (interrupt_handler_t)(hal_handler_table[int_number]);
@@ -395,7 +398,8 @@ int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handl
         return -EINVAL;
     }
 
-    pic_unmask(int_no);
+    int umask = pic_unmask(int_no);
+    if (umask) return umask;
 
     hal_handler_table[int_no] = handler;
     hal_interrupt_context_table[int_no] = NULL;
@@ -447,14 +451,25 @@ int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t h
         return -EINVAL;
     }
 
-    // Unmask the IRQ in the PIC
-    pic_unmask(int_number);
+    // Unmask the IRQ in the PIC, if it's not MSI
+    if (!(int_number >= HAL_IRQ_MSI_BASE - HAL_IRQ_BASE && int_number < HAL_IRQ_MSI_BASE + HAL_IRQ_MSI_COUNT - HAL_IRQ_BASE )) {
+        int umask = pic_unmask(int_number);
+        if (umask) return umask;
+    }
 
     // !!!: i mean, they're the same data type at the core level.. right?
-    hal_handler_table[int_number] = handler;
+    hal_handler_context_table[int_number] = handler;
     hal_interrupt_context_table[int_number] = context;
 
     return 0;
+}
+
+/**
+ * @brief Returns whether an interrupt handler is in use
+ * @param int_number The interrupt number to check
+ */
+int hal_interruptHandlerInUse(uintptr_t int_number) {
+    return hal_handler_table[int_number] || hal_handler_context_table[int_number];
 }
 
 

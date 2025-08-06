@@ -75,4 +75,10 @@ int hal_setPowerState(int state);
  */
 void hal_prepareForPowerState(int state);
 
+/**
+ * @brief Returns whether an interrupt handler is in use
+ * @param int_number The interrupt number to check
+ */
+int hal_interruptHandlerInUse(uintptr_t int_number);
+
 #endif

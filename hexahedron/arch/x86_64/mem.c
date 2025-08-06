@@ -599,7 +599,13 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         LOG(ERR, "Starting @ IP: %016llX\n", regs->rip);
         stack_frame_t *stk = (stack_frame_t*)regs->rbp;
         while (stk) {
+            if (!mem_validate(stk, PTR_USER)) {
+                LOG(ERR, "Corrupted stack frame 0x%016llX detected\n", stk);
+                break;
+            }
+
             LOG(ERR, "FRAME 0x%016llX: 0x%016llX\n", stk, stk->ip);
+        
             stk = stk->nextframe;
         }
 

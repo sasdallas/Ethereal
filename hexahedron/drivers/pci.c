@@ -163,7 +163,7 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     uint8_t offset = PCI_GENERAL_BAR0_OFFSET + (bar * 0x4);
     
     // Now go ahead and disable I/O and memory access in the command register (we'll restore it at the end)
-    uint32_t restore_command = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 4);
+    uint32_t restore_command = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
     pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, restore_command & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE), 2);
 
     // Read in the BAR
@@ -172,6 +172,7 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     // Read in the BAR size by writing all 1s (seeing which bits we can set)
     pci_writeConfigOffset(bus, slot, func, offset, 0xFFFFFFFF, 4);
     uint32_t bar_size = pci_readConfigOffset(bus, slot, func, offset, 4);
+    bar_size = ~bar_size + 1;
     pci_writeConfigOffset(bus, slot, func, offset, bar_address, 4);
 
     // Now we just need to parse it. Allocate memory for the response  
@@ -188,21 +189,16 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
 
         // Read the rest of the address
         uint32_t bar_address_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
-        
-        // And the rest of the size
-        pci_writeConfigOffset(bus, slot, func, offset + 4, 0xFFFFFFFF, 4);
-        uint32_t bar_size_high = pci_readConfigOffset(bus, slot, func, offset + 4, 4);
-        pci_writeConfigOffset(bus, slot, func, offset + 4, bar_address_high, 4);
-
+    
         // Now put the values in
         bar_out->address = (bar_address & 0xFFFFFFF0) | ((uint64_t)(bar_address_high & 0xFFFFFFFF) << 32);
-        bar_out->size = ~((((uint64_t)bar_size_high << 32)) | (bar_size & ~0xF)) + 1;
+        bar_out->size = bar_size;
         bar_out->prefetchable = (bar_address & 0x8) ? 1 : 0;
     } else if (bar_address & PCI_BAR_IO_SPACE) {
         // This is an I/O space BAR
         bar_out->type = PCI_BAR_IO_SPACE;
         bar_out->address = (bar_address & 0xFFFFFFFC);
-        bar_out->size = ~(bar_size & ~0x3) + 1;
+        bar_out->size = bar_size;
         bar_out->prefetchable = 0;
     } else if (bar_address & PCI_BAR_MEMORY16) {
         // This is a 16-bit memory space BAR (unsupported)
@@ -213,7 +209,7 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     } else {
         // This is a 32-bit memory space BAR
         bar_out->address = bar_address & 0xFFFFFFF0;
-        bar_out->size = ~(bar_size & ~0xF) + 1;
+        bar_out->size = bar_size;
         bar_out->type = PCI_BAR_MEMORY32;
         bar_out->prefetchable = (bar_address & 0x8) ? 1 : 0;
     }
@@ -324,12 +320,28 @@ uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
 #if !defined(__ARCH_I386__) && !defined(__ARCH_X86_64__)
     return pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
 #else
+
+    // !!!: This is a hack to get Bochs working since it doesn't support setting custom IRQ vectors
+    uint8_t irq_original = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
+    if (irq_original != 0xFF && !hal_interruptHandlerInUse(irq_original)) {
+        LOG(DEBUG, "PCI using default IRQ%d as it was not in use\n", irq_original);
+        uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
+        pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd & ~(PCI_COMMAND_INTERRUPT_DISABLE), 2);
+        return irq_original;
+    }
+
     // Allocate an IRQ from the PIC
     uint32_t irq = pic_allocate();
     LOG(DEBUG, "PCI allocated IRQ%d\n", irq);
     if (irq == 0xFFFFFFFF) return 0xFF;
+    
+    // Enable IRQs
+    uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
+    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd & ~(PCI_COMMAND_INTERRUPT_DISABLE), 2);
+
     pci_writeConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, irq, 1);
     
+
     return irq;    
 #endif
 }

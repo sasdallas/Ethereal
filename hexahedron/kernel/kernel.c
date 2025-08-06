@@ -260,6 +260,8 @@ void kmain() {
     mem_allocatePage(pg, MEM_PAGE_NOT_PRESENT | MEM_PAGE_NOALLOC | MEM_PAGE_READONLY);
 
     // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
+    current_cpu->current_thread = NULL;
+    current_cpu->current_process = NULL;
     sleep_init();
     process_init();
 
