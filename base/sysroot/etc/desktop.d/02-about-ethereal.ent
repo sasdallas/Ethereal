@@ -1,0 +1,4 @@
+[Desktop]
+Name="About Ethereal"
+Icon=/usr/share/icons/24/Ethereal.bmp
+Exec="etherealver"

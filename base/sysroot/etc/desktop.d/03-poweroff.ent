@@ -1,0 +1,4 @@
+[Desktop]
+Name=Power Off
+Icon=/usr/share/icons/24/power.bmp
+Exec="poweroff-dialog"

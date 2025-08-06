@@ -12,6 +12,7 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
+#include "menu.h"
 #include <ethereal/celestial.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,8 +46,6 @@ gfx_font_t *taskbar_font = NULL;
 /* Taskbar active */
 int menu_active = 0;
 
-/* Taskbar settings */
-#define TASKBAR_HEIGHT              40
 
 /* Current wallpaper */
 char *wallpaper = DEFAULT_WALLPAPER;
@@ -231,6 +230,7 @@ void mouse_event_taskbar(window_t *win, uint32_t event_type, void *event) {
             menu_active ^= 1;
         
             // TODO: Menu system completion
+            menu_show(menu_active);
         }
     }
 }
@@ -302,6 +302,9 @@ int main(int argc, char *argv[]) {
     // Fonts have been loaded, draw them in
     gfx_render(taskbar_ctx);
     celestial_flip(taskbar_window);
+
+    // Init menu
+    menu_init();
 
     // Now launch the startup task
     pid_t cpid = fork();

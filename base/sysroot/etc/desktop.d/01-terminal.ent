@@ -1,0 +1,4 @@
+[Desktop]
+Name=Terminal
+Icon=/usr/share/icons/24/Terminal.bmp
+Exec="termemu"
