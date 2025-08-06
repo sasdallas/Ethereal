@@ -20,6 +20,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/misc/mutex.h>
+#include <stdatomic.h>
 
 /**** DEFINITIONS ****/
 
@@ -77,6 +78,7 @@ typedef struct xhci_event_ring {
 typedef struct xhci_port_info {
     uint8_t rev_major;              // Major revision
     uint8_t rev_minor;              // Minor revision
+    uint8_t slot_id;                // Slot ID for port (if set, the port has been enabled)
 } xhci_port_info_t;
 
 typedef struct xhci {
@@ -103,9 +105,10 @@ typedef struct xhci {
     process_t *poller;                              // Port poller thread 
     USBController_t *controller;                    // controller              
 
-    // ctrb garbage
+    // ctrb + friends garbage
     xhci_command_completion_trb_t *ctr;             // Completion TRB
     volatile uint8_t flag;                          // Flag
+    volatile uint8_t port_status_changed;           // Port status was changed, keep iterating                            // MSI in use
 } xhci_t;
 
 /**** VARIABLES ****/
@@ -117,7 +120,7 @@ extern int xhci_controller_count;
 #define XHCI_EVENT_RING_DEQUEUE(xhci) (&((xhci)->event_ring->trb_list[(xhci)->event_ring->dequeue]))
 #define XHCI_ACKNOWLEDGE(xhci) (xhci)->run->irs[0].iman = (xhci)->run->irs[0].iman | XHCI_IMAN_INTERRUPT_ENABLE | XHCI_IMAN_INTERRUPT_PENDING
 
-#define XHCI_DOORBELL(xhci, i) (((uint32_t*)((xhci)->mmio_addr + (xhci)->cap->dboff))[(i)])
+#define XHCI_DOORBELL(xhci, i) (((volatile uint32_t*)((xhci)->mmio_addr + (xhci)->cap->dboff))[(i)])
 
 #define XHCI_CONTEXT_SIZE(xhci) ((xhci)->cap->context_size ? 64 : 32) 
 

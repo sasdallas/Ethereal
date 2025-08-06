@@ -102,7 +102,7 @@
 #define XHCI_PORTSC_PRC                 (1 << 21)
 // i dont care enough
 #define XHCI_PORTSC_DR                  (1 << 30)
-#define XHCI_PORTSC_WPC                 (1 << 31)
+#define XHCI_PORTSC_WPR                 (1 << 31)
 
 /* Speed */
 #define XHCI_USB_SPEED_FULL_SPEED           1
@@ -200,7 +200,8 @@ typedef struct xhci_op_regs {
     uint32_t rsvd0;                 // Reserved
     uint32_t rsvd1;                 
     uint32_t dnctrl;                // Device notification control
-    uint64_t crcr;                  // Command ring control
+    uint32_t crcr_lo;
+    uint32_t crcr_hi;
     uint32_t rsvd2;                 // Reserved
     uint32_t rsvd3;
     uint32_t rsvd4;

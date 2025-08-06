@@ -121,7 +121,10 @@ void xhci_initCommandRing(xhci_t *xhci) {
     xhci->cmd_ring->enqueue = 0;
 
     // Set command ring in CRCR
-    xhci->op->crcr = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list) | xhci->cmd_ring->cycle;
+    uintptr_t crcr_phys = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
+    xhci->op->crcr_lo = ((uint32_t)crcr_phys & 0xFFFFFFFF) | xhci->cmd_ring->cycle;
+    xhci->op->crcr_hi = (uint32_t)(crcr_phys >> 32);
+    LOG(DEBUG, "Command ring enabled (CRCR = %p)\n", crcr_phys);
 }
 
 /**
@@ -151,6 +154,56 @@ void xhci_initEventRing(xhci_t *xhci) {
 }
 
 /**
+ * @brief Reset port
+ * @param xhci xHC
+ * @param port Port number
+ * @param regs Port registers
+ */
+int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
+    uint32_t portsc = regs->portsc;
+
+    // Power on port if needed
+    if (!(portsc & XHCI_PORTSC_PP)) {
+        portsc |= XHCI_PORTSC_PP;
+        regs->portsc = portsc;
+        clock_sleep(200);
+
+        // PP should be set
+        if (!(regs->portsc & XHCI_PORTSC_PP)) {
+            LOG(ERR, "RESET ON PORT %d FAILED: PP was not set\n", port);
+            return 1;
+        }
+
+        portsc = regs->portsc;
+    }
+
+    // Clear lingering status change bits
+    portsc &= ~(XHCI_PORTSC_CSC | XHCI_PORTSC_PEC | XHCI_PORTSC_PRC);
+    regs->portsc = portsc;
+
+    // Initiate reset
+    if (xhci->ports[port].rev_major == 3) {
+        portsc |= XHCI_PORTSC_WPR;
+    } else {
+        portsc |= XHCI_PORTSC_PR;
+    }
+
+    regs->portsc = portsc;
+
+    int usb3 = (xhci->ports[port].rev_major == 3);
+    while (!(((usb3 && (regs->portsc & XHCI_PORTSC_WRC))) || ((!usb3 && (regs->portsc & XHCI_PORTSC_PRC))))) {
+        
+        arch_pause_single();
+
+    }
+
+    clock_sleep(3);
+
+    LOG(DEBUG, "New portsc: %x\n", regs->portsc);
+    return 0;
+}
+
+/**
  * @brief IRQ handler
  * @param context xHCI
  */
@@ -161,7 +214,11 @@ int xhci_irq(void *context) {
     XHCI_ACKNOWLEDGE(xhci);
 
     // Clear EINT
-    if (!(xhci->op->usbsts & XHCI_USBSTS_EINT)) return 0;
+    if (!(xhci->op->usbsts & XHCI_USBSTS_EINT)) {
+        LOG(WARN, "xHCI interrupt without EINT being set..?");
+        return 0;
+    }
+    
     xhci->op->usbsts = XHCI_USBSTS_EINT;
 
     while (1) {
@@ -172,8 +229,17 @@ int xhci_irq(void *context) {
             xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)t;
             LOG(INFO, "Port status change event detected on port %d\n", trb->port_id);
 
-            // Wakeup poller thread
-            if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+            // Try to reset the port
+            if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
+                // If a reset on this port failed, let's assume the port is dead
+                // TODO: Recovery? I need to read the spec for this sort of thing
+                LOG(ERR, "Reset failure detected. Assuming port %d is dead\n");
+                xhci->ports[trb->port_id - 1].rev_major = 0;
+            } else {
+                // Wakeup poller thread
+                __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
+                if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+            }
         } else if (t->type == XHCI_EVENT_COMMAND_COMPLETION) {
             xhci_command_completion_trb_t *trb = (xhci_command_completion_trb_t*)t;
             LOG(INFO, "Command completion event detected\n");
@@ -193,6 +259,8 @@ int xhci_irq(void *context) {
 
     // Reprogram ERDP without EHB
     xhci->run->irs[0].erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
+
+    LOG(DEBUG, "End of xHCI interrupt\n");
 
     return 0;
 }
@@ -247,7 +315,19 @@ void xhci_thread(void *context) {
     xhci_t *xhci = (xhci_t*)context;
 
     // Bug (QEMU): We run an initial pass on xHCI devices since (while the controller is *supposed* to send us Port Status Change TRBs, it doesn't.)
+    xhci->port_status_changed = 1;
+
     for (;;) {
+
+        uint8_t expected = 1;
+        while (!__atomic_compare_exchange_n(&xhci->port_status_changed, &expected, 0, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+            sleep_untilTime(current_cpu->current_thread,1 , 0);
+            sleep_enter();
+
+            // process_yield(1); 
+            expected = 1;
+        }
+
         for (unsigned i = 0; i < xhci->cap->max_ports; i++) {
             if (xhci->ports[i].rev_major) {
                 // We have a port
@@ -255,35 +335,50 @@ void xhci_thread(void *context) {
                 
                 // Check flags
                 uint32_t portsc_saved = r->portsc;
-                r->portsc = XHCI_PORTSC_CSC | XHCI_PORTSC_PRC | XHCI_PORTSC_PP;
+                r->portsc = XHCI_PORTSC_PP | XHCI_PORTSC_CSC | XHCI_PORTSC_PRC;
 
                 // If we are not connected, then.
                 if (!(r->portsc & XHCI_PORTSC_CCS)) {
+                    LOG(INFO, "Port %d not connected\n", i);
                     continue;
                 }
 
                 // Check revision
-                if (xhci->ports[i].rev_major == 2) {
-                    // USB2 port requires reset first
-                    if (!(portsc_saved & XHCI_PORTSC_PED && portsc_saved & XHCI_PORTSC_PRC)) {
-                        // Port needs a reset
-                        r->portsc = XHCI_PORTSC_PR | XHCI_PORTSC_PP;
+                switch (xhci->ports[i].rev_major) {
+                    case 2:
+                        // USB2 port requires reset first
+                        if (((portsc_saved & XHCI_PORTSC_PED) && (portsc_saved & XHCI_PORTSC_PRC))) {
+                            // Port is ready
+                            break;
+                        }
+
+                        // Usually if we get this far with CSC being set we should reset the device
+                        if (((portsc_saved & XHCI_PORTSC_CSC))) {
+                            LOG(DEBUG, "Assuming this controller hasn't queued a PSC event (since we have a USB2 device with CSC set), triggering USB2 port reset\n");
+                            r->portsc |= XHCI_PORTSC_PR | XHCI_PORTSC_PP;
+                        }
+
                         continue;
-                    }
-                } else if (xhci->ports[i].rev_major == 3) {
-                    // USB3 ports are fine
-                    if (!(portsc_saved & XHCI_PORTSC_CSC && portsc_saved & XHCI_PORTSC_PED)) {
-                        continue;
-                    }
+                
+                    case 3:
+                        // USB3 ports are fine
+                        if (!((portsc_saved & XHCI_PORTSC_PED))) {
+                            LOG(DEBUG, "USB3 port %d not enabled\n", i);
+                            continue;
+                        } else if (xhci->ports[i].slot_id) {
+                            // We already have a slot ID, device is already initialized probably
+                            continue;
+                        }
+                        
+                        break;
                 }
 
+                // Initialize the device
                 LOG(INFO, "Device detected on port %d\n", i);
                 xhci_initializeDevice(xhci, i);
             }
         }
 
-        sleep_untilNever(current_cpu->current_thread);
-        sleep_enter();
     }
 }
 
@@ -327,7 +422,7 @@ int xhci_enqueueCommandTRB(xhci_t *xhci, xhci_trb_t *trb) {
         link->c = xhci->cmd_ring->cycle;
         
         xhci->cmd_ring->enqueue = 0;
-        xhci->cmd_ring->cycle ^= 1;
+        xhci->cmd_ring->cycle = !xhci->cmd_ring->cycle;
     }
 
     return 0;
@@ -425,10 +520,11 @@ int xhci_initController(pci_device_t *device) {
     xhci_initScratchpad(xhci);
     
     // Enable interrupters
-    XHCI_ACKNOWLEDGE(xhci);
     xhci->op->usbcmd |= XHCI_USBCMD_INTE;
+    xhci->run->irs[0].iman = xhci->run->irs[0].iman | XHCI_IMAN_INTERRUPT_PENDING | XHCI_IMAN_INTERRUPT_ENABLE;
 
     // Run controller
+    LOG(DEBUG, "Starting xHCI controller...\n");
     xhci->op->usbcmd |= XHCI_USBCMD_RS;
     while (xhci->op->usbsts & XHCI_USBSTS_HCH) arch_pause_single();
     LOG(INFO, "xHCI controller started\n");
@@ -461,7 +557,7 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     xhci_enqueueCommandTRB(xhci, trb);
 
     // Ring ring
-    XHCI_DOORBELL(xhci, 0) = 0;
+    XHCI_DOORBELL(xhci, 0) = (uint32_t)0;
     
     // TODO: This was too slow..
     // if (TIMEOUT(__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) == 1, 2500)) {
@@ -470,7 +566,11 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     //     return NULL;
     // }
 
+    LOG(DEBUG, "Rung the doorbell, now entering loop\n");
     while (__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) != 1) {
+        uintptr_t crcr = ((uintptr_t)xhci->op->crcr_hi << 32) | xhci->op->crcr_lo;
+        LOG(DEBUG, "Awaiting TRB completion. USBSTS=%08x USBCMD=%08x CRCR=%016llx\n", xhci->op->usbsts, xhci->op->usbcmd, crcr);
+
         if (current_cpu->current_thread) {
             process_yield(1);
         } else {

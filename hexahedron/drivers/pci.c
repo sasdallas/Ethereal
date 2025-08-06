@@ -20,6 +20,7 @@
 #include <kernel/arch/arch.h>
 #include <assert.h>
 #include <string.h>
+#include <kernel/misc/args.h>
 
 #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
 #include <kernel/drivers/x86/pic.h>
@@ -347,6 +348,19 @@ uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
 }
 
 /**
+ * @brief Disable pin interrupts
+ * @param bus The bus of the PCI device
+ * @param slot The slot of the PCI device
+ * @param func The function of the PCI device
+ * @returns 0 on success
+ */
+int pci_disablePinInterrupts(uint8_t bus, uint8_t slot, uint8_t func) {
+    uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
+    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd | (PCI_COMMAND_INTERRUPT_DISABLE), 2);
+    return 0;
+}
+
+/**
  * @brief Get MSI interrupts
  * @param bus The bus of the PCI device
  * @param slot The slot of the PCI device
@@ -435,6 +449,10 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
         pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, interrupt & 0xFF, 1);
     }
     
+    // Disable pin interrupts too
+    pci_disableMSIX(bus, slot, func);
+    pci_disablePinInterrupts(bus, slot, func);
+
     return interrupt - 32;
 }
 

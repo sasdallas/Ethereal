@@ -378,7 +378,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
             __builtin_unreachable();
         }
     }
-    
+
     if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
     }

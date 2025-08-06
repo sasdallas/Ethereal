@@ -226,11 +226,13 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     memset(&slot, 0, sizeof(xhci_enable_slot_trb_t));
     slot.type = XHCI_CMD_ENABLE_SLOT;
 
+    LOG(DEBUG, "Sending slot TRB\n");
     xhci_command_completion_trb_t *completion = xhci_sendCommand(xhci, (xhci_trb_t*)&slot);
     if (!completion) {
         LOG(ERR, "Error enabling a slot\n");
         return 1;
     }
+    LOG(DEBUG, "Slot: %d\n", completion->slot_id);
 
     // Now we can actually begin initialization
     xhci_device_t *dev = kzalloc(sizeof(xhci_device_t));
@@ -308,7 +310,7 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     ep_ctx->transfer_ring_dequeue_ptr = dev->endpoints[0].tr->trb_list_phys | 1;
 
     LOG(DEBUG, "TR dequeue pointer is at %p\n", dev->endpoints[0].tr->trb_list_phys);
-;
+
     // Set DCBAA
     ((uint64_t*)xhci->dcbaa)[dev->slot_id] = dev->output_ctx_phys;
 
@@ -355,8 +357,9 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     usbdev->dev = (void*)dev;
     usbdev->evaluate = xhci_evaluateContext;
 
-
     usb_initializeDevice(usbdev);
+
+    xhci->ports[port].slot_id = dev->slot_id;
 
     return 0;
 }
