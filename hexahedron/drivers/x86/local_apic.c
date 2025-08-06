@@ -59,9 +59,7 @@ uint32_t lapic_read(uint32_t reg) {
  */
 void lapic_write(uint32_t reg, uint32_t data) {
     if (!lapic_base) return;
-
-    uint32_t volatile *lapic = ((uint32_t volatile*)(lapic_base + reg));
-    *lapic = data;
+    *((volatile uint32_t*)(lapic_base + reg)) = data;
 }
 
 /**
@@ -164,7 +162,7 @@ int lapic_timer_irq(uintptr_t exception_index, uintptr_t irq_number, registers_t
             // LOG(DEBUG, "Process is out of timeslice - yielding (LAPIC)\n");
             
             // End interrupt
-            hal_endInterrupt(irq_number);
+            // hal_endInterrupt(irq_number);
 
             // Yes, it is. Switch to next process
             process_yield(1);

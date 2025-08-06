@@ -230,6 +230,8 @@ int xhci_irq(void *context) {
             LOG(INFO, "Port status change event detected on port %d\n", trb->port_id);
 
             // Try to reset the port
+            
+            #if 0
             if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
                 // If a reset on this port failed, let's assume the port is dead
                 // TODO: Recovery? I need to read the spec for this sort of thing
@@ -240,6 +242,11 @@ int xhci_irq(void *context) {
                 __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
                 if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
             }
+            #else
+            // Wakeup poller thread
+            __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
+            if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+            #endif
         } else if (t->type == XHCI_EVENT_COMMAND_COMPLETION) {
             xhci_command_completion_trb_t *trb = (xhci_command_completion_trb_t*)t;
             LOG(INFO, "Command completion event detected\n");
@@ -569,7 +576,7 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     LOG(DEBUG, "Rung the doorbell, now entering loop\n");
     while (__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) != 1) {
         uintptr_t crcr = ((uintptr_t)xhci->op->crcr_hi << 32) | xhci->op->crcr_lo;
-        LOG(DEBUG, "Awaiting TRB completion. USBSTS=%08x USBCMD=%08x CRCR=%016llx\n", xhci->op->usbsts, xhci->op->usbcmd, crcr);
+        LOG(DEBUG, "Awaiting TRB completion. USBSTS=%08x USBCMD=%08x CRCR=%016llx IMAN=%08x\n", xhci->op->usbsts, xhci->op->usbcmd, crcr, xhci->run->irs[0].iman);
 
         if (current_cpu->current_thread) {
             process_yield(1);

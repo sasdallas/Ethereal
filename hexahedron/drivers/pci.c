@@ -439,14 +439,17 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     if (ctrl & (1 << 7)) {
         // 64-bit address supported
         uint64_t addr = 0xFEE00000;
+        uint32_t data = interrupt & 0xFF;
         pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
         pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, (addr >> 32), 4);
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x0C, (interrupt) & 0xFF, 1);
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x0C, data, 2);
     } else {
         // Only 32-bit
         uint32_t addr = 0xFEE00000;
+        uint32_t data = interrupt & 0xFF;
+
         pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, interrupt & 0xFF, 1);
+        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, data, 2);
     }
     
     // Disable pin interrupts too
