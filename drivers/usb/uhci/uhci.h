@@ -20,6 +20,7 @@
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/usb/dev.h>
 #include <kernel/misc/pool.h>
+#include <kernel/misc/util.h>
 #include <structs/list.h>
 
 #if defined(__ARCH_I386__)
@@ -173,6 +174,8 @@ typedef struct uhci_td {
     uint32_t software_use[4];           // 4 DWORDs for software use
 } uhci_td_t;
 
+STATIC_ASSERT(sizeof(uhci_td_t) % 16 == 0);
+
 /**
  * @brief Queue head
  * 
@@ -210,10 +213,12 @@ typedef struct uhci_qh {
     USBTransfer_t   *transfer;          // Pointer to the current transfer
     list_t          *td_list;           // Transfer descriptor list for this QH (virtual addresses rather than the QE physical addresses)
 
-#if defined(__ARCH_X86_64__)
+#if defined(__LP64__)
     uint64_t        extra_qword;        // On 64-bit architectures, the transfer/td_list pointers will be 16 bytes and qh/qe link will only be 8, making total 24 and not 16 aligned. 
 #endif
 } uhci_qh_t;
+
+STATIC_ASSERT(sizeof(uhci_qh_t) % 16 == 0);
 
 /**
  * @brief UHCI controller

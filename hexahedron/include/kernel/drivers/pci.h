@@ -205,6 +205,13 @@ typedef struct pci_bus {
     pci_slot_t slots[PCI_MAX_SLOT];
 } pci_bus_t;
 
+typedef struct pci_msix_entry {
+    uint32_t msg_addr_low;              // Low bits of message address
+    uint32_t msg_addr_high;             // High bits of message address
+    uint32_t msg_data;                  // Message data
+    uint32_t vector_ctrl;               // Vector control
+} pci_msix_entry_t;
+
 /**** MACROS ****/
 
 // Macro for help translating a bus/slot/function/offset to an address that can be written to PCI_CONFIG_ADDRESS

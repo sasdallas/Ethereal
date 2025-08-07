@@ -33,6 +33,9 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:UHCI", __VA_ARGS__)
 
+/* UHCI controller count */
+int uhci_controller_count = 0;
+
 /**
  * @brief Create a queue head
  * @param hc The host controller
@@ -429,19 +432,19 @@ int uhci_interrupt(USBController_t *controller, USBDevice_t *dev, USBTransfer_t 
 /**
  * @brief UHCI initialize controller
  */
-void uhci_initController(pci_device_t *dev) {
+int uhci_initController(pci_device_t *dev) {
     LOG(DEBUG, "Initializing UHCI controller on bus %d slot %d function %d\n", dev->bus, dev->slot, dev->function);
 
     // Now read in the PCI bar
     pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 4);
     if (!bar) {
         LOG(ERR, "UHCI controller does not have BAR4 - false positive?\n");
-        return;
+        return 1;
     }
 
     if (!(bar->type == PCI_BAR_IO_SPACE)) {
         LOG(ERR, "UHCI controller BAR4 is not I/O space - bug in PCI driver?\n");
-        return;
+        return 1;
     }
 
     // Construct a host controller
@@ -455,15 +458,6 @@ void uhci_initController(pci_device_t *dev) {
     memset(hc->frame_list, 0, 4096);
 
     LOG(DEBUG, "Frame list allocated to %p\n", hc->frame_list);
-    
-    // Do a check
-    if ((sizeof(uhci_qh_t) % 16) || (sizeof(uhci_td_t) % 16))  {
-        LOG(ERR, "You are missing the 16-byte alignment required for TDs/QHs\n");
-        LOG(ERR, "Please modify the uhci.h header file to add an extra DWORD as your architecture is 64-bit\n");
-        LOG(ERR, "Require a 16-byte alignment but QH = %d and TD = %d\n", sizeof(uhci_qh_t), sizeof(uhci_td_t));
-        return;
-    } 
-
     
     // Create the pools (16-byte alignment)
     hc->qh_pool = pool_create("uhci qh pool", sizeof(uhci_qh_t), 512 * sizeof(uhci_qh_t), 0, POOL_DMA);
@@ -512,6 +506,8 @@ void uhci_initController(pci_device_t *dev) {
 
     // Register the controller
     usb_registerController(controller);
+    uhci_controller_count++;
+    return 0;
 }
 
 /**
@@ -520,7 +516,7 @@ void uhci_initController(pci_device_t *dev) {
 int uhci_find(pci_device_t *dev, void *data) {
     // We know this device is of type 0x0C03, but it's only UHCI if the interface is 0x00
     if (pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_PROGIF_OFFSET, 1) == 0x00) {
-        uhci_initController(dev);
+        return uhci_initController(dev);
     }
 
     return 0;
@@ -537,7 +533,15 @@ int uhci_init(int argc, char **argv) {
         .id_list = NULL
     };
 
-    return pci_scanDevice(uhci_find, &params, NULL);
+    if (pci_scanDevice(uhci_find, &params, NULL)) {
+        return DRIVER_STATUS_ERROR;
+    }
+
+    if (uhci_controller_count) {
+        return DRIVER_STATUS_SUCCESS;
+    } else {
+        return DRIVER_STATUS_NO_DEVICE;
+    }
 }
 
 /**

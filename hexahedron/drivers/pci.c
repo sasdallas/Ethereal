@@ -360,6 +360,67 @@ int pci_disablePinInterrupts(uint8_t bus, uint8_t slot, uint8_t func) {
     return 0;
 }
 
+
+
+/**
+ * @brief Enable MSI-X
+ */
+static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t msi_off) {
+    // Find an available interrupt
+    uint8_t interrupt = 0xFF;
+    for (int i = 0; i < HAL_IRQ_MSI_COUNT; i++) {
+        if (!(msi_array[i / 8] & (1 << (i % 8)))) {
+            interrupt = i;
+            msi_array[i / 8] |= (1 << (i % 8));
+            break;
+        }
+    }
+
+    if (interrupt == 0xFF) {
+        LOG(ERR, "Kernel is out of MSI vectors. This is a bug.\n");
+        return 0xFF;
+    }
+
+    interrupt = HAL_IRQ_MSI_BASE + interrupt;
+    LOG(DEBUG, "MSIX: Get interrupt %x\n", interrupt);
+
+
+    // Set it up
+    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, msi_off + 0x02, 2);
+    ctrl |= (1 << 15);
+    pci_writeConfigOffset(bus, slot, func, msi_off + 0x02, ctrl, 2);
+
+    uint32_t dw = pci_readConfigOffset(bus, slot, func, msi_off + 0x04, 4);
+    uint32_t offset = dw & ~7u;
+    uint8_t bir = (uint8_t)(dw & 7u);
+
+    LOG(DEBUG, "BIR=%02x OFF=%08x\n", bir, offset);
+
+    uint64_t addr = 0xFEE00000;
+
+    // Allocate the BAR region
+    pci_bar_t *bar = pci_readBAR(bus, slot, func, bir);
+    if (!bar || bar->type == PCI_BAR_IO_SPACE || bar->type == PCI_BAR_MEMORY16) {
+        LOG(WARN, "MSI-X device is missing BAR%d or it is invalid\n", bir);
+        return 0xFF;
+    }
+
+    // TODO: FIND A WAY TO CLEAN THIS UP (?)
+    uintptr_t r = mem_mapMMIO(bar->address, bar->size);
+
+    pci_msix_entry_t *entry = (pci_msix_entry_t*)&(((pci_msix_entry_t*)(r + offset))[0]);
+    entry->msg_addr_low = addr & 0xFFFFFFFF;
+    entry->msg_addr_high = addr >> 32;
+    entry->msg_data = (interrupt & 0xFF);
+    entry->vector_ctrl = entry->vector_ctrl & ~1u;
+
+    // Disable MSI + pin
+    pci_disableMSI(bus, slot, func);
+    pci_disablePinInterrupts(bus, slot, func);
+
+    return interrupt - HAL_IRQ_BASE;
+} 
+
 /**
  * @brief Get MSI interrupts
  * @param bus The bus of the PCI device
@@ -376,38 +437,42 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
 
     // Get a pointer to the capability list
     uint8_t cap_list_off = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_CAPABILITIES_OFFSET, 1);
+    uint8_t msi_saved = 0x0;
 
     // Start parsing
     while (cap_list_off) {
         uint16_t cap = pci_readConfigOffset(bus, slot, func, cap_list_off, 2);
         if ((cap & 0xFF) == 0x05) {
             LOG(DEBUG, "MSI offset found at %x\n", cap_list_off);
-            break;
+            msi_saved = cap_list_off;
         }
 
         if ((cap & 0xFF) == 0x11) {
             // MSI-X
-            LOG(DEBUG, "MSI-X offset found at %x (no support)\n", cap_list_off);
+            LOG(DEBUG, "MSI-X offset found at %x\n", cap_list_off);
+
+            uint8_t r = pci_enableMSIX(bus, slot, func, cap_list_off);
+            if (r != 0xFF) return r;
         }
 
         cap_list_off = (cap >> 8) & 0xFC;
     }
 
     // Did we find it?
-    if (!cap_list_off) {
-        LOG(ERR, "Cannot enable MSI for a device that does not support it\n");
+    if (!msi_saved) {
+        LOG(ERR, "Device does not support MSI or MSI-X\n");
         return 0xFF;
     }
 
+    cap_list_off = msi_saved;
+
     // Find an available interrupt
     uint8_t interrupt = 0xFF;
-    for (int i = 0; i < HAL_IRQ_MSI_COUNT/8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if (!(msi_array[i] & (1 << j))) {
-                interrupt = (i*8) + j;
-                msi_array[i] |= (1 << j);
-                break;
-            }
+    for (int i = 0; i < HAL_IRQ_MSI_COUNT; i++) {
+        if (!(msi_array[i / 8] & (1 << (i % 8)))) {
+            interrupt = i;
+            msi_array[i / 8] |= (1 << (i % 8));
+            break;
         }
     }
 
@@ -419,11 +484,6 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     interrupt = HAL_IRQ_MSI_BASE + interrupt;
 
     LOG(DEBUG, "MSI: Get interrupt %x\n", interrupt);
-
-    // First disable legacy pin interrupts for the device
-    uint16_t pci_command = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
-    pci_command |= PCI_COMMAND_INTERRUPT_DISABLE;
-    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, pci_command, 2);
 
 
     // Start parsing the MSI information

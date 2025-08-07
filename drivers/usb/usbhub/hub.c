@@ -2,6 +2,7 @@
  * @file drivers/usbhub/hub.c
  * @brief USB Hub driver
  * 
+ * @todo This is a pretty garbage hacky driver. More logic in the USB subsystem needs to be implemented to allow controllers to probably link up hubs.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
