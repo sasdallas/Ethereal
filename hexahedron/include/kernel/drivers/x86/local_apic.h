@@ -179,4 +179,9 @@ uint8_t lapic_readError();
  */
 void lapic_sendIPI(uint8_t lapic_id, uint8_t irq_no, uint32_t flags);
 
+/**
+ * @brief Check whether local APIC initialized
+ */
+int lapic_initialized();
+
 #endif

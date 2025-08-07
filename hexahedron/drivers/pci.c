@@ -24,6 +24,7 @@
 
 #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
 #include <kernel/drivers/x86/pic.h>
+#include <kernel/drivers/x86/local_apic.h>
 #endif
 
 /* MSI map array */
@@ -418,6 +419,8 @@ static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t m
     pci_disableMSI(bus, slot, func);
     pci_disablePinInterrupts(bus, slot, func);
 
+    PCI_DEVICE(bus, slot, func)->msix_offset = msi_off;
+
     return interrupt - HAL_IRQ_BASE;
 } 
 
@@ -429,6 +432,13 @@ static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t m
  * @returns 0xFF or the interrupt ID
  */
 uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
+#if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
+    if (!lapic_initialized()) {
+        LOG(WARN, "MSI enabling failed: Local APIC not initialized. Buggy interrupts may occur\n");
+        return 0xFF;
+    }
+#endif
+
     // Find the MSI capability
     uint16_t status = pci_readConfigOffset(bus, slot, func, PCI_STATUS_OFFSET, 2);
     if (!(status & PCI_STATUS_CAPABILITIES_LIST)) {
@@ -495,6 +505,8 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     ctrl |= 1;
     pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x02, ctrl, 2);
 
+    LOG(DEBUG, "msg_ctrl = %04x (64-bit: %s)\n", ctrl, (ctrl & (1 << 7)) ? "YES" : "NO");
+
     // Configure message address and data
     if (ctrl & (1 << 7)) {
         // 64-bit address supported
@@ -515,6 +527,8 @@ uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
     // Disable pin interrupts too
     pci_disableMSIX(bus, slot, func);
     pci_disablePinInterrupts(bus, slot, func);
+    
+    PCI_DEVICE(bus, slot, func)->msi_offset = cap_list_off;
 
     return interrupt - 32;
 }
@@ -543,7 +557,9 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->class_code = pci_readConfigOffset(bus, slot, function, PCI_CLASSCODE_OFFSET, 1);
     dev->subclass_code = pci_readConfigOffset(bus, slot, function, PCI_SUBCLASS_OFFSET, 1);
     dev->driver = NULL;
-    
+    dev->msi_offset = 0xFF;
+    dev->msix_offset = 0xFF;
+
     // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
 
     // Do we need to initialize another bus?

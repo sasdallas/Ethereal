@@ -64,6 +64,13 @@ void lapic_write(uint32_t reg, uint32_t data) {
 }
 
 /**
+ * @brief Check whether local APIC initialized
+ */
+int lapic_initialized() {
+    return !!lapic_base;
+}
+
+/**
  * @brief Get the local APIC ID
  */
 uint8_t lapic_getID() {

@@ -130,6 +130,9 @@ typedef struct pci_device {
     uint16_t            pid;                // Product ID
     void                *driver;            // Driver-specific field                       
 
+    uint32_t            msi_offset;         // MSI offset in configuration space (or 0xFF if not found)
+    uint32_t            msix_offset;        // MSI-X offset in configuration space (or 0xFF if not found)
+
     int                 valid;              // !!!: Valid device hack
 } pci_device_t;
 
