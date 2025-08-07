@@ -27,10 +27,26 @@
 #include <kernel/multiboot2.h>
 #include <kernel/mem/pmm.h>
 #include <kernel/mem/mem.h>
+#include <kernel/arch/arch.h>
 
 extern uintptr_t arch_allocate_structure(size_t bytes);
 extern uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size);
 
+#define MBRELOC(x) ((uintptr_t)mem_remapPhys((uintptr_t)(x), 0))
+
+extern uintptr_t __kernel_end_phys;
+
+struct multiboot_rsdp {
+    char signature[8];      // "RSD PTR ", not null terminated
+    uint8_t checksum;       // Checksum validation
+    char oemid[6];          // OEM string
+    uint8_t revision;       // Revision of the RSDP. If not 0, cast this to an XSDP.
+    uint32_t rsdt_address;  // RSDT address
+    uint32_t length;        // Length
+    uint64_t xsdt_address;  // XSDT address
+    uint8_t checksum_ext;   // Checksum extended
+    uint8_t reserved[3];    // Reserved
+};
 
 /**
  * @brief Find a tag
@@ -40,21 +56,17 @@ extern uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size);
  */
 struct multiboot_tag *multiboot2_find_tag(void *header, uint32_t type) {
     uint8_t *start = (uint8_t*)header;
-    
-    while ((uintptr_t)start & 7) start++; // Skip over padding
-
     struct multiboot_tag *tag = (struct multiboot_tag*)start;
     while (tag->type != 0) {
         // Start going through the tags
         if (tag->type == type) return tag;
-        start += tag->size;
-        while ((uintptr_t)start & 7) start++;
-        tag = (struct multiboot_tag*)start;
+        tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     }
 
     return NULL;
 }
 
+extern void fuck_i_hate_multiboot(uint32_t nFrequence);
 
 /** 
  * @brief Parse a Multiboot 2 header and packs into a @c generic_parameters structure
@@ -62,137 +74,149 @@ struct multiboot_tag *multiboot2_find_tag(void *header, uint32_t type) {
  * @returns A generic parameters structure
  */
 generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
-    void *updated_bootinfo = (void*)((uint8_t*)bootinfo + 8); // TODO: ugly af
+    multiboot2_t *mb2 = (multiboot2_t*)bootinfo;
 
     // First, get some bytes for a generic_parameters structure
     generic_parameters_t *parameters = (generic_parameters_t*)arch_allocate_structure(sizeof(generic_parameters_t));
+    memset(parameters, 0, sizeof(generic_parameters_t));
+
+    // Let's go!
+    int mmap_found = 0;
+    int old_rsdp_found = 0;
+
+    struct multiboot_tag *tag = (struct multiboot_tag*)MBRELOC(mb2->tags);
+    while (tag->type != MULTIBOOT_TAG_TYPE_END) {
+        if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+            mmap_found = 1;
+
+            // Setup parameters for generic
+            parameters->mmap_start = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
+            memset(parameters->mmap_start, 0, sizeof(generic_mmap_desc_t));
+            generic_mmap_desc_t *last_mmap_descriptor = parameters->mmap_start;
+            generic_mmap_desc_t *descriptor = parameters->mmap_start;
+
+            // Start iterating!
+            struct multiboot_tag_mmap *mmap_tag = (struct multiboot_tag_mmap*)tag;
+            multiboot_memory_map_t *mmap;
+            for (mmap = mmap_tag->entries; 
+                    (uint8_t*)mmap < (uint8_t*)mmap_tag + mmap_tag->size;
+                    mmap = (multiboot_memory_map_t*)((unsigned long)mmap + mmap_tag->entry_size)) {
+
+                descriptor->address = mmap->addr;
+                descriptor->length = mmap->len;
+                switch (mmap->type) {
+                    case MULTIBOOT_MEMORY_AVAILABLE:
+                        descriptor->type = GENERIC_MEMORY_AVAILABLE;
+                        break;
+                    
+                    case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE:
+                        descriptor->type = GENERIC_MEMORY_ACPI_RECLAIM;
+                        break;
+                    
+                    case MULTIBOOT_MEMORY_NVS:
+                        descriptor->type = GENERIC_MEMORY_ACPI_NVS;
+                        break;
+                    
+                    case MULTIBOOT_MEMORY_BADRAM:
+                        descriptor->type = GENERIC_MEMORY_BADRAM;
+                        break;
+
+                    case MULTIBOOT_MEMORY_RESERVED:
+                    default:
+                        descriptor->type = GENERIC_MEMORY_RESERVED;
+                        break;
+                }
+
+                // Debugging output
+                // dprintf(DEBUG, "Memory descriptor 0x%x - 0x%016llX len 0x%016llX type 0x%x last descriptor 0x%x\n", descriptor, descriptor->address, descriptor->length, descriptor->type, last_mmap_descriptor);
+
+                // If we're not the first update the last memory map descriptor
+                if (mmap != mmap_tag->entries) {
+                    last_mmap_descriptor->next = descriptor;
+                    last_mmap_descriptor = descriptor;
+                }
+
+                // Reallocate & repeat
+                descriptor = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
+                memset(descriptor, 0, sizeof(generic_mmap_desc_t));
+            }
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_BASIC_MEMINFO) {
+            struct multiboot_tag_basic_meminfo *meminfo_tag = (struct multiboot_tag_basic_meminfo*)tag;
+            parameters->mem_size = meminfo_tag->mem_lower + meminfo_tag->mem_upper;
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
+            generic_module_desc_t *module = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
+            memset(module, 0, sizeof(generic_module_desc_t));
+            struct multiboot_tag_module *mod_tag = (struct multiboot_tag_module*)tag;
+
+            if (!parameters->module_start) {
+                module = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
+                parameters->module_start = module;
+            } else {
+                generic_module_desc_t *target = parameters->module_start;
+                while (target->next) target = target->next;
+                target->next = module;
+            }
+
+            module->mod_start = mem_remapPhys(mod_tag->mod_start, 0xDEADBEEF);
+            module->mod_end = mem_remapPhys(mod_tag->mod_end, 0xDEADBEEF);
+            module->cmdline = (char*)arch_relocate_structure(MBRELOC(mod_tag->cmdline), strlen((char*)MBRELOC(mod_tag->cmdline)));
+            
+            // Null-terminate cmdline
+            module->cmdline[strlen((char*)MBRELOC(mod_tag->cmdline)) - 1] = 0;
+
+            module->next = NULL;
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_ACPI_OLD) {
+            dprintf(DEBUG, "Found Multiboot2 old RSDP tag\n");
+
+            struct multiboot_tag_old_acpi *acpi = (struct multiboot_tag_old_acpi *)tag;
+            if (!hal_getRSDP()) {
+                uintptr_t rsdp = arch_relocate_structure((uintptr_t)acpi->rsdp, 20);
+                hal_setRSDP(mem_getPhysicalAddress(NULL, rsdp));
+            }   
+
+            old_rsdp_found = 1;
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_ACPI_NEW) {
+            struct multiboot_tag_new_acpi *acpi = (struct multiboot_tag_new_acpi*)tag;
+
+            dprintf(DEBUG, "Found Multiboot2 new RSDP tag\n");
+            if (!hal_getRSDP() || old_rsdp_found) {
+                struct multiboot_rsdp *acpi_rsdp = (struct multiboot_rsdp*)acpi->rsdp;
+
+                uintptr_t rsdp = arch_relocate_structure((uintptr_t)acpi_rsdp, (acpi_rsdp->length > sizeof(struct multiboot_rsdp)) ? sizeof(struct multiboot_rsdp) : acpi_rsdp->length);
+                hal_setRSDP(mem_getPhysicalAddress(NULL, rsdp));
+            }
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME) {
+            struct multiboot_tag_string *bootldr = (struct multiboot_tag_string *)tag; 
+            parameters->bootloader_name = (char*)arch_relocate_structure((uintptr_t)bootldr->string, strlen(bootldr->string));
+            parameters->bootloader_name[strlen(bootldr->string)] = 0;
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_CMDLINE) {
+            struct multiboot_tag_string *cmdline = (struct multiboot_tag_string *)tag; 
+            if (strlen(cmdline->string)) {
+            parameters->kernel_cmdline = (char*)arch_relocate_structure((uintptr_t)cmdline->string, strlen(cmdline->string));
+            parameters->kernel_cmdline[strlen(cmdline->string)] = 0;
+            } else {
+                parameters->kernel_cmdline = (char*)arch_allocate_structure(1);
+                parameters->kernel_cmdline[0] = 0;
+            }
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_FRAMEBUFFER) {
+            struct multiboot_tag_framebuffer *fb_tag = (struct multiboot_tag_framebuffer*)tag;
+            parameters->framebuffer = (generic_fb_desc_t*)arch_allocate_structure(sizeof(generic_fb_desc_t));
+            parameters->framebuffer->framebuffer_addr = fb_tag->common.framebuffer_addr;
+            parameters->framebuffer->framebuffer_width = fb_tag->common.framebuffer_width;
+            parameters->framebuffer->framebuffer_height = fb_tag->common.framebuffer_height;
+            parameters->framebuffer->framebuffer_bpp = fb_tag->common.framebuffer_bpp;
+            parameters->framebuffer->framebuffer_pitch = fb_tag->common.framebuffer_pitch;
+        }
+        
+        tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     
-    // Find the memory map, we'll parse it first.
-    struct multiboot_tag_mmap *mmap_tag = (struct multiboot_tag_mmap*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_MMAP);
-    if (mmap_tag == NULL) {
+    }
+
+    if (!mmap_found) {
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
         __builtin_unreachable();
     }
 
-    // Setup parameters for generic
-    parameters->mmap_start = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
-    generic_mmap_desc_t *last_mmap_descriptor = parameters->mmap_start;
-    generic_mmap_desc_t *descriptor = parameters->mmap_start;
-
-    // Start iterating!
-    multiboot_memory_map_t *mmap;
-    for (mmap = mmap_tag->entries; 
-            (uint8_t*)mmap < (uint8_t*)mmap_tag + mmap_tag->size;
-            mmap = (multiboot_memory_map_t*)((unsigned long)mmap + mmap_tag->entry_size)) {
-
-        descriptor->address = mmap->addr;
-        descriptor->length = mmap->len;
-        switch (mmap->type) {
-            case MULTIBOOT_MEMORY_AVAILABLE:
-                descriptor->type = GENERIC_MEMORY_AVAILABLE;
-                break;
-            
-            case MULTIBOOT_MEMORY_ACPI_RECLAIMABLE:
-                descriptor->type = GENERIC_MEMORY_ACPI_RECLAIM;
-                break;
-            
-            case MULTIBOOT_MEMORY_NVS:
-                descriptor->type = GENERIC_MEMORY_ACPI_NVS;
-                break;
-            
-            case MULTIBOOT_MEMORY_BADRAM:
-                descriptor->type = GENERIC_MEMORY_BADRAM;
-                break;
-
-            case MULTIBOOT_MEMORY_RESERVED:
-            default:
-                descriptor->type = GENERIC_MEMORY_RESERVED;
-                break;
-        }
-
-        // Debugging output
-        // dprintf(DEBUG, "Memory descriptor 0x%x - 0x%016llX len 0x%016llX type 0x%x last descriptor 0x%x\n", descriptor, descriptor->address, descriptor->length, descriptor->type, last_mmap_descriptor);
-
-        // If we're not the first update the last memory map descriptor
-        if (mmap != mmap_tag->entries) {
-            last_mmap_descriptor->next = descriptor;
-            last_mmap_descriptor = descriptor;
-        }
-
-        // Reallocate & repeat
-        descriptor = (generic_mmap_desc_t*)arch_allocate_structure(sizeof(generic_mmap_desc_t));
-    }
-
-    // Next, get the basic meminfo structure
-    struct multiboot_tag_basic_meminfo *meminfo_tag = (struct multiboot_tag_basic_meminfo*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_BASIC_MEMINFO);
-    if (meminfo_tag == NULL) {
-        kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a Multiboot2 tag that was not provided (BASIC_MEMINFO)\n");
-    }
-
-    parameters->mem_size = meminfo_tag->mem_lower + meminfo_tag->mem_upper;
-
-    // Parse modules
-    struct multiboot_tag_module *mod_tag = (struct multiboot_tag_module*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_MODULE);
-    
-    if (mod_tag == NULL) goto _done_modules; // Let generic deal with this...
-
-    parameters->module_start = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
-    generic_module_desc_t *module = parameters->module_start;
-    generic_module_desc_t *last_module = module;
-    while (mod_tag) {
-        // Relocate cmdline
-        module->cmdline = (char*)arch_relocate_structure((uintptr_t)mod_tag->cmdline, strlen((char*)(uintptr_t)mod_tag->cmdline));
-        module->cmdline[strlen((char*)(uintptr_t)module->cmdline) - 1] = 0; // TODO: need to do this?
-        
-        // Relocate the module's contents
-        module->mod_start = arch_relocate_structure((uintptr_t)mod_tag->mod_start, (uintptr_t)(mod_tag->mod_end - mod_tag->mod_start));
-        module->mod_end = module->mod_start + (mod_tag->mod_end - mod_tag->mod_start);
-
-        struct multiboot_tag_module *next_tag = (struct multiboot_tag_module*)multiboot2_find_tag((void*)mod_tag, MULTIBOOT_TAG_TYPE_MODULE);
-        if (next_tag == NULL) break;
-        mod_tag = next_tag;
-
-        // Allocate the next one
-        last_module = module;
-        module = (generic_module_desc_t*)arch_allocate_structure(sizeof(generic_module_desc_t));
-        last_module->next = module;
-    }
-
-_done_modules:
-
-    // Let's get the framebuffer
-    struct multiboot_tag_framebuffer *fb_tag = (struct multiboot_tag_framebuffer*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_FRAMEBUFFER);
-    if (fb_tag) {
-        parameters->framebuffer = (generic_fb_desc_t*)arch_allocate_structure(sizeof(generic_fb_desc_t));
-        parameters->framebuffer->framebuffer_addr = fb_tag->common.framebuffer_addr;
-        parameters->framebuffer->framebuffer_width = fb_tag->common.framebuffer_width;
-        parameters->framebuffer->framebuffer_height = fb_tag->common.framebuffer_height;
-        parameters->framebuffer->framebuffer_bpp = fb_tag->common.framebuffer_bpp;
-        parameters->framebuffer->framebuffer_pitch = fb_tag->common.framebuffer_pitch;
-    }
-
-    // Get command line and bootloader name
-    struct multiboot_tag_string *cmdline = (struct multiboot_tag_string*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_CMDLINE);
-    struct multiboot_tag_string *bootldr = (struct multiboot_tag_string*)multiboot2_find_tag(updated_bootinfo, MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME);
-
-    // TODO: Unsafe strcpy
-    if (cmdline && strlen((char*)cmdline->string) > 0) {
-        parameters->kernel_cmdline = (char*)arch_relocate_structure((uintptr_t)cmdline->string, strlen((char*)cmdline->string));
-        parameters->kernel_cmdline[strlen(parameters->kernel_cmdline) - 1] = 0;
-    } else {
-        parameters->kernel_cmdline = (char*)arch_allocate_structure(1); // !!!: wtf am i doing
-    }
-    
-
-    if (bootldr && strlen((char*)bootldr->string) > 0) {
-        parameters->bootloader_name = (char*)arch_relocate_structure((uintptr_t)bootldr->string, strlen((char*)bootldr->string));
-        parameters->bootloader_name[strlen(parameters->bootloader_name) - 1] = 0;
-    } else {
-        parameters->bootloader_name = (char*)arch_allocate_structure(1);
-    }
-
-
-    // Finished!
     return parameters;
 }
 
@@ -208,8 +232,6 @@ _done_modules:
  * @returns A generic parameters structure
  */
 generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
-#define MBRELOC(x) ((uintptr_t)mem_remapPhys((uintptr_t)(x), 0))
-
     bootinfo = (multiboot_t*)MBRELOC(bootinfo);
 
     // First, get some bytes for a generic_parameters structure
@@ -354,8 +376,6 @@ _done_modules:
 
 /**** x86_64 specific ****/
 
-#include <kernel/mem/mem.h>
-
 static multiboot_t *stored_bootinfo = NULL;
 static int is_mb2 = 0;
 
@@ -371,49 +391,35 @@ void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
     }
 
     if (is_mb2) {
-        // i love 64-bit mode
-        dprintf(DEBUG, "waiting to remap phys\n");
-        uintptr_t start_search = mem_remapPhys((uintptr_t)stored_bootinfo, 0xDEADBEEF);
+        multiboot2_t *bootinfo = (multiboot2_t*)stored_bootinfo;
 
         // Find the memory map, we'll parse it first.
-        struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap*)multiboot2_find_tag((void*)start_search, MULTIBOOT_TAG_TYPE_MMAP);
-        if (mmap == NULL) {
+        struct multiboot_tag_mmap *mm = (struct multiboot_tag_mmap*)multiboot2_find_tag((void*)bootinfo->tags, MULTIBOOT_TAG_TYPE_MMAP);
+        if (mm == NULL) {
             kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
             __builtin_unreachable();
         }
 
-        // Get ptr
-        char *ptr = (char*)mem_remapPhys((uintptr_t)mmap->entries, 0xDEADBEEF);
+        uintptr_t memory_size = 0;
 
-        // Search memory map
-        uintptr_t highest_address = 0;
-        while ((uintptr_t)ptr < (uintptr_t)mmap + mmap->size) {
-            struct multiboot_mmap_entry *entry = (struct multiboot_mmap_entry*)ptr;
-            if (entry->type == MULTIBOOT_MEMORY_AVAILABLE && entry->len && entry->addr + entry->len - 1 > highest_address) {
-                // Available!
-                dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as available memory\n", entry->addr, entry->addr + entry->len, entry->len / 1024);
-                pmm_initializeRegion((uintptr_t)entry->addr, (uintptr_t)entry->len);
-            } else {
-                // Make sure mmap->addr isn't out of memory - most emulators like to have reserved
-                // areas outside of their actual memory space, which the PMM really does not like.
+        struct multiboot_mmap_entry *ent = mm->entries;
 
-                // As well as that, QEMU bugs out and forgets about certain DMA regions (see below), so
-                // don't uninitialize anything below 0x10000 
-                if (entry->addr > 0x100000 && entry->addr + entry->len < mem_size) {
-                    dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as unavailable memory\n", entry->addr, entry->addr + entry->len, entry->len / 1024); 
-                    
-                    // Don't deinitialize this region, since the PMM starts out with everything deinitialized
-                    // pmm_deinitializeRegion((uintptr_t)entry->addr, (uintptr_t)entry->len);
+        while ((uintptr_t)ent < (uintptr_t)mm + mm->size) {
+            dprintf(DEBUG, "Memory map entry type=%d len=%016llX addr=%016llX\n", ent->type, ent->addr, ent->len);
+            if (ent->type == 1 && ent->len && ent->addr + ent->len - 1 > memory_size) {
+                memory_size = ent->addr + ent->len - 1;
 
-             
-                }
+                pmm_initializeRegion((uintptr_t)ent->addr, (uintptr_t)ent->len);
             }
 
-            dprintf(DEBUG, "%d %016llX\n", entry->type, entry->addr);
-
-            ptr += mmap->entry_size;
+            ent = (struct multiboot_mmap_entry*)((uintptr_t)ent + mm->entry_size);
         }
+            
 
+        if (!memory_size) {
+            kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
+            __builtin_unreachable();
+        }
     } else {
         // Bootinfo needs to be remapped using memory
         multiboot_t *bootinfo = (multiboot_t*)mem_remapPhys((uintptr_t)stored_bootinfo, MEM_ALIGN_PAGE(sizeof(multiboot_t)));
@@ -467,9 +473,6 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
     // Store structure for later use
     stored_bootinfo = bootinfo;
     is_mb2 = 0;
-
-
-    extern uintptr_t __kernel_end_phys;
     uintptr_t kernel_addr = (uintptr_t)&__kernel_end_phys;
     uintptr_t msize = (uintptr_t)&__kernel_end_phys;
 
@@ -522,45 +525,48 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
  * we have to initialize the allocator. It's very hacky, but it does end up working.
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
-void arch_parse_multiboot2_early(multiboot_t *bootinfo, uintptr_t *mem_size, uintptr_t *first_free_page) {
-    // Store bootinfo
-    void *updated_bootinfo = (void*)((uint8_t*)bootinfo + 8); // TODO: ugly af
-    stored_bootinfo = updated_bootinfo;
+void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, uintptr_t *first_free_page) {
+    dprintf(DEBUG, "bootinfo = %p\n");
+    multiboot2_t *bootinfo = (multiboot2_t*)bootinfo1;
+    stored_bootinfo = bootinfo1;
     is_mb2 = 1;
 
-    // Get mmap
-    struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap*)multiboot2_find_tag((void*)stored_bootinfo, MULTIBOOT_TAG_TYPE_MMAP);
-    if (!mmap) {
-        kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "multiboot2", "*** Kernel requires a memory map to boot\n");
-        __builtin_unreachable();
+    uintptr_t memory_size = 0;
+    uintptr_t kend = (uintptr_t)&__kernel_end_phys;
+
+    struct multiboot_tag *tag = (struct multiboot_tag*)(bootinfo->tags);
+    while (tag->type != MULTIBOOT_TAG_TYPE_END) {
+        
+        if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+            struct multiboot_tag_mmap *mm = (struct multiboot_tag_mmap*)tag;
+            struct multiboot_mmap_entry *ent = mm->entries;
+
+            while ((uintptr_t)ent < (uintptr_t)mm + mm->size) {
+                dprintf(DEBUG, "Memory map entry type=%d len=%016llX addr=%016llX\n", ent->type, ent->addr, ent->len);
+                if (ent->type == 1 && ent->len && ent->addr + ent->len - 1 > memory_size) {
+                    memory_size = ent->addr + ent->len - 1;
+                }
+
+                ent = (struct multiboot_mmap_entry*)((uintptr_t)ent + mm->entry_size);
+            }
+        } else if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
+            struct multiboot_tag_module *mod = (struct multiboot_tag_module*)tag;
+            
+            dprintf(DEBUG, "Module %08X - %08X (%s)\n", mod->mod_start, mod->mod_end, mod->cmdline);
+            
+            if (mod->mod_end > kend) kend = mod->mod_end;
+        }
+
+
+        uintptr_t tag_ptr = (uintptr_t)tag + ((tag->size + 7) & ~7);
+        if (tag_ptr > kend) kend = tag_ptr;
+
+        tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     }
 
-    char *ptr = (char*)mmap->entries;
+    kend = MEM_ALIGN_PAGE(kend);
 
-    // Get highest possible address
-    uintptr_t highest_address = 0;
-    while ((uintptr_t)ptr < (uintptr_t)mmap + mmap->size) {
-        struct multiboot_mmap_entry *entry = (struct multiboot_mmap_entry*)ptr;
-        if (entry->type == 1 && entry->len && entry->addr + entry->len - 1 > highest_address) {
-            highest_address = entry->addr + entry->len - 1;
-        } 
-
-        ptr += mmap->entry_size;
-    }
-
-    // Do the modules
-    extern uintptr_t __kernel_end;
-    uintptr_t kernel_end_address = (uintptr_t)&__kernel_end;
-    struct multiboot_tag_module *mod_tag = (struct multiboot_tag_module*)multiboot2_find_tag(stored_bootinfo, MULTIBOOT_TAG_TYPE_MODULE);
-    while (mod_tag) {
-        if ((uintptr_t)mod_tag->mod_end > kernel_end_address) kernel_end_address = (uintptr_t)mod_tag->mod_end;
-        mod_tag = (struct multiboot_tag_module*)multiboot2_find_tag((void*)mod_tag, MULTIBOOT_TAG_TYPE_MODULE);
-    }
-
-    // Update variables
-    *mem_size = highest_address;
-    *first_free_page = kernel_end_address;
-
-    dprintf(DEBUG, "Processed OK\n");
-
+    *first_free_page = kend;
+    *mem_size = memory_size;
+    dprintf(INFO, "FFP=%016llx MMSIZE=%016llX\n", kend, memory_size);
 }

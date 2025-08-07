@@ -75,9 +75,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_version_codename);
 
         printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), parameters->mem_size);
-
-        // NOTE: This should only be called once, so why not just modify some parameters?
-        parameters->cpu_count = smp_getCPUCount();
+        printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo
         gfx_drawLogo(RGB(255, 255, 255));

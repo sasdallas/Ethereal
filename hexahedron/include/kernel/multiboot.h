@@ -60,6 +60,11 @@ typedef struct _multiboot_t
 	uint8_t  framebuffer_type;
 } __attribute__ ((packed)) multiboot_t;
 
+typedef struct multiboot2 {
+	uint32_t total_size;
+	uint32_t reserved;
+	char tags[];
+} __attribute__((packed)) multiboot2_t;
 
 typedef struct multiboot1_mod
 {

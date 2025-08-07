@@ -63,6 +63,9 @@ static int ap_shutdown_finished = 0;
 static uintptr_t tlb_shootdown_address = 0x0;
 static spinlock_t tlb_shootdown_lock = { 0 };
 
+/* Last CPU number */
+static int last_cpu_number = 1;
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "SMP", __VA_ARGS__)
 
@@ -180,6 +183,7 @@ void smp_startAP(uint8_t lapic_id) {
     lapic_sendStartup(lapic_id, SMP_AP_BOOTSTRAP_PAGE);
 
     // Wait for AP to finish and set the startup flag
+    LOG(DEBUG, "Waiting for CPU%d to finish startup\n", lapic_id);
     do { asm volatile ("pause" ::: "memory"); } while (!ap_startup_finished);
 }
 
@@ -198,7 +202,7 @@ int smp_init(smp_info_t *info) {
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
     // Initialize I/O APIC first
-    if (kargs_has("--enable-ioapic")) pic_init(PIC_TYPE_IOAPIC, (void*)info);
+    pic_init(PIC_TYPE_IOAPIC, (void*)info);
 
     // Initialize the local APIC
     int lapic = lapic_initialize(lapic_remapped);
@@ -246,6 +250,7 @@ _finish_collection:
     hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
 
     processor_count = smp_data->processor_count;
+    arch_get_generic_parameters()->cpu_count = smp_getCPUCount();
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
 
     return 0;

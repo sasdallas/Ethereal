@@ -67,19 +67,8 @@ multiboot2_header_start:
 .long MULITBOOT2_CHECKSUM
 
 // Documentation: https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
-// Start with an address tag
-.align 8
-multiboot2_address_tag:
-.word 2                         // Type (u16 - address)
-.word 0                         // Flags (u16 - unused)
-.long 24                        // Size of the tag
-.long multiboot2_header_start   // Put the start of the header
-.long (__kernel_start - KERNEL_LOAD_ADDRESS)            // Starting address of the kernel
-.long (__bss_start - KERNEL_LOAD_ADDRESS)               // BSS starting address
-.long (__kernel_end - KERNEL_LOAD_ADDRESS)              // Ending address of the kernel
 
-
-/* Next, give a tag describing the entrypoint */
+/* Give a tag describing the entrypoint */
 .align 8
 multiboot2_entry_tag:
 .word 3                         // Type (u16 - entry)
@@ -87,24 +76,15 @@ multiboot2_entry_tag:
 .long 12                        // Size of the tag
 .long _start
 
-
 /* Then, give a tag requesting a framebuffer */
 .align 8
 multiboot2_fb_tag:
 .word 5                         // Type (u16 - fb)
 .word 0                         // Flags (u16 - unused)
 .long 20                        // Size of the tag
-.long 1024                      // 1024 width
-.long 768                       // 768 height
+.long 1920                      // 1024 width
+.long 1080                       // 768 height
 .long 32                        // 32 bpp (depth)
-
-/* Give a tag requesting EGA text support */
-.align 8
-multiboot2_console_flags_tag:
-.word 4                         // Type (u16 - flags)
-.word 0                         // Flags (u16 - unused)
-.long 12                        // Size of the tag
-.long 2                         // Bit 1 means we have EGA text support
 
 /* Make our lives easier and make module page aligned */
 .align 8
@@ -115,6 +95,13 @@ mulitboot2_align_mods:
 
 // NOTE:    A relocatable image tag is not used, I'm not keeping track of EIP
 //          through all of this bootstrapping AND adjusting ELF addresses in C code.
+
+/* End tag */
+.align 8
+multiboot2_end_tag:
+.word 0
+.word 0
+.long 8
 
 multiboot2_header_end:
 
@@ -225,7 +212,7 @@ _start:
     // 0x0000000000000000-0x0000000003ffffff -> 0x000000000000-0x000003ffffff
     add $0x1000, %edi       // Move to next entry
     mov $0x87, %ebx         // Present, writable, usermode, and page size
-    mov $32, %ecx           // Loop amount (400 4KiB pages)
+    mov $512, %ecx           // Loop amount (400 4KiB pages)
 
 .paging_set_entry_loop:
     // Loop through each entry 
