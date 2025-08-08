@@ -47,6 +47,46 @@ int xhci_resetController(xhci_t *xhci) {
 }
 
 /**
+ * @brief Take ownership of a controller
+ * @param xhci Controller
+ */
+int xhci_takeOwnership(xhci_t *xhci) {
+
+    uint16_t xECP = xhci->cap->extended_cap_pointer;
+    if (!xECP) {
+        LOG(WARN, "xECP not found\n");
+        return 0; // TODO: Fatal?
+    }
+
+    uintptr_t ext = (uintptr_t)((uint8_t*)xhci->mmio_addr + xECP*4);   
+
+    while (1) {
+        volatile xhci_extended_capability_t *cap = (xhci_extended_capability_t*)ext;
+        
+        if (cap->id == XHCI_EXT_CAP_USBLEGSUP) {
+            volatile xhci_legsup_capability_t *leg = (xhci_legsup_capability_t*)cap;
+
+            leg->os_sem = 1;
+            
+            // Timeout until BIOS sem clears
+            if (TIMEOUT(!(leg->bios_sem), 10000)) {
+                LOG(ERR, "BIOS/OS handoff failure (BIOS did not release semaphore)\n");
+                return 1;
+            }
+
+            LOG(DEBUG, "OS handoff success\n");
+            return 0;
+        }
+
+
+        if (!cap->next) break;
+        ext += cap->next*4;
+    }
+
+    return 0; // No capability
+}
+
+/**
  * @brief Process extended capabilities
  * @param xhci Controller
  */
@@ -54,7 +94,7 @@ int xhci_processExtendedCapabilities(xhci_t *xhci) {
     uint16_t xECP = xhci->cap->extended_cap_pointer;
     if (!xECP) {
         LOG(WARN, "xECP not found\n");
-        return 0; // TODO: Fatal?
+        return 1;
     }
 
     uintptr_t ext = (uintptr_t)((uint8_t*)xhci->mmio_addr + xECP*4);   
@@ -230,8 +270,6 @@ int xhci_irq(void *context) {
             LOG(INFO, "Port status change event detected on port %d\n", trb->port_id);
 
             // Try to reset the port
-            
-            #if 0
             if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
                 // If a reset on this port failed, let's assume the port is dead
                 // TODO: Recovery? I need to read the spec for this sort of thing
@@ -242,15 +280,10 @@ int xhci_irq(void *context) {
                 __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
                 if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
             }
-            #else
-            // Wakeup poller thread
-            __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
-            if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
-            #endif
         } else if (t->type == XHCI_EVENT_COMMAND_COMPLETION) {
             xhci_command_completion_trb_t *trb = (xhci_command_completion_trb_t*)t;
-            LOG(INFO, "Command completion event detected\n");
-            xhci->ctr = trb;
+            LOG(INFO, "Command completion event detected (completed TRB %016llX with cc %d type=%d slot_id=%d vfid=%d)\n", trb->ctrb, trb->cc, trb->type, trb->slot_id, trb->vfid);
+            memcpy(&xhci->ctr, trb, sizeof(xhci_command_completion_trb_t));
             __atomic_store_n(&xhci->flag, 1, __ATOMIC_SEQ_CST);
         } else if (t->type == XHCI_EVENT_TRANSFER) {
             xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
@@ -477,6 +510,15 @@ int xhci_initController(pci_device_t *device) {
     xhci->mutex = mutex_create("xhci mutex");
     
     // Reset xHCI controller
+    if (xhci_takeOwnership(xhci)) {
+        LOG(ERR, "xHCI ownership handoff failed\n");
+        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        kfree(xhci);
+        kfree(bar);
+        return 1;
+    }
+
+    // Reset xHCI controller
     if (xhci_resetController(xhci)) {
         LOG(ERR, "xHCI controller reset failed\n");
         mem_unmapMMIO(xhci->mmio_addr, bar->size);
@@ -556,11 +598,11 @@ int xhci_initController(pci_device_t *device) {
  */
 xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     mutex_acquire(xhci->mutex);
-    xhci->ctr = NULL;
 
     __atomic_store_n(&xhci->flag, 0, __ATOMIC_SEQ_CST);
 
     // Enqueue, please.
+    LOG(DEBUG, "Sending xHC command %p\n", trb);
     xhci_enqueueCommandTRB(xhci, trb);
 
     // Ring ring
@@ -573,19 +615,21 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     //     return NULL;
     // }
 
-    LOG(DEBUG, "Rung the doorbell, now entering loop\n");
     while (__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) != 1) {
         uintptr_t crcr = ((uintptr_t)xhci->op->crcr_hi << 32) | xhci->op->crcr_lo;
         LOG(DEBUG, "Awaiting TRB completion. USBSTS=%08x USBCMD=%08x CRCR=%016llx IMAN=%08x\n", xhci->op->usbsts, xhci->op->usbcmd, crcr, xhci->run->irs[0].iman);
 
-        if (current_cpu->current_thread) {
-            process_yield(1);
-        } else {
-            arch_pause_single();
-        }
+        LOG(DEBUG, "Waiting for LAPIC to complete interrupt (MSI=%02x MSIX=%02x).\n", xhci->dev->msi_offset, xhci->dev->msix_offset);
+        arch_pause();
+
+        // if (current_cpu->current_thread) {
+            // process_yield(1);
+        // } else {
+            // arch_pause_single();
+        // }
     }
 
-    xhci_command_completion_trb_t *ctrb = xhci->ctr;
+    xhci_command_completion_trb_t *ctrb = &xhci->ctr;
     LOG(DEBUG, "TRB complete\n");
 
     if (!TRB_SUCCESS(ctrb)) {

@@ -255,26 +255,14 @@ STATIC_ASSERT(sizeof(xhci_trb_t) == 0x10);
 typedef struct xhci_command_completion_trb {
     uint64_t ctrb;
 
-    union {
-        struct {
-            uint32_t rsvd0:24;
-            uint32_t cc:8;
-        };
+    uint32_t rsvd0:24;
+    uint32_t cc:8;
 
-        uint32_t status;
-    };
-    
-    union {
-        struct {
-            uint32_t c:1;
-            uint32_t reserved2:9;
-            uint32_t type:6;
-            uint32_t vfid:8;
-            uint32_t slot_id:8;
-        };
-
-        uint32_t control;
-    };
+    uint32_t c:1;
+    uint32_t reserved2:9;
+    uint32_t type:6;
+    uint32_t vfid:8;
+    uint32_t slot_id:8;
 } xhci_command_completion_trb_t;
 
 STATIC_ASSERT(sizeof(xhci_command_completion_trb_t) == 0x10);
@@ -331,17 +319,11 @@ typedef struct xhci_enable_slot_trb {
     uint32_t rsvd1;
     uint32_t rsvd2;
 
-    union {
-        struct {
-            uint32_t c:1;
-            uint32_t rsvd3:9;
-            uint32_t type:6;
-            uint32_t slot_type:5;
-            uint32_t rsvd4:11;
-        };
-
-        uint32_t control;
-    };
+    uint32_t c:1;
+    uint32_t rsvd3:9;
+    uint32_t type:6;
+    uint32_t slot_type:5;
+    uint32_t rsvd4:11;
 } xhci_enable_slot_trb_t;  
 
 STATIC_ASSERT(sizeof(xhci_enable_slot_trb_t) == 0x10);

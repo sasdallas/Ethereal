@@ -106,7 +106,7 @@ typedef struct xhci {
     USBController_t *controller;                    // controller              
 
     // ctrb + friends garbage
-    xhci_command_completion_trb_t *ctr;             // Completion TRB
+    xhci_command_completion_trb_t ctr;              // Completion TRB
     volatile uint8_t flag;                          // Flag
     volatile uint8_t port_status_changed;           // Port status was changed, keep iterating                            // MSI in use
 } xhci_t;
