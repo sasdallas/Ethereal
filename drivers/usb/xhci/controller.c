@@ -135,6 +135,12 @@ int xhci_processExtendedCapabilities(xhci_t *xhci) {
         ext += cap->next*4;
     }
 
+    // Program maximum slots enabled
+    uint32_t config = xhci->op->config;
+    config &= 0xFF;
+    config |= xhci->cap->max_slots;
+    xhci->op->config =  config;
+
     return 0;
 }
 
@@ -187,7 +193,7 @@ void xhci_initEventRing(xhci_t *xhci) {
     // Setup registers
     xhci->run->irs[0].erstsz = 1;
     xhci->run->irs[0].erdp = trb_list_phys | (1 << 3);
-    xhci->run->irs[0].erstba = trb_list_phys + (XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    xhci->run->irs[0].erstba = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->event_ring->ent);
 
     xhci->event_ring->trb_list_phys = trb_list_phys;
     LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", trb_list_phys);
@@ -477,7 +483,7 @@ int xhci_initController(pci_device_t *device) {
 
     // First, enable bus mastering + MMIO, disable IRQs
     uint16_t cmd = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
-    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, ((cmd & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE))) | PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_INTERRUPT_DISABLE, 2);
+    pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, ((cmd & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_INTERRUPT_DISABLE))) | PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE, 2);
 
     // Make xHCI structure
     xhci_t *xhci = kzalloc(sizeof(xhci_t));

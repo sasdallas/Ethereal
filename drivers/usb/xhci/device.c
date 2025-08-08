@@ -212,6 +212,20 @@ int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
     return USB_SUCCESS;
 }
 
+static char *xhci_portSpeedToString(uint8_t speed) {
+    static char* speed_string[7] = {
+        "Invalid",
+        "Full Speed (12 MB/s - USB2.0)",
+        "Low Speed (1.5 Mb/s - USB 2.0)",
+        "High Speed (480 Mb/s - USB 2.0)",
+        "Super Speed (5 Gb/s - USB3.0)",
+        "Super Speed Plus (10 Gb/s - USB 3.1)",
+        "Undefined"
+    };
+
+    return speed_string[speed];
+}
+
 /**
  * @brief Initialize a device
  * @param xhci The xHCI controller
@@ -220,19 +234,18 @@ int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
  */
 int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     LOG(INFO, "Initializing device on port %d\n", port);
+    LOG(INFO, "This device has speed: %s\n", xhci_portSpeedToString(xhci->op->ports[port].portsc & 0x3c00 >> 10));
 
     // Enable a slot for the device 
     xhci_enable_slot_trb_t slot;
     memset(&slot, 0, sizeof(xhci_enable_slot_trb_t));
     slot.type = XHCI_CMD_ENABLE_SLOT;
 
-    LOG(DEBUG, "Sending slot TRB\n");
     xhci_command_completion_trb_t *completion = xhci_sendCommand(xhci, (xhci_trb_t*)&slot);
     if (!completion) {
         LOG(ERR, "Error enabling a slot\n");
         return 1;
     }
-    LOG(DEBUG, "Slot: %d\n", completion->slot_id);
 
     // Now we can actually begin initialization
     xhci_device_t *dev = kzalloc(sizeof(xhci_device_t));
