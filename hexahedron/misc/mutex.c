@@ -67,3 +67,12 @@ void mutex_release(mutex_t *mutex) {
     __atomic_store_n(&mutex->lock, -1, __ATOMIC_SEQ_CST);
     sleep_wakeupQueue(mutex->queue, 1);
 }
+
+/**
+ * @brief Destroy a mutex
+ * @param mutex The mutex to destroy
+ */
+void mutex_destroy(mutex_t *mutex) {
+    kfree(mutex->queue);
+    kfree(mutex);
+}

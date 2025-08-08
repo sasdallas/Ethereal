@@ -41,8 +41,6 @@ Easy. Register your controller with usb_registerController and probe your device
 When you find a device, use usb_createDevice to create a new USBDevice_t structure, and then use usb_initializeDevice to initialize the device
 and select a configuration.
 
-Make sure to register a poll method as your device will often be probed to find any new ports.
-
 ==== IV. Using this stack as an inspiration
 
 I'd highly recommend you don't. Some of the code is kind of messy and strewn together, using externs to avoid having weird header calls.

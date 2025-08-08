@@ -87,7 +87,6 @@ int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number
  * @param ap The core to store information on
  */
 void smp_collectAPInfo(int ap) {
-    processor_data[ap].cpu_id = smp_getCurrentCPU();
     processor_data[ap].cpu_manufacturer = cpu_getVendorName();
     strncpy(processor_data[ap].cpu_model, cpu_getBrandString(), 48);
     processor_data[ap].cpu_model_number = cpu_getModelNumber();
@@ -101,10 +100,14 @@ void smp_collectAPInfo(int ap) {
 __attribute__((noreturn)) void smp_finalizeAP() {
     // Load new stack
     asm volatile ("movq %0, %%rsp" :: "m"(_ap_stack_base));
-    
+
+    int id = last_cpu_number++;
+
     // Set GSbase
-    arch_set_gsbase((uintptr_t)&processor_data[smp_getCurrentCPU()]);
+    arch_set_gsbase((uintptr_t)&processor_data[id]);
     arch_initialize_syscall_handler();
+
+    current_cpu->cpu_id = id;
 
     // Setup the PAT
     asm volatile(
@@ -267,9 +270,7 @@ int smp_getCPUCount() {
  * @brief Get the current CPU's APIC ID
  */
 int smp_getCurrentCPU() {
-	uint32_t ebx, unused;
-    __cpuid(0x1, unused, ebx, unused, unused);
-    return (int)(ebx >> 24);
+    return current_cpu->cpu_id;
 }
 
 /**

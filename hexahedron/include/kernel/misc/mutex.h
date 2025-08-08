@@ -55,5 +55,10 @@ int mutex_tryAcquire(mutex_t *mutex);
  */
 void mutex_release(mutex_t *mutex);
 
+/**
+ * @brief Destroy a mutex
+ * @param mutex The mutex to destroy
+ */
+void mutex_destroy(mutex_t *mutex);
 
 #endif

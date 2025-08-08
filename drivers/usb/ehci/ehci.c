@@ -765,7 +765,7 @@ int ehci_init(pci_device_t *dev) {
     LOG(INFO, "EHCI controller online - interface version %d.%d\n", (hci_version >> 8), (hci_version >> 4) & 0xF);
 
     // Create controller structure
-    USBController_t *controller = usb_createController((void*)hc, NULL); // TODO: No polling method
+    USBController_t *controller = usb_createController((void*)hc); // TODO: No polling method
 
     // Probe for devices
     // TODO: For the USB stack, make the main USB logic probe for devices

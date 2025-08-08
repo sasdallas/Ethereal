@@ -73,10 +73,9 @@ void usb_init();
  * @brief Create a USB controller
  * 
  * @param hc The host controller
- * @param poll The host controller poll method, will be called once per tick
  * @returns A @c USBController_t structure
  */
-USBController_t *usb_createController(void *hc, usb_poll_t poll);
+USBController_t *usb_createController(void *hc);
 
 /**
  * @brief Register a new USB controller

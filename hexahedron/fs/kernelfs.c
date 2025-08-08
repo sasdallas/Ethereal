@@ -516,6 +516,16 @@ kernelfs_entry_t *kernelfs_createEntry(kernelfs_dir_t *dir, char *name, kernelfs
 }
 
 /**
+ * @brief Remove an entry under a directory for the KernelFS
+ * @param dir The directory to remove the entry from
+ * @param entry The entry to remove 
+ */
+int kernelfs_removeEntry(kernelfs_dir_t *dir, kernelfs_entry_t *entry) {
+    if (dir->entries) list_delete(dir->entries, list_find(dir->entries, (void*)entry));
+    return 0;
+}
+
+/**
  * @brief Read kernel memory information
  * @param entry The entry to read
  * @param data NULL

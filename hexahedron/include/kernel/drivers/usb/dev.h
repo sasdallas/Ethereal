@@ -26,7 +26,8 @@
 // Speeds
 #define USB_FULL_SPEED      0x00    // Full speed
 #define USB_LOW_SPEED       0x01    // Low speed
-#define USB_HIGH_SPEED      0x02    // High speed (fastest)
+#define USB_HIGH_SPEED      0x02    // High speed
+#define USB_SUPER_SPEED     0x03    // Super speed
 
 // Transfer statuses
 #define USB_TRANSFER_IN_PROGRESS    0

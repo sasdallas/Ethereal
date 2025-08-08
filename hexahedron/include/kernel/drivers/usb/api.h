@@ -106,7 +106,7 @@ USB_STATUS usb_getStringDevice(USBDevice_t *device, int idx, uint16_t lang, char
 /**
  * @brief Configure the endpoint of a USB device
  * 
- * You are expected to do this when you want to use a specific endoint
+ * You are expected to do this when you want to use a specific endpoint
  * 
  * @param device The device to configure the endoint for
  * @param endp The endpoint to configure

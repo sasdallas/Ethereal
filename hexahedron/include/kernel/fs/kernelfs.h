@@ -116,6 +116,13 @@ kernelfs_dir_t *kernelfs_createDirectory(kernelfs_dir_t *parent, char *name, int
 kernelfs_entry_t *kernelfs_createEntry(kernelfs_dir_t *dir, char *name, kernelfs_get_data_t get_data, void *data);
 
 /**
+ * @brief Remove an entry under a directory for the KernelFS
+ * @param dir The directory to remove the entry from
+ * @param entry The entry to remove 
+ */
+int kernelfs_removeEntry(kernelfs_dir_t *dir, kernelfs_entry_t *entry);
+
+/**
  * @brief Generic read method for the KernelFS
  */
 ssize_t kernelfs_genericRead(fs_node_t *node, off_t off, size_t size, uint8_t *buffer);

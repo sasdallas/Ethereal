@@ -56,8 +56,9 @@ typedef struct xhci_device {
     xhci_input_context_t *input_ctx;        // Input context
     uintptr_t input_ctx_phys;               // Physical address of input context
 
-    uintptr_t output_ctx_phys;              // Physical address of output context]
+    uintptr_t output_ctx;                   // Output context
 
+    USBDevice_t *dev;                       // USB device
     xhci_endpoint_t endpoints[32];          // Endpoints
 } xhci_device_t;
 

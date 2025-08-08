@@ -498,7 +498,7 @@ int uhci_initController(pci_device_t *dev) {
     outportw(hc->io_addr + UHCI_REG_USBCMD, UHCI_CMD_RS);   // Enable controller
 
     // Create controller
-    USBController_t *controller = usb_createController((void*)hc, NULL); // TODO: No polling method as no asyncronous transfers/port insertion detection yet
+    USBController_t *controller = usb_createController((void*)hc);
 
     // Probe for devices
     // TODO: For the USB stack, make the main USB logic probe for devices

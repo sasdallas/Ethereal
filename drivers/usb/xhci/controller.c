@@ -369,13 +369,14 @@ void xhci_thread(void *context) {
     xhci->port_status_changed = 1;
 
     for (;;) {
-
         uint8_t expected = 1;
         while (!__atomic_compare_exchange_n(&xhci->port_status_changed, &expected, 0, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
             arch_pause();
             process_yield(1);
             expected = 1;
         }
+
+        LOG(DEBUG, "It's poll time\n");
 
         for (unsigned i = 0; i < xhci->cap->max_ports; i++) {
             if (xhci->ports[i].rev_major) {
@@ -386,9 +387,14 @@ void xhci_thread(void *context) {
                 uint32_t portsc_saved = r->portsc;
                 r->portsc = XHCI_PORTSC_PP | XHCI_PORTSC_CSC | XHCI_PORTSC_PRC;
 
-                // If we are not connected, then.
+                // Are we connected?
                 if (!(r->portsc & XHCI_PORTSC_CCS)) {
-                    LOG(INFO, "Port %d not connected\n", i);
+                    LOG(INFO, "Port %d disconnected\n", i);
+
+                    if (xhci->ports[i].slot_id && xhci->slots[xhci->ports[i].slot_id]) {
+                        usb_deinitializeDevice(xhci->slots[xhci->ports[i].slot_id]->dev);
+                    }
+
                     continue;
                 }
 
@@ -588,7 +594,7 @@ int xhci_initController(pci_device_t *device) {
     LOG(INFO, "xHCI controller started\n");
 
     // Prepare controller
-    xhci->controller = usb_createController((void*)xhci, NULL);
+    xhci->controller = usb_createController((void*)xhci);
 
     // Spawn poller thread
     xhci->poller = process_createKernel("xhci poller", PROCESS_KERNEL, PRIORITY_LOW, xhci_thread, (void*)xhci);

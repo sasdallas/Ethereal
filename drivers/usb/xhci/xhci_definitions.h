@@ -69,9 +69,10 @@
 #define XHCI_CMD_ENABLE_SLOT            9
 #define XHCI_CMD_DISABLE_SLOT           10
 #define XHCI_CMD_ADDRESS_DEVICE         11
-#define XHCI_CMD_EVALUATE_CONTEXT       12
-#define XHCI_CMD_RESET_ENDPOINT         13
-#define XHCI_CMD_STOP_ENDPOINT          14
+#define XHCI_CMD_CONFIGURE_ENDPOINT     12
+#define XHCI_CMD_EVALUATE_CONTEXT       13
+#define XHCI_CMD_RESET_ENDPOINT         14
+#define XHCI_CMD_STOP_ENDPOINT          15
 
 /* Events */
 #define XHCI_EVENT_TRANSFER             32
@@ -328,6 +329,20 @@ typedef struct xhci_enable_slot_trb {
 
 STATIC_ASSERT(sizeof(xhci_enable_slot_trb_t) == 0x10);
 
+typedef struct xhci_disable_slot_trb {
+    uint32_t rsvd0;
+    uint32_t rsvd1;
+    uint32_t rsvd2;
+
+    uint32_t c:1;
+    uint32_t rsvd3:9;
+    uint32_t type:6;
+    uint32_t rsvd4:8;
+    uint32_t slot_id:8;
+} xhci_disable_slot_trb_t;
+
+STATIC_ASSERT(sizeof(xhci_disable_slot_trb_t) == 0x10);
+
 typedef struct xhci_address_device_trb {
     uint64_t input_ctx;                 // Physical base of input context
     uint32_t rsvd0;                     // Reserved
@@ -475,6 +490,46 @@ typedef struct xhci_evaluate_context_trb {
 
 STATIC_ASSERT(sizeof(xhci_evaluate_context_trb_t) == 0x10);
 
+typedef struct xhci_configure_endpoint_trb {
+    uint64_t input_context;
+    uint32_t rsvd0;
+
+    union {
+        struct {
+            uint32_t c:1;
+            uint32_t rsvd1:8;
+            uint32_t dc:1;
+            uint32_t type:6;
+            uint32_t rsvd2:8;
+            uint32_t slot_id:8;
+        };
+    };
+} xhci_configure_endpoint_trb_t;
+
+STATIC_ASSERT(sizeof(xhci_configure_endpoint_trb_t) == 0x10);
+
+typedef struct xhci_normal_trb {
+    uint64_t buffer;
+
+    uint32_t len:17;
+    uint32_t td_size:5;
+    uint32_t target:10;
+
+    uint32_t c:1;
+    uint32_t ent:1;
+    uint32_t isp:1;
+    uint32_t ns:1;
+    uint32_t ch:1;
+    uint32_t ioc:1;
+    uint32_t idt:1;
+    uint32_t rsvd0:2;
+    uint32_t bei:1;
+    uint32_t type:6;
+    uint32_t dir:1;
+    uint32_t rsvd1:15;
+} xhci_normal_trb_t;
+
+STATIC_ASSERT(sizeof(xhci_normal_trb_t) == 0x10);
 
 typedef struct xhci_event_ring_entry {
     uint64_t rsba;
@@ -599,5 +654,6 @@ STATIC_ASSERT(sizeof(xhci_slot_context_t) == 0x20);
 
 /**** MACROS ****/
 #define TRB_SUCCESS(trb) ((trb)->cc == 1)
+#define XHCI_ENDPOINT_NUMBER_FROM_DESC(desc) (((desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + (desc.bEndpointAddress & USB_ENDP_DIRECTION_IN ? 1 : 0))
 
 #endif

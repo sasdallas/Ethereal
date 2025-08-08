@@ -93,7 +93,7 @@ int xhci_waitForTransfer(xhci_endpoint_t *endp) {
 int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
     if (!controller || !device || !transfer || !device->dev) return USB_TRANSFER_FAILED;
     xhci_device_t *dev = (xhci_device_t*)(device->dev);
-    mutex_acquire(dev->mutex);
+    mutex_acquire(dev->endpoints[0].m);
     
     // Start building the TRB chain
     // Control transactions: SETUP -> DATA -> STATUS
@@ -164,7 +164,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     // Wait for transfer to complete
     if (xhci_waitForTransfer(&dev->endpoints[0])) {
         LOG(ERR, "Detected a transfer failure during CONTROL transfer\n");
-        mutex_release(dev->mutex);
+        mutex_release(dev->endpoints[0].m);
         transfer->status = USB_TRANSFER_FAILED;
         return USB_TRANSFER_FAILED;
     }
@@ -173,7 +173,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
 
 
     // Done!
-    mutex_release(dev->mutex);
+    mutex_release(dev->endpoints[0].m);
     transfer->status = USB_TRANSFER_SUCCESS;
     return USB_TRANSFER_SUCCESS;
 }
@@ -211,6 +211,200 @@ int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
     return USB_SUCCESS;
 }
 
+/**
+ * @brief Configure a USB device endpoint
+ * @param controller USB controller
+ * @param device USB device
+ * @param endpoint USB endpoint
+ */
+int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint_t *endpoint) {
+    xhci_device_t *dev = (xhci_device_t*)device->dev;
+
+    mutex_acquire(dev->mutex);
+
+    uint8_t ep_type = 0;
+    if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_BULK) {
+        if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
+            ep_type = XHCI_ENDPOINT_TYPE_BULK_IN;
+        } else {
+            ep_type = XHCI_ENDPOINT_TYPE_BULK_OUT;
+        }
+    } else if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_INT) {
+        if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
+            ep_type = XHCI_ENDPOINT_TYPE_INT_IN;
+        } else {
+            ep_type = XHCI_ENDPOINT_TYPE_INT_OUT;
+        }
+    } else if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH) {
+        if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
+            ep_type = XHCI_ENDPOINT_TYPE_ISOCH_IN;
+        } else {
+            ep_type = XHCI_ENDPOINT_TYPE_ISOCH_OUT;
+        }
+    } else {
+        ep_type = XHCI_ENDPOINT_TYPE_CONTROL;
+    }
+
+    uint8_t ep_control = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_CONTROL);
+    uint8_t ep_bulk = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_BULK);
+    uint8_t ep_isoch = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH);
+    uint8_t ep_int = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_INT);
+
+    // Determine endpoint number + setup endpoint
+    uint8_t endp_num = (((endpoint->desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + !!(endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN));
+    xhci_endpoint_t *ep = &(dev->endpoints[endp_num]);
+
+    ep->m = mutex_create("xhci endpoint mutex");
+    ep->tr = xhci_createTransferRing();
+
+    xhci_input_context_t *ic = XHCI_INPUT_CONTEXT(dev);
+    xhci_slot_context_t *sc = XHCI_SLOT_CONTEXT(dev);
+    xhci_endpoint_context_t *ec = XHCI_ENDPOINT_CONTEXT(dev, endp_num);
+
+    // Enable the endpoint in the input context
+    ic->add_flags = (1 << endp_num) | (1 << 0);
+    ic->drop_flags = 0;
+
+    // Setup the slot context
+    // TODO: USBHubInformation_t
+    if (endp_num > sc->context_entries) {
+        sc->context_entries = endp_num;
+    }
+
+
+    // Setup the endpoint context
+    uint32_t max_esit = ((ec->max_packet_size * (ec->max_burst_size + 1)));
+    ec->state = XHCI_ENDPOINT_STATE_DISABLED;
+    ec->endpoint_type = ep_type;
+    ec->error_count = (ep_isoch) ? 0 : 3;
+    ec->max_packet_size = (ep_control || ep_bulk) ? endpoint->desc.wMaxPacketSize : endpoint->desc.wMaxPacketSize & 0x7ff;
+    ec->max_burst_size = (ep_control || ep_bulk) ? 0 : (endpoint->desc.wMaxPacketSize & 0x1800) >> 11;
+    ec->max_esit_payload_lo = max_esit & 0xFFFF;
+    ec->max_esit_payload_hi = max_esit >> 16;
+    ec->average_trb_length = (ep_control) ? 8 : max_esit;
+    ec->transfer_ring_dequeue_ptr = ep->tr->trb_list_phys | 1; 
+
+    // Determine interval
+    uint32_t speed = ((dev->parent->op->ports[dev->port_id].portsc & 0x3c00) >> 10);
+
+    if (speed == XHCI_USB_SPEED_HIGH_SPEED || speed == XHCI_USB_SPEED_SUPER_SPEED) {
+        ec->interval = endpoint->desc.bInterval - 1;
+    } else {
+        ec->interval = endpoint->desc.bInterval;
+
+        if (ep_int || ep_bulk) {
+            // Clamp to 3-18
+            if (ec->interval < 3) ec->interval = 3;
+            if (ec->interval > 18) ec->interval = 18;
+        }
+    }
+
+    xhci_configure_endpoint_trb_t trb = {
+        .type = XHCI_CMD_CONFIGURE_ENDPOINT,
+        .input_context = dev->input_ctx_phys,
+        .rsvd0 = 0,
+        .rsvd1 = 0,
+        .rsvd2 = 0,
+        .slot_id = dev->slot_id,
+        .dc = 0,
+    };
+
+    if (!xhci_sendCommand(dev->parent, (xhci_trb_t*)&trb)) {
+        LOG(ERR, "Failed to configure endpoint %d\n", endp_num);
+        return USB_FAILURE;
+    }
+    
+    mutex_release(dev->mutex);
+
+    LOG(DEBUG, "Configured endpoint %d\n", endp_num);
+    return USB_SUCCESS;
+}
+
+/**
+ * @brief Interrupt transfer method
+ * @param controller USB controller
+ * @param device USB device
+ * @param transfer USB transfer
+ */
+int xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
+    xhci_device_t *dev = (xhci_device_t*)device->dev;
+
+    // Get the endpoint they want to transfer to
+    uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
+    xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
+    if (!ep->tr || !ep->m) {
+        LOG(ERR, "Endpoint %d is not configured\n", ep_num);
+        return USB_FAILURE;
+    }
+
+    mutex_acquire(ep->m);
+
+    xhci_normal_trb_t trb;
+    memset(&trb, 0, sizeof(xhci_normal_trb_t));
+
+    trb.type = XHCI_TRB_TYPE_NORMAL;
+    trb.buffer = mem_getPhysicalAddress(NULL, (uintptr_t)transfer->data);
+    trb.len = transfer->length;
+    trb.ioc = 1;
+    trb.isp = 1;
+    
+    xhci_enqueueTransferTRB(ep->tr, (xhci_trb_t*)&trb);
+
+    // Ring doorbell
+    XHCI_DOORBELL(dev->parent, dev->slot_id) = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
+
+    if (xhci_waitForTransfer(ep)) {
+        LOG(ERR, "INTERRUPT transfer failure detected\n");
+        mutex_release(ep->m);
+        transfer->status = USB_TRANSFER_FAILED;
+        return USB_TRANSFER_FAILED;
+    }
+
+    mutex_release(ep->m);
+    transfer->status = USB_TRANSFER_SUCCESS;
+    return USB_TRANSFER_SUCCESS;
+}
+
+/**
+ * @brief Shutdown the xHCI USB device
+ * @param controller USB controller
+ * @param device USB device
+ */
+int xhci_shutdown(USBController_t *controller, USBDevice_t *device) {
+    xhci_device_t *dev = (xhci_device_t*)device->dev;
+
+    xhci_disable_slot_trb_t slot;
+    memset(&slot, 0, sizeof(xhci_disable_slot_trb_t));
+    slot.type = XHCI_CMD_DISABLE_SLOT;
+    slot.slot_id = dev->slot_id;
+
+    if (!xhci_sendCommand(dev->parent, (xhci_trb_t*)&slot)) {
+        LOG(WARN, "Failed to disable slot %d\n", dev->slot_id);
+    } else {
+        LOG(INFO, "Slot disabled successfully\n");
+    }
+
+    // Free memory of the device
+    mutex_destroy(dev->mutex);
+    // mem_freeDMA((uintptr_t)dev->input_ctx, 4096);
+    // mem_freeDMA((uintptr_t)dev->output_ctx, 4096);
+    
+    for (int i = 0; i < 32; i++) {
+        if (dev->endpoints[i].tr) {
+            LOG(DEBUG, "Freeing EP%d\n", i);
+            mem_freeDMA((uintptr_t)dev->endpoints[i].tr->trb_list, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+            kfree(dev->endpoints[i].tr);
+        }
+    }
+
+    dev->parent->slots[dev->slot_id-1] = NULL;
+    dev->parent->ports[dev->port_id].slot_id = 0;
+    return USB_SUCCESS;
+}
+
+/**
+ * @brief Port speed to string
+ */
 static char *xhci_portSpeedToString(uint8_t speed) {
     static char* speed_string[7] = {
         "Invalid",
@@ -265,7 +459,7 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     // Initialize output context
     uintptr_t output_ctx = mem_allocateDMA(4096);
     memset((void*)output_ctx, 0, 4096);
-    dev->output_ctx_phys = mem_getPhysicalAddress(NULL, output_ctx);
+    dev->output_ctx = output_ctx;
 
     // Build endpoint 0 transfer ring
     dev->endpoints[0].tr = xhci_createTransferRing();
@@ -321,10 +515,8 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     ep_ctx->state = 0;
     ep_ctx->transfer_ring_dequeue_ptr = dev->endpoints[0].tr->trb_list_phys | 1;
 
-    LOG(DEBUG, "TR dequeue pointer is at %p\n", dev->endpoints[0].tr->trb_list_phys);
-
     // Set DCBAA
-    ((uint64_t*)xhci->dcbaa)[dev->slot_id] = dev->output_ctx_phys;
+    ((uint64_t*)xhci->dcbaa)[dev->slot_id] = mem_getPhysicalAddress(NULL, dev->output_ctx);
 
     // Addressing time
     xhci_address_device_trb_t address_device = {
@@ -358,20 +550,28 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
             break;
 
         case XHCI_USB_SPEED_HIGH_SPEED:
+            speed = USB_HIGH_SPEED;
+            break;
+
         case XHCI_USB_SPEED_SUPER_SPEED:
         case XHCI_USB_SPEED_SUPER_SPEED_PLUS:
-            speed = USB_HIGH_SPEED;
+            speed = USB_SUPER_SPEED;
             break;
     }
 
-    LOG(INFO, "!!!!!!!!!!!!!! BEGIN INIT OF USB DEVICE !!!!!!!!!!!!!!\n");
-    USBDevice_t *usbdev = usb_createDevice(xhci->controller, port, speed, NULL, xhci_control, NULL);   
+    USBDevice_t *usbdev = usb_createDevice(xhci->controller, port, speed, NULL, xhci_control, xhci_interrupt);   
     usbdev->dev = (void*)dev;
     usbdev->evaluate = xhci_evaluateContext;
+    usbdev->shutdown = xhci_shutdown;
+    usbdev->confendp = xhci_configure;
+    dev->dev = usbdev;
 
-    usb_initializeDevice(usbdev);
+    if (usb_initializeDevice(usbdev) != USB_SUCCESS) {
+        // TODO: FREE MEMORY
+        LOG(WARN, "Device init failed (memory leaked)\n");
+        return 1;
+    } 
 
     xhci->ports[port].slot_id = dev->slot_id;
-
     return 0;
 }
