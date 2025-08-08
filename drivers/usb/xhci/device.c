@@ -234,7 +234,7 @@ static char *xhci_portSpeedToString(uint8_t speed) {
  */
 int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     LOG(INFO, "Initializing device on port %d\n", port);
-    LOG(INFO, "This device has speed: %s\n", xhci_portSpeedToString(xhci->op->ports[port].portsc & 0x3c00 >> 10));
+    LOG(INFO, "This device has speed: %s\n", xhci_portSpeedToString((xhci->op->ports[port].portsc & 0x3c00) >> 10));
 
     // Enable a slot for the device 
     xhci_enable_slot_trb_t slot;
@@ -275,10 +275,10 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     uint32_t spd = (xhci->op->ports[port].portsc & 0x3c00) >> 10;
     switch (spd) {
         case XHCI_USB_SPEED_LOW_SPEED:
-        case XHCI_USB_SPEED_FULL_SPEED:
             dev->endpoints[0].mps = 8;
             break;
 
+        case XHCI_USB_SPEED_FULL_SPEED:
         case XHCI_USB_SPEED_HIGH_SPEED:
             dev->endpoints[0].mps = 64;
             break;

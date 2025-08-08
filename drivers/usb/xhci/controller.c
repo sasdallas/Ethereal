@@ -623,9 +623,6 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
 
     while (__atomic_load_n(&xhci->flag, __ATOMIC_SEQ_CST) != 1) {
         uintptr_t crcr = ((uintptr_t)xhci->op->crcr_hi << 32) | xhci->op->crcr_lo;
-        LOG(DEBUG, "Awaiting TRB completion. USBSTS=%08x USBCMD=%08x CRCR=%016llx IMAN=%08x\n", xhci->op->usbsts, xhci->op->usbcmd, crcr, xhci->run->irs[0].iman);
-
-        LOG(DEBUG, "Waiting for LAPIC to complete interrupt (MSI=%02x MSIX=%02x).\n", xhci->dev->msi_offset, xhci->dev->msix_offset);
         arch_pause();
 
         // if (current_cpu->current_thread) {
