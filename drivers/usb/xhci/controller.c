@@ -273,14 +273,21 @@ int xhci_irq(void *context) {
         
         if (t->type == XHCI_EVENT_PORT_STATUS_CHANGE) {
             xhci_port_status_change_trb_t *trb = (xhci_port_status_change_trb_t*)t;
-            LOG(INFO, "Port status change event detected on port %d\n", trb->port_id);
+            uint8_t dev_connected = (!!(xhci->op->ports[trb->port_id - 1].portsc & XHCI_PORTSC_CCS));
+            LOG(INFO, "Port status change event detected on port %d (connected: %s)\n", trb->port_id, dev_connected ? "YES" : "NO");
 
-            // Try to reset the port
-            if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
-                // If a reset on this port failed, let's assume the port is dead
-                // TODO: Recovery? I need to read the spec for this sort of thing
-                LOG(ERR, "Reset failure detected. Assuming port %d is dead\n");
-                xhci->ports[trb->port_id - 1].rev_major = 0;
+            if (dev_connected) {
+                // Try to reset the port
+                if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
+                    // If a reset on this port failed, let's assume the port is dead
+                    // TODO: Recovery? I need to read the spec for this sort of thing
+                    LOG(ERR, "Reset failure detected. Assuming port %d is dead\n");
+                    xhci->ports[trb->port_id - 1].rev_major = 0;
+                } else {
+                    // Wakeup poller thread
+                    __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
+                    if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+                }
             } else {
                 // Wakeup poller thread
                 __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
@@ -295,7 +302,7 @@ int xhci_irq(void *context) {
             xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
             LOG(INFO, "Transfer completed on slot %d endp %d cc %d\n", trb->slot_id, trb->endpoint_id, trb->completion_code);
             
-            xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr = trb;
+            memcpy(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr, trb, sizeof(xhci_transfer_completion_trb_t));
             __atomic_store_n(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
         } else {
             LOG(WARN, "Unrecognized event TRB: %d\n", t->type);
@@ -305,8 +312,6 @@ int xhci_irq(void *context) {
 
     // Reprogram ERDP without EHB
     xhci->run->irs[0].erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
-
-    LOG(DEBUG, "End of xHCI interrupt\n");
 
     return 0;
 }
@@ -367,10 +372,8 @@ void xhci_thread(void *context) {
 
         uint8_t expected = 1;
         while (!__atomic_compare_exchange_n(&xhci->port_status_changed, &expected, 0, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
-            sleep_untilTime(current_cpu->current_thread,1 , 0);
-            sleep_enter();
-
-            // process_yield(1); 
+            arch_pause();
+            process_yield(1);
             expected = 1;
         }
 

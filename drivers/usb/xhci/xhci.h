@@ -42,7 +42,7 @@ typedef struct xhci_endpoint {
     mutex_t *m;                     // Mutex
     
     // HACKY
-    xhci_transfer_completion_trb_t *ctr;
+    xhci_transfer_completion_trb_t ctr;
     volatile uint8_t flag;          // Flag
 } xhci_endpoint_t;
 

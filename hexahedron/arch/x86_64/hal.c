@@ -168,42 +168,6 @@ _minacpi: ; // Jumped here if "--no-acpica" was present
  * @brief Stage 2 startup - initializes debugger, ACPI, etc.
  */
 static void hal_init_stage2() {
-    /* DEBUGGER INITIALIZATION */
-
-    // We need to reconfigure the serial ports and initialize the debugger.
-    serial_setPort(serial_createPortData(__debug_output_com_port, __debug_output_baud_rate), 1);
-
-    if (!__debugger_enabled) goto _no_debug;
-
-    serial_port_t *port = serial_initializePort(__debugger_com_port, __debugger_baud_rate);
-    if (!port) {
-        dprintf(WARN, "Failed to initialize COM%i for debugging\n", __debugger_com_port);
-        goto _no_debug;
-    }
-
-    serial_setPort(port, 0);
-    if (debugger_initialize(port) != 1) {
-        dprintf(WARN, "Debugger failed to initialize or connect.\n");
-    }
-
-_no_debug: ;
-
-    /* ACPI INITIALIZATION */
-
-    smp_info_t *smp = hal_initACPI();
-    if (!smp) goto _no_smp;
-    
-    /* SMP INITIALIZATION */
-    
-    // Collect AP info for CPU0
-    smp_collectAPInfo(0);
-
-    if (smp_init(smp)) {
-        dprintf(ERR, "Failed to initialize SMP\n");
-    }
-
-_no_smp: ;
-
     /* VIDEO INITIALIZATION */
 
     if (!kargs_has("--no-video")) {
@@ -228,6 +192,54 @@ _no_smp: ;
         arch_say_hello(0);
     } else {
         dprintf(INFO, "Argument \"--no_video\" found, disabling video.\n");
+    }
+
+    // At this point in time if the user wants to view debugging output not on the serial console, they
+    // can. Look for kernel boot argument "--debug=console"
+    if (kargs_has("--debug")) {
+        if (!strcmp(kargs_get("--debug"), "console")) {
+            debug_setOutput(terminal_print);
+        } else if (!strcmp(kargs_get("--debug"), "none")) {
+            debug_setOutput(NULL);
+        }
+    }
+
+
+    /* DEBUGGER INITIALIZATION */
+
+    // We need to reconfigure the serial ports and initialize the debugger.
+    serial_setPort(serial_createPortData(__debug_output_com_port, __debug_output_baud_rate), 1);
+
+    if (!__debugger_enabled) goto _no_debug;
+
+    serial_port_t *port = serial_initializePort(__debugger_com_port, __debugger_baud_rate);
+    if (!port) {
+        dprintf(WARN, "Failed to initialize COM%i for debugging\n", __debugger_com_port);
+        goto _no_debug;
+    }
+
+    serial_setPort(port, 0);
+    if (debugger_initialize(port) != 1) {
+        dprintf(WARN, "Debugger failed to initialize or connect.\n");
+    }
+
+_no_debug: ;
+
+    /* ACPI INITIALIZATION */
+
+    smp_info_t *smp = hal_initACPI();
+
+    /* SMP INITIALIZATION */
+
+    // Collect AP info for CPU0
+    smp_collectAPInfo(0);
+
+    if (smp) {
+        if (smp_init(smp)) {
+            dprintf(ERR, "Failed to initialize SMP\n");
+        }
+    } else {
+        arch_get_generic_parameters()->cpu_count = 1;
     }
 
     /* PCI INITIALIZATION */

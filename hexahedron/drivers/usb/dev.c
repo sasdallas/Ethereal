@@ -454,8 +454,28 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
 
     // Done! We've got the device language codes. Now we've unlocked usb_getStringIndex
     char *product_str = usb_getStringIndex(dev, dev->device_desc.iProduct, dev->chosen_language);
+
+    if (!product_str && dev->device_desc.iProduct) {
+        // We aren't accessing string index 0 and transfer failed
+        LOG(ERR, "Device initialization failed - could not read product string when it is present\n");
+        return USB_FAILURE;
+    }
+
     char *vendor_str = usb_getStringIndex(dev, dev->device_desc.iManufacturer, dev->chosen_language);  
+    
+    if (!vendor_str && dev->device_desc.iManufacturer) {
+        // We aren't accessing string index 0 and transfer failed
+        LOG(ERR, "Device initialization failed - could not read manufacturer string when it is present\n");
+        return USB_FAILURE;
+    }
+    
     char *serial_number = usb_getStringIndex(dev, dev->device_desc.iSerialNumber, dev->chosen_language);
+    
+    if (!serial_number && dev->device_desc.iSerialNumber) {
+        // We aren't accessing string index 0 and transfer failed
+        LOG(ERR, "Device initialization failed - could not read SN string when it is present\n");
+        return USB_FAILURE;
+    }
 
     // Now we need to finish configuring the device - this involves picking a configuration, interface, and endpoint.
     // We can get the configuration by using bNumConfigurations from the device descriptor
@@ -533,6 +553,9 @@ USB_STATUS usb_deinitializeDevice(USBDevice_t *dev) {
         }
     }
 
-    // TODO: Implement a host controller shutdown method because we need to actually disable the device.
+    if (dev->shutdown) {
+        dev->shutdown(dev->c, dev);
+    }
+    
     return USB_SUCCESS;
 }

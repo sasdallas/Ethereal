@@ -75,6 +75,7 @@ int xhci_enqueueTransferTRB(xhci_transfer_ring_t *tr, xhci_trb_t *trb) {
  */
 int xhci_waitForTransfer(xhci_endpoint_t *endp) {
     while (!__atomic_load_n(&endp->flag, __ATOMIC_SEQ_CST)) {
+        arch_pause();
         if (current_cpu->current_thread) {
             process_yield(1);
         } else {
@@ -83,7 +84,7 @@ int xhci_waitForTransfer(xhci_endpoint_t *endp) {
     }
 
 
-    return !endp->ctr || (endp->ctr->completion_code != 1);
+    return (endp->ctr.completion_code != 1);
 }
 
 /**
@@ -92,7 +93,6 @@ int xhci_waitForTransfer(xhci_endpoint_t *endp) {
 int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
     if (!controller || !device || !transfer || !device->dev) return USB_TRANSFER_FAILED;
     xhci_device_t *dev = (xhci_device_t*)(device->dev);
-
     mutex_acquire(dev->mutex);
     
     // Start building the TRB chain
@@ -162,7 +162,6 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     __atomic_store_n(&dev->endpoints[0].flag, 0, __ATOMIC_SEQ_CST);
 
     // Wait for transfer to complete
-    dev->endpoints[0].ctr = NULL;
     if (xhci_waitForTransfer(&dev->endpoints[0])) {
         LOG(ERR, "Detected a transfer failure during CONTROL transfer\n");
         mutex_release(dev->mutex);
