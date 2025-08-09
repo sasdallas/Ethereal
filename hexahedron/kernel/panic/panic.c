@@ -203,6 +203,5 @@ void kernel_panic_prepare(uint32_t bugcode) {
  * @brief Finalize the panic state
  */
 void kernel_panic_finalize() {
-    if (debugger_isConnected()) BREAKPOINT();
     arch_panic_finalize();
 }

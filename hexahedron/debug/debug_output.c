@@ -17,6 +17,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/gfx/term.h>
 #include <kernel/mem/mem.h>
 #include <kernel/misc/args.h>
 #include <errno.h>
@@ -62,6 +63,11 @@ static int debug_write_buffer(size_t length, char *buffer) {
  * @brief Function to print debug string
  */
 int debug_print(void *user, char ch) {
+extern int kernel_in_panic_state;
+    if (kernel_in_panic_state) {
+        terminal_print(NULL, ch);
+    }
+
     /* First, write the character to debug buffer */
     if (debug_buffer) {
         if (ch == '\n') DEBUG_PUSH('\r');

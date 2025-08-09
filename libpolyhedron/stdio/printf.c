@@ -525,6 +525,11 @@ int sprintf(char * str, const char * format, ...) {
 
 #ifdef __LIBK
 static int cb_printf(void * user, char c) {
+
+	// !!!: If we are in panic state, debug output is the only thing getting printed.
+extern int kernel_in_panic_state;
+	if (kernel_in_panic_state) return 0;
+
 	// Terminal printing!
 	// TODO: Replace with changeable thing?
 	extern int terminal_print(void *user, char c);
