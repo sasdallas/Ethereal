@@ -46,4 +46,10 @@ int pipe_create(process_t *process, int fildes[2]);
  */
 fs_pipe_t *pipe_createPipe();
 
+/**
+ * @brief Returns the amount of content available to read
+ * @param pipe One end of a pipe
+ */
+size_t pipe_remainingRead(fs_node_t *pipe);
+
 #endif

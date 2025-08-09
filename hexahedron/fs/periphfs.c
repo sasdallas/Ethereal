@@ -258,6 +258,13 @@ int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_
         .y_difference = y_diff
     };
 
+    // We MUST flush the buffer before we hit the size! If the pipe contains too many mouse events, we will accidentally put this thread to sleep
+    // Since this function is usually called by IRQ handlers when they receieve mouse events, that's not gonna work.
+    while (pipe_remainingRead(mouse_node) > 32 * sizeof(mouse_event_t)) {
+        mouse_event_t junk;
+        fs_read(mouse_node, 0, sizeof(mouse_event_t), (uint8_t*)&junk);
+    }
+
     fs_write(mouse_node, 0, sizeof(mouse_event_t), (uint8_t*)&event);
 
     return 0;

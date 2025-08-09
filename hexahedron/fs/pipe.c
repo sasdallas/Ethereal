@@ -177,3 +177,12 @@ int pipe_create(process_t *process, int fildes[2]) {
 
     return 0;
 }
+
+/**
+ * @brief Returns the amount of content available to read
+ * @param pipe One end of a pipe
+ */
+size_t pipe_remainingRead(fs_node_t *pipe) {
+    fs_pipe_t *p = (fs_pipe_t*)pipe->dev;
+    return circbuf_remaining_read(p->buf);
+}
