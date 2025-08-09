@@ -221,17 +221,17 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
     mutex_acquire(dev->mutex);
 
     uint8_t ep_type = 0;
-    if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_BULK) {
-        if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
-            ep_type = XHCI_ENDPOINT_TYPE_BULK_IN;
-        } else {
-            ep_type = XHCI_ENDPOINT_TYPE_BULK_OUT;
-        }
-    } else if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_INT) {
+    if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_INT) {
         if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
             ep_type = XHCI_ENDPOINT_TYPE_INT_IN;
         } else {
             ep_type = XHCI_ENDPOINT_TYPE_INT_OUT;
+        }
+    } else if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_BULK) {
+        if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
+            ep_type = XHCI_ENDPOINT_TYPE_BULK_IN;
+        } else {
+            ep_type = XHCI_ENDPOINT_TYPE_BULK_OUT;
         }
     } else if (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH) {
         if (endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN) {
@@ -242,11 +242,6 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
     } else {
         ep_type = XHCI_ENDPOINT_TYPE_CONTROL;
     }
-
-    uint8_t ep_control = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_CONTROL);
-    uint8_t ep_bulk = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_BULK);
-    uint8_t ep_isoch = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH);
-    uint8_t ep_int = (endpoint->desc.bmAttributes & USB_ENDP_TRANSFER_INT);
 
     // Determine endpoint number + setup endpoint
     uint8_t endp_num = (((endpoint->desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + !!(endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN));
@@ -260,6 +255,7 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
     xhci_endpoint_context_t *ec = XHCI_ENDPOINT_CONTEXT(dev, endp_num);
 
     // Enable the endpoint in the input context
+    memset(ic, 0, XHCI_CONTEXT_SIZE(dev->parent));
     ic->add_flags = (1 << endp_num) | (1 << 0);
     ic->drop_flags = 0;
 
@@ -271,31 +267,61 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
 
 
     // Setup the endpoint context
-    uint32_t max_esit = ((ec->max_packet_size * (ec->max_burst_size + 1)));
+    ec->max_packet_size = (USB_ENDP_IS_CONTROL(endpoint) || USB_ENDP_IS_BULK(endpoint)) ? endpoint->desc.wMaxPacketSize : endpoint->desc.wMaxPacketSize & 0x7ff;
+    ec->max_burst_size = (USB_ENDP_IS_CONTROL(endpoint) || USB_ENDP_IS_BULK(endpoint)) ? 0 : (endpoint->desc.wMaxPacketSize & 0x1800) >> 11;
     ec->state = XHCI_ENDPOINT_STATE_DISABLED;
     ec->endpoint_type = ep_type;
-    ec->error_count = (ep_isoch) ? 0 : 3;
-    ec->max_packet_size = (ep_control || ep_bulk) ? endpoint->desc.wMaxPacketSize : endpoint->desc.wMaxPacketSize & 0x7ff;
-    ec->max_burst_size = (ep_control || ep_bulk) ? 0 : (endpoint->desc.wMaxPacketSize & 0x1800) >> 11;
+    ec->error_count = (USB_ENDP_IS_ISOCH(endpoint)) ? 0 : 3;
+    ec->transfer_ring_dequeue_ptr = ep->tr->trb_list_phys | 1; 
+
+    uint32_t max_esit = ((ec->max_packet_size * (ec->max_burst_size + 1)));
     ec->max_esit_payload_lo = max_esit & 0xFFFF;
     ec->max_esit_payload_hi = max_esit >> 16;
-    ec->average_trb_length = (ep_control) ? 8 : max_esit;
-    ec->transfer_ring_dequeue_ptr = ep->tr->trb_list_phys | 1; 
+    ec->average_trb_length = (USB_ENDP_IS_CONTROL(endpoint)) ? 8 : max_esit;
 
     // Determine interval
     uint32_t speed = ((dev->parent->op->ports[dev->port_id].portsc & 0x3c00) >> 10);
 
-    if (speed == XHCI_USB_SPEED_HIGH_SPEED || speed == XHCI_USB_SPEED_SUPER_SPEED) {
-        ec->interval = endpoint->desc.bInterval - 1;
-    } else {
-        ec->interval = endpoint->desc.bInterval;
 
-        if (ep_int || ep_bulk) {
-            // Clamp to 3-18
-            if (ec->interval < 3) ec->interval = 3;
-            if (ec->interval > 18) ec->interval = 18;
-        }
+    // !!!: EXTREMELY TEMPORARY (stolen from banan-os)
+#define ilog2(val) (sizeof(val) * 8 - __builtin_clz(val) - 1)
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#define XHCI_CLAMP_INTERVAL(intv, low, high) ((intv < low) ? low : (intv > high) ? high : intv)
+    switch (speed) {
+        case XHCI_USB_SPEED_HIGH_SPEED:
+            if (USB_ENDP_IS_BULK(endpoint) || USB_ENDP_IS_CONTROL(endpoint)) {
+                ec->interval = (endpoint->desc.bInterval) ? XHCI_CLAMP_INTERVAL(ilog2(endpoint->desc.bInterval), 0, 15) : 0;
+                break;
+            }
+            // fall through
+        case XHCI_USB_SPEED_SUPER_SPEED:
+            if (USB_ENDP_IS_ISOCH(endpoint) || USB_ENDP_IS_INTERRUPT(endpoint)) {
+                ec->interval = XHCI_CLAMP_INTERVAL(endpoint->desc.bInterval - 1, 0, 15);
+                break;
+            }
+
+            ec->interval = 0;
+            break;
+
+        case XHCI_USB_SPEED_FULL_SPEED:
+            if (USB_ENDP_IS_ISOCH(endpoint)) {
+                ec->interval = XHCI_CLAMP_INTERVAL(endpoint->desc.bInterval + 2, 3, 18);
+                break;
+            }
+
+            // fall through
+        case XHCI_USB_SPEED_LOW_SPEED:
+            if (USB_ENDP_IS_ISOCH(endpoint) || USB_ENDP_IS_INTERRUPT(endpoint)) {
+                ec->interval = (endpoint->desc.bInterval) ? XHCI_CLAMP_INTERVAL(ilog2(endpoint->desc.bInterval * 8), 3, 10) : 0;
+                break;
+            }
+
+            ec->interval = 0;
+            break;
     }
+
+    LOG(DEBUG, "Configuring endpoint %d for device on slot %d with speed %d\n", endp_num, dev->slot_id, speed)
+    LOG(DEBUG, "max_esit_payload=0x%x max_burst_size=0x%x max_packet_size=%d ep_type=%d error_count=%d trdq=%p avg_trb=%d interval=%d\n", max_esit, ec->max_burst_size, ec->max_packet_size, ec->endpoint_type, ec->error_count, ec->transfer_ring_dequeue_ptr, ec->average_trb_length, ec->interval);
 
     xhci_configure_endpoint_trb_t trb = {
         .type = XHCI_CMD_CONFIGURE_ENDPOINT,
@@ -387,8 +413,8 @@ int xhci_shutdown(USBController_t *controller, USBDevice_t *device) {
     for (int i = 0; i < 32; i++) {
         if (dev->endpoints[i].tr) {
             LOG(DEBUG, "Freeing EP%d\n", i);
-            mem_freeDMA((uintptr_t)dev->endpoints[i].tr->trb_list, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
-            kfree(dev->endpoints[i].tr);
+            // mem_freeDMA((uintptr_t)dev->endpoints[i].tr->trb_list, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+            // kfree(dev->endpoints[i].tr);
         }
     }
 

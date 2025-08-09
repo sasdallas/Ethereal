@@ -166,6 +166,8 @@ extern list_t *usb_controller_list;
  * @returns USB_SUCCESS on a found driver and USB_FAILURE on a failure.
  */
 USB_STATUS usb_initializeDeviceDriver(USBDevice_t *dev) {
+    int initialized_interfaces = 0;
+
     foreach(drv_node, usb_driver_list) {
         USBDriver_t *driver = (USBDriver_t*)(drv_node->value);
         if (!driver) continue;
@@ -181,11 +183,13 @@ USB_STATUS usb_initializeDeviceDriver(USBDevice_t *dev) {
             USBInterface_t *intf = (USBInterface_t*)(intf_node->value);
             if (!intf) continue;
             if (usb_driverInitializeDevice(driver, dev, intf) == USB_SUCCESS) {
-                return USB_SUCCESS; // All done
+                initialized_interfaces++;
             }       
         }
         
     }
 
-    return USB_FAILURE;
+    LOG(INFO, "Initialized %d interfaces\n", initialized_interfaces);
+
+    return USB_SUCCESS;
 }

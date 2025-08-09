@@ -398,6 +398,7 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
     // Disable boot protocol
     if (intf->desc.bInterfaceSubClass == 1) {
         // Boot protocol supported
+        LOG(DEBUG, "Disabling boot protocol and switching to report protocol\n");
         if (usb_requestDevice(intf->dev, USB_RT_H2D | USB_RT_CLASS | USB_RT_INTF, HID_REQ_SET_PROTOCOL, 1, intf->desc.bInterfaceNumber, 0, NULL) != USB_TRANSFER_SUCCESS) {
             LOG(ERR, "HID_REQ_SET_PROTOCOL (Report) failed\n");
             return USB_FAILURE;
@@ -458,8 +459,8 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
     d->transfer.callback = hid_callback;
     d->transfer.parameter = (void*)intf;
     d->transfer.endp = target;
-    d->transfer.data = (void*)mem_allocateDMA(PAGE_SIZE);
-    d->transfer.length = PAGE_SIZE;
+    d->transfer.data = (void*)mem_allocateDMA(d->endp->desc.wMaxPacketSize & 0x7FF);
+    d->transfer.length = d->endp->desc.wMaxPacketSize & 0x7FF;
     // NOTE: Actual request does not matetr
 
     intf->d = (void*)d;
