@@ -15,9 +15,11 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/task/sleep.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/panic.h>
 #include <structs/list.h>
 #include <kernel/debug.h>
 #include <string.h>
+#include <assert.h>
 
 /* Sleeping queue */
 list_t *sleep_queue = NULL;
@@ -27,6 +29,28 @@ spinlock_t sleep_queue_lock = { 0 };
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SLEEP", __VA_ARGS__)
+
+/**
+ * @brief Wakeup state to string
+ */
+char *sleep_wakeupToString(int wakeup) {
+    switch (wakeup) {
+        case SLEEP_FLAG_NOCOND:
+            return "NEVER";
+        case SLEEP_FLAG_TIME:
+            return "TIME";
+        case SLEEP_FLAG_COND:
+            return "UPON_CONDITION";
+        case SLEEP_FLAG_WAKEUP:
+            return "NOW";
+        default:
+            if (wakeup >= WAKEUP_SIGNAL) {
+                return "WOKEN_UP_ALREADY";
+            }
+
+            return "???";
+    }
+}
 
 /**
  * @brief Wakeup sleepers callback
@@ -46,11 +70,20 @@ void sleep_callback(uint64_t ticks) {
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;
         if (!sleep || !sleep->thread) {
             LOG(WARN, "Corrupt node in sleep queue %p (sleep: %p)\n", node, sleep);
-            node_t *old = node;
-            node = old->next;
-            list_delete(sleep_queue, old);
-            kfree(old);
-            continue;
+            
+            kernel_panic_prepare(UNKNOWN_CORRUPTION_DETECTED);
+            dprintf(NOHEADER, "*** Detected corruption in kernel sleep queue\n");
+            dprintf(NOHEADER, "*** This usually indicates a race condition in the kernel, check all systems using sleep_wakeup and that they lock.\n\n");
+            dprintf(NOHEADER, "*** The failing list node: %p\n", node);
+
+            if (!sleep) {
+                dprintf(NOHEADER, "*** The failing sleep queue entry is NULL\n");
+            } else {
+                dprintf(NOHEADER, "*** The failing sleep queue entry: %p\n", sleep);
+                dprintf(NOHEADER, "*** Was supposed to wakeup %s but lost its thread structure (context=%p)\n", sleep_wakeupToString(sleep->sleep_state), sleep->context);
+            }
+            
+            kernel_panic_finalize();
         }
 
 
@@ -133,6 +166,9 @@ int sleep_untilNever(struct thread *thread) {
     memset(sleep, 0, sizeof(thread_sleep_t));
     sleep->sleep_state = SLEEP_FLAG_NOCOND;
     sleep->thread = thread;
+
+#pragma GCC diagnostic ignored "-Wframe-address"
+    sleep->context = __builtin_return_address(0);
     thread->sleep = sleep;
 
     // Manually create node..
@@ -287,8 +323,9 @@ int sleep_inQueue(sleep_queue_t *queue) {
     }
 
     spinlock_acquire(&queue->lock);
-    list_append(&queue->queue, (void*)current_cpu->current_thread);
     sleep_untilNever(current_cpu->current_thread);
+    list_append(&queue->queue, (void*)current_cpu->current_thread);
+    current_cpu->current_thread->sleep->context = __builtin_return_address(0);
     spinlock_release(&queue->lock);
 
     return 0; // !!!: Validate that in the time from putting ourselves in this queue to sleeping we can't be woken up, and if so we can be woken up properly.
@@ -310,13 +347,20 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     node_t *node = list_popleft(&queue->queue);
     while (node) {
         thread_t *thr = (thread_t*)node->value;
-        if (thr) sleep_wakeup(thr);
-        
+        if (thr) {
+            assert(thr->sleep);
+            assert(thr->sleep->context == queue);
+            assert(thr->sleep->sleep_state < WAKEUP_SIGNAL);
+            sleep_wakeup(thr);        
+        }
+
+
         // Increase
         awoken++;
-        if (awoken >= amounts) break;
+        if (awoken >= amounts) { kfree(node); break; }
         
         // Next
+        kfree(node);
         node = list_popleft(&queue->queue);
     }
 
