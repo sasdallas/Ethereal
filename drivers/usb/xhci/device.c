@@ -51,6 +51,7 @@ xhci_transfer_ring_t *xhci_createTransferRing() {
  * @param trb The TRB to enqueue
  */
 int xhci_enqueueTransferTRB(xhci_transfer_ring_t *tr, xhci_trb_t *trb) {
+    LOG(DEBUG, "Enqueueing transfer TRB to %p\n", &tr->trb_list[tr->enqueue]);
     trb->c = tr->cycle;
     memcpy(&tr->trb_list[tr->enqueue], trb, sizeof(xhci_trb_t));
     tr->enqueue++;
@@ -128,10 +129,9 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     xhci_enqueueTransferTRB(dev->endpoints[0].tr, (xhci_trb_t*)&setup_trb);
 
     // Build the data TRB
-    uintptr_t temp = mem_allocateDMA(4096);
     if (transfer->length) {
         xhci_data_stage_trb_t data_trb = {
-            .buffer = mem_getPhysicalAddress(NULL, (uintptr_t)temp),
+            .buffer = mem_getPhysicalAddress(NULL, (uintptr_t)transfer->data),
             .transfer_length = transfer->length,
             .td_size = 0,
             .interrupter = 0,
@@ -168,8 +168,6 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
         transfer->status = USB_TRANSFER_FAILED;
         return USB_TRANSFER_FAILED;
     }
-
-    if (transfer->req->bmRequestType & USB_RT_D2H) memcpy(transfer->data, (void*)temp, transfer->length);
 
 
     // Done!
@@ -350,19 +348,16 @@ int xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer
     
     xhci_enqueueTransferTRB(ep->tr, (xhci_trb_t*)&trb);
 
+    // Pending interrupt transfer points to this
+    ep->pending_int = transfer;
+
+    mutex_release(ep->m);
+
     // Ring doorbell
     XHCI_DOORBELL(dev->parent, dev->slot_id) = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
 
-    if (xhci_waitForTransfer(ep)) {
-        LOG(ERR, "INTERRUPT transfer failure detected\n");
-        mutex_release(ep->m);
-        transfer->status = USB_TRANSFER_FAILED;
-        return USB_TRANSFER_FAILED;
-    }
-
-    mutex_release(ep->m);
-    transfer->status = USB_TRANSFER_SUCCESS;
-    return USB_TRANSFER_SUCCESS;
+    transfer->status = USB_TRANSFER_IN_PROGRESS;
+    return USB_TRANSFER_IN_PROGRESS;
 }
 
 /**

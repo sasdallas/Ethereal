@@ -41,6 +41,8 @@ typedef struct xhci_endpoint {
     uint32_t mps;                   // MPS
     mutex_t *m;                     // Mutex
     
+    USBTransfer_t *pending_int;     // Pending interrupt transfer 
+
     // HACKY
     xhci_transfer_completion_trb_t ctr;
     volatile uint8_t flag;          // Flag

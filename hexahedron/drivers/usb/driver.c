@@ -171,9 +171,10 @@ USB_STATUS usb_initializeDeviceDriver(USBDevice_t *dev) {
         if (!driver) continue;
 
         // Check VID/PID
-        if (driver->find->vid && dev->device_desc.idVendor != driver->find->vid) continue;
-        if (driver->find->pid && dev->device_desc.idProduct != driver->find->pid) continue;
-
+        if (driver->find) {
+            if (driver->find->vid && dev->device_desc.idVendor != driver->find->vid) continue;
+            if (driver->find->pid && dev->device_desc.idProduct != driver->find->pid) continue;
+        }
 
         // Now we need to iterate through the interfaces to find the correct one
         foreach(intf_node, dev->config->interface_list) {

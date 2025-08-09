@@ -21,6 +21,7 @@
 #include <kernel/debug.h>
 #include <kernel/fs/kernelfs.h>
 #include <string.h>
+#include <kernel/misc/util.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB:DEV", __VA_ARGS__)
@@ -168,7 +169,7 @@ int usb_requestDevice(USBDevice_t *device, uintptr_t type, uintptr_t request, ui
     // Create a new transfer
     USBTransfer_t *transfer = kmalloc(sizeof(USBTransfer_t));
     transfer->req = req;
-    transfer->endpoint = 0;      // TODO: Allow custom endpoints - CONTROL requests don't necessary have to come from the DCP
+    transfer->endpoint = 0;
     transfer->status = USB_TRANSFER_IN_PROGRESS;
     transfer->length = length;
     transfer->data = data;
@@ -312,6 +313,7 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
             // Setup values
             memcpy((void*)&interface->desc, buffer, sizeof(USBInterfaceDescriptor_t));
             interface->endpoint_list = list_create("usb endpoint list");
+            interface->additional_desc_list = list_create("usb additional descriptor list");
             interface->dev = dev;
             list_append(config->interface_list, (void*)interface);
 
@@ -319,26 +321,31 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
 
             // Push buffer ahead
             buffer += interface->desc.bLength;
-
-            // Now we can start parsing the next few endpoints
-            for (int e = 0; e < interface->desc.bNumEndpoints + 1; e++) {
-                // Get the endpoint
+        } else if (buffer[1] == USB_DESC_ENDP) {
+            if (config->interface_list->tail) {
+                USBInterface_t *intf = (USBInterface_t*)(config->interface_list->tail->value); 
                 USBEndpointDescriptor_t *endpoint_desc = (USBEndpointDescriptor_t*)buffer;
                 USBEndpoint_t *endp = kmalloc(sizeof(USBEndpoint_t));
                 memcpy((void*)&endp->desc, (void*)endpoint_desc, sizeof(USBEndpointDescriptor_t));
-                list_append(interface->endpoint_list, (void*)endp);
-
-                LOG(DEBUG, "\tEndpoint available with bEndpointAddress 0x%x bmAttributes 0x%x wMaxPacketSize %d bLength %d\n", endp->desc.bEndpointAddress, endp->desc.bmAttributes, endp->desc.wMaxPacketSize, endp->desc.bLength);
-            
-                // Next
-                buffer += endp->desc.bLength;
+                list_append(intf->endpoint_list, (void*)endp);
             }
-        } else if (buffer[1] == USB_DESC_ENDP) {
-            LOG(ERR, "Additional endpoint found while parsing interface\n");
+
             buffer += buffer[0];
         } else {
-            LOG(WARN, "Unrecognized descriptor type while parsing configuration: 0x%x - assuming class specific descriptor\n", buffer[1]);
-            buffer += buffer[0];    // Pray to god we hit bLength
+            if (config->interface_list->tail) {
+                USBInterface_t *intf = (USBInterface_t*)(config->interface_list->tail->value); 
+                
+                void *intf_buffer = kmalloc(buffer[0]);
+                memcpy(intf_buffer, buffer, buffer[0]);
+
+                list_append(intf->additional_desc_list, intf_buffer);
+                HEXDUMP(buffer, buffer[0]);
+            } else {
+                LOG(WARN, "Unrecognized descriptor type while parsing configuration: 0x%x - assuming class specific descriptor\n", buffer[1]);
+            }
+
+
+            buffer += buffer[0];
         }
     } 
 
@@ -419,6 +426,11 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
 
 
     LOG(DEBUG, "USB Device: Version %d.%d, VID 0x%04x, PID 0x%04x PROTOCOL 0x%04x\n", dev->device_desc.bcdUSB >> 8, (dev->device_desc.bcdUSB >> 4) & 0xF, dev->device_desc.idVendor, dev->device_desc.idProduct, dev->device_desc.bDeviceProtocol);
+
+    if (!dev->device_desc.bNumConfigurations) {
+        LOG(ERR, "Device initialization failed - corrupted device descriptor (bNumConfigurations = 0)\n");
+        return USB_FAILURE;
+    }
 
     // Add it to the device list of the controller
     list_append(dev->c->devices, dev);
@@ -556,6 +568,6 @@ USB_STATUS usb_deinitializeDevice(USBDevice_t *dev) {
     if (dev->shutdown) {
         dev->shutdown(dev->c, dev);
     }
-    
+
     return USB_SUCCESS;
 }

@@ -195,3 +195,15 @@ USB_STATUS usb_configureEndpoint(USBDevice_t *device, USBEndpoint_t *endp) {
 
     return USB_SUCCESS;
 }
+
+/**
+ * @brief Perform USB interrupt transfer
+ * @param device The USB device to perform the transfer on
+ * @param transfer The transfer to perform
+ * @returns USB transfer status
+ */
+int usb_interruptTransfer(USBDevice_t *device, USBTransfer_t *transfer) {
+    if (!device->interrupt) return USB_TRANSFER_FAILED;
+    device->interrupt(device->c, device, transfer);
+    return transfer->status;
+}

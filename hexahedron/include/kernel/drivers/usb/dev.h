@@ -65,8 +65,10 @@ typedef struct USBInterface {
 
     USBInterfaceDescriptor_t desc;  // Descriptor
     list_t *endpoint_list;          // List of endpoints (USBEndpoint_t)
+    list_t *additional_desc_list;   // Additional, unrecognized descriptors 
 
     struct USBDriver *driver;       // Driver currently registered to this interface
+    void *d;                        // Driver-specific
 } USBInterface_t;
 
 /**
@@ -77,6 +79,16 @@ typedef struct USBConfiguration {
     USBConfigurationDescriptor_t desc;  // Descriptor
     list_t *interface_list;             // List of interfaces
 } USBConfiguration_t;
+
+struct USBTransfer;
+struct USBTransferCompletion;
+
+/**
+ * @brief Interrupt transfer callback
+ * @param endp The endpoint that received the transfer
+ * @param completion The completed transfer that was done
+ */
+typedef void (*usb_int_callback_t)(USBEndpoint_t *endp, struct USBTransferCompletion *completion);
 
 /**
  * @brief USB transfer
@@ -90,8 +102,17 @@ typedef struct USBTransfer {
     uint32_t length;                // Length of the data
     int status;                     // Transfer status (USB_TRANSFER_...)
     USBEndpoint_t *endp;            // Endpoint structure
+    usb_int_callback_t callback;    // (Optional) Transfer callback for interrupt transfers
+    void *parameter;                // Specific transfer parameter, this is for your reference
 } USBTransfer_t;
 
+/**
+ * @brief USB transfer completion object
+ */
+typedef struct USBTransferCompletion {
+    USBTransfer_t *transfer;        // Original transfer
+    size_t length;                  // The amount of data that was sent
+} USBTransferCompletion_t;
 
 /**
  * @brief Host controller transfer method for a CONTROL transfer

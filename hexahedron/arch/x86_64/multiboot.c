@@ -66,8 +66,6 @@ struct multiboot_tag *multiboot2_find_tag(void *header, uint32_t type) {
     return NULL;
 }
 
-extern void fuck_i_hate_multiboot(uint32_t nFrequence);
-
 /** 
  * @brief Parse a Multiboot 2 header and packs into a @c generic_parameters structure
  * @param bootinfo A pointer to the multiboot informatino

@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <time.h>
 #include <kernel/drivers/clock.h>
+#include <kernel/debug.h>
+#include <ctype.h>
 
 /**** MACROS ****/
 
@@ -47,6 +49,23 @@
 #define __STATIC_ASSERT3(cond, file, line) STATIC_ASSERT_MSG((cond), at_line_##line)
 #define __STATIC_ASSERT2(cond, file, line) __STATIC_ASSERT3(cond, file, line)
 #define STATIC_ASSERT(cond) __STATIC_ASSERT2(cond, __FILE__, __LINE__)
+
+
+#define HEXDUMP(ptr, size)                                                      \
+    do {                                                                         \
+        const unsigned char *data = (const unsigned char *)(ptr);               \
+        size_t length = (size_t)(size);                                         \
+        for (size_t i = 0; i < length; i += 16) {                                \
+            char hex[16 * 3 + 1] = {0};                                          \
+            char ascii[17] = {0};                                                \
+            for (size_t j = 0; j < 16 && i + j < length; ++j) {                  \
+                unsigned char byte = data[i + j];                                \
+                sprintf(&hex[j * 3], "%02X ", byte);                             \
+                ascii[j] = isprint(byte) ? byte : '.';                           \
+            }                                                                    \
+            dprintf(DEBUG, "%08zx  %-48s  |%s\n", i, hex, ascii);                     \
+        }                                                                        \
+    } while (0)
 
 /* min/max */
 #define min(a, b) ((a) < (b) ? (a) : (b))

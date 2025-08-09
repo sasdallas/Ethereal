@@ -21,6 +21,7 @@
 #include <kernel/loader/driver.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/mem/alloc.h>
+#include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
@@ -39,6 +40,8 @@ int ps2_waitForInputClear() {
     while (timeout) {
         uint8_t status = inportb(PS2_STATUS);
         if (!(status & PS2_STATUS_INPUT_FULL)) return 0;
+        clock_sleep(25);
+        timeout -= 25;
     }
 
     LOG(ERR, "Timeout expired\n");
@@ -54,6 +57,8 @@ int ps2_waitForOutput() {
     while (timeout) {
         uint8_t status = inportb(PS2_STATUS);
         if (status & PS2_STATUS_OUTPUT_FULL) return 0;
+        clock_sleep(25);
+        timeout -=  25;
     }
 
     LOG(ERR, "Timeout expired\n");

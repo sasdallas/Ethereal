@@ -83,33 +83,6 @@ int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
             dprintf(ERR, "IO_VIDEO_SET_INFO is unimplemented\n");
             return -EINVAL;
 
-        // !!!: DEPRECATED!!!!!
-        case IO_VIDEO_GET_FRAMEBUFFER:
-            void **fbout = (void**)argp;
-            if (!mem_validate(argp, PTR_USER | PTR_STRICT)) {
-                dprintf(ERR, "Evil bad process provided a bad argp %p\n", argp);
-                process_exit(current_cpu->current_process, 1);
-            }
-
-            for (uintptr_t i = MEM_USERMODE_DEVICE_REGION; i < MEM_USERMODE_DEVICE_REGION + bufsz; i += PAGE_SIZE) {
-                page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
-                mem_allocatePage(pg, MEM_PAGE_WRITE_COMBINE);
-            }
-
-            user_fb = (uint8_t*)MEM_USERMODE_DEVICE_REGION;
-            *fbout = (void*)MEM_USERMODE_DEVICE_REGION;
-            return 0;
-
-        // !!! DEPRECATED!!!!!!
-        case IO_VIDEO_FLUSH_FRAMEBUFFER:
-            if (user_fb) {
-                size_t bufsz = (current_driver->screenWidth * 4) + (current_driver->screenHeight * current_driver->screenPitch);
-                memcpy(video_framebuffer, user_fb, bufsz);
-                video_updateScreen();
-                return 0;
-            }
-            return 0;
-
         default:
             return -EINVAL;
     }

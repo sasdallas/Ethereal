@@ -83,6 +83,15 @@ int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number
 }
 
 /**
+ * @brief Get the current local APIC ID
+ */
+static int smp_getLocalAPICID() {
+	uint32_t ebx, unused;
+    __cpuid(0x1, unused, ebx, unused, unused);
+    return (int)(ebx >> 24);
+}
+
+/**
  * @brief Collect AP information to store in processor_data
  * @param ap The core to store information on
  */
@@ -91,6 +100,7 @@ void smp_collectAPInfo(int ap) {
     strncpy(processor_data[ap].cpu_model, cpu_getBrandString(), 48);
     processor_data[ap].cpu_model_number = cpu_getModelNumber();
     processor_data[ap].cpu_family = cpu_getFamily();
+    current_cpu->lapic_id = smp_getLocalAPICID();
 }
 
 /**
@@ -294,7 +304,7 @@ void smp_disableCores() {
     LOG(INFO, "Disabling cores - please wait...\n");
 
     for (int i = 0; i < smp_data->processor_count; i++) {
-        if (smp_data->lapic_ids[i] != smp_getCurrentCPU()) {
+        if (smp_data->lapic_ids[i] != current_cpu->lapic_id) {
             lapic_sendNMI(smp_data->lapic_ids[i], 0); // The interrupt vector here doesnt matter as an NMI is sent regardless
 
             // do { asm volatile ("pause"); } while (!ap_shutdown_finished);

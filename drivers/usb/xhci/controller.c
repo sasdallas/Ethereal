@@ -302,8 +302,23 @@ int xhci_irq(void *context) {
             xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
             LOG(INFO, "Transfer completed on slot %d endp %d cc %d\n", trb->slot_id, trb->endpoint_id, trb->completion_code);
             
-            memcpy(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr, trb, sizeof(xhci_transfer_completion_trb_t));
-            __atomic_store_n(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
+            // Is it directed to the CONTROL endpoint?
+            if (trb->endpoint_id == 1) {
+                memcpy(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr, trb, sizeof(xhci_transfer_completion_trb_t));
+                __atomic_store_n(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
+            } else if (xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id].pending_int) {
+                USBTransfer_t *pending = xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id].pending_int;
+                pending->status = USB_TRANSFER_SUCCESS;
+
+                USBTransferCompletion_t completion = {
+                    .transfer = pending,
+                    .length = (pending->length - trb->transfer_len),
+                };
+
+                if (pending->callback) {
+                    pending->callback(pending->endp, &completion);
+                }
+            }
         } else {
             LOG(WARN, "Unrecognized event TRB: %d\n", t->type);
         }

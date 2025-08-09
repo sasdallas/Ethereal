@@ -47,14 +47,14 @@
 #define USB_ENDP_FEEDBACK           0x10        // Feedback endpoint
 #define USB_ENDP_FEEDBACK_IMPL      0x30        // Feedback implicit endpoint
 
-// Endpoint transfer types
+// Endpoint transfer types - recommended to use USB_ENDP_IS_...
 #define USB_ENDP_TRANSFER_CONTROL   0x00        // !!!: DO NOT USE AS THIS IS AN INVALID BITMASK
 #define USB_ENDP_TRANSFER_ISOCH     0x01        // Isochronous endpoint
 #define USB_ENDP_TRANSFER_BULK      0x02        // Bulk endpoint
 #define USB_ENDP_TRANSFER_INT       0x03        // Interrupt endpoint
 
-// Endpoint directions
-#define USB_ENDP_DIRECTION_OUT      0x00        // !!!: DO NOT USE AS THIS IS AN INVALID BITMASK
+/* Endpoint directions - to be used with USB_ENDP_GET_DIRECTION() only! */
+#define USB_ENDP_DIRECTION_OUT      0x00        // OUT endpoint
 #define USB_ENDP_DIRECTION_IN       0x80        // IN endpoint
 
 // TODO: Endpoint syncronization types
@@ -68,6 +68,8 @@
 // See https://github.com/brookebasile/USB-langids/blob/master/USB_LANGIDs.pdf for full list
 #define USB_LANGID_ENGLISH      0xFF09  // English
 
+
+// IDs for macros specifically
 
 /**** TYPES ****/
 
@@ -182,5 +184,16 @@ typedef struct USBHubDescriptor {
     // The remaining two fields of the hub descriptor are DeviceRemovable and PortPwrControlMask.
     // These take the size of bNbrPorts bits and are not included
 } USBHubDescriptor_t;
+
+/**** MACROS ****/
+
+#define USB_ENDP_GET_NUMBER(endp) (((endp)->desc.bEndpointAddress & 0x0F) * 2 + !!((endp)->desc.bEndpointAddress & 0x80))
+
+#define USB_ENDP_IS_INTERRUPT(endp) (((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_INT) == USB_ENDP_TRANSFER_INT)
+#define USB_ENDP_IS_BULK(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_BULK))
+#define USB_ENDP_IS_ISOCH(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH))
+#define USB_ENDP_IS_CONTROL(endp) (!(USB_ENDP_IS_BULK(endp)) && !(USB_ENDP_IS_ISOCH(endp)))
+
+#define USB_ENDP_GET_DIRECTION(endp) ((endp)->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN)
 
 #endif
