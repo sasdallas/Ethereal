@@ -325,7 +325,6 @@ int sleep_inQueue(sleep_queue_t *queue) {
     spinlock_acquire(&queue->lock);
     sleep_untilNever(current_cpu->current_thread);
     list_append(&queue->queue, (void*)current_cpu->current_thread);
-    current_cpu->current_thread->sleep->context = __builtin_return_address(0);
     spinlock_release(&queue->lock);
 
     return 0; // !!!: Validate that in the time from putting ourselves in this queue to sleeping we can't be woken up, and if so we can be woken up properly.
@@ -348,10 +347,7 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     while (node) {
         thread_t *thr = (thread_t*)node->value;
         if (thr) {
-            assert(thr->sleep);
-            assert(thr->sleep->context == queue);
-            assert(thr->sleep->sleep_state < WAKEUP_SIGNAL);
-            sleep_wakeup(thr);        
+            sleep_wakeup(thr);
         }
 
 
