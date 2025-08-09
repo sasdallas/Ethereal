@@ -17,11 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 
-#ifdef __TINYC__
 #define __cpuid(leaf, a, b, c, d) asm volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(leaf))
-#else
-#include <cpuid.h>
-#endif
 
 /**** DEFINITIONS ****/
 

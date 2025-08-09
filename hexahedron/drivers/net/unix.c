@@ -139,6 +139,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             spinlock_release(usock->packet_buffer->lock);
             
             int w = sleep_enter();
+            usock->thr = NULL;
             if (w == WAKEUP_SIGNAL) return -EINTR;
 
             // Another thread must've woken us up, reacquire the lock

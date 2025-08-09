@@ -203,7 +203,7 @@ void clock_sleepMilliseconds(uint64_t ms) {
     clock_gettimeofday(&t, NULL);
 
     unsigned long target_seconds, target_subseconds;
-    clock_relative(ms / 1000, ms & 999, &target_seconds, &target_subseconds);
+    clock_relative(ms / 1000, (ms & 999) * (SUBSECONDS_PER_SECOND/1000), &target_seconds, &target_subseconds);
 
     target_seconds += boottime; // !!!: Hack
 
