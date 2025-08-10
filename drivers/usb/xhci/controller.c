@@ -18,6 +18,7 @@
 #include <kernel/misc/mutex.h>
 #include <string.h>
 #include <kernel/mem/pmm.h>
+#include <kernel/misc/args.h>
 
 /* xHCI controller count */
 int xhci_controller_count = 0;
@@ -238,9 +239,7 @@ int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
 
     int usb3 = (xhci->ports[port].rev_major == 3);
     while (!(((usb3 && (regs->portsc & XHCI_PORTSC_WRC))) || ((!usb3 && (regs->portsc & XHCI_PORTSC_PRC))))) {
-        
         arch_pause_single();
-
     }
 
     clock_sleep(3);
@@ -278,7 +277,7 @@ int xhci_irq(void *context) {
 
             if (dev_connected) {
                 // Try to reset the port
-                if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
+                if (!kargs_has("--xhci-no-reset-ports") && xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
                     // If a reset on this port failed, let's assume the port is dead
                     // TODO: Recovery? I need to read the spec for this sort of thing
                     LOG(ERR, "Reset failure detected. Assuming port %d is dead\n");
