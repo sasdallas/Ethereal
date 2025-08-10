@@ -64,8 +64,6 @@ static int minacpi_validateRSDP(acpi_rsdp_t *rsdp) {
  */
 int minacpi_parseRSDP() {
     // First we need to determine the revision of the RSDP.
-
-
     char oemid[7];
     memcpy(oemid, ((acpi_rsdp_t*)rsdp_ptr)->oemid, 6);
     oemid[6] = 0;
@@ -274,8 +272,11 @@ int minacpi_initialize() {
     // Instead we'll just use the main BIOS area at 0xE0000 - 0xFFFFF.
     rsdp_ptr = hal_getRSDP(); // Multiboot2 might provide this
 
-    if (rsdp_ptr) goto _found_rsdp;
-
+    if (rsdp_ptr) {
+        rsdp_ptr = mem_remapPhys(rsdp_ptr, PAGE_SIZE); 
+        goto _found_rsdp;
+    }
+    
     // Now we need to search the main BIOS area. We can map this into memory
     uintptr_t main_bios_area = mem_remapPhys(0xE0000, 0x20000);
 
