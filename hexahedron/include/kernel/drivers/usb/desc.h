@@ -192,7 +192,7 @@ typedef struct USBHubDescriptor {
 #define USB_ENDP_IS_INTERRUPT(endp) (((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_INT) == USB_ENDP_TRANSFER_INT)
 #define USB_ENDP_IS_BULK(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_BULK))
 #define USB_ENDP_IS_ISOCH(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH))
-#define USB_ENDP_IS_CONTROL(endp) (!(USB_ENDP_IS_BULK(endp)) && !(USB_ENDP_IS_ISOCH(endp)))
+#define USB_ENDP_IS_CONTROL(endp) (((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_INT) == 0x0)
 
 #define USB_ENDP_GET_DIRECTION(endp) ((endp)->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN)
 

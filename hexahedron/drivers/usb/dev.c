@@ -365,15 +365,6 @@ USBConfiguration_t *usb_getConfigurationFromIndex(USBDevice_t *dev, int index) {
 USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     LOG(DEBUG, "Initializing USB device on port 0x%x...\n", dev->port);
 
-    // xHCI controllers *require* that we address the device before doing mps
-    if (dev->setaddr) { 
-        if (dev->setaddr(dev->c, dev)) {
-            // The request did not succeed
-            LOG(ERR, "Device initialization failed - could not set device address\n");
-            return USB_FAILURE;
-        }
-    }
-
     // Get first few bytes of the device descriptor
     // TODO: Bochs requests that this have a size equal the mps of a device - implement this
     if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
@@ -383,6 +374,8 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         LOG(ERR, "USB_REQ_GET_DESC did not succeed\n");
         return USB_FAILURE;
     }
+
+    LOG(DEBUG, "bMaxPacketSize0: %d\n", dev->device_desc.bMaxPacketSize0);
         
     // Set the maximum packet size
     dev->mps = dev->device_desc.bMaxPacketSize0;
@@ -435,34 +428,36 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     // Add it to the device list of the controller
     list_append(dev->c->devices, dev);
 
-    // Read the language IDs supported by this device
-    uint8_t lang_length;
+    // // Read the language IDs supported by this device
+    // uint8_t lang_length;
 
-    // We need bLength so only read 1 byte
-    if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, 
-                USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, 1, &lang_length) != USB_TRANSFER_SUCCESS) 
-    {
-        LOG(ERR, "Device initialization failed - could not get language codes\n");
-        return USB_FAILURE;
-    }
+    // // We need bLength so only read 1 byte
+    // if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, 
+    //             USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, 1, &lang_length) != USB_TRANSFER_SUCCESS) 
+    // {
+    //     LOG(ERR, "Device initialization failed - could not get language codes\n");
+    //     return USB_FAILURE;
+    // }
 
-    // Now we can read the full descriptor
-    dev->langs = kmalloc(lang_length);
+    // // Now we can read the full descriptor
+    // dev->langs = kmalloc(lang_length);
 
-    if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
-                USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, lang_length, dev->langs) != USB_TRANSFER_SUCCESS)
-    {
-        LOG(ERR, "Device initialization failed - could not get all language codes\n");
-        return USB_FAILURE;
-    }
+    // if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
+    //             USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, lang_length, dev->langs) != USB_TRANSFER_SUCCESS)
+    // {
+    //     LOG(ERR, "Device initialization failed - could not get all language codes\n");
+    //     return USB_FAILURE;
+    // }
 
-    for (int i = 0; i < (dev->langs->bLength - 2) / 2; i++) {
-        LOG(DEBUG, "Supports language code: 0x%02x\n", dev->langs->wLangID[i]);
-        if (dev->langs->wLangID[i] & USB_LANGID_ENGLISH) {
-            // We don't support Unicode yet
-            dev->chosen_language = dev->langs->wLangID[i];
-        }
-    }
+    // for (int i = 0; i < (dev->langs->bLength - 2) / 2; i++) {
+    //     LOG(DEBUG, "Supports language code: 0x%02x\n", dev->langs->wLangID[i]);
+    //     if (dev->langs->wLangID[i] & USB_LANGID_ENGLISH) {
+    //         // We don't support Unicode yet
+    //         dev->chosen_language = dev->langs->wLangID[i];
+    //     }
+    // }
+
+    dev->chosen_language = 0x409;
 
     // Done! We've got the device language codes. Now we've unlocked usb_getStringIndex
     char *product_str = usb_getStringIndex(dev, dev->device_desc.iProduct, dev->chosen_language);

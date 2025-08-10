@@ -184,6 +184,7 @@ int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
     if (device->mps == dev->endpoints[0].mps) return USB_SUCCESS; // No need
 
     // Let's reconfigure the context
+    LOG(INFO, "!!!!!!!!!!!! EVALUATING CONTEXT\n");
     xhci_input_context_t *input_context = XHCI_INPUT_CONTEXT(dev);
     xhci_endpoint_context_t *ep_ctx = XHCI_ENDPOINT_CONTEXT(dev, 1);
     memset((void*)input_context, 0, XHCI_CONTEXT_SIZE(dev->parent));
@@ -261,10 +262,17 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
 
     // Setup the slot context
     // TODO: USBHubInformation_t
-    if (endp_num > sc->context_entries) {
-        sc->context_entries = endp_num;
+    // if (endp_num > sc->context_entries) {
+        // sc->context_entries = endp_num;
+    // }
+
+    // Get the last valid endpoint
+    uint32_t last_valid_ep = USB_ENDP_GET_NUMBER(endpoint);
+    for (size_t i = last_valid_ep; i < 32; i++) {
+        if (dev->endpoints[i].tr) last_valid_ep = i + 1;
     }
 
+    sc->context_entries = last_valid_ep;
 
     // Setup the endpoint context
     ec->max_packet_size = (USB_ENDP_IS_CONTROL(endpoint) || USB_ENDP_IS_BULK(endpoint)) ? endpoint->desc.wMaxPacketSize : endpoint->desc.wMaxPacketSize & 0x7ff;
