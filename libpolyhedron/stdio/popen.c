@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fcntl.c
- * @brief fcntl
+ * @file libpolyhedron/stdio/popen.c
+ * @brief popen
  * 
  * 
  * @copyright
@@ -11,11 +11,11 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/libc_debug.h>
-#include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int fcntl(int fd, int op, ...) {
-    dprintf("fcntl (stub): %d: %d\n", fd, op);
-    return 0;
+FILE *popen(const char *command, const char *type) {
+    fprintf(stderr, "libc: popen: stub\n");
+    abort();
+    return NULL;
 }

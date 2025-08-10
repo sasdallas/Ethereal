@@ -11,10 +11,11 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
+#include <sys/libc_debug.h>
 #include <locale.h>
 #include <stdio.h>
 
 char *setlocale(int category, const char *locale) {
-    fprintf(stderr, "setlocale: %d %s\n", category, locale);
+    dprintf("setlocale (stub): %d %s\n", category, locale);
     return "en_US"; // Default
 }

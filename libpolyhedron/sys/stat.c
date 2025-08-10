@@ -31,3 +31,8 @@ int fstat(int fd, struct stat *statbuf) {
 int lstat(const char *pathname, struct stat *statbuf) {
     __sets_errno(__syscall_lstat(pathname, statbuf));
 }
+
+int mknod(const char *path, mode_t mode, dev_t dev) {
+    errno = ENOSYS;
+    return -1;   
+}

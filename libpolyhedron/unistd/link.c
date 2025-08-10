@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fcntl.c
- * @brief fcntl
+ * @file libpolyhedron/unistd/link.c
+ * @brief link
  * 
  * 
  * @copyright
@@ -11,11 +11,12 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/libc_debug.h>
-#include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int fcntl(int fd, int op, ...) {
-    dprintf("fcntl (stub): %d: %d\n", fd, op);
+int link(const char *oldpath, const char *newpath) {
+    fprintf(stderr, "link: %s -> %s\n", oldpath, newpath);
+    assert(0);
     return 0;
 }

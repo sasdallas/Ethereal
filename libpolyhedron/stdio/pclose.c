@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fcntl.c
- * @brief fcntl
+ * @file libpolyhedron/stdio/pclose.c
+ * @brief pclose
  * 
  * 
  * @copyright
@@ -11,11 +11,11 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/libc_debug.h>
-#include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int fcntl(int fd, int op, ...) {
-    dprintf("fcntl (stub): %d: %d\n", fd, op);
-    return 0;
+int pclose(FILE *stream) {
+    fprintf(stderr, "libc: pclose: stub\n");
+    abort();
+    return 0;;
 }

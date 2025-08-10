@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fcntl.c
- * @brief fcntl
+ * @file libpolyhedron/time/timezone.c
+ * @brief timezone functions
  * 
  * 
  * @copyright
@@ -11,11 +11,17 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/libc_debug.h>
-#include <fcntl.h>
-#include <stdio.h>
+#include <time.h>
 
-int fcntl(int fd, int op, ...) {
-    dprintf("fcntl (stub): %d: %d\n", fd, op);
-    return 0;
+int daylight;
+long timezone;
+char* tzname[2];
+
+void tzset() {
+	// Reset to default
+	daylight = 0;
+	timezone = 0;
+	tzname[0] = "UTC";
+	tzname[1] = "UTC";
 }
+

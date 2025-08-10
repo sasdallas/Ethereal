@@ -1,6 +1,6 @@
 /**
- * @file libpolyhedron/stdio/fcntl.c
- * @brief fcntl
+ * @file libpolyhedron/unistd/symlink.c
+ * @brief symlink
  * 
  * 
  * @copyright
@@ -11,11 +11,12 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/libc_debug.h>
-#include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-int fcntl(int fd, int op, ...) {
-    dprintf("fcntl (stub): %d: %d\n", fd, op);
+int symlink(const char *target, const char *linkpath) {
+    fprintf(stderr, "symlink: %s -> %s\n", target, linkpath);
+    assert(0);
     return 0;
 }
