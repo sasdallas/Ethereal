@@ -64,7 +64,7 @@ static int debug_write_buffer(size_t length, char *buffer) {
  */
 int debug_print(void *user, char ch) {
 extern int kernel_in_panic_state;
-    if (kernel_in_panic_state) {
+    if (kernel_in_panic_state && debug_putchar_method != terminal_print) {
         terminal_print(NULL, ch);
     }
 
