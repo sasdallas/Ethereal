@@ -43,17 +43,25 @@ struct USBController;
 typedef void (*usb_poll_t)(struct USBController *controller);
 
 /**
+ * @brief Initialize device on hub port method
+ * @param hub_device The USB device of the hub
+ * @param port_number The port number to initialize
+ * @param speed Speed of USB device
+ */
+typedef int (*usb_hub_init_t)(USBDevice_t *hub_device, uint32_t port_number, uint32_t speed);
+
+/**
  * @brief USB controller structure
  * 
  * Normal USB drivers do not need to register this. This is for host controller
  * drivers, such as xHCI/EHCI
  */
 typedef struct USBController {
-    uint32_t id;            // ID of this USB controller
-    void *hc;               // Pointer to the host controller structure
-    usb_poll_t poll;        // Poll method, will be called once every tick
-    list_t *devices;        // List of USB devices with a maximum of 127
-    uint32_t last_address;  // Last address given to a device. Starts at 0x1
+    uint32_t id;                // ID of this USB controller
+    void *hc;                   // Pointer to the host controller structure
+    usb_hub_init_t hub_init;    // Initialize device on hub port
+    list_t *devices;            // List of USB devices with a maximum of 127
+    uint32_t last_address;      // Last address given to a device. Starts at 0x1
 } USBController_t;
 
 /**** VARIABLES ****/

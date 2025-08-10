@@ -375,8 +375,6 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
         return USB_FAILURE;
     }
 
-    LOG(DEBUG, "bMaxPacketSize0: %d\n", dev->device_desc.bMaxPacketSize0);
-        
     // Set the maximum packet size
     dev->mps = dev->device_desc.bMaxPacketSize0;
 
@@ -514,7 +512,7 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
 
     // Now send the device the request to set its configuration
     if (usb_requestDevice(dev, USB_RT_H2D | USB_RT_STANDARD | USB_RT_DEV,
-                USB_REQ_SET_CONF, dev->config->index, 0, 0, NULL) != USB_TRANSFER_SUCCESS)
+                USB_REQ_SET_CONF, dev->config->desc.bConfigurationValue, 0, 0, NULL) != USB_TRANSFER_SUCCESS)
     {
         LOG(ERR, "USB initialization failed - could not set configuration\n");
         return USB_FAILURE;
