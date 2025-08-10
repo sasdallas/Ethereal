@@ -6,6 +6,7 @@
 #define __ACHEXAHEDRON_H__
 
 #include <kernel/misc/spinlock.h>
+#include <kernel/misc/mutex.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
@@ -25,6 +26,7 @@
 // Use local ACPICA cache
 #define ACPI_CACHE_T                ACPI_MEMORY_LIST
 #define ACPI_USE_LOCAL_CACHE        1
+#define ACPI_MUTEX_TYPE             ACPI_OSL_MUTEX
 
 #if defined(__ARCH_X86_64__)
 #define ACPI_MACHINE_WIDTH          64
@@ -37,6 +39,7 @@
 
 // Spinlock/uintptr_t
 #define ACPI_SPINLOCK               spinlock_t*
+#define ACPI_MUTEX                  mutex_t*
 #define ACPI_UINTPTR_T              uintptr_t
 
 // Error messages to conform to our debug log system (in the most scuffed way possible due to lack of clock)

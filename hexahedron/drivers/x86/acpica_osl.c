@@ -30,6 +30,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/semaphore.h>
+#include <kernel/misc/mutex.h>
 #include <kernel/drivers/pci.h>
 
 #include <stdarg.h>
@@ -156,6 +157,7 @@ void AcpiOsWaitEventsComplete() {
 /* Create a semaphore */
 ACPI_STATUS AcpiOsCreateSemaphore(UINT32 MaxUnits, UINT32 InitialUnits, ACPI_SEMAPHORE *OutHandle) {
     *OutHandle = semaphore_create("acpica_sem", InitialUnits, MaxUnits);
+    LOG(WARN, "AcpiOsCreateSemaphore done - you may get KERNEL_BAD_ARGUMENT_ERROR\n");
     return AE_OK;
 }
 
@@ -197,6 +199,31 @@ ACPI_STATUS AcpiOsSignalSemaphore(ACPI_SEMAPHORE Handle, UINT32 Units) {
     int added = semaphore_signal(Handle, Units);
     if ((UINT32)added != Units) return AE_LIMIT;
     return AE_OK;
+}
+
+/* MUTEX FUNCTIONS */
+
+ACPI_STATUS AcpiOsCreateMutex(ACPI_MUTEX *OutHandle) {
+    mutex_t *mutex = mutex_create("acpica mutex");
+    *OutHandle = mutex;
+
+    return AE_OK;
+}
+
+void AcpiOsDeleteMutex(ACPI_MUTEX Handle) {
+    mutex_destroy(Handle);
+}
+
+ACPI_STATUS AcpiOsAcquireMutex(ACPI_MUTEX Handle, UINT16 Timeout) {
+    // TODO: Timeout
+    if (!Handle) return AE_BAD_PARAMETER;
+
+    mutex_acquire(Handle);
+    return AE_OK;
+}
+
+void AcpiOsReleaseMutex(ACPI_MUTEX Handle) {
+    mutex_release(Handle);
 }
 
 /* LOCK FUNCTIONS */
