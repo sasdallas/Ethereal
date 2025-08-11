@@ -51,7 +51,6 @@ xhci_transfer_ring_t *xhci_createTransferRing() {
  * @param trb The TRB to enqueue
  */
 int xhci_enqueueTransferTRB(xhci_transfer_ring_t *tr, xhci_trb_t *trb) {
-    LOG(DEBUG, "Enqueueing transfer TRB to %p\n", &tr->trb_list[tr->enqueue]);
     trb->c = tr->cycle;
     memcpy(&tr->trb_list[tr->enqueue], trb, sizeof(xhci_trb_t));
     tr->enqueue++;

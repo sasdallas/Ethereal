@@ -817,7 +817,7 @@ void process_exit(process_t *process, int status_code) {
     
     // If our parent is waiting, wake them up
     if (process->parent) {
-        // if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
+        if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
         if (process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
             // TODO: Locking?
             foreach(thr_node, process->parent->waitpid_queue) {

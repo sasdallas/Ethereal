@@ -106,7 +106,7 @@ ini_t *ini_load(char *filename) {
                 if (!(*value)) goto _next_token;
                 *value = 0;
             }
-            
+
             // After all of that confusing string stuff, key and real_value are our pair
             hashmap_set(current_section, key, real_value);
         }

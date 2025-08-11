@@ -68,7 +68,98 @@
 #define HID_REPORT_COLLECTION_USAGE_SWITCH      5
 #define HID_REPORT_COLLECTION_USAGE_MODIFIER    6
 
+#define HID_INPUT_FLAG_VARIABLE                 0x2
+#define HID_INPUT_FLAG_RELATIVE                 0x4
+
+#define HID_MAX_USAGE_STACK                     32
+
 /**** TYPES ****/
+
+
+struct USBHidCollection;
+struct USBHidReportItem;
+
+/**
+ * @brief Try to initialize a USB HID collection
+ * @param collection The collection to attempt to initialize
+ * @returns @c USB_SUCCESS on success 
+ */
+typedef USB_STATUS (*hid_init_collection_t)(struct USBHidCollection *collection);
+
+/**
+ * @brief Try to deinitialize a USB HID collection
+ * @param collection The collection to deinitialize
+ * @returns @c USB_STATUS on success
+ */
+typedef USB_STATUS (*hid_deinit_collection_t)(struct USBHidCollection *collection);
+
+/**
+ * @brief Begin report
+ * @param collection The collection to begin the report on
+ * @returns @c USB_STATUS on success
+ */
+typedef USB_STATUS (*hid_begin_report_t)(struct USBHidCollection *collection);
+
+/**
+ * @brief Finish report
+ * @param collection The collection to finish the report on
+ * @returns @c USB_STATUS on success
+ */
+typedef USB_STATUS (*hid_finish_report_t)(struct USBHidCollection *collection);
+
+/**
+ * @brief Process a relative data variable
+ * @param collection The collection to process the variable on
+ * @param item The report item being processed
+ * @param usage_page The usage page of the variable
+ * @param usage_id The usage ID
+ * @param value The value
+ * 
+ * @note Only trust usage page and ID passed to you 
+ */
+typedef USB_STATUS (*hid_process_relative_var_t)(struct USBHidCollection *collection, struct USBHidReportItem *item, uint16_t usage_page, uint32_t usage_id, int64_t value);
+
+/**
+ * @brief Process an absolute data variable
+ * @param collection The collection to process the variable on
+ * @param item The report item being processed
+ * @param usage_page The usage page of the variable
+ * @param usage_id The usage ID
+ * @param value The value
+ * 
+ * @note Only trust usage page and ID passed to you 
+ */
+typedef USB_STATUS (*hid_process_absolute_var_t)(struct USBHidCollection *collection, struct USBHidReportItem *item, uint16_t usage_page, uint32_t usage_id, int64_t value);
+
+/**
+ * @brief Process a data array
+ * @param collection The collection to process the array on
+ * @param item The report item being processed
+ * @param usage_page The usage page of the array
+ * @param array The data array
+ * 
+ * @note Only trust usage page and ID passed to you 
+ */
+typedef USB_STATUS (*hid_process_array_t)(struct USBHidCollection *collection, struct USBHidReportItem *item, uint16_t usage_page, int64_t array);
+
+/**
+ * @brief HID device driver object
+ */
+typedef struct USBHidDeviceDriver {
+    char *name;                             // Driver name
+    uint16_t usage_id;                      // Target usage ID
+    uint16_t usage_page;                    // Target usage page
+
+    hid_begin_report_t begin;               // Begin report
+    hid_finish_report_t finish;             // Finish report
+
+    hid_init_collection_t init;             // Init collection method
+    hid_deinit_collection_t deinit;         // Deinit collection method
+    hid_process_relative_var_t relative;    // Process relative variable method
+    hid_process_absolute_var_t absolute;    // Process absolute variable method
+    hid_process_array_t array;              // Process array method
+} USBHidDeviceDriver_t;
+
 
 typedef union USBHidOpcode {
     uint8_t raw;
@@ -90,11 +181,11 @@ typedef struct USBHidReportItem {
     uint32_t report_count;
     uint32_t report_size;
 
-    uint32_t logical_min;
-    uint32_t logical_max;
+    int32_t logical_min;
+    int32_t logical_max;
 
-    uint32_t phys_min;
-    uint32_t phys_max;
+    int32_t phys_min;
+    int32_t phys_max;
 
     uint32_t usage_min;
     uint32_t usage_max;
@@ -111,16 +202,28 @@ typedef struct USBHidParserState {
     uint32_t report_size;
     uint32_t report_count;
     uint8_t report_id;
+
+    uint8_t has_report_id;
 } USBHidParserState_t;
 
+struct USBHidDevice;
 typedef struct USBHidCollection {
-    uint8_t type;
-    list_t *items;
-    list_t *collections;
+    uint8_t opcode;                     // HID_REPORT_MAIN_COLLECTION
+    uint8_t type;                       // Type of the collection
+    uint16_t usage_page;                // Usage page of the collection
+    uint32_t usage_id;                  // Usage ID of the collection
+
+    list_t *items;                      // List of items in the collection. This can also contain collections.
+    struct USBHidDevice *dev;           // HID device
+
+    USBHidDeviceDriver_t *driver;       // Selected driver
+    void *d;                            // Driver-specific
 } USBHidCollection_t;
 
 typedef struct USBHidLocalState {
-    uint32_t usage;
+    uint32_t usage_stack[HID_MAX_USAGE_STACK];
+    uint8_t usage_stack_len;
+
     uint32_t usage_minimum;
     uint32_t usage_maximum;
 } USBHidLocalState_t;
@@ -141,8 +244,12 @@ typedef struct USBHidDescriptor {
 } USBHidDescriptor_t;
 
 typedef struct USBHidDevice {
-    USBEndpoint_t *endp;                // Target interrupt in endpoint
+    USBInterface_t *intf;               // Interface
+    USBEndpoint_t *in_endp;             // INTERRUPT IN endpoint
+    USBEndpoint_t *out_endp;            // INTERRUPT OUT endpoint
     USBTransfer_t transfer;             // Generic transfer
+    uint8_t uses_report_id;             // Device uses report ID
+    list_t *collections;                // Collection list
 } USBHidDevice_t;
 
 /**** FUNCTIONS ****/
@@ -151,5 +258,11 @@ typedef struct USBHidDevice {
  * @brief Register and initialize HID drivers
  */
 void hid_init();
+
+/**
+ * @brief Register an HID driver
+ * @param driver The driver to register
+ */
+void hid_registerDriver(USBHidDeviceDriver_t *driver);
 
 #endif
