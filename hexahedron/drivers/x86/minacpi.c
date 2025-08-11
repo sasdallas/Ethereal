@@ -194,6 +194,11 @@ smp_info_t *minacpi_parseMADT() {
                 // We found a CPU!
                 acpi_madt_lapic_t *lapic = (acpi_madt_lapic_t*)entry;
                 LOG(DEBUG, "LOCAL APIC - ID 0x%x FLAGS 0x%x PROCESSOR ID 0x%x\n", lapic->apic_id, lapic->flags, lapic->processor_id);
+                
+                // Sanity check for invalid ID (Acer Nitro 5 AN515)
+                if (lapic->apic_id == 0xFF) {
+                    continue;
+                }
 
                 if (cpu_count >= MAX_CPUS) {
                     cpu_count++; // Even if we hit the limit, we can still tell the user at the end.

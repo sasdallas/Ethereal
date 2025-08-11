@@ -203,6 +203,11 @@ smp_info_t *ACPICA_GetSMPInfo() {
                 ACPI_MADT_LOCAL_APIC *LocalApic = (ACPI_MADT_LOCAL_APIC*)Subtable;
                 LOG(DEBUG, "LOCAL APIC - ID 0x%x FLAGS 0x%x PROCESSOR ID 0x%x\n", LocalApic->Id, LocalApic->LapicFlags, LocalApic->ProcessorId);
                 
+                // Sanity check for invalid ID (Acer Nitro 5 AN515)
+                if (LocalApic->Id == 0xFF) {
+                    continue;
+                }
+
                 if (cpu_count >= MAX_CPUS) {
                     cpu_count++; // Even if we have hit the limit, we can still tell the user at the end.
                     break;
