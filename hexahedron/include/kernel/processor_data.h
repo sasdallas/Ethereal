@@ -46,7 +46,6 @@ typedef struct _processor {
 
 #if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
 
-    // Another hack sourced from Toaru
 #ifdef __ARCH_X86_64__
     uintptr_t kstack;                   // (0x40) Kernel-mode stack loaded in TSS
     uintptr_t ustack;                   // (0x48) Usermode stack, saved in SYSCALL entrypoint    
@@ -61,7 +60,7 @@ typedef struct _processor {
     int cpu_family;
 #endif
     
-
+    uint64_t idle_time;                 // Time the processor has spent idling
 } processor_t;
 
 /* External variables defined by architecture */

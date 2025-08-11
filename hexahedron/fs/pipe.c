@@ -36,7 +36,9 @@ ssize_t pipe_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     if (!circbuf_remaining_read(pipe->buf)) return 0;
 
     // Start reading from the circular buffer
-    return circbuf_read(pipe->buf, size, buffer);
+    ssize_t r = circbuf_read(pipe->buf, size, buffer);
+    if (r) fs_alert(pipe->write, VFS_EVENT_WRITE);
+    return r;
 }
 
 /**
@@ -57,7 +59,9 @@ ssize_t pipe_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     }
 
     // Start writing to the circular buffer
-    return circbuf_write(pipe->buf, size, buffer);
+    ssize_t r = circbuf_write(pipe->buf, size, buffer);
+    if (r) fs_alert(pipe->read, VFS_EVENT_READ);
+    return r;
 }
 
 /**

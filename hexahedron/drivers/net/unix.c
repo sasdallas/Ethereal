@@ -155,7 +155,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         // We have the lock and there's content available.
         // Pop the node
         node_t *n = list_popleft(usock->dgram_data);
-        if (!n) return -EINTR;  // ???
+        if (!n) { spinlock_release(usock->packet_buffer->lock); return -EINTR; }  // ???
         unix_datagram_data_t *data = (unix_datagram_data_t *)n->value;
         kfree(n);
         spinlock_release(usock->packet_buffer->lock);
@@ -368,6 +368,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     // Add ourselves to the incoming connections queue
     spinlock_acquire(&serv->incoming_connect_lock);
     list_append(serv->incoming_connections, (void*)creq);
+    fs_alert(serv_sock->node, VFS_EVENT_READ);
     spinlock_release(&serv->incoming_connect_lock);
 
     // Prepare ourselves if needed
@@ -610,6 +611,11 @@ int unix_close(sock_t *sock) {
  */
 int unix_ready(sock_t *sock, int events) {
     unix_sock_t *usock = (unix_sock_t*)sock->driver;
+
+    if (usock->incoming_connections) {
+        int revents = (usock->incoming_connections->length) ? VFS_EVENT_READ : 0;
+        return revents;
+    }
 
     if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
         int revents = (usock->dgram_data->length ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;

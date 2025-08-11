@@ -30,7 +30,7 @@
 
 /* Filesystem nodes */
 fs_node_t *kbd_node = NULL;
-fs_node_t *mouse_node = NULL;
+fs_pipe_t *mouse_pipe = NULL;
 fs_node_t *stdin_node = NULL;
 
 /* Log method */
@@ -59,32 +59,6 @@ static int periphfs_getKeyboardEvent(key_buffer_t *buf, key_event_t *event) {
 
     return 0;
 } 
-
-/**
- * @brief Get the last mouse event (pop from the buffer)
- * @param event Event pointer
- * @returns 0 on success, 1 on failure
- */
-static int periphfs_getMouseEvent(mouse_event_t *event) {
-    // Get buffer
-    mouse_buffer_t *buf = (mouse_buffer_t*)mouse_node->dev;
-
-    // Get the lock
-    spinlock_acquire(&buf->lock);
-    
-    // Increase and reset head
-    buf->head++;
-    if (buf->head > MOUSE_QUEUE_EVENTS) buf->head = 0;
-
-    // Get event
-    *event = buf->event[buf->head];
-
-    // Release the lock
-    spinlock_release(&buf->lock);
-
-    return 0;
-} 
-
 
 /**
  * @brief Keyboard device read
@@ -190,9 +164,9 @@ void periphfs_init() {
     vfs_mount(stdin_node, "/device/stdin");
 
     // Use pipes for the mouse because why not
-    fs_pipe_t *mouse_pipes = pipe_createPipe();
-    vfs_mount(mouse_pipes->read, "/device/mouse");
-    mouse_node = mouse_pipes->write;
+    mouse_pipe = pipe_createPipe();
+    mouse_pipe->read->waiting_nodes = list_create("vfs waiting nodes"); // !!!: SERIOUS HACK
+    vfs_mount(mouse_pipe->read, "/device/mouse");
 }
 
 /**
@@ -260,12 +234,12 @@ int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_
 
     // We MUST flush the buffer before we hit the size! If the pipe contains too many mouse events, we will accidentally put this thread to sleep
     // Since this function is usually called by IRQ handlers when they receieve mouse events, that's not gonna work.
-    while (pipe_remainingRead(mouse_node) > 32 * sizeof(mouse_event_t)) {
+    while (pipe_remainingRead(mouse_pipe->read) > 32 * sizeof(mouse_event_t)) {
         mouse_event_t junk;
-        fs_read(mouse_node, 0, sizeof(mouse_event_t), (uint8_t*)&junk);
+        fs_read(mouse_pipe->read, 0, sizeof(mouse_event_t), (uint8_t*)&junk);
     }
 
-    fs_write(mouse_node, 0, sizeof(mouse_event_t), (uint8_t*)&event);
+    fs_write(mouse_pipe->write, 0, sizeof(mouse_event_t), (uint8_t*)&event);
 
     return 0;
 }

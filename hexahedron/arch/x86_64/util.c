@@ -14,6 +14,7 @@
 #include <kernel/arch/x86_64/arch.h>
 #include <kernel/arch/x86_64/hal.h>
 #include <kernel/arch/x86_64/smp.h>
+#include <kernel/drivers/x86/clock.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/arch/arch.h>
 #include <kernel/processor_data.h>
@@ -275,4 +276,11 @@ void arch_single_step(struct thread *thread, int state) {
 	} else {
 		thread->regs->rflags &= ~(1 << 8);
 	}
+}
+
+/**
+ * @brief Read the current system tick count
+ */
+uint64_t arch_tick_count() {
+	return clock_readTSC();
 }
