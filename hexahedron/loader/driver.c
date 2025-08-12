@@ -387,11 +387,9 @@ int driver_loadConfiguration(fs_node_t *file) {
 
         // Free values
         fs_close(driver_file);
-        json_value_free(filename_obj);
-        json_value_free(priority_obj);
     }
 
-    json_value_free(json_data);
+    // json_value_free(json_data);
     kfree(data);
 
     LOG(INFO, "Successfully loaded %i drivers\n", drivers);

@@ -16,6 +16,7 @@
 
 #include "liballoc.h"
 #include <stdint.h>
+#include <kernel/panic.h>
 
 /**  Durand's Amazing Super Duper Memory functions.  */
 
@@ -658,6 +659,9 @@ void PREFIX(free)(void *ptr)
 								LIBALLOC_MAGIC );
 			FLUSH();
 			#endif
+
+
+			kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Potential overrun (magic %x != %x)\n", min->magic, LIBALLOC_MAGIC);
 		}
 						
 						
@@ -669,6 +673,8 @@ void PREFIX(free)(void *ptr)
 									__builtin_return_address(0) );
 			FLUSH();
 			#endif
+		
+			kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Multiple free detected on pointer %p\n", ptr);
 		}
 		else
 		{
@@ -678,6 +684,8 @@ void PREFIX(free)(void *ptr)
 								__builtin_return_address(0) );
 			FLUSH();
 			#endif
+
+			kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Invalid free detected on pointer %p\n", ptr);
 		}
 			
 		// being lied to...
