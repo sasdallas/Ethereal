@@ -347,6 +347,9 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         
         process->fd_table->references = 1;
         process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
+
+        memset(process->fd_table->fds, 0, sizeof(fd_t) * fd_count);
+
         if (parent) {
             for (size_t i = 0; i < parent->fd_table->total; i++) {
                 if (parent->fd_table->fds[i]) {
@@ -356,26 +359,12 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
                     process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
                     
                     process->fd_table->fds[i]->node = fs_copy(parent->fd_table->fds[i]->node);
-                } else {
-                    process->fd_table->fds[i] = NULL;
                 }
             }
-        } else {
-            memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
         }
     }
 
     if (process_list) list_append(process_list, (void*)process);
-
-// #ifdef __ARCH_I386__
-//     // !!!: very dirty hack
-//     // !!!: resets pages in process->kstack to be global, meaning they won't be invalidated when the TLB flushes (mem_switchDirectory)
-//     // !!!: this is bad. kernel allocations should be global in all directories. they are in i386, but stacks cant be handled by its current system.
-//     for (uintptr_t i = (process->kstack - PROCESS_KSTACK_SIZE); i < process->kstack; i += PAGE_SIZE) {
-//         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
-//         if (pg) pg->bits.global = 1;
-//     }
-// #endif
 
     return process;
 }

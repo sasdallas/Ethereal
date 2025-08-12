@@ -18,7 +18,7 @@
 #include <stdio.h>
 
 void *dlopen(const char *filename, int flags) {
-    fprintf(stderr, "dlopen: stub\n");
+    fprintf(stderr, "dlopen: %s\n", filename);
     abort();
 }
 
