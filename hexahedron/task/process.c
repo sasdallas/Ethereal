@@ -348,7 +348,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->fd_table->references = 1;
         process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
 
-        memset(process->fd_table->fds, 0, sizeof(fd_t) * fd_count);
+        memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
 
         if (parent) {
             for (size_t i = 0; i < parent->fd_table->total; i++) {
@@ -807,7 +807,7 @@ void process_exit(process_t *process, int status_code) {
     // If our parent is waiting, wake them up
     if (process->parent) {
         if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
-        if (process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
+        if (process->parent && process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
             // TODO: Locking?
             foreach(thr_node, process->parent->waitpid_queue) {
                 thread_t *thr = (thread_t*)thr_node->value;
