@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <graphics/gfx.h>
 #include <sys/utsname.h>
+#include <ethereal/version.h>
 
 int main(int argc, char *argv[]) {
     wid_t w = celestial_createWindow(0, 350, 250);
@@ -44,12 +45,15 @@ int main(int argc, char *argv[]) {
     struct utsname name;
     uname(&name);
 
-    // TODO: Way to get Ethereal version. Perhaps command, perhaps otherwise
+    const ethereal_version_t *ver = ethereal_getVersion();
     char kernel_build_str[256] = { 0 };
-    snprintf(kernel_build_str, 256, "Version 1.1.0 (Kernel Build %s)", name.release);
+    snprintf(kernel_build_str, 256, "Version %d.%d.%d (Kernel Build %s)", ver->version_major, ver->version_minor, ver->version_lower, name.release);
+
+    char ethereal_build_str[256] = { 0 };
+    snprintf(ethereal_build_str, 256, "Ethereal Operating System (%s)", ver->codename);
 
     // Draw info lines
-    gfx_renderString(ctx, f, "Ethereal Operating System", 10, 100, GFX_RGB(0,0,0));
+    gfx_renderString(ctx, f, ethereal_build_str, 10, 100, GFX_RGB(0,0,0));
     gfx_renderString(ctx, f, kernel_build_str, 10, 120, GFX_RGB(0,0,0));
     gfx_renderString(ctx, f, "Copyright Samuel Stuart, 2024 - 2025", 10, 140, GFX_RGB(0,0,0));
     gfx_renderString(ctx, f, "Ethereal is licensed under the BSD 3-clause license.", 10, 180, GFX_RGB(0, 0, 0));
