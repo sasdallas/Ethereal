@@ -84,6 +84,7 @@ wchar_t          *wmemmove(wchar_t *, const wchar_t *, size_t);
 wchar_t          *wmemset(wchar_t *, wchar_t, size_t);
 int               wprintf(const wchar_t *, ...);
 int               wscanf(const wchar_t *, ...);
+size_t            mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps);
 
 
 #endif

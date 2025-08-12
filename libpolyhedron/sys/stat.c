@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <errno.h>
+#include <fcntl.h>
 
 DEFINE_SYSCALL2(stat, SYS_STAT, const char*, struct stat*);
 DEFINE_SYSCALL2(fstat, SYS_FSTAT, int, struct stat*);
@@ -35,4 +36,8 @@ int lstat(const char *pathname, struct stat *statbuf) {
 int mknod(const char *path, mode_t mode, dev_t dev) {
     errno = ENOSYS;
     return -1;   
+}
+
+int creat(const char *path, mode_t mode) {
+    return open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
 }

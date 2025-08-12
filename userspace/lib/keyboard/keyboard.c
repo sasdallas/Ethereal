@@ -47,7 +47,7 @@ static key_scancode_t kbd_us_scancodes_upper[128] = {
 	0, SCANCODE_ESCAPE,
 	'!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
 	'_', '+', '\b', '\t',
-	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,
+	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', SCANCODE_LEFT_CTRL,
 	'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '\"', '~', SCANCODE_LEFT_SHIFT,
 	'|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', SCANCODE_RIGHT_SHIFT,
 	'*', 0, ' ', 0,
