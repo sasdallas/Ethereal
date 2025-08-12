@@ -172,16 +172,13 @@ int sleep_untilNever(struct thread *thread) {
     thread->sleep = sleep;
 
     // Manually create node..
-    node_t *node = kmalloc(sizeof(node_t));
+    node_t *node = kzalloc(sizeof(node_t));
     node->value = (void*)sleep;
+    sleep->node = node;
 
     // Mark thread as sleeping. If process_yield finds this thread to be trying to reschedule,
     // it will disallow it and just switch away
     __sync_or_and_fetch(&thread->status, THREAD_STATUS_SLEEPING);
-
-    spinlock_acquire(&sleep_queue_lock);
-    list_append_node(sleep_queue, node);
-    spinlock_release(&sleep_queue_lock);
 
     return 0;
 }
@@ -211,13 +208,13 @@ int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long 
     sleep->seconds = new_seconds;
     sleep->subseconds = new_subseconds;
 
-    // Manually create node..
-    node_t *node = kmalloc(sizeof(node_t));
-    node->value = (void*)sleep;
+    // Setup context
+    sleep->context = __builtin_return_address(0);
 
-    spinlock_acquire(&sleep_queue_lock);
-    list_append_node(sleep_queue, node);
-    spinlock_release(&sleep_queue_lock);
+    // Manually create node..
+    node_t *node = kzalloc(sizeof(node_t));
+    node->value = (void*)sleep;
+    sleep->node = node;
 
     // Mark thread as sleeping. If process_yield finds this thread to be trying to reschedule,
     // it will disallow it and just switch away
@@ -249,12 +246,10 @@ int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, voi
     sleep->context = context;
 
     // Manually create node..
-    node_t *node = kmalloc(sizeof(node_t));
+    node_t *node = kzalloc(sizeof(node_t));
     node->value = (void*)sleep;
 
-    spinlock_acquire(&sleep_queue_lock);
-    list_append_node(sleep_queue, node);
-    spinlock_release(&sleep_queue_lock);
+    sleep->node = node;
 
     // Mark thread as sleeping. If process_yield finds this thread to be trying to reschedule,
     // it will disallow it and just switch away
@@ -288,8 +283,17 @@ int sleep_wakeup(struct thread *thread) {
  * @returns A sleep wakeup reason
  */
 int sleep_enter() {
-    // TODO: Maybe don't yield if thread is already supposed to wakeup? This would mean sleep_callback can't NULL it
+    if (!current_cpu->current_thread->sleep) {
+        LOG(WARN, "Thread tried to sleep without a node\n");
+        return WAKEUP_ANOTHER_THREAD;
+    }
 
+    spinlock_acquire(&sleep_queue_lock);
+    list_append_node(sleep_queue, current_cpu->current_thread->sleep->node);
+    spinlock_release(&sleep_queue_lock);
+
+
+    // TODO: Maybe don't yield if thread is already supposed to wakeup? This would mean sleep_callback can't NULL it
     process_yield(0);
     int state = current_cpu->current_thread->sleep->sleep_state;
     kfree(current_cpu->current_thread->sleep);
@@ -324,6 +328,8 @@ int sleep_inQueue(sleep_queue_t *queue) {
 
     spinlock_acquire(&queue->lock);
     sleep_untilNever(current_cpu->current_thread);
+    
+    current_cpu->current_thread->sleep->context = __builtin_return_address(0);
     list_append(&queue->queue, (void*)current_cpu->current_thread);
     spinlock_release(&queue->lock);
 
@@ -347,9 +353,10 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     while (node) {
         thread_t *thr = (thread_t*)node->value;
         if (thr) {
+            assert(thr->sleep);
+            assert(thr->sleep->sleep_state < WAKEUP_SIGNAL);
             sleep_wakeup(thr);
         }
-
 
         // Increase
         awoken++;

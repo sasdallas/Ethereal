@@ -64,12 +64,6 @@ static int kernel_panic_putchar(void *user, char ch) {
 }
 
 /**
- * @brief Send panic packet to debugger
- */
-void kernel_panic_sendPacket(uint32_t bugcode, char *module, char *additional) {
-}
-
-/**
  * @brief Immediately panic and stop the kernel.
  * 
  * @param bugcode Takes in a kernel bugcode, e.g. KERNEL_DEBUG_TRAP
@@ -110,18 +104,11 @@ void kernel_panic_extended(uint32_t bugcode, char *module, char *format, ...) {
     vsnprintf(additional, 512, format, ap);
     va_end(ap);
 
-   
-    // Notify debugger
-    kernel_panic_sendPacket(bugcode, module, additional);
-
     // Print out a generic message
     dprintf(NOHEADER, COLOR_CODE_RED        "\nAdditional information: %s", kernel_panic_messages[bugcode]);
     printf(COLOR_CODE_RED                   "\nAdditional information: %s", kernel_panic_messages[bugcode]);
 
-
-
     // Finish the panic
-    if (debugger_isConnected()) BREAKPOINT();
     arch_panic_finalize();
 }
 
@@ -158,9 +145,6 @@ void kernel_panic(uint32_t bugcode, char *module) {
     printf(COLOR_CODE_RED   "*** STOP: cpu%i: %s (module \"%s\")\n", arch_current_cpu(), kernel_bugcode_strings[bugcode], module);
     printf(COLOR_CODE_RED   "*** %s\n", kernel_panic_messages[bugcode]);
 
-    // Send debugger packet to say we panicked
-    kernel_panic_sendPacket(bugcode, module, NULL);
-
     // Finish the panic
     if (debugger_isConnected()) BREAKPOINT();
     arch_panic_finalize();
@@ -195,8 +179,6 @@ void kernel_panic_prepare(uint32_t bugcode) {
         dprintf(NOHEADER, COLOR_CODE_RED_BOLD   "*** STOP: cpu%i: %s\n", arch_current_cpu(), kernel_bugcode_strings[bugcode]);
         printf(COLOR_CODE_RED   "*** STOP: cpu%i: %s\n", arch_current_cpu(), kernel_bugcode_strings[bugcode]);
     }
-
-    kernel_panic_sendPacket(bugcode, NULL, NULL);
 }
 
 /**
