@@ -13,7 +13,7 @@ SOURCE_DIRECTORIES = stdlib stdio string time net
 # Include the architecture Make configuration to allow it to add to DIRECTORIES
 include arch/$(BUILD_ARCH)/make.config
 
-LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread pwd termios semaphore
+LIBC_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES) errno unistd libc dirent mmap signal locale libgen socket poll sys ethereal wchar pthread pwd termios semaphore netdb
 LIBK_SOURCE_DIRECTORIES = $(SOURCE_DIRECTORIES)
 
 # Construct our output directories
