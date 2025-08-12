@@ -63,10 +63,13 @@ void sleep_callback(uint64_t ticks) {
     unsigned long seconds, subseconds;
     clock_getCurrentTime(&seconds, &subseconds);
     
-    spinlock_acquire(&sleep_queue_lock);
+    if (!spinlock_tryAcquire(&sleep_queue_lock)) {
+        return;
+    }
+
+
     node_t *node = sleep_queue->head;
     while (node) {
-        if (!node) continue;
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;
         if (!sleep || !sleep->thread) {
             LOG(WARN, "Corrupt node in sleep queue %p (sleep: %p)\n", node, sleep);

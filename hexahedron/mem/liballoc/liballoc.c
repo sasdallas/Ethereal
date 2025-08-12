@@ -107,6 +107,7 @@ struct	liballoc_minor
 	struct liballoc_minor *prev;		///< Linked list information.
 	struct liballoc_minor *next;		///< Linked list information.
 	struct liballoc_major *block;		///< The owning block. A pointer to the major structure.
+	void *func;							///< Function in use
 	unsigned int magic;					///< A magic number to idenfity correctness.
 	unsigned int size; 					///< The size of the memory allocated. Could be 1 byte or more.
 	unsigned int req_size;				///< The size of memory requested.
@@ -707,6 +708,7 @@ void PREFIX(free)(void *ptr)
 
 		maj->usage -= (min->size + sizeof( struct liballoc_minor ));
 		min->magic  = LIBALLOC_DEAD;		// No mojo.
+		min->func = __builtin_return_address(0);
 
 		if ( min->next != NULL ) min->next->prev = min->prev;
 		if ( min->prev != NULL ) min->prev->next = min->next;
@@ -812,6 +814,8 @@ void*   PREFIX(realloc)(void *p, size_t size)
 									LIBALLOC_MAGIC );
 				FLUSH();
 				#endif
+
+				kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Possible overrun detected on pointer %p (magic %x != %x)\n", p, min->magic, LIBALLOC_MAGIC);
 			}
 							
 							
@@ -823,6 +827,8 @@ void*   PREFIX(realloc)(void *p, size_t size)
 										__builtin_return_address(0) );
 				FLUSH();
 				#endif
+
+				kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Multiple free detected on pointer %p (was freed by %p)\n", p, min->func);
 			}
 			else
 			{
@@ -832,6 +838,8 @@ void*   PREFIX(realloc)(void *p, size_t size)
 									__builtin_return_address(0) );
 				FLUSH();
 				#endif
+
+				kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "liballoc", "*** Invalid free detected on pointer %p\n", p);
 			}
 			
 			// being lied to...

@@ -62,6 +62,25 @@ void spinlock_acquire(spinlock_t *spinlock) {
 }
 
 /**
+ * @brief Try to lock a spinlock
+ * @param spinlock The spinlock to lock
+ * @returns 1 on lock success
+ */
+int spinlock_tryAcquire(spinlock_t *spinlock) {
+    int state = hal_getInterruptState();
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
+    if (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
+        hal_setInterruptState(state);
+        return 0;
+    }
+
+    spinlock->state = state;
+    spinlock->cpu = arch_current_cpu();
+    return 1;
+}
+
+/**
  * @brief Release a spinlock
  */
 void spinlock_release(spinlock_t *spinlock) {

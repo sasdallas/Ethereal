@@ -216,12 +216,12 @@ log_putchar_method_t debug_getOutput() {
  * @brief Mount the debug node onto the VFS
  */
 void debug_mountNode() {
-    // /* Allocate the debug buffer */
-    // if (!kargs_has("--no-store-debug")) {
-    //     debug_buffer = kmalloc(PAGE_SIZE);
-    //     debug_buffer_size = PAGE_SIZE;
-    //     debug_buffer_index = 0;
-    // }
+    /* Allocate the debug buffer */
+    if (!kargs_has("--no-store-debug")) {
+        debug_buffer = kmalloc(PAGE_SIZE);
+        debug_buffer_size = PAGE_SIZE;
+        debug_buffer_index = 0;
+    }
 
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
 

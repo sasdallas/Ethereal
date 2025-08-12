@@ -51,6 +51,13 @@ void spinlock_destroy(spinlock_t *spinlock);
 void spinlock_acquire(spinlock_t *spinlock);
 
 /**
+ * @brief Try to lock a spinlock
+ * @param spinlock The spinlock to lock
+ * @returns 1 on lock success
+ */
+int spinlock_tryAcquire(spinlock_t *spinlock);
+
+/**
  * @brief Release a spinlock
  */
 void spinlock_release(spinlock_t *spinlock);
