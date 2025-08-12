@@ -16,6 +16,8 @@ OBJ_DIR = $(OBJ_OUTPUT_DIRECTORY)/userspace/$(ACTUAL_DIR)
 C_SRCS = $(shell find . -name "*.c" -printf '%f ')
 C_OUTPUTS = $(patsubst %.c, $(OBJ_DIR)/%, $(C_SRCS))
 
+# Additional libc
+LDFLAGS += -lversion
 
 MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)

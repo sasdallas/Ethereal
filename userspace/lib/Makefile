@@ -2,7 +2,7 @@
 include ./make.config
 
 # List of libraries to compile
-LIBS = graphics celestial keyboard ansi pthread widget
+LIBS = graphics celestial keyboard ansi pthread widget version
 
 LIBS_TARGETS_INSTALL := $(patsubst %, install-%, $(LIBS))
 LIBS_TARGETS_CLEAN := $(patsubst %, clean-%, $(LIBS))
