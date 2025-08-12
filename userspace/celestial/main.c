@@ -89,16 +89,17 @@ void celestial_main() {
         // Process all socket events
         socket_keys = hashmap_keys(WM_SW_MAP);
         
-        
         foreach(kn, socket_keys) {
             socket_handle((int)(uintptr_t)kn->value);
         }
+
+        list_destroy(socket_keys, false);
 
         // Redraw only if there were changes
         celestial_redraw();
 
         // Control frame rate to reduce CPU usage
-        usleep(16667); // ~60 FPS (1000000 microseconds / 60)
+        // usleep(16667); // ~60 FPS (1000000 microseconds / 60)
     }
 }
 

@@ -628,10 +628,21 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
 
     // Page fault, get the address
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
-    
+        
     // Print it out
-    LOG(NOHEADER, "*** ISR detected exception: Page fault at address 0x%016llX\n\n", page_fault_addr);
-    printf("*** Page fault at address 0x%016llX detected in kernel.\n", page_fault_addr);
+    LOG(NOHEADER, COLOR_CODE_RED "*** Page fault at address " COLOR_CODE_RED_BOLD "0x%016llX\n" COLOR_CODE_RED, page_fault_addr);
+
+    // Determine fault cause
+    int present = (regs->err_code & (1 << 0));
+    int write = (regs->err_code & (1 << 1));
+    int rsvd = (regs->err_code & (1 << 3));
+    int instruction = (regs->err_code & (1 << 4));
+
+    LOG(NOHEADER, "*** Memory access type: %s%s%s%s\n\n", 
+                            (present) ? "PRESENT_IN_MEMORY " : "NOT_PRESENT_IN_MEMORY ",
+                            (write) ? "WRITE " : "READ ",
+                            (rsvd) ? "RSVD_BIT_SET " : "",
+                            (instruction) ? "INSTRUCTION_FETCH " : "");
 
     LOG(NOHEADER, "\033[1;31mFAULT REGISTERS:\n\033[0;31m");
 
