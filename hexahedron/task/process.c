@@ -23,6 +23,7 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <sys/ethereal/auxv.h>
+#include <kernel/mem/pmm.h>
 
 #include <structs/tree.h>
 #include <structs/list.h>
@@ -799,7 +800,7 @@ void process_exit(process_t *process, int status_code) {
         foreach (cnode, process->node->children) {
             tree_node_t *tnode = (tree_node_t*)cnode->value;
             process_t *child = (process_t*)tnode->value;
-            child->parent = NULL;
+            child->parent = (process_t*)process_tree->root->value;
         }
     }
 
@@ -817,14 +818,14 @@ void process_exit(process_t *process, int status_code) {
                 thread_t *thr = (thread_t*)thr_node->value;
                 sleep_wakeup(thr);
             }
+
+            // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
+            process_switchNextThread(); // !!!: Hopefully that works and they free us..
         } 
 
-
-        // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-        process_switchNextThread(); // !!!: Hopefully that works and they free us..
     } 
 
-    // Put ourselves in the wait queue
+    // // Put ourselves in the wait queue
     // spinlock_acquire(&reap_queue_lock);
     // LOG(WARN, "Assuming this process is orphaned\n");
     // list_append(reap_queue, (void*)process);
