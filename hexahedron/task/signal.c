@@ -80,7 +80,7 @@ int signal_sendThread(struct thread *thr, int signal) {
     }
 
     // Is this signal blocked?
-    if (SIGNAL_IS_BLOCKED(thr, signal)) {
+    if (SIGNAL_IS_BLOCKED(thr, signal) && THREAD_SIGNAL(thr, signal).handler == SIGNAL_ACTION_IGNORE) {
         return 0;
     }
 
