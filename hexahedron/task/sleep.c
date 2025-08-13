@@ -384,6 +384,7 @@ int sleep_exit(thread_t *thr) {
     spinlock_acquire(&sleep_queue_lock);
     list_delete(sleep_queue, list_find(sleep_queue, thr->sleep));
     kfree(thr->sleep);
+    thr->sleep = NULL;
     spinlock_release(&sleep_queue_lock);
     return 0;
 }

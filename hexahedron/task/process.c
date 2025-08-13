@@ -289,6 +289,8 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->gid = parent->gid;
         process->euid = parent->euid;
         process->egid = parent->egid;
+        process->pgid = parent->pgid;
+        process->sid = parent->sid;
     } else {
         process->gid = process->uid = 0;
     }
@@ -546,6 +548,8 @@ void process_reaper(void *ctx) {
 process_t *process_spawnInit() {
     // Create a new process
     process_t *init = process_createStructure(NULL, "init", PROCESS_STARTED | PROCESS_RUNNING, PRIORITY_HIGH);
+    init->sid = 1;
+    init->pgid = 1;
 
     // !!!: hack
     process_freePID(init->pid);
@@ -813,19 +817,21 @@ void process_exit(process_t *process, int status_code) {
                 thread_t *thr = (thread_t*)thr_node->value;
                 sleep_wakeup(thr);
             }
-
-            // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-            process_switchNextThread(); // !!!: Hopefully that works and they free us..
         } 
+
+
+        // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
+        process_switchNextThread(); // !!!: Hopefully that works and they free us..
     } 
 
     // Put ourselves in the wait queue
-    spinlock_acquire(&reap_queue_lock);
-    list_append(reap_queue, (void*)process);
+    // spinlock_acquire(&reap_queue_lock);
+    // LOG(WARN, "Assuming this process is orphaned\n");
+    // list_append(reap_queue, (void*)process);
 
-    // Wakeup the reaper thread
-    sleep_wakeup(reaper_proc->main_thread);
-    spinlock_release(&reap_queue_lock);
+    // // Wakeup the reaper thread
+    // sleep_wakeup(reaper_proc->main_thread);
+    // spinlock_release(&reap_queue_lock);
 
     // To the next process we go
     if (process == current_cpu->current_process) process_switchNextThread();

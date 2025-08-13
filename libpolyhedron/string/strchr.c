@@ -16,6 +16,8 @@
 char *strchr(const char *str, int character) {
     char *ptr = (char*)str;
 
+    if (!character) return (char*)(ptr + strlen(ptr));
+
     while (*ptr) {
         if (*ptr == character) return ptr;
         ptr++;

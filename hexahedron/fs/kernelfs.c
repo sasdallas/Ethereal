@@ -58,15 +58,18 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
             node->length = snprintf((char*)tmp_buffer, 512,
                     "ProcessName:%s\n"
                     "ProcessPid:%d\n"
-                    "SbrkHeapBase:%p-%p\n"
                     "Uid:%d\n"
                     "Gid:%d\n"
+                    "Euid:%d\n"
+                    "Egid:%d\n"
+                    "Sid:%d\n"
+                    "Pgid:%d\n"
                     "KernelStack:%p\n"
                     "Parent:%s\n",
                         proc->name,
                         proc->pid,
-                        proc->heap_base, proc->heap,
-                        proc->uid, proc->gid,
+                        proc->uid, proc->gid, proc->euid, proc->egid,
+                        proc->sid, proc->pgid,
                         proc->kstack,
                         (proc->parent ? proc->parent->name : "N/A"));
         
@@ -77,7 +80,7 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
             for (size_t i = 0; i < proc->fd_table->total; i++) {
                 fd_t *fd = proc->fd_table->fds[i];
                 if (fd) {
-                    char tmp_buffer2[512];
+                    char tmp_buffer2[512] = { 0 };
                     node->length += snprintf(tmp_buffer2, 512-strlen(tmp_buffer),
                         "FileDescriptor:%d\n"
                         "Name:%s\n",

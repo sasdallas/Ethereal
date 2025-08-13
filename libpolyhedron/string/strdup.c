@@ -20,3 +20,14 @@ char *strdup(const char *str) {
     memcpy(new_str, str, strlen(str) + 1);
     return new_str;
 }
+
+char *strndup(const char *str, size_t size) {
+    size_t str_length = strlen(str);
+    size_t actual_len = (str_length > size) ? size : str_length;
+
+    char *p = malloc(actual_len+1);
+    memcpy(p, str, actual_len);
+    p[actual_len] = 0;
+
+    return p;
+}
