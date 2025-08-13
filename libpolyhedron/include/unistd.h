@@ -136,6 +136,7 @@ int dup2(int oldfd, int newfd);
 int dup(int fd);
 int getopt(int argc, char * const argv[], const char * optstring);
 int pipe(int fildes[2]);
+int pipe2(int fildes[2], int flags);
 int mkdir(const char *pathname, mode_t mode);
 int remove(const char *pathname);
 int rename(const char *oldpath, const char *newpath);

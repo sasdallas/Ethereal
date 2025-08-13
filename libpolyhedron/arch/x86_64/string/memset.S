@@ -13,9 +13,10 @@
 
 .global memset
 memset:
-    movq %rdi, %rax     // save RDI in return register
+    movq %rdi, %r8      // save RDI in r8 register so it doesnt get clobbered
     movb %sil, %al      // sil = lower bits of RSI
     movq %rdx, %rcx     // rdx = size
 
     rep stosb
+    movq %r8, %rax
     ret

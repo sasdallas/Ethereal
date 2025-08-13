@@ -20,3 +20,7 @@ DEFINE_SYSCALL1(pipe, SYS_PIPE, int*);
 int pipe(int fildes[2]) {
     __sets_errno(__syscall_pipe(fildes));
 }
+
+int pipe2(int fildes[2], int flags) {
+    return pipe(fildes);
+}
