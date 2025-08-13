@@ -60,6 +60,7 @@ typedef unsigned long u_int32_t;
 typedef unsigned long long u_int64_t;
 
 typedef int clockid_t;
+typedef void *timer_t;
 
 #endif
 

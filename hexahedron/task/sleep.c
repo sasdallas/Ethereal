@@ -160,7 +160,7 @@ int sleep_untilNever(struct thread *thread) {
     if (!thread) return 1;
 
     if (thread->sleep) {
-        LOG(ERR, "This thread sleeping already..?\n");
+        LOG(ERR, "This thread is already sleeping. State: %s\n", sleep_wakeupToString(thread->sleep->sleep_state));
         return 1;
     }
 
@@ -355,7 +355,7 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     node_t *node = list_popleft(&queue->queue);
     while (node) {
         thread_t *thr = (thread_t*)node->value;
-        if (thr) {
+        if (thr && thr->sleep) {
             assert(thr->sleep);
             assert(thr->sleep->sleep_state < WAKEUP_SIGNAL);
             sleep_wakeup(thr);

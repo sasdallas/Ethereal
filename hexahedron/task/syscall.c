@@ -1032,9 +1032,9 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
 }
 
 long sys_sigpending(sigset_t *set) {
-    LOG(ERR, "sigpending is unimplemented\n");
-    return -ENOSYS;
-
+    SYSCALL_VALIDATE_PTR(set);
+    *set = current_cpu->current_thread->pending_signals;
+    return 0;
 }
 
 long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
