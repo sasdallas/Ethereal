@@ -50,11 +50,11 @@ static syscall_func_t syscall_table[] = {
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
     [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
-    [SYS_READLINK]          = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_READLINK]          = (syscall_func_t)(uintptr_t)sys_readlink,
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
-    [SYS_CHMOD]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
-    [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
-    [SYS_UNLINK]            = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_CHMOD]             = (syscall_func_t)(uintptr_t)sys_chmod,
+    [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)sys_fcntl,
+    [SYS_UNLINK]            = (syscall_func_t)(uintptr_t)sys_unlink,
     [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
@@ -201,17 +201,11 @@ void syscall_handle(syscall_t *syscall) {
     return;
 }
 
-/**
- * @brief Exit system call
- */
 void sys_exit(int status) {
     LOG(DEBUG, "sys_exit %d\n", status);
     process_exit(NULL, status);
 }
 
-/**
- * @brief Open system call
- */
 int sys_open(const char *pathname, int flags, mode_t mode) {
     // Validate pointer
     SYSCALL_VALIDATE_PTR(pathname);
@@ -263,9 +257,6 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
     return fd->fd_number;
 }
 
-/**
- * @brief Read system call
- */
 ssize_t sys_read(int fd, void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
@@ -282,9 +273,6 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
     return i;
 }
 
-/**
- * @brief Write system calll
- */
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
@@ -301,9 +289,6 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     return i;
 }
 
-/**
- * @brief Close system call
- */
 int sys_close(int fd) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
@@ -349,9 +334,6 @@ static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
     statbuf->st_ctime = f->ctime;
 }
 
-/**
- * @brief Stat system call
- */
 long sys_stat(const char *pathname, struct stat *statbuf) {
     SYSCALL_VALIDATE_PTR(pathname);
     SYSCALL_VALIDATE_PTR(statbuf);
@@ -370,9 +352,6 @@ long sys_stat(const char *pathname, struct stat *statbuf) {
     return 0;
 }
 
-/**
- * @brief fstat system call
- */
 long sys_fstat(int fd, struct stat *statbuf) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
     SYSCALL_VALIDATE_PTR(statbuf);
@@ -729,8 +708,10 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
     if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
 
+    sigset_t old_set = current_cpu->current_thread->blocked_signals;
+
     if (ctx->sigmask) {
-        LOG(WARN, "sigmask is unsupported in pselect\n");
+        current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
     }
 
     // Create the return sets
@@ -784,6 +765,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     // Did we get anything?
     if (ret) {
         sleep_exit(current_cpu->current_thread);
+        (current_cpu->current_thread->blocked_signals) = old_set;
         return ret;
     }
 
@@ -804,8 +786,15 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     // Enter sleep
     int w = sleep_enter();
-    if (w == WAKEUP_SIGNAL) return -EINTR; // TODO: SA_RESTART
-    if (w == WAKEUP_TIME) return 0;
+    if (w == WAKEUP_SIGNAL) {
+        (current_cpu->current_thread->blocked_signals) = old_set;
+        return -EINTR; // TODO: SA_RESTART
+    }
+
+    if (w == WAKEUP_TIME) {
+        (current_cpu->current_thread->blocked_signals) = old_set;
+        return 0;
+    }
 
 
 
@@ -845,8 +834,14 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
     if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
 
+    (current_cpu->current_thread->blocked_signals) = old_set;
+
     // Ready!
     return ret; 
+}
+
+ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
+    SYSCALL_UNIMPLEMENTED("sys_readlink");
 }
 
 long sys_access(const char *path, int amode) {
@@ -864,6 +859,20 @@ long sys_access(const char *path, int amode) {
     fs_close(n);
 
     return 0;
+}
+
+long sys_chmod(const char *path, mode_t mode) {
+    SYSCALL_UNIMPLEMENTED("sys_chmod");
+}
+
+long sys_fcntl(int fd, int cmd, int extra) {
+    SYSCALL_UNIMPLEMENTED("sys_fcntl");
+}
+
+long sys_unlink(const char *pathname) {
+    SYSCALL_VALIDATE_PTR(pathname);
+    LOG(INFO, "sys_unlink: %s: UNIMPLEMENTED\n", pathname);
+    return -EROFS;
 }
 
 long sys_ftruncate(int fd, off_t length) {
