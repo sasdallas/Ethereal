@@ -481,7 +481,6 @@ void process_destroy(process_t *proc) {
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
     fd_destroyTable(proc);
     if (proc->vas) vas_destroy(proc->vas);
-    // mem_free(proc->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_DEFAULT);
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
     if (proc->node) {
@@ -849,11 +848,6 @@ pid_t process_fork() {
 
     // Create a new child process thread
     child->main_thread = thread_create(child, child->dir, (uintptr_t)NULL, THREAD_FLAG_CHILD);
-
-    // HACK:    This is one of the grossest hacks in my opinion. This trick is yet another one stolen from ToaruOS.
-    //          I would love to call arch_save_context() for the child thread and just return but unfortunately since we're still in
-    //          execution context for the current thread it would overwrite the stack and cause problems.
-    //          There's definitely a good way to fix this but I'm really tired right now so I'm gonna use this
     
     // Configure context of child thread
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
