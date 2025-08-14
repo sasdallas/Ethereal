@@ -18,6 +18,7 @@
 #include <kernel/fs/drivefs.h>
 #include <kernel/debug.h>
 #include <string.h>
+#include <arpa/inet.h>
 
 // HAL
 #ifdef __ARCH_I386__
@@ -408,10 +409,6 @@ int ahci_readCapacity(ahci_port_t *port, uint32_t *lba, uint32_t *block_size) {
 
     LOG(DEBUG, "%04x %04x %04x %04x\n", capacity[0], capacity[1], capacity[2], capacity[3]);
 
-    // Get LBA
-    // htonl source: https://github.com/klange/toaruos/blob/master/modules/ata.c#L686
-    #define htonl(l)  ( (((l) & 0xFF) << 24) | (((l) & 0xFF00) << 8) | (((l) & 0xFF0000) >> 8) | (((l) & 0xFF000000) >> 24))
-	
     // Convert LBA and block size
     uint32_t _lba, _block_size;
 	memcpy(&_lba, &capacity[0], sizeof(uint32_t));

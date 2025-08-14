@@ -34,6 +34,8 @@
 #include <kernel/arch/x86_64/registers.h>
 #endif
 
+#include <arpa/inet.h>
+
 /* PCI IDE controller */
 pci_device_t *ide_pci = NULL; // Constructed via PCI_ADDR
 
@@ -649,9 +651,6 @@ void atapi_device_init(ide_device_t *device) {
     uint16_t capacity[4];
     for (int i = 0; i < 4; i++) capacity[i] = inportw(channels[device->channel].io_base);
 
-    // htonl source: https://github.com/klange/toaruos/blob/master/modules/ata.c#L686
-    #define htonl(l)  ( (((l) & 0xFF) << 24) | (((l) & 0xFF00) << 8) | (((l) & 0xFF0000) >> 8) | (((l) & 0xFF000000) >> 24))
-	
     // Convert LBA and block size
     uint32_t lba, block_size;
 	memcpy(&lba, &capacity[0], sizeof(uint32_t));

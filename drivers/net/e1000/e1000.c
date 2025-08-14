@@ -505,12 +505,6 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     e1000_reset(nic);
     LOG(DEBUG, "Reset the NIC successfully\n");
 
-    // Configure flow control (ToaruOS)
-    E1000_SENDCMD(0x28, 0x2c8001);
-    E1000_SENDCMD(0x2c, 0x100);
-    E1000_SENDCMD(0x30, 0x8808);
-    E1000_SENDCMD(0x170, 0xFFFF);
-
     // Link up
     e1000_setLinkUp(nic);
     LOG(DEBUG, "Link up on NIC (status %d)\n", nic->link);
