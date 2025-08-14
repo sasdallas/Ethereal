@@ -1,13 +1,16 @@
 /**
  * @file libpolyhedron/stdio/printf.c
- * @brief printf() implementation
+ * @brief printf and friends
  * 
- * @todo This file needs a cleanup and rewrite. I didn't make it!!
  * 
  * @copyright
- * This file is part of ToaruOS and is released under the terms
- * of the NCSA / University of Illinois License - see LICENSE.md
- * Copyright (C) 2011-2021 K. Lange
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * It is released under the terms of the BSD 3-clause license.
+ * Please see the LICENSE file in the main repository for more details.
+ * 
+ * Copyright (C) 2025 Samuel Stuart
+ * 
+ * @note xvasprintf, vsnprintf, etc. designs inspired from ToaruOS
  */
 
 #include <stdint.h>
@@ -22,124 +25,130 @@
 /* Temporary */
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+/* Output macro */
+#define OUT(c) ({ callback(user, (c)); written++; })
 
+/* Hexadecimal character array */
+static char __hex_char_arr[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 
-#define OUT(c) do { callback(userData, (c)); written++; } while (0)
-static size_t print_dec(unsigned long long value, unsigned int width, int (*callback)(void*,char), void * userData, int fill_zero, int align_right, int precision) {
+/**
+ * @brief Print a decimal number
+ * @param callback xvasprintf callback
+ * @param user Data for xvasprintf callback
+ * @param value The value pulled from the printf system
+ * @param width Width of the number
+ * @param padding Padding to use
+ * @param justification 0 right, 1 left
+ * @param precision Precision
+ */
+static size_t print_dec(int (*callback)(void*,char), void *user, uint64_t value, unsigned int width,  char padding, int justification, int precision) {
 	size_t written = 0;
-	unsigned long long n_width = 1;
-	unsigned long long i = 9;
 	if (precision == -1) precision = 1;
 
-	if (value == 0) {
-		n_width = 0;
-	} else {
-		unsigned long long val = value;
-		while (val >= 10UL) {
-			val /= 10UL;
-			n_width++;
+	// We have a total width but we need to calculate integer width
+	size_t int_width = 1; // Default to 1 for the case where value is 0
+	uint64_t tmp = value;
+	while (tmp >= 10) {
+		tmp /= 10;
+		int_width++;
+	}
+
+	// Cool, should we left-pad?
+	if (width && !justification) {
+		// Yes, do the padding.
+		for (int i = 0; i < (int)(width - int_width); i++) OUT(padding);
+	}
+
+	// Do we need to pad with leading zeoes?
+	if (int_width < (size_t)precision) {
+		for (size_t i = int_width; i < (size_t)precision; i++) {
+			OUT('0');
 		}
 	}
 
-	if (n_width < (unsigned long long)precision) n_width = precision;
+	// Now we can print out the integer
+	// Because of the way we do this we have to reverse the buffer as well
+	char rev_buf[int_width];
 
-	int printed = 0;
-	if (align_right) {
-		while (n_width + printed < width) {
-			OUT(fill_zero ? '0' : ' ');
-			printed += 1;
-		}
+	unsigned idx = 0;
+	while (idx < int_width) {
+		unsigned char ch = ((char)((value % 10)) + '0');
+		rev_buf[int_width-idx-1] = ch;
+		value /= 10;
+		idx++;
+	}
 
-		i = n_width;
-		char tmp[100];
-		while (i > 0) {
-			unsigned long long n = value / 10;
-			long long r = value % 10;
-			tmp[i - 1] = r + '0';
-			i--;
-			value = n;
-		}
-		while (i < n_width) {
-			OUT(tmp[i]);
-			i++;
-		}
-	} else {
-		i = n_width;
-		char tmp[100];
-		while (i > 0) {
-			unsigned long long n = value / 10;
-			long long r = value % 10;
-			tmp[i - 1] = r + '0';
-			i--;
-			value = n;
-			printed++;
-		}
-		while (i < n_width) {
-			OUT(tmp[i]);
-			i++;
-		}
-		while (printed < (long long)width) {
-			OUT(fill_zero ? '0' : ' ');
-			printed += 1;
-		}
+	for (unsigned i = 0; i < int_width; i++) OUT(rev_buf[i]);
+
+
+	// Cool, should we right-pad?
+	if (width && justification) {
+		// Yes, do the padding.
+		for (unsigned i = 0; i < width - int_width; i++) OUT(padding);
 	}
 
 	return written;
 }
 
-/*
- * Hexadecimal to string
+/**
+ * @brief Hexadecimal print
+ * @param callback xvasprintf callback
+ * @param user Data for xvasprintf callback
+ * @param value The value pulled from the printf system
+ * @param width Width of the number
+ * @param padding Padding to use
+ * @param prefix Whether to use 0x prefix
+ * @param upper Uppercase
+ * @param justification Justification
  */
-static size_t print_hex(unsigned long long value, unsigned int width, int (*callback)(void*,char), void* userData, int fill_zero, int alt, int caps, int align) {
+static size_t print_hex(int (*callback)(void*,char), void* user, uint64_t value, unsigned int width, char padding, int prefix, int upper, int justification) {
 	size_t written = 0;
-	long long i = width;
 
-	unsigned long long n_width = 1;
-	unsigned long long j = 0x0F;
-	while (value > j && j < UINT64_MAX) {
-		n_width += 1;
-		j *= 0x10;
-		j += 0x0F;
+	// We have a total width but we need to calculate integer width
+	size_t int_width = 1; // Default to 1 for the case where value is 0
+	uint64_t tmp = value;
+	while (tmp >= 0x10) {
+		tmp /= 0x10;
+		int_width++;
 	}
 
-	if (!fill_zero && align == 1) {
-		while (i > (long long)n_width + 2*!!alt) {
-			OUT(' ');
-			i--;
-		}
-	}
-
-	if (alt) {
+	if (prefix && !justification && padding == '0') {
 		OUT('0');
-		OUT(caps ? 'X' : 'x');
+		OUT(upper ? 'X' : 'x');
 	}
 
-	if (fill_zero && align == 1) {
-		while (i > (long long)n_width + 2*!!alt) {
-			OUT('0');
-			i--;
-		}
+	// Cool, should we left-pad?
+	if (width && !justification) {
+		// Yes, do the padding.
+		for (unsigned i = 0; i < width - int_width; i++) OUT(padding);
 	}
 
-	i = (long long)n_width;
-	while (i-- > 0) {
-		char c = (caps ? "0123456789ABCDEF" : "0123456789abcdef")[(value>>(i*4))&0xF];
-		OUT(c);
+	if (prefix && !justification && padding == ' ') {
+		OUT('0');
+		OUT(upper ? 'X' : 'x');
 	}
 
-	if (align == 0) {
-		i = width;
-		while (i > (long long)n_width + 2*!!alt) {
-			OUT(' ');
-			i--;
-		}
+
+	unsigned idx = 0;
+	while (idx < int_width) {
+		unsigned char ch = __hex_char_arr[(value >> ((int_width-idx-1)*4) & 0xF)];
+		OUT(upper ? toupper(ch) : ch);
+		idx++;
 	}
+
+	
+	// Cool, should we right-pad?
+	if (width && justification) {
+		// Yes, do the padding.
+		for (unsigned i = 0; i < width - int_width; i++) OUT(padding);
+	}
+
 
 	return written;
 }
 
 /* xvasprintf is Ethereal code and not ToaruOS. Above functions are ToaruOS */ 
-size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args) {
+size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt, va_list args) {
 	if (!fmt || !callback) return 0;
 	size_t written = 0;
 
@@ -339,7 +348,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char *
 					OUT('+');
 				}
 
-				written += print_dec(dec, width, callback, userData, (padding == '0'), !justification, precision);
+				written += print_dec(callback, user, dec, width, padding, justification, precision);
 				break;
 			
 			case 'p': ;
@@ -350,7 +359,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char *
 				} else {
 					ptr = (unsigned int)(va_arg(args, unsigned int));
 				}
-				written += print_hex(ptr, width, callback, userData, (padding == '0'), 1, isupper(*f), !justification);
+				written += print_hex(callback, user, ptr, width, padding, 1, isupper(*f), justification);
 				break;
 			
 			case 'x':
@@ -372,7 +381,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char *
 					hex = (unsigned int)(va_arg(args, unsigned int));
 				}
 
-				written += print_hex(hex, width, callback, userData, (padding == '0'), add_special_chars, isupper(*f), !justification);
+				written += print_hex(callback, user, hex, width, padding, add_special_chars, isupper(*f), justification);
 				break;
 
 			case 'u': ;
@@ -393,7 +402,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char *
 					uns = (unsigned int)(va_arg(args, unsigned int));
 				}
 
-				written += print_dec(uns, width, callback, userData, (padding == '0'), !justification, precision);
+				written += print_dec(callback, user, uns, width, padding, justification, precision);
 				break;
 
 			case 's': ;
@@ -460,94 +469,97 @@ size_t __xvasprintf(int (*callback)(void *, char), void * userData, const char *
 
 /* This is an alias to fix building binutils */
 /* libiberty provides its own xvasprintf, but the kernel uses it too so we can just use this */
-size_t __attribute__((weak, alias("__xvasprintf"))) xvasprintf(int (*callback)(void *, char), void * userData, const char * fmt, va_list args);
+size_t __attribute__((weak, alias("__xvasprintf"))) xvasprintf(int (*callback)(void *, char), void *user, const char *fmt, va_list ap);
 
-struct CBData {
-	char * str;
-	size_t size;
-	size_t written;
+/* We will pass this to our __vsnprintf_callback function */
+struct __vsnprintf_data {
+	char *string;
+	int index;
+	int n;
 };
 
-static int cb_sprintf(void * user, char c) {
-	struct CBData * data = user;
-	if (data->size > data->written + 1) {
-		data->str[data->written] = c;
-		data->written++;
-		if (data->written < data->size) {
-			data->str[data->written] = '\0';
-		}
+int __vsnprintf_callback(void *u, char ch) {
+	struct __vsnprintf_data *d = (struct __vsnprintf_data*)u;
+
+	if (!(d->n == -1) && (d->n-1) - d->index) {
+		// (v)snprintf
+		d->string[d->index] = ch;
+		d->index++;
+		if (d->index < d->n) d->string[d->index] = 0; // Null terminate if we have enough room
+	} else if (d->n == -1) {
+		// sprintf 
+		d->string[d->index++] = ch;
 	}
+
 	return 0;
 }
 
-int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
-	struct CBData data = {str,size,0};
-	int out = __xvasprintf(cb_sprintf, &data, format, ap);
-	cb_sprintf(&data, '\0');
-	return out;
+int vsnprintf(char *s, size_t n, const char *format, va_list ap) {
+	struct __vsnprintf_data dat = {
+		.string = s,
+		.index = 0,
+		.n = n
+	};
+
+	int ret = __xvasprintf(__vsnprintf_callback, &dat, format, ap);
+
+	// Usually the NULL termination is left out
+	__vsnprintf_callback(&dat, 0);
+	return ret;
 }
 
-int vsprintf(char *str, const char *fmt, va_list ap) {
-	struct CBData data = {str, 0, 0};
-	int out = __xvasprintf(cb_sprintf, &data, fmt, ap);
-	cb_sprintf(&data, '\0');
-	return out;
+int snprintf(char *str, size_t size, const char *format, ...) {
+	va_list ap;
+	va_start(ap, format);
+	int ret = vsnprintf(str, size, format, ap);
+	va_end(ap);
+	return ret;
 }
 
+int sprintf(char *str, const char *format, ...) {
+	va_list ap;
+	va_start(ap, format);
 
-int snprintf(char * str, size_t size, const char * format, ...) {
-	struct CBData data = {str,size,0};
-	va_list args;
-	va_start(args, format);
-	int out = __xvasprintf(cb_sprintf, &data, format, args);
-	va_end(args);
-	cb_sprintf(&data, '\0');
-	return out;
-}
+	struct __vsnprintf_data dat = {
+		.string = str,
+		.index = 0,
+		.n = -1,
+	};
 
-static int cb_sxprintf(void * user, char c) {
-	struct CBData * data = user;
-	data->str[data->written] = c;
-	data->written++;
-	return 0;
-}
+	int ret = __xvasprintf(__vsnprintf_callback, &dat, format, ap);
+	va_end(ap);
 
-
-int sprintf(char * str, const char * format, ...) {
-	struct CBData data = {str,0,0};
-	va_list args;
-	va_start(args, format);
-	int out = __xvasprintf(cb_sxprintf, &data, format, args);
-	va_end(args);
-	cb_sxprintf(&data, '\0');
-	return out;
+	// Usually the NULL termination is left out
+	__vsnprintf_callback(&dat, 0);
+	return ret;
 }
 
 #ifdef __LIBK
-static int cb_printf(void * user, char c) {
 
-	// !!!: If we are in panic state, debug output is the only thing getting printed.
+int __printf_callback(void *user, char ch) {
 extern int kernel_in_panic_state;
 	if (kernel_in_panic_state) return 0;
 
-	// Terminal printing!
-	// TODO: Replace with changeable thing?
-	extern int terminal_print(void *user, char c);
-	return terminal_print(user, c);
-	return 0;
+extern int terminal_print(void *user, char ch);
+	return terminal_print(user, ch);
 }
-#endif
 
-int printf(const char * fmt, ...) {
- 	va_list args;
-	va_start(args, fmt);
+int printf(const char *format, ...) {
+	va_list ap;
+	va_start(ap, format);
+	int ret = __xvasprintf(__printf_callback, NULL, format, ap);
+	va_end(ap);
+	return ret;
+}
 
-#ifdef __LIBK
-	int out = __xvasprintf(cb_printf, (void*)NULL, fmt, args);
 #else
-	int out = vprintf(fmt, args);
-#endif	
 
-	va_end(args);
-	return out;
+int printf(const char *format, ...) {
+	va_list ap;
+	va_start(ap, format);
+	int ret = vprintf(format, ap);
+	va_end(ap);
+	return ret;
 }
+
+#endif
