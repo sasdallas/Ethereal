@@ -8,14 +8,10 @@
  * @todo Perhaps we should avoid putting files as tree nodes - maybe we can separate directories and files sort of similar to how the VFS does it.
  * @todo A bit messy, but luckily abstracted so can be fixed up :D
  * 
- * The idea of fragmentation is, again, stolen from ToaruOS
- * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
- * It is released under the terms of the BSD 3-clause license.
- * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Review on the @c tmpfs_write and @c tmpfs_read functions are pending as they are similar to ToaruOS.
+ * This file is not copyrighted by Hexahedron for the time being, as I attribute it to klange.
  */
 
 #include <kernel/fs/tmpfs.h>
