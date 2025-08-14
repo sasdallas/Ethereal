@@ -88,12 +88,17 @@ Certain external components are available in `external`. Here is a list of them 
 - libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
 - freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
 
+## Credits
+
+A lot of Ethereal's design was inspired by [ToaruOS by klange](https://github.com/klange/ToaruOS) - thank you!
+
+The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
+
 ## Licensing
 
 Hexahedron, libpolyhedron, and all other components of Ethereal fall under the terms of the BSD 3-clause license (available in LICENSE).\
 All files, unless specified, fall under this license.
 
+**LICENSING ISSUES:** If a file is found without proper commenting, immediately contact me (preferably through a public channel such as GitHub issues for transparency) directly to resolve it.
 
-## Credits
-
-The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
+Ethereal's goal has **NEVER** been to take code, but it has happened in the past. Please contact me!
