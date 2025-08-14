@@ -12,6 +12,8 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2024 Samuel Stuart
+ * 
+ * @note This design is inspired by ToaruOS' PTY design with a few additions of my own (no code is copy pasted, but the design is similar).
  */
 
 #include <kernel/fs/pty.h>
