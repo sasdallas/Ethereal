@@ -30,8 +30,21 @@ hashmap_t *kargs = NULL;
 void kargs_init(char *args) {
     if (!args) return; // No kernel arguments provided
 
-    // kargs is to be redone.
-    return;
+    kargs = hashmap_create("kernel argument map", 5);
+
+    // The only thing about arguments is that they are separated by spaces
+    // Arguments can also appear with equal signs, such as "--debug=console"
+
+    char *pch = strtok(args, " ");
+    while (pch) {
+        // If we have a value process it
+        char *n  = strchr(pch, '=');
+        if (n) { *n = 0; n++; }
+
+        hashmap_set(kargs, pch, n);
+
+        pch = strtok(NULL, " ");
+    }
 }
 
 /**
