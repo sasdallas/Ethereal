@@ -881,6 +881,21 @@ extern uintptr_t __kernel_start, __kernel_end;
     // Register page fault
     hal_registerExceptionHandler(14, mem_pageFault);
 
+    // Almost done. From here we have memory management working, however when we get to process space an issue will take place.
+    // Allocate only the first layer of PMLs for upper memory space. This ensures syncronization across cores.
+    for (unsigned i = 256; i < 512; i++) {
+        if (!mem_kernelPML[0][i].bits.present) {
+            // Mark it appropriately
+            uintptr_t frame = pmm_allocateBlock();
+            memset((void*)mem_remapPhys(frame, 0x1000), 0, PAGE_SIZE);
+            mem_kernelPML[0][i].bits.present = 1;
+            mem_kernelPML[0][i].bits.rw = 1;
+            mem_kernelPML[0][i].bits.usermode = 0;
+            
+            MEM_SET_FRAME((&mem_kernelPML[0][i]), frame);
+        }
+    }
+
     LOG(INFO, "Memory management initialized\n");
 }
 
