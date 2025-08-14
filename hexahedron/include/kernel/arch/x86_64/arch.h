@@ -96,4 +96,9 @@ void arch_set_gsbase(uintptr_t base);
  */
 void arch_initialize_syscall_handler();
 
+/**
+ * @brief Initialize SSE/FPU
+ */
+void arch_enable_sse();
+
 #endif

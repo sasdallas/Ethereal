@@ -135,8 +135,8 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     extern void hal_installIDT();
     hal_installIDT();
 
-    // Initialize FPU
-    cpu_fpuInitialize();
+    // Initialize SSE
+    arch_enable_sse();
 
     // Set current core's directory
     current_cpu->current_dir = mem_getKernelDirectory();

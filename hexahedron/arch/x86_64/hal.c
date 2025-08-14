@@ -82,8 +82,9 @@ static void hal_init_stage1() {
     // Say hi!
     arch_say_hello(1);
 
-    // Initialize FPU
-    cpu_fpuInitialize();
+    // Initialize SSE (some libc/libk functions use SSE so this is needed)
+    // TODO: If we don't use any SSE in the kernel, shouldn't we not use it in libk?
+    arch_enable_sse();
 
     // Initialize clock driver
     clock_initialize();
