@@ -1,0 +1,1 @@
+libm.a is an empty stub library for when the actual libm is completed
