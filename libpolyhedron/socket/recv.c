@@ -9,6 +9,8 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2025 Samuel Stuart
+ * 
+ * @note Usage of syscalls sendmsg and recvmsg are inspired by ToaruOS
  */
 
 #include <sys/socket.h>
