@@ -2,7 +2,6 @@
  * @file libpolyhedron/libc/main.c
  * @brief libc startup code
  * 
- * @ref https://github.com/klange/toaruos/blob/1a551db5cf47aa8ae895983b2819d5ca19be53a3/libc/main.c for idea of using __get_argv and __get_environ
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
