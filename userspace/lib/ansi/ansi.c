@@ -67,6 +67,7 @@ ansi_t *ansi_create() {
  * @param id The ID to convert
  */
 uint32_t ansi_convert(ansi_t *ansi, int id) {
+    // Thank you to @Bananymous for helping me with translation code :D
     if (id < 16) {
         return ansi->ansi_pallete[id];
     } else if (id <= 231) {
