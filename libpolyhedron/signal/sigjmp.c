@@ -9,6 +9,8 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2025 Samuel Stuart
+ * 
+ * @note This concept came from @Bananymous
  */
 
 #include <setjmp.h>

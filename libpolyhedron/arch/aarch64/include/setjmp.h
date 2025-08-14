@@ -27,6 +27,8 @@ _Begin_C_Header;
 /**** TYPES ****/
 
 typedef long long jmp_buf[_JBLEN];
+
+/* Credit to @Bananymous for the sigjmp_buf idea */
 typedef long long sigjmp_buf[_JBLEN + 1 + (sizeof(long long) / sizeof(long))];
 
 /**** FUNCTIONS ****/
