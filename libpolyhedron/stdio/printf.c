@@ -41,7 +41,7 @@ static char __hex_char_arr[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9
  * @param justification 0 right, 1 left
  * @param precision Precision
  */
-static size_t print_dec(int (*callback)(void*,char), void *user, uint64_t value, unsigned int width,  char padding, int justification, int precision) {
+static size_t __printf_decimal(int (*callback)(void*,char), void *user, uint64_t value, unsigned int width,  char padding, int justification, int precision) {
 	size_t written = 0;
 	if (precision == -1) precision = 1;
 
@@ -101,7 +101,7 @@ static size_t print_dec(int (*callback)(void*,char), void *user, uint64_t value,
  * @param upper Uppercase
  * @param justification Justification
  */
-static size_t print_hex(int (*callback)(void*,char), void* user, uint64_t value, unsigned int width, char padding, int prefix, int upper, int justification) {
+static size_t __printf_hexadecimal(int (*callback)(void*,char), void* user, uint64_t value, unsigned int width, char padding, int prefix, int upper, int justification) {
 	size_t written = 0;
 
 	// We have a total width but we need to calculate integer width
@@ -147,7 +147,6 @@ static size_t print_hex(int (*callback)(void*,char), void* user, uint64_t value,
 	return written;
 }
 
-/* xvasprintf is Ethereal code and not ToaruOS. Above functions are ToaruOS */ 
 size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt, va_list args) {
 	if (!fmt || !callback) return 0;
 	size_t written = 0;
@@ -348,7 +347,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt,
 					OUT('+');
 				}
 
-				written += print_dec(callback, user, dec, width, padding, justification, precision);
+				written += __printf_decimal(callback, user, dec, width, padding, justification, precision);
 				break;
 			
 			case 'p': ;
@@ -359,7 +358,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt,
 				} else {
 					ptr = (unsigned int)(va_arg(args, unsigned int));
 				}
-				written += print_hex(callback, user, ptr, width, padding, 1, isupper(*f), justification);
+				written += __printf_hexadecimal(callback, user, ptr, width, padding, 1, isupper(*f), justification);
 				break;
 			
 			case 'x':
@@ -381,7 +380,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt,
 					hex = (unsigned int)(va_arg(args, unsigned int));
 				}
 
-				written += print_hex(callback, user, hex, width, padding, add_special_chars, isupper(*f), justification);
+				written += __printf_hexadecimal(callback, user, hex, width, padding, add_special_chars, isupper(*f), justification);
 				break;
 
 			case 'u': ;
@@ -402,7 +401,7 @@ size_t __xvasprintf(int (*callback)(void *, char), void *user, const char * fmt,
 					uns = (unsigned int)(va_arg(args, unsigned int));
 				}
 
-				written += print_dec(callback, user, uns, width, padding, justification, precision);
+				written += __printf_decimal(callback, user, uns, width, padding, justification, precision);
 				break;
 
 			case 's': ;
