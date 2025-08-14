@@ -36,10 +36,7 @@ static key_scancode_t kbd_us_scancodes_lower[128] = {
 	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
 	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
 	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
-	SCANCODE_DEL,
-	0, 0, 0,
-	SCANCODE_F11, SCANCODE_F12,
-	0, /* everything else */
+	SCANCODE_DEL, 0, 0, 0, SCANCODE_F11, SCANCODE_F12, 0
 };
 
 /* US keyboard scancodes (upper) */
@@ -53,12 +50,8 @@ static key_scancode_t kbd_us_scancodes_upper[128] = {
 	'*', 0, ' ', 0,
 	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
 	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
-	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
-	0, /* delete */
-	0, 0, 0,
-	0, /* F11 */
-	0, /* F12 */
-	0, /* everything else */
+	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0, // TODO: Fill in these scancodes
+	SCANCODE_DEL, 0, 0, 0, SCANCODE_F11, SCANCODE_F12, 0
 };
 
 /* Extended scancodes */
