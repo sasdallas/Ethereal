@@ -6,7 +6,7 @@ OUT_OBJ = $(OBJ_OUTPUT_DIRECTORY)/hexahedron/
 OUT_BUILD = $(BUILD_OUTPUT_DIRECTORY)/hexahedron
 
 # Edit this to add more source directories. MAKE SURE TO HAVE SUBDIRECTORIES SEPARATE!
-SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/sound drivers/storage debug mem misc gfx fs loader task
+SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/sound drivers/storage debug mem misc gfx fs loader task klib/string klib/stdio klib/stdlib
  
 # Edit this to change the allocator in use. ONLY ONE.
 SOURCE_DIRECTORIES += mem/liballoc/
@@ -18,7 +18,7 @@ include arch/$(BUILD_ARCH)/make.config
 # -lkstructures must not use anything from before it
 # -lkpolyhedron must not use anything from libkstructures
 # -lgcc must not use anything from libkpolyhedron
-LIBS += -lkstructures -lkpolyhedron -lgcc
+LIBS += -lkstructures -lgcc
 
 # Construct object output directories
 OUTPUT_DIRECTORIES = $(addprefix $(OUT_OBJ)/,$(SOURCE_DIRECTORIES))
