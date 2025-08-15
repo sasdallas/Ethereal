@@ -156,13 +156,14 @@ int dprintf_va(char *module, DEBUG_LOG_TYPE status, char *format, va_list ap) {
     // If the clock driver isn't ready we just print a blank header.
     char header[129];
     size_t header_length = 0;
-    if (!clock_isReady()) {
+    if (!clock_isReady() || 1) {
         if (module) {
             header_length = snprintf(header, 128, "[no clock ready] [%s] [%s] ", header_prefix, module);
         } else {
             header_length = snprintf(header, 128, "[no clock ready] [%s] ", header_prefix);
         }
     } else {
+        #if 0
         time_t rawtime;
         time(&rawtime);
         struct tm *timeinfo = localtime(&rawtime);
@@ -172,6 +173,7 @@ int dprintf_va(char *module, DEBUG_LOG_TYPE status, char *format, va_list ap) {
         } else {
             header_length = snprintf(header, 128, "[%s] [CPU%i] [%s] ", asctime(timeinfo), arch_current_cpu(), header_prefix);
         }
+        #endif
     }
 
     debug_write_buffer(header_length, header);

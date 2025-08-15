@@ -78,12 +78,13 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
         spinlock_acquire(&debug_lock);
     }
 
-    time_t rawtime;
-    time(&rawtime);
-    struct tm *timeinfo = localtime(&rawtime);
+    // TODO
+    // time_t rawtime;
+    // time(&rawtime);
+    // struct tm *timeinfo = localtime(&rawtime);
 
     char header[256];
-    snprintf(header, 256, "[%s] [PROC] [%s:%d] ", asctime(timeinfo), current_cpu->current_process->name, current_cpu->current_process->pid);
+    snprintf(header, 256, "[%s] [PROC] [%s:%d] ", "clock not available", current_cpu->current_process->name, current_cpu->current_process->pid);
     for (size_t i = 0; i < strlen(header); i++) log_print(NULL, header[i]);
     for (size_t i = 0; i < size; i++) log_print(NULL, buf[i]);
 

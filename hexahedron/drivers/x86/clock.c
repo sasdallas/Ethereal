@@ -133,7 +133,7 @@ uint64_t clock_convertCMOSToUnix() {
     uint16_t values[128];
     uint16_t old_values[128];
 
-    while (clock_isCMOSUpdateInProgress()); // Wait for CMOS
+    while (clock_isCMOSUpdateInProgress());
     clock_dumpCMOS((uint16_t*)values);
 
     do {

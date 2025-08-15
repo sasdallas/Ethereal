@@ -167,13 +167,13 @@ debug_packet_t *debugger_createPacket(uint32_t type) {
     }
 
     // Get time first
-    time_t rawtime;
-    time(&rawtime);
-    struct tm *tm = localtime(&rawtime);
+    // time_t rawtime;
+    // time(&rawtime);
+    // struct tm *tm = localtime(&rawtime);
 
     // Now we should pack some information
     json_object_push(packet, "type", json_integer_new(type)); // "type": type
-    json_object_push(packet, "time", json_string_new(asctime(tm))); // "time": time
+    // json_object_push(packet, "time", json_string_new(asctime(tm))); // "time": time
 
     return packet;
 }

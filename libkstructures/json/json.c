@@ -302,6 +302,8 @@ json_value * json_parse_ex (json_settings * settings,
       {
          json_char b = (state.ptr == end ? 0 : *state.ptr);
 
+         #include <kernel/debug.h>
+
          if (flags & flag_string)
          {
             if (!b)
@@ -602,7 +604,6 @@ json_value * json_parse_ex (json_settings * settings,
                         continue;
 
                      case '[':
-
                         if (!new_value (&state, &top, &root, &alloc, json_array))
                            goto e_alloc_failure;
 
@@ -839,6 +840,8 @@ json_value * json_parse_ex (json_settings * settings,
 
                if (! (flags & flag_num_e))
                {
+
+               #ifndef __LIBKSTRUCTURES
                   if (top->type == json_double)
                   {
                      if (!num_digits)
@@ -848,6 +851,9 @@ json_value * json_parse_ex (json_settings * settings,
 
                      top->u.dbl += num_fraction / pow (10.0, num_digits);
                   }
+               #else
+                  assert(top->type != json_double);
+               #endif
 
                   if (b == 'e' || b == 'E')
                   {
@@ -873,7 +879,12 @@ json_value * json_parse_ex (json_settings * settings,
                      goto e_failed;
                   }
 
+
+               #ifndef __LIBKSTRUCTURES
                   top->u.dbl *= pow (10.0, (flags & flag_num_e_negative ? - num_e : num_e));
+               #else
+                  assert(0);
+               #endif
                }
 
                if (flags & flag_num_negative)
