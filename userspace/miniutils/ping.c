@@ -33,14 +33,12 @@ typedef struct icmp_header {
 	uint8_t payload[];
 } icmp_header_t;
 
-/**
- * @brief Get the current time
- */
-static unsigned long get_current_time(void) {
-	struct timeval tv;
-	gettimeofday(&tv,NULL);
-	return tv.tv_sec * 1000000 + tv.tv_usec;
-}
+/* Destination IP */
+char *dest_ip = NULL;
+
+/* seq/recv */
+int seq = 0;
+int rcvd = 0;
 
 /**
  * @brief Calculate the ICMP checksum
@@ -57,6 +55,12 @@ static uint16_t icmp_checksum(void *payload, size_t len) {
     return ~(checksum & 0xFFFF) & 0xFFFF;
 }
 
+void sigint(int signum) {
+    printf("--- %s ping statistics ---\n", dest_ip);
+    printf("%d packets transmitted, %d received, %d%% packet loss\n", seq, rcvd, (100*(seq-rcvd)/seq));
+    exit(0);
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("ping: Destination address required\n");
@@ -64,18 +68,21 @@ int main(int argc, char *argv[]) {
     }
 
     // Route the destination IP
-    char *dest_ip = argv[1];
+    dest_ip = argv[1];
 
-    struct hostent *ent = gethostbyname(dest_ip);
-    if (!ent) {
-        herror("ping");
-        return 1;
-    }
+    // Register SIGINT handler
+    signal(SIGINT, sigint);
 
     // Create a socket
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (sock < 0) {
         perror("socket");
+        return 1;
+    }
+
+    struct hostent *ent = gethostbyname(dest_ip);
+    if (!ent) {
+        herror("ping");
         return 1;
     }
 
@@ -97,22 +104,25 @@ int main(int argc, char *argv[]) {
     // PING!
     printf("PING %s (%s) 56 data bytes\n", dest_ip, ent->h_name);
 
-    
-    int seq = 0;
-    int rcvd = 0;
-    for (; seq < 5; seq++) {
+    while (1) {
+        seq++;
+
         // Setup the ping request
-        ping_req->sequence_number = htons(seq+1);
+        ping_req->sequence_number = htons(seq);
         ping_req->checksum = 0;
         ping_req->checksum = htons(icmp_checksum((char*)ping_req, 64));
 
         // Send a ping and get the current time
-        unsigned long send_time = get_current_time();
         ssize_t s = sendto(sock, (void*)ping_req, 64, 0, (struct sockaddr*)&dest, sizeof(struct sockaddr_in));
         if (s < 0) {
             perror("sendto");
             return 1;
         }
+
+
+	    struct timeval tv;
+	    gettimeofday(&tv,NULL);
+	    unsigned long send_time = tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
 
         // Poll
         struct pollfd fds[1];
@@ -133,22 +143,14 @@ int main(int argc, char *argv[]) {
 
         // Receive
         char data[4096];
-        struct iovec iov = {
-            .iov_base = data,
-            .iov_len = 4096
-        };
+        struct sockaddr_in src;
+        socklen_t src_len = sizeof(src);
 
-        struct msghdr msg = {
-            .msg_control = NULL,
-            .msg_controllen = 0,
-            .msg_name = &dest,
-            .msg_namelen = sizeof(struct sockaddr_in),
-            .msg_iov = &iov,
-            .msg_iovlen = 1
-        };
-
-        ssize_t bytes = recvmsg(sock, &msg, 0);
-        unsigned long recv_time = get_current_time();
+        ssize_t bytes = recvfrom(sock, data, sizeof(data), 0, (struct sockaddr*)&src, &src_len);
+        
+        // Receive time
+	    gettimeofday(&tv,NULL);
+	    unsigned long recv_time = tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
 
         if (bytes) {
             // Check to make sure its a ping packet
@@ -166,8 +168,5 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
 
-    printf("--- %s ping statistics ---\n", dest_ip);
-    printf("%d packets transmitted, %d received, %d%% packet loss\n", seq, rcvd, (100*(seq-rcvd)/seq));
-    close(sock);
     return 0;
 }
