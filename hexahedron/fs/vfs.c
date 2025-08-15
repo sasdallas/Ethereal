@@ -5,6 +5,8 @@
  * @warning Some code in here can be pretty messy.
  * @todo Some errno support would be really helpful.. could implement a @c vfs_getError system
  * 
+ * @note Some code in this design, specifically design of @c vfs_mount and @c vfs_canonicalizePath was inspired by ToaruOS. 
+ * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.

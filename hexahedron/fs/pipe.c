@@ -5,6 +5,7 @@
  * This is just a simple UNIX pipe implementation.
  * 
  * @note The closing idea of using @c closed_read and @c closed_write was sourced from klange
+ * @note This specific ringbuffer implementation was inspired by ToaruOS.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
