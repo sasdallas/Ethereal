@@ -8,6 +8,9 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2024 Samuel S.
+ * 
+ * @copyright
+ * Some parts of this file may be attributed to ToaruOS. It is unclear and still being worked out.
  */
 
 #include <kernel/fs/tarfs.h>
