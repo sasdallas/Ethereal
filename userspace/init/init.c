@@ -34,6 +34,8 @@ int main(int argc, char *argv[]) {
     // Setup environment variables
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
 
+    printf("\nWelcome to the \033[35mEthereal Operating System\033[0m!\n\n");
+
     // Read kernel command line
     FILE *f = fopen("/kernel/cmdline", "r");
     fseek(f, 0, SEEK_END);
@@ -44,13 +46,6 @@ int main(int argc, char *argv[]) {
     fread(cmdline, size, 1, f);
 
 
-    // Execute welcome script
-    if (!strstr(cmdline, "--skip-startup")) {
-        system("/etc/init.d/01_welcome.sh");
-    }
-
-    printf("Welcome to the Ethereal Operating System\n");
-    
     pid_t cpid = fork();
 
     if (!cpid) {
