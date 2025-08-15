@@ -37,7 +37,6 @@ void random_mount() {
     strcpy(n->name, "random");
     n->mask = 0666;
     n->uid = n->gid = 0;
-    n->length = 1024;
     n->flags = VFS_CHARDEVICE;
     n->read = random_read;
 

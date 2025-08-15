@@ -30,7 +30,6 @@ static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, ch
 /* binfmt table */
 binfmt_entry_t binfmt_table[BINFMT_MAX] = {
     { .name = "ELF Executable", .load = process_execute, .match_count = 4, .bytes = { ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3 } },
-    { .name = "Shebang", .load = binfmt_shebang, .match_count = 2, .bytes = { '#', '!' }},
     { 0 },
 };
 
@@ -51,76 +50,6 @@ int binfmt_register(binfmt_entry_t entry) {
 }
 
 /**
- * @brief Shebang executable loader
- * @param path Full path of the file
- * @param file The file to execute
- * @param argc The argument count
- * @param argv The argument list
- * @param envp The environment variables pointer
- * @returns Error code
- */
-static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
-    char buf[256];
-    if (fs_read(file, 0, 256, (uint8_t*)buf) <= 0) return -EIO;
-    fs_close(file);
-
-    // We know that the file begins with a shebang, but how shebang is it?
-    char *sb_start = &buf[2];
-
-    // Handle any leading spaces
-    while (*sb_start == ' ' && *sb_start) sb_start++;
-    if (!(*sb_start)) return -ENOEXEC;
-
-
-    // First take out the nl
-    char *nl = strchr(sb_start, '\n');
-    if (!nl) return -ENOEXEC;
-    *nl = 0;
-
-    // Is there a space?
-    char *arg = NULL;
-    char *sp = strchr(sb_start, ' ');
-    if (sp) {
-        // There is! Let's get it!
-        *sp = 0;
-        sp++;
-        arg = sp; // We accept an interpreter argument
-    }
-
-    // Try to open the interpreter
-    fs_node_t *interp = kopen(sb_start, 0);
-    if (!interp) return -ENOENT;
-
-    // Construct the arguments like so:
-    // Interpreter (sb_start) + Optional argument + Script
-
-    char **nargv = kmalloc(sizeof(char*) * (argc + (arg ? 4 : 3)));
-    nargv[0] = strdup(sb_start); // !!!: MEMORY LEAK. Perhaps process_execute could clean this..?
-
-    // Construct argument list
-    if (arg) {
-        nargv[1] = strdup(arg);
-        nargv[2] = strdup(path);
-        nargv[3] = NULL;
-    } else {
-        nargv[1] = strdup(path);
-        nargv[2] = NULL;
-    }
-
-    // Now create the remaining arguments
-    int o = (arg ?  3 : 2);
-
-    for (int i = 1; i < argc; i++, o++) {
-        nargv[o] = argv[i];
-    }
-
-    nargv[o] = NULL;
-
-    // Go!
-    return binfmt_exec(nargv[0], interp, argc + (arg ? 2 : 1), nargv, envp);
-}
-
-/**
  * @brief Start execution of a process or return an error code
  * @param path Full path of the file
  * @param file The file to execute
@@ -138,15 +67,7 @@ int binfmt_exec(char *path, fs_node_t *file, int argc, char **argv, char **envp)
     for (int i = 0; i < binfmt_last_entry; i++) {
         binfmt_entry_t entry = binfmt_table[i];
         if (entry.match_count) {
-            int match = 1;
-            for (size_t j = 0; j < entry.match_count; j++) {
-                if (entry.bytes[j] != bytes[j]) {
-                    match = 0;
-                    break;
-                }
-            }
-
-            if (!match) continue;
+            if (memcmp(entry.bytes, bytes, entry.match_count)) continue;
 
             // Start execution
             LOG(INFO, "Executing file as \"%s\"\n", entry.name);

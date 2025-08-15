@@ -10,6 +10,9 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2024 Samuel Stuart
+ * 
+ * @copyright
+ * Some portions of this file are under the NCSA License for ToaruOS.
  */
 
 #if defined(__ARCH_I386__)
