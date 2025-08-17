@@ -1,1 +1,0 @@
-/* Required for building some programs */
