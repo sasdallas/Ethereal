@@ -102,7 +102,7 @@ vas_allocation_t *vas_reserve(vas_t *vas, uintptr_t address, size_t size, int ty
 
     // If n exists but we can just fit it in the hole of 0 - n do that
     if (nn && ALLOC(nn)->base) {
-        if (RANGE_IN_RANGE(address, address+size, 1, ALLOC(nn)->base)) {
+        if (RANGE_IN_RANGE(address, address+size, 1, ALLOC(nn)->base) || (!address && (ALLOC(nn)->base > size))) {
             vas->head = node;
             node->next = nn;
             nn->prev = node;

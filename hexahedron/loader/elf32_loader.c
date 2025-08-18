@@ -625,7 +625,7 @@ uintptr_t elf_getHeapLocation(uintptr_t elf_address) {
         // Relocatable
         LOG(ERR, "Heap locations for relocatable files are not implemented\n");
         return 0x0;
-    } else if (ehdr->e_type == ET_EXEC) {
+    } else if (ehdr->e_type == ET_EXEC || ehdr->e_type == ET_DYN) {
         // Executable
         uintptr_t heap_base = 0x0;
         

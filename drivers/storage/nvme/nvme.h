@@ -19,6 +19,7 @@
 #include <kernel/misc/util.h>
 #include <kernel/misc/spinlock.h>
 #include <structs/list.h>
+#include <kernel/drivers/pci.h>
 
 /**** TYPES ****/
 
@@ -294,6 +295,121 @@ typedef struct nvme_sq_entry {
 STATIC_ASSERT(sizeof(nvme_sq_entry_t) == 64);
 
 /**
+ * @brief NVMe identification space
+ * @ref https://nvmexpress.org/wp-content/uploads/NVM-Express-Base-Specification-Revision-2.2-2025.03.11-Ratified.pdf (figure 313)
+ */
+typedef struct nvme_ident {
+    uint16_t vid;
+    uint16_t ssvid;
+    char sn[20];
+    char mn[40];
+    char fr[8];
+    uint8_t rab;
+    char ieee[3];
+    uint8_t cmic;
+    uint8_t mdts;
+    uint16_t cntlid;
+    uint32_t ver;
+    uint32_t rtd3r;
+    uint32_t rtd3e;
+    uint32_t oaes;
+    uint32_t ctratt;
+    uint16_t rrls;
+    uint8_t bpcap;
+    uint8_t reserved0;
+    uint32_t nssl;
+    uint16_t reserved1;
+    uint8_t plsi;
+    uint8_t cntrltype;
+    char fguid[16];
+    uint16_t crdt1;
+    uint16_t crdt2;
+    uint16_t crdt3;
+    uint8_t crcap;
+    char reserved2[105];
+    char reserved3[13];
+    uint8_t nvmsr;
+    uint8_t vwci;
+    uint8_t mec;
+    uint16_t oacs;
+    uint8_t acl; 
+    uint8_t aerl;
+    uint8_t frmw;
+    uint8_t lpa;
+    uint8_t elpe;
+    uint8_t npss;
+    uint8_t avscc;
+    uint8_t apsta;
+    uint16_t wctemp;
+    uint16_t cctemp;
+    uint16_t mtfa;
+    uint32_t hmpre;
+    uint32_t hmmin;
+    uint8_t tnvmcap[16];
+    uint8_t unvmcap[16];
+    uint32_t rpmbs;
+    uint16_t edstt;
+    uint8_t dsto;
+    uint8_t fwug;
+    uint16_t kas;
+    uint16_t hctma;
+    uint16_t mntmt;
+    uint16_t mxtmt;
+    uint32_t sanicap;
+    uint32_t hmminds;
+    uint16_t hmmaxd;
+    uint16_t nsetidmax;
+    uint16_t endgidmax;
+    uint8_t anatt;
+    uint8_t anacap;
+    uint32_t anagrpmax;
+    uint32_t nanagrpid;
+    uint32_t pels;
+    uint16_t did;
+    uint8_t kpioc;
+    uint8_t reserved4;
+    uint16_t mptfawr;
+    uint8_t reserved5[6];
+    uint8_t megcap[16];
+    uint8_t tmpthha;
+    uint8_t reserved6;
+    uint16_t cqt;
+    uint8_t reserved7[124];
+    uint8_t sqes;
+    uint8_t cqes;
+    uint16_t maxcmd;
+    uint32_t nn;
+    uint16_t oncs;
+    uint16_t fuses;
+    uint8_t fna;
+    uint8_t vwc;
+    uint16_t awun;
+    uint16_t awupf;
+    uint8_t icsvscc;
+    uint8_t nwpc;
+    uint16_t acwu;
+    uint16_t cdfs;
+    uint32_t sgls;
+    uint32_t mnan;
+    uint8_t maxdna[16];
+    uint32_t maxcna;
+    uint32_t oaqd;
+    uint8_t rhiri;
+    uint8_t hirt;
+    uint16_t cmmrtd;
+    uint16_t nmmrtd;
+    uint8_t minmrtg;
+    uint8_t maxmrtg;
+    uint8_t trattr;
+    uint16_t mcudmq;
+    uint16_t mnsudmq;
+    uint16_t mcmr;
+    char i_dont_want_to_fill_the_rest_in[3513];
+} __attribute__((packed)) nvme_ident_t;
+
+STATIC_ASSERT(sizeof(nvme_ident_t) == 4096);
+
+/**
  * @brief NVMe completion event
  */
 typedef struct nvme_completion {
@@ -328,6 +444,7 @@ typedef struct nvme {
     volatile nvme_registers_t *regs;    // Registers
     nvme_queue_t *admin_queue;          // Admin queue
     nvme_queue_t *io_queue;             // I/O queue
+    pci_device_t *dev;                  // PCI device
 } nvme_t;   
 
 

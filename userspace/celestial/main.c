@@ -68,7 +68,7 @@ void celestial_redraw() {
     mouse_render();
 
     // Render the graphics
-    gfx_render(WM_GFX);
+    if (WM_GFX->clip) gfx_render(WM_GFX);
 }
 
 /**
@@ -194,11 +194,11 @@ int main(int argc, char *argv[]) {
 
     // If there wasn't a log device, open one.
     if (!__celestial_log_device) {
-        __celestial_log_device = fopen("/device/kconsole", "w");
+        __celestial_log_device = fopen("/device/log", "w");
     }
 
-    dup2(__celestial_log_device->fd, STDOUT_FILENO);
-    dup2(__celestial_log_device->fd, STDERR_FILENO);
+    dup2(fileno(__celestial_log_device), STDOUT_FILENO);
+    dup2(fileno(__celestial_log_device), STDERR_FILENO);
         
     CELESTIAL_LOG("celestial v %d.%d.%d\n", CELESTIAL_VERSION_MAJOR, CELESTIAL_VERSION_MINOR, CELESTIAL_VERSION_LOWER);
 
@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
     CELESTIAL_DEBUG("Created keyboard successfully\n");
 
     if (!fork()) {
-        const char *a[] = { launch, NULL };
+        char *a[] = { launch, NULL };
         execvp(launch, a);
         exit(1);
     }

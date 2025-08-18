@@ -1,0 +1,3 @@
+[submodule "libc/mlibc"]
+	path = libc/mlibc
+	url = https://github.com/sasdallas/mlibc

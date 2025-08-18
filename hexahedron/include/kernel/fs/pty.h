@@ -27,7 +27,7 @@
 #define TTY_DIRECTORY       "/device/tty/"
 
 /* Defaults */
-#define PTY_IFLAG_DEFAULT   ICRNL | BRKINT  // Map CR to newline on input and SIGINT on break
+#define PTY_IFLAG_DEFAULT   ICRNL | BRKINT | ISIG   // Map CR to newline on input and SIGINT on break
 #define PTY_OFLAG_DEFAULT   ONLCR | OPOST   // Map NL to CRNL
 #define PTY_LFLAG_DEFAULT   ECHO | ECHOE | ECHOK | ICANON | ISIG | IEXTEN
 #define PTY_CFLAG_DEFAULT   CREAD | CS8 | B38400

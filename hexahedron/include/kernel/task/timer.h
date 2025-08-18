@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <time.h>
 #include <stdint.h>
+#include <sys/time.h>
 
 /**** TYPES ****/
 

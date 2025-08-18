@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <ethereal/celestial.h>
+#include <ethereal/widget.h>
 
 
 int pty_master, pty_slave;
@@ -58,132 +59,48 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     }
 }
 
+void btn1_click(widget_t *widget, void *d) {
+    printf("button 1 clicked: data=%p\n", d);
+}
 
-void background() {
-    wid_t bgwid = celestial_createWindowUndecorated(0, 1024, 768);
-    window_t *win = celestial_getWindow(bgwid);
-    celestial_setZArray(win, CELESTIAL_Z_BACKGROUND);
-    gfx_context_t *ctx = celestial_getGraphicsContext(win);
-    celestial_unsubscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
-
-    FILE *bg = fopen("/usr/share/lines.bmp", "r");
-    sprite_t *sp = gfx_createSprite(0,0);
-    gfx_loadSprite(sp, bg);
-    gfx_renderSprite(ctx, sp, 0, 0);
-    gfx_font_t *font = gfx_loadFont(ctx, "/usr/share/UbuntuMono-Regular.ttf");
-    gfx_renderString(ctx, font, "Ethereal x86_64", 10, 10, GFX_RGB(255, 255, 255));
-    
-    struct utsname un;
-    uname(&un);
-
-    char str[256];
-    snprintf(str, 256, "%s %s %s", un.sysname, un.release, un.version);
-
-    gfx_renderString(ctx, font, str, 10, 30, GFX_RGB(255, 255, 255));
-
-    gfx_render(ctx);
-
-    celestial_flip(win);
+void btn2_click(widget_t *widget, void *d) {
+    printf("button 2 clicked: data=%p\n", d);
 }
 
 int main(int argc, char *argv[]) {
-    background();
-    
     wid_t wid = celestial_createWindow(0, 512, 256);
     fprintf(stderr, "got wid: %d\n", wid);
 
     window_t *win = celestial_getWindow(wid);
     fprintf(stderr, "window %d: %dx%d at X %d Y %d\n", wid, win->width, win->height, win->x, win->y);
     
+    widget_t *frame = frame_createRoot(win, FRAME_DEFAULT);
+    widget_t *lbl = label_create(frame, "Hello, widgets!", 12);
+    widget_renderAtCoordinates(lbl, 30, 30);
 
-    fprintf(stderr, "subscribe to mouse event");
-    if (celestial_subscribe(win, CELESTIAL_EVENT_MOUSE_ENTER | CELESTIAL_EVENT_MOUSE_EXIT) != 0) {
-        fprintf(stderr, "subscribe failed: %s\n", strerror(errno));
-        return 1;
-    }
-    fprintf(stderr, "Subscribe OK\n");
+    widget_t *btn = button_create(frame, "OK", GFX_RGB(0, 0, 0), BUTTON_ENABLED);
+    widget_renderAtCoordinates(btn, 100, 100);
+    widget_setHandler(btn, WIDGET_EVENT_CLICK, btn1_click, (void*)0xDEADDEAD);
 
-    celestial_setTitle(win, "Celestial Demonstration Window");
-    // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_ENTER, mouse_handler);
-    // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_EXIT, mouse_handler);
-    // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_MOTION, mouse_handler);
-    // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_handler);
-    celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
-    gfx_context_t *ctx = celestial_getGraphicsContext(win);
-    gfx_clear(ctx, GFX_RGB(0, 0, 0));
-    gfx_render(ctx);
-    gfx_font_t *font = gfx_loadFont(ctx, "/usr/share/UbuntuMono-Regular.ttf");
+    // widget_t *btn2 = button_create(frame, "This is a button", GFX_RGB(0, 0, 0), BUTTON_ENABLED);
+    // widget_renderAtCoordinates(btn2, 300, 150);
+    // widget_setHandler(btn2, WIDGET_EVENT_CLICK, btn2_click, (void*)0xCAFECAFE);
+
+    widget_t *btn3 = button_create(frame, "Big button", GFX_RGB(0,0,0), BUTTON_ENABLED);
+    btn3->width = 100;
+    btn3->height = 100;
+
+    widget_renderAtCoordinates(btn3, 300, 150);
+
+
+    widget_render(celestial_getGraphicsContext(win), frame);
+    
+    gfx_render(celestial_getGraphicsContext(win));
     celestial_flip(win);
 
-    // Create a PTY
-    openpty(&pty_master, &pty_slave, NULL, NULL, NULL);
-
-    int x = 0;
-    int y = 40;
     
-    kbd = keyboard_create();
 
-    // Fork
-    pid_t cpid = fork();
-    if (!cpid) {
-        dup2(pty_slave, STDIN_FILENO);
-        dup2(pty_slave, STDOUT_FILENO);
-        dup2(pty_slave, STDERR_FILENO);
-
-        setsid();
-        ioctl(STDIN_FILENO, TIOCSCTTY, 1);
-        tcsetpgrp(STDIN_FILENO, getpid());
-
-        char *nargv[] = { "essence", NULL };
-        execvp("essence", (const char**)nargv);
-        exit(1);
-    } else {
-        for (;;) {
-            celestial_poll();
-
-            struct pollfd fds[] = { { .fd = pty_master, .events = POLLIN } };
-            int p = poll(fds, 1, 0);
-            if (!p) continue;
-            
-            char buf[4096];
-            ssize_t r = read(pty_master, buf, 4096);
-            if (r <= 0) continue;
-            buf[r] = 0;
-
-            for (int i = 0; i < r; i++) {
-                if (x >= (int)ctx->width) {
-                    x = 0;
-                    y += 10;
-                }
-
-
-                if (y >= (int)ctx->height) {
-                    y = 10;
-                    x = 0;
-                    gfx_clear(ctx, GFX_RGB(0,0,0));
-                    gfx_render(ctx);
-                    celestial_flip(win);
-                }
-
-                if (buf[i] == '\n') {
-                    x = 0;
-                    y += 10;
-                    continue;
-                }
-
-                if (!buf[i]) continue;
-
-                gfx_renderCharacter(ctx, font, buf[i], x, y, GFX_RGB(255,255,255));
-                x += gfx_getAdvanceX(ctx, font, buf[i]);
-                // x += 10;
-            }
-
-
-            gfx_render(ctx);
-            celestial_flip(win);
-        }
-    }
-
+    celestial_mainLoop();
 
     return 0;
 }

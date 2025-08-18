@@ -22,6 +22,7 @@
 #include <structs/hashmap.h>
 #include <errno.h>
 #include <poll.h>
+#include <unistd.h>
 
 #include "window.h"
 #include "socket.h"

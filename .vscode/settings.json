@@ -145,7 +145,17 @@
     "list.h": "c",
     "drive.h": "c",
     "ctype.h": "c",
-    "wctype.h": "c"
+    "wctype.h": "c",
+    "ptrace.h": "c",
+    "pthread.h": "c",
+    "partition.h": "c",
+    "mbr.h": "c",
+    "drivefs.h": "c",
+    "keyboard.h": "c",
+    "mouse.h": "c",
+    "libc_debug.h": "c",
+    "binfmt.h": "c",
+    "shared.h": "c"
   },
   "makefile.configureOnOpen": false
 }

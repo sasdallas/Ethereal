@@ -15,7 +15,7 @@
 #include <kernel/task/syscall.h>
 #include <kernel/debug.h>
 #include <sys/ptrace.h>
-#include <sys/user.h>
+#include <ethereal/user.h>
 #include <errno.h>
 
 /* Log method */

@@ -26,6 +26,7 @@
 #include <kernel/gfx/term.h>
 #include <kernel/config.h>
 
+#include <sys/syscall_nums.h>
 #include <sys/types.h>
 #include <sys/ptrace.h>
 #include <limits.h>
@@ -131,6 +132,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_SETITIMER]         = (syscall_func_t)(uintptr_t)sys_setitimer,
     [SYS_PTRACE]            = (syscall_func_t)(uintptr_t)sys_ptrace,
     [SYS_REBOOT]            = (syscall_func_t)(uintptr_t)sys_reboot,
+    [SYS_READ_ENTRIES]      = (syscall_func_t)(uintptr_t)sys_read_entries,
 }; 
 
 
@@ -202,13 +204,24 @@ void syscall_handle(syscall_t *syscall) {
 }
 
 void sys_exit(int status) {
-    LOG(DEBUG, "sys_exit %d\n", status);
+    LOG(DEBUG, "process %s sys_exit %d\n", current_cpu->current_process->name, status);
     process_exit(NULL, status);
 }
 
 int sys_open(const char *pathname, int flags, mode_t mode) {
     // Validate pointer
     SYSCALL_VALIDATE_PTR(pathname);
+    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
+
+    // !!!: HACK
+    if (!strcmp(pathname, "/dev/ptmx")) {
+        // Make a PTY
+        pty_t *pty = pty_create(NULL, NULL, -1);
+        
+        // Create file descriptors
+        fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
+        return master_fd->fd_number;
+    }
 
     // Try and get it open
     fs_node_t *node = kopen_user(pathname, flags);
@@ -253,7 +266,6 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
         fd->offset = node->length;
     }
 
-    // LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
     return fd->fd_number;
 }
 
@@ -275,7 +287,6 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
 
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
-
     
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
@@ -286,13 +297,18 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     proc_fd->offset += i;
 
     // LOG(DEBUG, "sys_write fd %d buffer %p count %d\n", fd, buffer, count);
+    if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     return i;
 }
 
 int sys_close(int fd) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+        LOG(WARN, "Bad file descriptor close attempt on fd %d\n", fd);
         return -EBADF;
     }
+
+    // // !!! HACK: If you don't want to free this, too bad...
+    // if (FD(current_cpu->current_process, fd)->dev) kfree(FD(current_cpu->current_process, fd)->dev);
 
     // LOG(DEBUG, "sys_close fd %d\n", fd);
     fd_remove(current_cpu->current_process, fd);
@@ -327,7 +343,7 @@ static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
     statbuf->st_gid = f->gid;
     statbuf->st_rdev = 0; // TODO
     statbuf->st_size = f->length;
-    statbuf->st_blksize = STAT_DEFAULT_BLOCK_SIZE; // TODO: This would prove useful for file I/O
+    statbuf->st_blksize = 512; // TODO: This would prove useful for file I/O
     statbuf->st_blocks = 0; // TODO
     statbuf->st_atime = f->atime;
     statbuf->st_mtime = f->mtime;
@@ -640,6 +656,9 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     int have_hit = 0;
 
+    /* !!!: Currently broken */
+#ifdef POLL_USES_FS_WAIT
+
     for (size_t i = 0; i < nfds; i++) {
         // Check the file descriptor
         fds[i].revents = 0;
@@ -681,7 +700,6 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     // Enter sleep state
     int wakeup = sleep_enter();
 
-    // LOG(INFO, "Woken up from a poll due to reason %d\n", wakeup);
     if (wakeup == WAKEUP_SIGNAL) return -EINTR;
     if (wakeup == WAKEUP_TIME) return 0;
 
@@ -699,6 +717,49 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     }
 
     return have_hit;   // At least one thread woke us up
+
+#else
+
+    struct timeval tv_start;
+    gettimeofday(&tv_start, NULL);
+
+    while (1) {
+        for (size_t i = 0; i < nfds; i++) {
+            // Check the file descriptor
+            fds[i].revents = 0;
+            if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+                fds[i].revents |= POLLNVAL;
+                continue;
+            }
+
+            // Does the file descriptor have available contents right now?
+            int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+            int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+            if (ready & events) {
+                // Oh, we already have a hit! :D
+                // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+                fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+                have_hit++;
+            } 
+        }
+
+        if (have_hit) return have_hit;
+
+        // We didn't get anything. Did they want us to wait?
+        if (timeout == 0) return 0;
+
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        if ((tv.tv_sec*1000) - (tv_start.tv_sec*1000) + (tv.tv_usec/1000) > timeout && timeout != -1) {
+            return 0;
+        }
+
+        process_yield(1);
+    }
+#endif
+
 }
 
 long sys_pselect(sys_pselect_context_t *ctx) {
@@ -890,20 +951,20 @@ long sys_uname(struct utsname *buf) {
     SYSCALL_VALIDATE_PTR(buf);
 
     // Copy!
-    snprintf(buf->sysname, LIBPOLYHEDRON_UTSNAME_LENGTH, "Hexahedron");
-    snprintf(buf->nodename, LIBPOLYHEDRON_UTSNAME_LENGTH, "N/A"); // lol, should be hostname
-    snprintf(buf->release, LIBPOLYHEDRON_UTSNAME_LENGTH, "%d.%d.%d-%s", 
+    snprintf(buf->sysname, 128, "Hexahedron");
+    snprintf(buf->nodename, 128, "N/A"); // lol, should be hostname
+    snprintf(buf->release, 128, "%d.%d.%d-%s", 
                     __kernel_version_major, 
                     __kernel_version_minor, 
                     __kernel_version_lower,
                     __kernel_build_configuration);
 
-    snprintf(buf->version, LIBPOLYHEDRON_UTSNAME_LENGTH, "%s %s %s",
+    snprintf(buf->version, 128, "%s %s %s",
         __kernel_version_codename,
         __kernel_build_date,
         __kernel_build_time);
 
-    snprintf(buf->machine, LIBPOLYHEDRON_UTSNAME_LENGTH, "%s", __kernel_architecture);
+    snprintf(buf->machine, 128, "%s", __kernel_architecture);
 
     return 0;
 }
@@ -916,6 +977,7 @@ pid_t sys_getpid() {
 
 long sys_mmap(sys_mmap_context_t *context) {
     SYSCALL_VALIDATE_PTR(context);
+    LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
     return (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
 }
 
@@ -961,13 +1023,13 @@ long sys_dup2(int oldfd, int newfd) {
 
 /* SIGNALS */
 
-long sys_signal(int signum, sa_handler handler) {
+long sys_signal(int signum, void (*handler)(int)) {
     // Validate range
-    if (signum < 0 || signum >= NUMSIGNALS) return -EINVAL;
+    if (signum < 0 || signum >= NSIG) return -EINVAL;
     if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL; // Trying to set signals that cannot be handled
 
     // Is the handler special?
-    sa_handler old_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
+    void *old_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
     if (handler == SIG_IGN) {
         THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_IGNORE;
     } else if (handler == SIG_DFL) {
@@ -984,7 +1046,7 @@ long sys_signal(int signum, sa_handler handler) {
 
 long sys_kill(pid_t pid, int sig) {
     // Check signal
-    if (sig < 0 || sig >= NUMSIGNALS) return -EINVAL;
+    if (sig < 0 || sig >= NSIG) return -EINVAL;
 
     if (pid > 0 || pid < -1) {
         if (pid < -1) pid *= -1;
@@ -1009,7 +1071,7 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
     if (act) SYSCALL_VALIDATE_PTR(act);
     if (oact) SYSCALL_VALIDATE_PTR(oact);
 
-    if (signum < 0 || signum >= NUMSIGNALS) return -EINVAL;
+    if (signum < 0 || signum >= NSIG) return -EINVAL;
     if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL;
 
     // First, assign the old action
@@ -1409,4 +1471,44 @@ long sys_setitimer(int which, const struct itimerval *value, struct itimerval *o
 
 long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
     return ptrace_handle(op, pid, addr, data);
+}
+
+/**** MLIBC ****/
+
+struct readdir_context {
+    int fd;
+    int ent;
+};
+
+long sys_read_entries(int handle, void *buffer, size_t max_size) {
+    if (!FD_VALIDATE(current_cpu->current_process, handle)) return -EBADF;
+    SYSCALL_VALIDATE_PTR_SIZE(buffer, max_size);
+
+    LOG(DEBUG, "TRACE: sys_read_entries %d %p %d\n", handle, buffer, max_size);
+
+    fd_t *f = FD(current_cpu->current_process, handle);
+    if (!f->dev) { f->dev = kzalloc(sizeof(struct readdir_context)); ((struct readdir_context*)f->dev)->fd = handle; }
+
+    struct readdir_context *ctx = (struct readdir_context*)f->dev;
+
+    unsigned char *p = (unsigned char*)buffer;
+    size_t read = 0;
+    while (read + sizeof(struct dirent) <= max_size) {
+        struct dirent *ent = fs_readdir(f->node, ctx->ent);
+        if (!ent) {
+            break;
+        }
+
+        // !!!: HACK: SET d_reclen BECAUSE IT NORMALLY ISNT SET
+        ent->d_reclen = sizeof(struct dirent);
+
+        memcpy(p, ent, sizeof(struct dirent));
+        kfree(ent);
+
+        ctx->ent++;
+        p += sizeof(struct dirent);
+        read += sizeof(struct dirent);
+    }  
+
+    return read;
 }

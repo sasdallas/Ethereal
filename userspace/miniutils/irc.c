@@ -24,6 +24,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <ctype.h>
+#include <stdarg.h>
+
 
 /* Socket file */
 static FILE *fsock = NULL;
@@ -413,7 +415,7 @@ int main(int argc, char *argv[]) {
         fds[0].fd = sock;
         fds[0].events = POLLIN;
         
-        fds[1].fd = STDIN_FILE_DESCRIPTOR;
+        fds[1].fd = STDIN_FILENO;
         fds[1].events = POLLIN;
 
         int p = poll(fds, 2, 0);

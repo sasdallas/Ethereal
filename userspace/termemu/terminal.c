@@ -24,6 +24,7 @@
 #include <ethereal/ansi.h>
 #include <getopt.h>
 #include <ethereal/celestial.h>
+#include <sys/ioctl.h>
 
 /* Graphics context */
 static gfx_context_t *ctx = NULL;
@@ -293,7 +294,7 @@ void terminal_createPTY(char *startup_program) {
         // Spawn shell
         // TODO: Support argc/argv
         char *argv[] = { startup_program, NULL };
-        execvp(startup_program, (const char **)argv);
+        execvp(startup_program, argv);
         exit(1);
     }
 }

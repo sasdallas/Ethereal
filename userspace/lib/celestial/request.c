@@ -87,7 +87,10 @@ int celestial_sendRequest(void *req, size_t size) {
 void *celestial_getResponse(int type) {
     if (__celestial_socket < 0) {
         int c = celestial_connect(CELESTIAL_DEFAULT_SOCKET_NAME);
-        if (c < 0) return NULL;
+        if (c < 0) {
+            fprintf(stderr, "celestial_lib: Connection failed with Celestial\n");
+            return NULL;
+        }
     } 
 
     // Wait for a response
@@ -108,8 +111,11 @@ void *celestial_getResponse(int type) {
         fds[0].events = POLLIN;
 
         int p = poll(fds, 1, -1);
-        if (p <= 0 || !(fds[0].revents & POLLIN)) return NULL;
-
+        if (p <= 0 || !(fds[0].revents & POLLIN)) {
+            fprintf(stderr, "celestial_lib: Poll failed (%d)\n", p);
+            return NULL;
+        }
+        
         // New data available
         char data[4096];
         ssize_t r = recv(__celestial_socket, data, 4096, 0);

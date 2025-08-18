@@ -2,7 +2,7 @@ include ../make.config
 
 ifeq ($(HOSTARCH), i386)
 # Required for I386
-PROJECTS := musl freetype
+PROJECTS := freetype
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
@@ -11,7 +11,7 @@ endif
 
 else ifeq ($(HOSTARCH), x86_64)
 # Required for x86_64
-PROJECTS := musl freetype
+PROJECTS := freetype
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
@@ -21,7 +21,7 @@ endif
 else ifeq ($(HOSTARCH), aarch64)
 # Required for aarch64
 # Freetype cannot be built
-PROJECTS := musl
+PROJECTS :=
 
 else
 PROJECTS :=

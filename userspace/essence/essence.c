@@ -203,7 +203,7 @@ __noargs:
         essence_execute(parse);
 
         // Cleanup
-        essence_cleanupParsed(parse);
+        // essence_cleanupParsed(parse);
     }
     return 0;
 }

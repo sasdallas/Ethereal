@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <ethereal/shared.h>
 
 /**** TYPES ****/
 

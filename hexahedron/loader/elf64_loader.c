@@ -69,7 +69,7 @@ static int elf_checkSupported(Elf64_Ehdr *ehdr) {
         return 0;
     }
 
-    if (ehdr->e_type != ET_REL && ehdr->e_type != ET_EXEC) {
+    if (ehdr->e_type != ET_REL && ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) {
         LOG(ERR, "elf_checkSupported(): Unsupported ELF file type: %i\n", ehdr->e_type);
         return 0;
     }
@@ -511,7 +511,7 @@ uintptr_t elf_getEntrypoint(uintptr_t ehdr_address) {
     if (!ehdr_address) return (uintptr_t)NULL;
     Elf64_Ehdr *ehdr = (Elf64_Ehdr*)ehdr_address;
 
-    if (ehdr->e_type != ET_EXEC) return 0x0;
+    if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) return 0x0;
 
     return ehdr->e_entry;
 }
@@ -544,6 +544,7 @@ uintptr_t elf_loadBuffer(uint8_t *fbuf, int flags) {
             break;
         
         case ET_EXEC:
+        case ET_DYN:
             // Executable file
             if (elf_loadExecutable(ehdr)) {
                 LOG(ERR, "Failed to load executable ELF file.\n");
@@ -586,7 +587,7 @@ int elf_check(fs_node_t *file, int type) {
     }
 
     // Does it match the class?
-    if (type == ELF_EXEC && ehdrtmp.e_type != ET_EXEC) return 0;
+    if (type == ELF_EXEC && ehdrtmp.e_type != ET_EXEC && ehdrtmp.e_type != ET_DYN) return 0;
     if (type == ELF_RELOC && ehdrtmp.e_type != ET_REL) return 0;
 
     if (type == ELF_DYNAMIC) {
@@ -712,7 +713,7 @@ uintptr_t elf_getHeapLocation(uintptr_t elf_address) {
         // Relocatable
         LOG(ERR, "Heap locations for relocatable files are not implemented\n");
         return 0x0;
-    } else if (ehdr->e_type == ET_EXEC) {
+    } else if (ehdr->e_type == ET_EXEC || ehdr->e_type == ET_DYN) {
         // Executable
         uintptr_t heap_base = 0x0;
         
@@ -757,5 +758,127 @@ void elf_createImage(uintptr_t elf_address) {
         }
     }
 }
+
+/**
+ * @brief Detect and find the interpreter for a dynamically linked file
+ * @param file The file to get the interpreter for
+ * @returns Interpreter string on success or NULL on failure
+ * @note Free this yourself
+ */
+char *elf_getInterpreter(fs_node_t *file) {
+    // Read the EHDR field into a temporary holder
+    Elf64_Ehdr ehdrtmp;
+    if (fs_read(file, 0, sizeof(Elf64_Ehdr), (uint8_t*)&ehdrtmp) != sizeof(Elf64_Ehdr)) {
+        LOG(ERR, "Failed to read ELF file\n");
+        return NULL;
+    }
+
+
+    for (int i = 0; i < ehdrtmp.e_phnum; i++) {
+        Elf64_Phdr phdr;
+        if (fs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (uint8_t*)&phdr) != sizeof(Elf64_Phdr)) {
+            LOG(ERR, "Error reading PHDR %d into memory\n", ehdrtmp.e_phnum);
+            return NULL;
+        }
+
+        if (phdr.p_type == PT_INTERP) {
+            // Found the PT_DYNAMIC, read it in
+            char *buffer = kmalloc(phdr.p_filesz); // rip stack
+
+            if (fs_read(file, phdr.p_offset, phdr.p_filesz, (uint8_t*)buffer) != (ssize_t)phdr.p_filesz) {
+                LOG(ERR, "Error reading PT_DYNAMIC section into memory\n");
+                kfree(buffer);
+                return NULL;
+            }
+
+            return buffer;
+        }
+    }
+
+    LOG(ERR, "ELF file is a dynamically loaded object file but does not contain a PT_INTERP\n");
+    return NULL; // No PT_DYNAMIC section found
+} 
+
+
+/**
+ * @brief Load dynamic ELF file
+ * @param file The file to load dynamically
+ * @param info Output @c elf_dynamic_info_t
+ * @returns 0 on success
+ */
+int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info) {
+    // TODO: We could merge this with elf_load.. improve flags?
+
+    uint8_t *buf = kmalloc(file->length);
+    if (fs_read(file, 0, file->length, buf) != (ssize_t)file->length) {
+        LOG(ERR, "Error reading ELF file\n");
+        return 1;
+    }
+
+    // Determine PHDR bounds first
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr*)buf;
+    uintptr_t lowest = UINTPTR_MAX;
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
+
+        // PT_LOAD is the only one that matters
+        if (phdr->p_type == PT_LOAD && phdr->p_vaddr < lowest) lowest = phdr->p_vaddr;
+    }
+
+    // Begin actual PHDR loading
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
+
+        switch (phdr->p_type) {
+            case PT_LOAD:
+                for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
+                    page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
+                    if (pg && !PAGE_IS_PRESENT(pg)) {
+                        mem_allocatePage(pg, MEM_DEFAULT);
+                    }
+                }
+        
+                // !!!: HACK
+                if (current_cpu->current_process) {
+                    vas_node_t *existn = vas_get(current_cpu->current_process->vas, phdr->p_vaddr);
+
+                    if (existn) {
+                        vas_allocation_t *exist = existn->alloc;
+                        if (exist->base + exist->size < phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) {
+                            exist->size = (phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) - exist->base;
+                        }
+                    } else {
+                        vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
+                    }
+                }
+
+                memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
+
+                // Zero remainder
+                if (phdr->p_memsz > phdr->p_filesz) {
+                    memset((void*)phdr->p_vaddr + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
+                }
+
+                break;
+
+            case PT_PHDR:
+                // Important that we save this
+                info->at_phdr = phdr->p_vaddr;
+                break;
+            
+            default:
+                LOG(WARN, "Unrecognized PHDR type: 0x%x\n", phdr->p_type);
+                break;
+        }
+    }
+
+    // Setup remaining info
+    info->at_entry = ehdr->e_entry;
+    info->at_phent = ehdr->e_phentsize;
+    info->at_phnum = ehdr->e_phnum;
+
+    return 0;
+}
+
 
 #endif

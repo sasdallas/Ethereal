@@ -49,8 +49,7 @@
 #error "Please define your includes here"
 #endif
 
-
-#include <sys/user.h>
+#include <ethereal/user.h>
 
 /**** TYPES ****/
 

@@ -80,7 +80,7 @@ void menu_drawLargeEntry(menu_entry_t *ent, int highlighted) {
 void menu_execute(menu_entry_t *ent) {
     if (!fork()) {
         // TODO: This is kinda stupid
-        const char *args[] = {
+        char *args[] = {
             "/usr/bin/essence",
             "-c",
             ent->exec,

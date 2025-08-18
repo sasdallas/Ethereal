@@ -12,7 +12,7 @@
  */
 
 #include <ethereal/celestial.h>
-#include <sys/ethereal/shared.h>
+#include <ethereal/shared.h>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <errno.h>

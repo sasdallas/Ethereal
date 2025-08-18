@@ -18,7 +18,7 @@
 #include <string.h>
 
 /* Default action list */
-const sa_handler signal_default_action[] = {
+const __signal_handler signal_default_action[] = {
     [SIGABRT]           = SIGNAL_ACTION_TERMINATE_CORE,
     [SIGALRM]           = SIGNAL_ACTION_TERMINATE,
     [SIGBUS]            = SIGNAL_ACTION_TERMINATE_CORE,
@@ -49,7 +49,6 @@ const sa_handler signal_default_action[] = {
     [SIGXFSZ]           = SIGNAL_ACTION_TERMINATE_CORE,
     [SIGWINCH]          = SIGNAL_ACTION_IGNORE,
     [SIGCANCEL]         = SIGNAL_ACTION_IGNORE,
-    [SIGDISPLAY]        = SIGNAL_ACTION_IGNORE,
 };
 
 /* Pending signal set */
@@ -70,7 +69,8 @@ const sa_handler signal_default_action[] = {
  * @returns 0 on success
  */
 int signal_sendThread(struct thread *thr, int signal) {
-    if (signal < 0 || signal >= NUMSIGNALS) return -EINVAL;
+    if (signal < 0 || signal >= NSIG) return -EINVAL;
+    LOG(DEBUG, "Sending signal %d to thread\n", signal);
 
     // Are they trying to continue a process?
     if (THREAD_SIGNAL(thr, signal).handler == SIGNAL_ACTION_CONTINUE && thr->status & THREAD_STATUS_SLEEPING) {
@@ -118,7 +118,7 @@ int signal_sendThread(struct thread *thr, int signal) {
  */
 int signal_send(struct process *proc, int signal) {
     LOG(DEBUG, "Sending signal %d to process pid %d\n", signal, proc->pid);
-    if (signal < 0 || signal >= NUMSIGNALS) return -EINVAL;
+    if (signal < 0 || signal >= NSIG) return -EINVAL;
 
     return signal_sendThread(proc->main_thread, signal);
 }
@@ -133,7 +133,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // Get signal and handler
     proc_signal_t *sig = &THREAD_SIGNAL(thr, signum);
-    sa_handler handler = (sig->handler ? sig->handler : signal_default_action[signum]);
+    __signal_handler handler = (sig->handler ? sig->handler : signal_default_action[signum]);
 
     // Reset?
     if (sig->flags & SA_RESETHAND) {
@@ -253,7 +253,7 @@ int signal_handle(struct thread *thr, registers_t *regs) {
     spinlock_acquire(&thr->siglock);
     if (!SIGNAL_ANY_PENDING(thr)) goto _done;
     
-    for (int i = 0; i < NUMSIGNALS; i++) {
+    for (int i = 0; i < NSIG; i++) {
         if (SIGNAL_IS_PENDING(thr, i)) {
             // The signal is pending - let's handle it.
             int h = signal_try_handle(thr, i, regs);

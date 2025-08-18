@@ -41,6 +41,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
+#include <assert.h>
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
    /* C99 might give us uintptr_t and UINTPTR_MAX but they also might not be provided */

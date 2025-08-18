@@ -22,6 +22,7 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/ioctl.h>
 
 /* Verbose mode enabled */
 static int verbose = 0;

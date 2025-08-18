@@ -19,6 +19,7 @@
 #include <ethereal/keyboard.h>
 #include <pty.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 
 int main(int argc, char *argv[]) {
     printf("Starting Ethereal terminal...\n");
@@ -49,7 +50,7 @@ int main(int argc, char *argv[]) {
         tcsetpgrp(aslave, getpid());
 
         char *nargv[] = { "essence", NULL };
-        execvp("essence", (const char**)nargv);
+        execvp("essence", nargv);
         exit(1);
     } else {
         while (1) {

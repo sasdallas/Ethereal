@@ -24,6 +24,10 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:NVME", __VA_ARGS__)
 
+#undef TIMEOUT
+#pragma GCC diagnostic ignored "-Wpedantic"
+#define TIMEOUT(a, b) ({ while (!(a)) arch_pause_single(); 0; })
+
 /**
  * @brief Reset an NVMe device
  * @param nvme The NVMe device to reset
@@ -80,6 +84,8 @@ int nvme_createIOQueue(nvme_t *nvme) {
  * @param nvme The NVMe object
  */
 int nvme_identify(nvme_t *nvme) {
+    LOG(DEBUG, "Sending IDENTIFY request to NVMe drive\n");
+
     // Allocate a DMA page to hold the identification data
     uintptr_t id_page = mem_allocateDMA(PAGE_SIZE);
     memset((void*)id_page, 0, PAGE_SIZE);
@@ -92,10 +98,19 @@ int nvme_identify(nvme_t *nvme) {
     cmd->cns = NVME_CNS_IDENTIFY_CONTROLLER;
     
     // Submit
-    if (nvme_submitQueue(nvme->admin_queue, &entry)) {
-        LOG(ERR, "Failed to send NVME_CMD_IDENTIFY\n");
-        mem_freeDMA(id_page, PAGE_SIZE);
-        return 1;
+    nvme_submitQueue(nvme->admin_queue, &entry);
+
+    while (!nvme->admin_queue->completions->length) {
+        LOG(DEBUG, "Waiting for LAPIC to complete interrupt (MSI=%02x MSIX=%02x).\n", nvme->dev->msi_offset, nvme->dev->msix_offset);
+
+        if (nvme->dev->msi_offset != 0xFF) {
+            uint32_t pending = pci_readConfigOffset(nvme->dev->bus, nvme->dev->slot, nvme->dev->function, nvme->dev->msi_offset + 0x14, 4);
+            uint32_t masked = pci_readConfigOffset(nvme->dev->bus, nvme->dev->slot, nvme->dev->function, nvme->dev->msi_offset + 0x10, 4);
+            LOG(DEBUG, "\tPENDING=%08x MASKED=%08x\n", pending, masked);
+        }
+
+        arch_pause_single();
+
     }
 
     // Now let's wait for a completion event
@@ -120,9 +135,14 @@ int nvme_identify(nvme_t *nvme) {
     kfree(comp);
 
     // We should have the ID
-    char model[40] = { 0 };
-    memcpy((char*)id_page + 24, model, 40);
-    LOG(DEBUG, "Model: %s\n", model);
+    // char model[41] = { 0 };
+    // memcpy((char*)id_page + 24, model, 40);
+    // model[40] = 0;
+    // LOG(DEBUG, "Model: %s\n", model);
+
+    HEXDUMP(id_page, PAGE_SIZE);
+
+
 
     return 0;
 }
@@ -168,6 +188,7 @@ int nvme_init(pci_device_t *dev) {
     // Create the NVMe structure
     nvme_t *nvme = kzalloc(sizeof(nvme_t));
     nvme->regs = (nvme_registers_t*)mmio_base;
+    nvme->dev = dev;
 
     LOG(DEBUG, "NVMe controller version %d.%d\n", (uint16_t)nvme->regs->vs.mjr, (uint8_t)nvme->regs->vs.mnr);
     LOG(DEBUG, "Command sets supported: %s%s%s\n", (nvme->regs->cap.css & NVME_CAP_CSS_NVME) ? "NVME " : "", (nvme->regs->cap.css & NVME_CAP_CSS_IO) ? "IO " : "", (nvme->regs->cap.css & NVME_CAP_CSS_ADMIN) ? "ADMIN" : "");

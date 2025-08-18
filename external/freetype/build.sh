@@ -10,9 +10,12 @@ if [[ -d build-freetype ]]; then
 fi 
 
 # Download freetype
-wget https://sourceforge.net/projects/freetype/files/freetype2/2.4.9/freetype-2.4.9.tar.bz2
+if [ ! -f freetype-2.4.9.tar.bz2 ]; then
+    wget https://sourceforge.net/projects/freetype/files/freetype2/2.4.9/freetype-2.4.9.tar.bz2
+fi
+
 tar -xf freetype-2.4.9.tar.bz2
-rm freetype-2.4.9.tar.bz2
+# rm freetype-2.4.9.tar.bz2
 
 # Patch freetype
 cd freetype-2.4.9
@@ -24,7 +27,7 @@ cd ..
 mkdir build-freetype
 cd build-freetype
 chmod +x ../freetype-2.4.9/configure
-../freetype-2.4.9/configure --host=$1-ethereal --prefix=/usr
+../freetype-2.4.9/configure --host=$1-ethereal --prefix=/usr --build=x86_64-linux-gnu
 make -j4
 make DESTDIR=$2 install
 cd ..

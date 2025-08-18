@@ -117,7 +117,7 @@ void essence_executeCommand(essence_command_t *cmd) {
         }
 
         // Duplications performed, now execute
-        execvpe(cmd->argv[0], (const char **)cmd->argv, cmd->environ);
+        execvpe(cmd->argv[0], cmd->argv, cmd->environ);
 
         // Execution failed.. what happened?
         if (errno == ENOENT) {

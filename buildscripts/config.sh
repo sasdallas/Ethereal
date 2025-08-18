@@ -1,7 +1,7 @@
 # config.sh - Configure the kernel. You shouldn't touch any of this unless you know what you're doing.
 
-HEADER_PROJECTS="base libpolyhedron libkstructures external hexahedron userspace"                 # Projects to install headers for. This is always done first
-PROJECTS="libpolyhedron libkstructures external drivers hexahedron userspace base"           # Projects to enter and run make install.
+HEADER_PROJECTS="base libc libkstructures external hexahedron userspace"            # Projects to install headers for. This is always done first
+PROJECTS="libc libkstructures external drivers hexahedron userspace base"           # Projects to enter and run make install.
 
 # !! EDIT THIS TO CHANGE BUILD CONFIGURATION !!
 export KERNEL_BUILD_CONF="DEBUG";
@@ -66,6 +66,8 @@ mkdir -p "$INITRD/"
 # Configure CFLAGS (TODO: Don't expose KERNEL_BUILD_CONFIGURATION)
 export CFLAGS="-D__HEXAHEDRON__ -D__REDUCEOS__ -D__ARCH__=$BUILD_ARCH -D__ARCH_${BUILD_ARCH_UPPER}__ -D__KERNEL__ -D__KERNEL_${KERNEL_BUILD_CONF}__"
 export CFLAGS="$CFLAGS -MD -MP --sysroot=$SYSROOT -O2"
+
+export LDFLAGS="-static"
 
 # polyhedron/kstructures are given, these are mainly just for external projects
 export KERNEL_LIBS=""

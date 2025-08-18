@@ -19,6 +19,7 @@
                 "${workspaceFolder}/userspace/lib/include/",
                 "${workspaceFolder}/libkstructures/include/**",
                 "${workspaceFolder}/libpolyhedron/include/",
+                "${workspaceFolder}/hexahedron/include/",
                 "${workspaceFolder}/libpolyhedron/arch/x86_64/include/",
                 "${workspaceFolder}/hexahedron/include/**",
                 "${workspaceFolder}/userspace/lib/include/**",
@@ -36,7 +37,7 @@
             "compilerPath": "/usr/bin/x86_64-elf-gcc",
             "cStandard": "c17",
             "cppStandard": "c++14",
-            "intelliSenseMode": "linux-gcc-x86",
+            "intelliSenseMode": "linux-gcc-x64",
             "compilerArgs": [
                 "-ffreestanding",
                 "--sysroot",

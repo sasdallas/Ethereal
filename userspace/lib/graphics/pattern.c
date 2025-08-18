@@ -36,12 +36,13 @@ gfx_color_t gfx_patternGradient(int32_t x, int32_t y, uint8_t alpha, void *data)
     float point = (use) / (double)grad->size;
 
     // We have a point in the gradient, now let's make some colors
+    uint8_t a = (GFX_RGB_A(grad->start) * (1.0 - point)) + (GFX_RGB_A(grad->end) * (point));
     uint8_t r = (GFX_RGB_R(grad->start) * (1.0 - point)) + (GFX_RGB_R(grad->end) * (point));
     uint8_t g = (GFX_RGB_G(grad->start) * (1.0 - point)) + (GFX_RGB_G(grad->end) * (point));
     uint8_t b = (GFX_RGB_B(grad->start) * (1.0 - point)) + (GFX_RGB_B(grad->end) * (point));
     
     gfx_color_t c =  0 |
-            (alpha) << 24 |
+            ((a * alpha / 255) & 0xFF) << 24 |
             ((r * alpha / 255) & 0xFF) << 16 |
             ((g * alpha / 255) & 0xFF) << 8 |
             ((b * alpha / 255) & 0xFF) << 0;

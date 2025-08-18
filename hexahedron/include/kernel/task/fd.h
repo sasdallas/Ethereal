@@ -36,6 +36,7 @@ typedef struct fd {
     fs_node_t *node;            // File that this file descriptor is connected to
     mode_t mode;                // Mode of file descriptor
     uint64_t offset;            // Offset of file descriptor
+    void *dev;                  // Driver object
 } fd_t;
 
 /**

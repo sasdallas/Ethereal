@@ -144,6 +144,7 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file) {
     if (fread(buffer, 4, 1, file) < 1) {
         return 1;
     }
+    rewind(file); // Reset the file pointer to the beginning
 
     if (buffer[0] == 'B' && buffer[1] == 'M') {
         // Bitmap image

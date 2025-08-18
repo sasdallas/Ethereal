@@ -14,6 +14,9 @@
 #include <time.h>
 #include <kernel/drivers/clock.h>
 
+int gettimeofday(struct timeval *tp, void *tzp) { return clock_gettimeofday(tp, tzp); }
+int settimeofday(struct timeval *tp, void *tzp) { return clock_settimeofday(tp, tzp); }
+
 time_t time(time_t *tloc) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -22,5 +25,3 @@ time_t time(time_t *tloc) {
 }
 
 unsigned long long now() { return (uint64_t)time(NULL); }
-int gettimeofday(struct timeval *tp, void *tzp) { return clock_gettimeofday(tp, tzp); }
-int settimeofday(struct timeval *tp, void *tzp) { return clock_settimeofday(tp, tzp); }

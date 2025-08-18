@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 
 int main(int argc, char *argv[]) {
@@ -27,9 +28,13 @@ int main(int argc, char *argv[]) {
     }
 
     // Open files
-    open("/device/stdin", O_RDONLY);
-    open("/device/console", O_RDWR);
-    open("/device/log", O_RDWR);
+    int stdin = open("/device/stdin", O_RDONLY);
+    int stdout = open("/device/console", O_RDWR);
+    int stderr = open("/device/log", O_RDWR);
+
+    if (stdin != STDIN_FILENO) dup2(stdin, STDIN_FILENO);
+    if (stdout != STDOUT_FILENO) dup2(stdout, STDOUT_FILENO);
+    if (stderr != STDERR_FILENO) dup2(stderr, STDERR_FILENO); 
 
     // Setup environment variables
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
@@ -52,7 +57,7 @@ int main(int argc, char *argv[]) {
         if (strstr(cmdline, "--old-kernel-terminal")) {
             // Oof, here we go.
             char *nargv[3] = { "terminal", NULL };
-            execvpe("terminal", (const char**)nargv, environ);
+            execvpe("terminal", nargv, environ);
 
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         }
@@ -60,13 +65,13 @@ int main(int argc, char *argv[]) {
         if (strstr(cmdline, "--single-user")) {
             // Launch single-user mode
             char *nargv[3] = { "termemu", "-f", NULL };
-            execvpe("termemu", (const char**)nargv, environ);
+            execvpe("termemu", nargv, environ);
 
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         }
 
         char *nargv[3] = { "/device/initrd/usr/bin/celestial", NULL };
-        execvpe("/device/initrd/usr/bin/celestial", (const char**)nargv, environ);
+        execvpe("/device/initrd/usr/bin/celestial", nargv, environ);
     
         printf("ERROR: Failed to launch Celestial process: %s\n", strerror(errno));
         return 1;

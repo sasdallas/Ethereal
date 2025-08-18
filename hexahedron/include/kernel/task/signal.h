@@ -21,20 +21,22 @@
 /**** DEFINITIONS ****/
 
 /* Signal actions */
-#define SIGNAL_ACTION_DEFAULT               (sa_handler)0 // Kernel clears array to 0, so this works out nice
-#define SIGNAL_ACTION_TERMINATE             (sa_handler)1
-#define SIGNAL_ACTION_TERMINATE_CORE        (sa_handler)2
-#define SIGNAL_ACTION_IGNORE                (sa_handler)3
-#define SIGNAL_ACTION_STOP                  (sa_handler)4
-#define SIGNAL_ACTION_CONTINUE              (sa_handler)5
+#define SIGNAL_ACTION_DEFAULT               (void*)0 // Kernel clears array to 0, so this works out nice
+#define SIGNAL_ACTION_TERMINATE             (void*)1
+#define SIGNAL_ACTION_TERMINATE_CORE        (void*)2
+#define SIGNAL_ACTION_IGNORE                (void*)3
+#define SIGNAL_ACTION_STOP                  (void*)4
+#define SIGNAL_ACTION_CONTINUE              (void*)5
 
 /**** TYPES ****/
 
 typedef struct proc_signal {
-    sa_handler  handler;        // Signal handler
+    void        (*handler)(int);        // Signal handler
     sigset_t    mask;           // Signal mask
     int         flags;          // Flags
 } proc_signal_t;
+
+typedef void *__signal_handler;
 
 /**** MACROS ****/
 

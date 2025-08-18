@@ -2,7 +2,6 @@
  * @file hexahedron/drivers/net/socket.c
  * @brief Socket handler
  * 
- * This includes support for @c AF_RAW sockets
  * 
  * @todo Add timeouts
  * 
@@ -53,7 +52,7 @@ static ssize_t socket_raw_sendmsg(sock_t *sock, struct msghdr *message, int flag
     // For each iovec...
     size_t total_sent = 0;
     LOG(DEBUG, "RAW: Sending message\n");
-    for (int i = 0; i < message->msg_iovlen; i++) {
+    for (unsigned i = 0; i < message->msg_iovlen; i++) {
         // Try to send some data to the NIC
         total_sent += fs_write(sock->bound_nic->parent_node, 0, message->msg_iov[i].iov_len, message->msg_iov[i].iov_base);
     }
@@ -71,7 +70,7 @@ static ssize_t socket_raw_recvmsg(sock_t *sock, struct msghdr *message, int flag
     // For each iovec...
     ssize_t total_received = 0;
     LOG(DEBUG, "RAW: Receiving message\n");
-    for (int i = 0; i < message->msg_iovlen; i++) {
+    for (unsigned i = 0; i < message->msg_iovlen; i++) {
         // Try to get some data
         sock_recv_packet_t *pkt = socket_get(sock);
         if (!pkt) return -EINTR;
@@ -114,7 +113,6 @@ static sock_t *socket_raw_create(int type, int protocol) {
 void socket_init() {
     socket_map = hashmap_create_int("socket map", 4);
     socket_list = list_create("socket list");
-    socket_register(AF_RAW, socket_raw_create);
     LOG(INFO, "Sockets initialized\n");
 }
 
@@ -143,7 +141,7 @@ static int socket_validateMsg(struct msghdr *message) {
         SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov, message->msg_iovlen * sizeof(struct iovec));
 
         // For each iov
-        for (int i = 0; i < message->msg_iovlen; i++) {
+        for (unsigned i = 0; i < message->msg_iovlen; i++) {
             SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
         }
     }
@@ -299,12 +297,6 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
 
             // Bind it
             sock->bound_nic = nic;
-
-            // Special case
-            if (sock->domain == AF_RAW) {
-                if (!nic->raw_sockets) nic->raw_sockets = list_create("raw sockets");  
-                list_append(nic->raw_sockets, (void*)sock);
-            }
 
             LOG(DEBUG, "Bound to NIC %s\n", device);
 

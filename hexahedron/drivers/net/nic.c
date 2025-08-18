@@ -21,6 +21,7 @@
 #include <kernel/debug.h>
 #include <structs/list.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 /* NIC list */
 list_t *nic_list = NULL;

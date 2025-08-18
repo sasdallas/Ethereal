@@ -512,7 +512,7 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     // !!!: Incompliant. This should NOT BE LIKE IT IS RIGHT NOW.
     ssize_t total_received = 0;
-    for (int i = 0; i < msg->msg_iovlen; i++) {
+    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         // Read ACK packet
         sock_recv_packet_t *ack_pkt = socket_get(sock);
         if (!ack_pkt) return -EINTR;
@@ -587,7 +587,7 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     ssize_t total_sent_bytes = 0;
-    for (int i = 0; i < msg->msg_iovlen; i++) {
+    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         size_t sent_bytes = 0;
 
         while (sent_bytes < msg->msg_iov[i].iov_len) {

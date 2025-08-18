@@ -37,6 +37,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <errno.h>
 
 /* List of drivers */
 list_t *driver_list = NULL;

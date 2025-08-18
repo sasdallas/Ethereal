@@ -74,7 +74,7 @@ partition_t *partition_create(struct drive *drive, size_t size) {
 int partition_mount(partition_t *part) {
     // Create mount path
     char mount_path[256] = { 0 };
-    snprintf(mount_path, 256, "%sp%d", part->parent->drivefs->name, part->index);
+    snprintf(mount_path, 256, "%sp%lu", part->parent->drivefs->name, part->index);
     vfs_mount(part->node, mount_path);
     return 0;
 }

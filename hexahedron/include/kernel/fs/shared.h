@@ -17,7 +17,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <sys/ethereal/shared.h>
+#include <ethereal/shared.h>
 #include <kernel/task/process.h>
 
 /**** DEFINITIONS ****/

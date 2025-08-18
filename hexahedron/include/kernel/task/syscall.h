@@ -27,9 +27,12 @@
 #include <termios.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/epoll.h>
-#include <sys/ethereal/driver.h>
+#include <ethereal/driver.h>
+#include <ethereal/shared.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <signal.h>
 #include <poll.h>
@@ -154,7 +157,7 @@ long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
 long sys_msync(void *addr, size_t len, int flags);
 long sys_dup2(int oldfd, int newfd);
-long sys_signal(int signum, sa_handler handler);
+long sys_signal(int signum, void (*handler)(int));
 long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oact);
 long sys_sigpending(sigset_t *set);
 long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset);
@@ -197,6 +200,7 @@ long sys_sethostname(const char *name, size_t size);
 long sys_yield();
 long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue);
 long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
+long sys_read_entries(int handle, void *buffer, size_t max_size);
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);

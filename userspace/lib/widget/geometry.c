@@ -13,6 +13,7 @@
 
 #include <ethereal/widget.h>
 #include <stdlib.h>
+#include <assert.h>
 
 /**
  * @brief Render widget to X and Y coordinates

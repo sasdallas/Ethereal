@@ -64,3 +64,4 @@ clean:
 	
 bash_symlink:
 	@-mkdir -p $(INITRD)/bin/ $(DESTDIR)/bin/
+	cp -r $(OUTPUT_FILE) $(DESTDIR)/bin/sh

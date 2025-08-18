@@ -38,9 +38,9 @@
 #define EXT2_INODE_TYPE_SOCKET              0xC000
 
 /* Inode permissions */
-#define EXT2_INODE_IROTH                    0x0001
+#define EXT2_INODE_IXOTH                    0x0001
 #define EXT2_INODE_IWOTH                    0x0002
-#define EXT2_INODE_IXOTH                    0x0004
+#define EXT2_INODE_IROTH                    0x0004
 #define EXT2_INODE_IXGRP                    0x0008
 #define EXT2_INODE_IWGRP                    0x0010
 #define EXT2_INODE_IRGRP                    0x0020
@@ -48,8 +48,8 @@
 #define EXT2_INODE_IWUSR                    0x0080
 #define EXT2_INODE_IRUSR                    0x0100
 #define EXT2_INODE_STICKY                   0x0200
-#define EXT2_INODE_SGID                     0x0400
-#define EXT2_INODE_SUID                     0x0800
+#define EXT2_INODE_ISGID                    0x0400
+#define EXT2_INODE_ISUID                    0x0800
 
 /* Blocks */
 #define EXT2_DIRECT_BLOCKS                  12
@@ -178,6 +178,7 @@ typedef struct ext2 {
 
     // BGD
     size_t bgd_count;                       // BGD count
+    size_t bgd_blocks;                      // BGD blocks
     ext2_bgd_t *bgds;                       // Array of BGDs
 
     // SUPERBLOCK
@@ -205,6 +206,15 @@ typedef struct ext2 {
 int ext2_readBlock(ext2_t *ext2, uint32_t block, uint8_t **buffer);
 
 /**
+ * @brief Write a block to an EXT2 filesystem
+ * @param ext2 The filesystem to write
+ * @param block The block number to write
+ * @param buffer Buffer location
+ * @returns Error code
+ */
+int ext2_writeBlock(ext2_t *ext2, uint32_t block, uint8_t *buffer);
+
+/**
  * @brief Read the inode metadata from an EXT2 filesystem
  * @param ext2 The filesystem to read
  * @param inode The inode number to read
@@ -212,6 +222,26 @@ int ext2_readBlock(ext2_t *ext2, uint32_t block, uint8_t **buffer);
  * @returns Error code
  */
 int ext2_readInode(ext2_t *ext2, uint32_t inode, uint8_t **buffer);
+
+/**
+ * @brief Write an inode structure
+ * @param ext2 EXT2 filesystem
+ * @param inode The inode structure to write
+ * @param inode_number The inode number
+ */
+int ext2_writeInode(ext2_t *ext2, ext2_inode_t *inode, uint32_t inode_number);
+
+/**
+ * @brief Write the superblock after changes were made
+ * @param ext2 EXT2 filesystem
+ */
+void ext2_flushSuperblock(ext2_t *ext2);
+
+/**
+ * @brief Flush all block group descriptors
+ * @param ext2 EXT2 filesystem
+ */
+void ext2_flushBGDs(ext2_t *ext2);
 
 /**
  * @brief Convert inode to VFS node
@@ -239,5 +269,17 @@ uint32_t ext2_convertInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t bloc
  * @returns Error code
  */
 int ext2_readInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t block, uint8_t **buffer);
+
+/**
+ * @brief Allocate an inode in EXT2
+ * @param ext2 EXT2 filesystem
+ */
+uint32_t ext2_allocateInode(ext2_t *ext2);
+
+/**
+ * @brief Allocate a new block in an EXT2 filesystem
+ * @param ext2 The filesystem to allocate a block in
+ */
+uint32_t ext2_allocateBlock(ext2_t *ext2);
 
 #endif

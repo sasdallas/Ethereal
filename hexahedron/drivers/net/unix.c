@@ -292,6 +292,7 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             spinlock_release(usock_target->packet_buffer->lock);
 
             if (usock_target->thr) sleep_wakeup(usock_target->thr);
+
             fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
         }
 

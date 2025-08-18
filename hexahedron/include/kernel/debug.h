@@ -55,6 +55,9 @@ typedef enum {
 
 /**** FUNCTIONS ****/
 
+size_t xvasprintf(int (*callback)(void*, char), void * userData, const char * fmt, va_list args);
+
+
 #ifdef __INTELLISENSE__
 /**
  * @brief Print something to the debug log

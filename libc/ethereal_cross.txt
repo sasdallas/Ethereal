@@ -1,0 +1,12 @@
+[host_machine]
+system = 'ethereal'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
+[binaries]
+c = 'x86_64-ethereal-gcc'
+cpp = 'x86_64-ethereal-g++'
+ar = 'x86_64-ethereal-ar'
+strip = 'x86_64-ethereal-strip'
+ld = 'x86_64-ethereal-ld'
+pkgconfig = 'x86_64-ethereal-pkg-config'

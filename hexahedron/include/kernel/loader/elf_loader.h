@@ -32,6 +32,15 @@
 #define ELF_DYNAMIC     2   // Dynamically linked object files
 #define ELF_ANY         3   // It doesn't matter what file we're looking for
 
+/**** TYPES ****/
+
+typedef struct elf_dynamic_info {
+    uintptr_t at_entry;         // AT_ENTRY
+    uintptr_t at_phdr;          // AT_PHDR
+    uintptr_t at_phnum;         // AT_PHNUM
+    uintptr_t at_phent;         // AT_PHENT
+} elf_dynamic_info_t;
+
 /**** FUNCTIONS ****/
 
 /**
@@ -96,5 +105,21 @@ uintptr_t elf_getHeapLocation(uintptr_t elf_address);
  * @param elf_address Address given by @c elf_load
  */
 void elf_createImage(uintptr_t elf_address);
+
+/**
+ * @brief Detect and find the interpreter for a dynamically linked file
+ * @param file The file to get the interpreter for
+ * @returns Interpreter string on success or NULL on failure
+ * @note Free this yourself
+ */
+char *elf_getInterpreter(fs_node_t *file);
+
+/**
+ * @brief Load dynamic ELF file
+ * @param file The file to load dynamically
+ * @param info Output @c elf_dynamic_info_t
+ * @returns 0 on success
+ */
+int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info);
 
 #endif

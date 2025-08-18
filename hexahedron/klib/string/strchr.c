@@ -13,6 +13,9 @@
 
 #include <string.h>
 
+/* mlibc does not have definition */
+extern void *memchrr(const void *s, int ch, size_t n);
+
 char *strchr(const char *s, int c) {
     return memchr(s, c, strlen(s));
 }

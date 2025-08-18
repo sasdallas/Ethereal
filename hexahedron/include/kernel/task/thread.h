@@ -71,7 +71,7 @@ typedef struct thread {
 
     // SIGNALS
     spinlock_t siglock;                     // Signal lock
-    proc_signal_t signals[NUMSIGNALS];      // Signal list
+    proc_signal_t signals[NSIG];            // Signal list
     sigset_t pending_signals;               // Pending signals
     sigset_t blocked_signals;               // Blocked signals
 

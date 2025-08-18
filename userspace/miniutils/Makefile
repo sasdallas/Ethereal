@@ -17,7 +17,7 @@ C_SRCS = $(shell find . -name "*.c" -printf '%f ')
 C_OUTPUTS = $(patsubst %.c, $(OBJ_DIR)/%, $(C_SRCS))
 
 # Additional libc
-LDFLAGS += -lversion
+LDFLAGS += -lversion -lethereal
 
 MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)

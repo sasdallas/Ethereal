@@ -22,6 +22,10 @@
 #include <string.h>
 #include <poll.h>
 #include <sys/uio.h>
+#include <sys/signal.h>
+#include <sys/time.h>
+#include <time.h>
+
 
 // PING ICMP header (identifier + sequence numbers)
 typedef struct icmp_header {
@@ -82,7 +86,7 @@ int main(int argc, char *argv[]) {
 
     struct hostent *ent = gethostbyname(dest_ip);
     if (!ent) {
-        herror("ping");
+        fprintf(stderr, "ping: %s: Error resolving\n", argv[1]);
         return 1;
     }
 
@@ -122,7 +126,7 @@ int main(int argc, char *argv[]) {
 
 	    struct timeval tv;
 	    gettimeofday(&tv,NULL);
-	    unsigned long send_time = tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
+	    unsigned long send_time = tv.tv_sec * 1000000L + tv.tv_usec;
 
         // Poll
         struct pollfd fds[1];
@@ -150,7 +154,7 @@ int main(int argc, char *argv[]) {
         
         // Receive time
 	    gettimeofday(&tv,NULL);
-	    unsigned long recv_time = tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
+	    unsigned long recv_time = tv.tv_sec * 1000000L + tv.tv_usec;
 
         if (bytes) {
             // Check to make sure its a ping packet

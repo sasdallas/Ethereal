@@ -45,14 +45,14 @@ static const char *__siglist[] = {
     [SIGXCPU]           = "CPU time limit exceeded",
     [SIGXFSZ]           = "File size limit exceeded",
     [SIGWINCH]          = "Window size changed",
-    [NUMSIGNALS]        = "Unknown signal",
+    [NSIG]              = "Unknown signal",
 };
 
 /* Signal description */
 static char __sigstr[256];
 
 char *strsignal(int sig) {
-    if (sig > NUMSIGNALS || sig < 0) sig = NUMSIGNALS;
+    if (sig > NSIG || sig < 0) sig = NSIG;
     strncpy(__sigstr, __siglist[sig], 256);
     return __sigstr;
 }

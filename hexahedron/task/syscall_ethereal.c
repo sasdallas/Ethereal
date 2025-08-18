@@ -17,12 +17,13 @@
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
 #include <kernel/loader/driver.h>
-#include <sys/ethereal/driver.h>
+#include <ethereal/driver.h>
 #include <kernel/kernel.h>
-#include <sys/ethereal/reboot.h>
+#include <ethereal/reboot.h>
 #include <kernel/hal.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL:ETHEREAL", __VA_ARGS__)

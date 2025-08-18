@@ -22,8 +22,8 @@
 #include <kernel/panic.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
-#include <sys/ethereal/auxv.h>
 #include <kernel/mem/pmm.h>
+#include <kernel/loader/elf.h>
 
 #include <structs/tree.h>
 #include <structs/list.h>
@@ -576,7 +576,185 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
 
 /**
  * @brief Execute a new ELF binary for the current process (execve)
-* @param path Full path of the file
+ * @param path Full path of the file
+ * @param file The file to execute
+ * @param argc The argument count
+ * @param argv The argument list
+ * @param envp The environment variables pointer
+ * @returns Error code
+ * 
+ * @todo There's a lot of pointless directory switching for some reason - need to fix
+ */
+int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+    // Execute dynamic loader
+    // First, try to open the interpreter that's in PT_INTERP
+    char *interpreter_path = elf_getInterpreter(file);
+    fs_node_t *interpreter = NULL;
+    if (interpreter_path) {
+        // We have an interpreter path
+        LOG(INFO, "Trying to execute interpreter: %s\n", interpreter_path);
+        interpreter = kopen(interpreter_path, 0);
+        kfree(interpreter_path);
+    }
+
+    // Strike 2
+    if (!interpreter) {
+        // Backup path: Run /usr/lib/ld.so
+        LOG(INFO, "Trying to load interpreter: /usr/lib/ld.so\n");
+        interpreter = kopen("/usr/lib/ld.so", 0);
+    }
+
+    // Strike 3
+    if (!interpreter) {
+        LOG(ERR, "No interpreter available\n");
+        return -ENOENT;
+    }
+
+    // Setup new name
+    // TODO: This should be a *pointer* to argv[0], not a duplicate.
+    kfree(current_cpu->current_process->name);
+    current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
+
+    // Destroy previous threads
+    if (current_cpu->current_process->main_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
+    if (current_cpu->current_process->thread_list) {
+        foreach(thread_node, current_cpu->current_process->thread_list) {
+            thread_t *thr = (thread_t*)thread_node->value;
+            if (thr && thr != current_cpu->current_thread) __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
+        }
+    }
+
+    // Switch away from old directory
+    mem_switchDirectory(NULL);
+
+    // Destroy the current thread
+    if (current_cpu->current_thread) {
+        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
+        thread_destroy(current_cpu->current_thread);
+    }
+
+    // Clone new directory and destroy the old one
+    LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
+    page_t *last_dir = current_cpu->current_process->dir;
+    current_cpu->current_process->dir = mem_clone(NULL);
+    vas_destroy(current_cpu->current_process->vas);
+
+    // Create a new VAS
+    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
+    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
+
+    // Switch to directory
+    mem_switchDirectory(current_cpu->current_process->dir);
+
+    // Create a new main thread with a blank entrypoint
+    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->dir, 0x0, THREAD_FLAG_DEFAULT);
+
+    // Load file into memory
+    // TODO: This runs check twice (redundant)
+    uintptr_t elf_binary = elf_load(interpreter, ELF_USER);
+
+    // Success?
+    if (elf_binary == 0x0) {
+        // Something happened...
+        LOG(ERR, "ELF binary failed to load properly (but is valid?)\n");
+        return -EINVAL;
+    }
+
+    // Alright cool we have an interpreter now, load the file
+    elf_dynamic_info_t info;
+    if (elf_loadDynamicELF(file, &info)) {
+        LOG(ERR, "Error loading dynamic ELF file\n");
+        return -ENOEXEC;
+    }
+
+    // Setup heap location
+    current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
+    current_cpu->current_process->heap = current_cpu->current_process->heap_base;
+
+    // Populate image
+    elf_createImage(elf_binary);
+
+    // Get the entrypoint
+    uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
+    arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
+
+    // We own this process
+    current_cpu->current_thread = current_cpu->current_process->main_thread;
+
+    // Some programs won't play well with an allocation at NULL, but certain things need it. VAS system also gets confused, so this is technically a hack.
+    if (!vas_get(current_cpu->current_process->vas, 0x0)) {
+        vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
+    }
+
+    // Now we need to start pushing argc, argv, and envp onto the thread stack
+
+    // Calculate envc
+    // TODO: Maybe accept envc/force accept envc so this dangerous/slow code can be calculated elsewhere
+    int envc = 0;
+    char **p = envp;
+    while (*p++) envc++;
+
+    // Push contents of envc onto the stack
+    char *envp_pointers[envc]; // The array we pass to libc is a list of pointers, so we push the strings and then the pointers
+    for (int e = 0; e < envc; e++) {
+        THREAD_PUSH_STACK_STRING(current_cpu->current_thread->stack, strlen(envp[e]), envp[e]);
+        envp_pointers[e] = (char*)current_cpu->current_thread->stack;
+    }
+
+    // Push contents of argv onto the stack
+    char *argv_pointers[argc];
+    for (int a = 0; a < argc; a++) {
+        THREAD_PUSH_STACK_STRING(current_cpu->current_thread->stack, strlen(argv[a]), argv[a]);
+        argv_pointers[a] = (char*)current_cpu->current_thread->stack;
+    }
+
+    // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
+
+    // Create SysV auxiliary vector
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_NULL);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_BASE);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phdr);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHDR);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phnum);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHNUM);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phent);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHENT);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_entry);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_ENTRY);
+    
+
+    // Now let's push the envp array
+    // We have to do this backwards to make sure the array is constructured properly
+    // Push NULL first
+    char **user_envp = NULL;
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, NULL);
+    for (int e = envc; e > 0; e--) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, envp_pointers[e-1]);
+    }
+
+    // Push the argv array
+    // Push NULL first
+    char **user_argv = NULL;
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, NULL);
+    for (int a = argc; a > 0; a--) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, argv_pointers[a-1]);
+    }
+
+    
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
+
+    // Enter
+    LOG(DEBUG, "Launching new ELF process\n");
+    arch_prepare_switch(current_cpu->current_thread);
+    arch_start_execution(process_entrypoint, current_cpu->current_thread->stack);
+
+    return 0;
+}
+
+/**
+ * @brief Execute a new ELF binary for the current process (execve)
+ * @param path Full path of the file
  * @param file The file to execute
  * @param argc The argument count
  * @param argv The argument list
@@ -593,32 +771,8 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     if (elf_check(file, ELF_DYNAMIC)) {
         // Yes, it is, run the process with ld.so
         // TODO: Get PT_INTERP value
-
-        // TODO: Maybe we can mount the initial ramdisk as / and /device/initrd?
-        LOG(DEBUG, "Launching new dynamic ELF process\n");
-
-        char **nargv = kmalloc((argc + 3) * sizeof(char*));
-
-        // Copy argv elements
-        nargv[0] = "ld.so";
-        nargv[1] = strdup(path);
-        for (int i = 0; i < argc; i++) {
-            nargv[i+2] = argv[i];
-        }
-        nargv[argc+2] = NULL;
-    
-        // Figure out which one we want
-        char *interp_path = "/lib/ld.so";
-        fs_node_t *interp = kopen(interp_path, 0);
-        if (!interp) {
-            // Use backup interpreter in initrd
-            interp = kopen("/device/initrd/lib/ld.so", 0);
-            interp_path = "/device/initrd/lib/ld.so";
-        }
-
-        if (!interp) return -ENOENT;
-
-        return process_execute(path, interp, argc+2, nargv, envp);
+        LOG(INFO, "Running dynamic executable\n");
+        return process_executeDynamic(path, file, argc, argv, envp);
     }
 
     // Check the ELF binary
@@ -658,7 +812,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     vas_destroy(current_cpu->current_process->vas);
 
     // Create a new VAS
-    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
+    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
     current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
 
     // Switch to directory
@@ -692,6 +846,11 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     // We own this process
     current_cpu->current_thread = current_cpu->current_process->main_thread;
 
+    // Some programs won't play well with an allocation at NULL, but certain things need it. VAS system also gets confused, so this is technically a hack.
+    if (!vas_get(current_cpu->current_process->vas, 0x0)) {
+        vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
+    }
+
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
     // Calculate envc
@@ -714,6 +873,13 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         argv_pointers[a] = (char*)current_cpu->current_thread->stack;
     }
 
+    // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
+
+    // Create SysV auxiliary vector
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_NULL);
+    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
+    
+
     // Now let's push the envp array
     // We have to do this backwards to make sure the array is constructured properly
     // Push NULL first
@@ -723,8 +889,6 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, envp_pointers[e-1]);
     }
 
-    user_envp = (char**)current_cpu->current_thread->stack;
-
     // Push the argv array
     // Push NULL first
     char **user_argv = NULL;
@@ -733,18 +897,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, argv_pointers[a-1]);
     }
 
-    user_argv = (char**)current_cpu->current_thread->stack;
-
-    // Create the auxiliary vector
-    __auxv_t auxv = { .tls = current_cpu->current_process->image.tls, .tls_size = current_cpu->current_process->image.tls_size };
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, __auxv_t, auxv);
-
-    __auxv_t *user_auxv = (__auxv_t*)current_cpu->current_thread->stack;
-
-    // Now we can the pointers they need
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_auxv);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_envp);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, user_argv);
+    
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
 
     // Enter
@@ -911,7 +1064,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
             // Validate PID matches
             if (pid < -1) {
                 // Wait for any child process whose group ID is the absolute value of PID
-                if (child->gid != (pid * -1)) continue;
+                if (child->gid != (gid_t)(pid * -1)) continue;
             } else if (pid == 0) {
                 // Wait for any child process whose group ID is equal to the calling process
                 if (current_cpu->current_process->gid != child->gid) {
@@ -932,9 +1085,9 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 // Update wstatus
                 if (wstatus) {
                     if (child->exit_reason == PROCESS_EXIT_NORMAL) {
-                        *wstatus = WSTATUS_EXITED | (child->exit_status << WSTATUS_EXITCODE);
+                        *wstatus = (child->exit_status << 8);
                     } else {
-                        *wstatus = WSTATUS_EXITED | WSTATUS_SIGNALLED | (child->exit_status << WSTATUS_SIGNUM);
+                        *wstatus = (child->exit_status & 0x7F);
                     }
                 }
 
@@ -957,7 +1110,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
 
                     // Update wstatus
                     if (wstatus) {
-                        *wstatus = WSTATUS_STOPPED | (child->exit_status << WSTATUS_SIGNUM);
+                        *wstatus = 0x7F;
                     }
 
                     spinlock_release(&reap_queue_lock);

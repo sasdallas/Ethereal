@@ -48,7 +48,6 @@ Currently, the project is developing its usermode stages.
 - `drivers`: Drivers for Hexahedron, copied based on their configuration.
 - `external`: Contains external projects, such as ACPICA. See External Components.
 - `hexahedron`: The main kernel project
-- `libpolyhedron`: The libc/libk for the project.
 - `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
 
 ## Building
@@ -71,7 +70,6 @@ A lot of times, Ethereal fails to load. This is expected. Please start a GitHub 
 You can solve some problems by using 'e' to open a GRUB configuration and adding some kernel arguments to the end of the `multiboot entry`.\
 Here is a small list:
 
-- `--enable-ioapic`: Enable a prototype I/O APIC driver. Use this if you keyboard isn't working! (and you support PS/2)
 - `--debug=`: Options are `console` and `none`. If `console`, will redirect kernel debug output to the screen. Useful for debugging
 - `--noload=`: Comma-separated list of driver (.sys) files to not load. Problematic drivers: usb_xhci.sys, ahci.sys, ps2.sys (if you don't support PS/2),
 - `--no-acpica`: Disable the ACPICA library and fallback to MinACPI implementation. Only useful in extreme cases.
@@ -79,14 +77,15 @@ Here is a small list:
 - `--disable-smp`: Enable ACPI, but disable SMP
 - `--no-secondary-fb`: Disables the secondary framebuffer. **RECOMMENDED** for real hardware, since double buffering is slow (**warning: scrolling will be extremely slow**)
 - `--disable-cow`: Disable copy-on-write. Not recommended, but can be useful in extreme cases.
-- `--xhci-fix-pci`: Enable xHCI PCI fix. Useful for Bochs.
 - `--no-psf-font`: Don't load the PSF font from initrd
 
 ## External components
-Certain external components are available in `external`. Here is a list of them and their versions:
+Certain external components are available in `external`, `libc`, and other parts of the kernel. Here is a list of them and their versions:
 - ACPICA UNIX* (Intel License): Version 20240927 [available here](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/download.html)
 - libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
 - freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
+- mlibc (MIT license): [Ethereal fork available here](https://github.com/sasdallas/mlibc)
+- Linux 6.16 (GPL license, required for mlibc linux headers): [available here](https://kernel.org)
 
 ## Credits
 
@@ -96,8 +95,8 @@ The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](htt
 
 ## Licensing
 
-Hexahedron, libpolyhedron, and all other components of Ethereal fall under the terms of the BSD 3-clause license (available in LICENSE).\
-All files, unless specified, fall under this license.
+Hexahedron and all other non-external components of Ethereal fall under the terms of the BSD 3-clause license (available in LICENSE).\
+All files, unless specified in the copyright header, fall under this license. Any file without a copyright header is NOT protected by BSD 3-clause.
 
 **LICENSING ISSUES:** If a file is found without proper commenting, immediately contact me (preferably through a public channel such as GitHub issues for transparency) directly to resolve it.
 

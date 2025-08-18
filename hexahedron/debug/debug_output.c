@@ -111,10 +111,10 @@ ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) 
  */
 ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
     spinlock_acquire(&debug_lock);
-    ssize_t r = debug_write_buffer(size, (char*)buffer);
+    debug_write_buffer(size, (char*)buffer);
     debug_node.length = debug_buffer_index;
     spinlock_release(&debug_lock);
-    return r;
+    return size;
 }
 
 
@@ -219,11 +219,11 @@ log_putchar_method_t debug_getOutput() {
  */
 void debug_mountNode() {
     /* Allocate the debug buffer */
-    if (!kargs_has("--no-store-debug")) {
-        debug_buffer = kmalloc(PAGE_SIZE);
-        debug_buffer_size = PAGE_SIZE;
-        debug_buffer_index = 0;
-    }
+    // if (!kargs_has("--no-store-debug")) {
+    //     debug_buffer = kmalloc(PAGE_SIZE);
+    //     debug_buffer_size = PAGE_SIZE;
+    //     debug_buffer_index = 0;
+    // }
 
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
 

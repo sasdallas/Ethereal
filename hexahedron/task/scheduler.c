@@ -51,6 +51,8 @@ extern list_t *reap_queue;
  */
 int scheduler_update(uint64_t ticks) {
     // Update the current process' time
+    
+#ifdef SCHED_FOLLOW_PRIORITIES
     if (!current_cpu->current_thread) {
         return 0; // Before a process was initialized
     }
@@ -65,6 +67,10 @@ int scheduler_update(uint64_t ticks) {
     }
 
     return 0;
+#else
+    scheduler_reschedule();
+    return 1;
+#endif
 }
 
 /**
@@ -148,11 +154,8 @@ void scheduler_reschedule() {
 
     // If the current thread is still running, we can append it to the back of the queue
     if (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) {
-        spinlock_acquire(&scheduler_lock);
         // Get the thread's timeslice
         current_cpu->current_thread->preempt_ticks = scheduler_timeslices[current_cpu->current_thread->parent->priority];
-
-        spinlock_release(&scheduler_lock);
     }
 }
 

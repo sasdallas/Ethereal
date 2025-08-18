@@ -23,11 +23,13 @@
 #include <kernel/debug.h>
 #include <ctype.h>
 #include <sys/ioctl.h>
+#include <sys/ioctl_ethereal.h>
 #include <sys/signal.h>
 #include <string.h>
 #include <termios.h>
 #include <structs/hashmap.h>
 #include <stdlib.h>
+#include <errno.h>
 
 /* Last used index for PTY */
 static int last_pty_index = 0;
@@ -40,12 +42,12 @@ fs_node_t *pty_dir = NULL;
 hashmap_t *pty_map = NULL;
 
 /* Helpers */
-#define CTRL(ch) (('@' + ch) % 128)
+#define PTY_TO_CTRL(ch) (('@' + ch) % 128)
 #define IS_CTRL(ch) (ch < 0x20 || ch == 0x7F)
 
 #define WRITE_IN(ch) pty->write_in(pty, ch)
 #define WRITE_OUTPUT(ch) pty->write_out(pty, ch)
-#define WRITE_CONTROL(ch) { WRITE_OUTPUT('^'); WRITE_OUTPUT(CTRL(ch)); }
+#define WRITE_CONTROL(ch) { WRITE_OUTPUT('^'); WRITE_OUTPUT(PTY_TO_CTRL(ch)); }
 #define WRITE_BKSP() { WRITE_OUTPUT('\010'); WRITE_OUTPUT(' '); WRITE_OUTPUT('\010'); }
 
 /* Log method */

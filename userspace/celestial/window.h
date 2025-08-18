@@ -19,7 +19,7 @@
 #include <sys/types.h>
 #include <graphics/gfx.h>
 #include <structs/hashmap.h>
-#include <sys/ethereal/shared.h>
+#include <ethereal/shared.h>
 
 /**** DEFINITIONS ****/
 

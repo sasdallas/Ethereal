@@ -21,6 +21,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <structs/ini.h>
+#include <sys/signal.h>
+#include <errno.h>
 
 /* Disable background drawing */
 int disable_bg = 0;
@@ -176,13 +178,22 @@ void config_load() {
  */
 void create_background() {
     celestial_info_t *info = celestial_getServerInformation();
-    if (!info) exit(1);
+    if (!info) {
+        perror("celestial_getServerInformation");
+        exit(1);
+    }
 
     wid_t bgwid = celestial_createWindowUndecorated(0, info->screen_width, info->screen_height);
-    if (bgwid < 0) exit(1);
+    if (bgwid < 0) {
+        perror("celestial_createWindowUndecorated");
+        exit(1);
+    }
 
     background_window = celestial_getWindow(bgwid);
-    if (!background_window) exit(1);
+    if (!background_window) {
+        perror("celestial_getWindow");
+        exit(1);
+    }
 
     // Set Z order
     celestial_setZArray(background_window, CELESTIAL_Z_BACKGROUND);
@@ -270,17 +281,24 @@ int main(int argc, char *argv[]) {
     }
 
     // Set reload signal
+    fprintf(stderr, "set reload..\n");
     signal(SIGUSR2, reload_signal);
 
     // Load config
-    config_load();
+    fprintf(stderr, "load config...\n");
+    // config_load();
 
     // Create the background
+    fprintf(stderr, "make background..\n");
     create_background();
 
     // Create the taskbar window
     wid_t taskbar_wid = celestial_createWindowUndecorated(0, celestial_getServerInformation()->screen_width, TASKBAR_HEIGHT);
-    if (taskbar_wid < 0) return 1;
+    if (taskbar_wid < 0) {
+        fprintf(stderr, "desktop: Create window failed with error %s\n", strerror(errno));
+        return 1;
+    }
+
     taskbar_window = celestial_getWindow(taskbar_wid);
     if (!taskbar_window) return 1;
     celestial_setWindowPosition(taskbar_window, 0, celestial_getServerInformation()->screen_height - TASKBAR_HEIGHT);
@@ -316,7 +334,7 @@ int main(int argc, char *argv[]) {
         }       
 
         char *args[] = { start, NULL };
-        execvp(start, (const char **)args);
+        execvp(start, args);
         return 1;
     }
 

@@ -11,7 +11,7 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <sys/ethereal/reboot.h>
+#include <ethereal/reboot.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>

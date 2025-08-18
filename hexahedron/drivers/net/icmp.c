@@ -155,7 +155,7 @@ ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
 
     ssize_t sent_bytes = 0;
-    for (int i = 0; i < msg->msg_iovlen; i++) {
+    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         // Check it
         if (msg->msg_iov[i].iov_len < sizeof(icmp_packet_t)) return -EINVAL;
 
@@ -198,7 +198,7 @@ ssize_t icmp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     sock_recv_packet_t *pkt = NULL;
 
-    for (int i = 0; i < msg->msg_iovlen; i++) {
+    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         if (pkt) kfree(pkt);
 
         // Get new packet

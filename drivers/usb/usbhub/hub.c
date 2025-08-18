@@ -83,24 +83,25 @@ USB_STATUS usbhub_probe(USBHub_t *hub) {
 
         // Did the enable bit set?
         if (port_status & HUB_PORT_STATUS_ENABLE) {
+            LOG(DEBUG, "Initializing port %d\n", port);
             // Yes, create a device and initialize it
-            uint32_t port_speed = (port_status & HUB_PORT_STATUS_LOW_SPEED) ? USB_LOW_SPEED : ((port_status & HUB_PORT_STATUS_HIGH_SPEED) ? USB_HIGH_SPEED : USB_FULL_SPEED);
-            USBDevice_t *dev = usb_createDevice(hub->intf->dev->c, port, port_speed, hub->intf->dev->shutdown, hub->intf->dev->control, hub->intf->dev->interrupt);
-            dev->mps = 8; // TODO: Bochs says to make this equal the mps corresponding to the speed of the device
-            if (!dev) {
-                LOG(ERR, "Failed to create device for port %d\n", port+1);
-                return USB_FAILURE;
-            }
+            // uint32_t port_speed = (port_status & HUB_PORT_STATUS_LOW_SPEED) ? USB_LOW_SPEED : ((port_status & HUB_PORT_STATUS_HIGH_SPEED) ? USB_HIGH_SPEED : USB_FULL_SPEED);
+            // USBDevice_t *dev = usb_createDevice(hub->intf->dev->c, port, port_speed, hub->intf->dev->shutdown, hub->intf->dev->control, hub->intf->dev->interrupt);
+            // dev->mps = 8; // TODO: Bochs says to make this equal the mps corresponding to the speed of the device
+            // if (!dev) {
+            //     LOG(ERR, "Failed to create device for port %d\n", port+1);
+            //     return USB_FAILURE;
+            // }
 
-            if (usb_initializeDevice(dev) == USB_FAILURE) {
-                // Failed to initialize
-                usb_deinitializeDevice(dev);
-                usb_destroyDevice(hub->intf->dev->c, dev); 
-                continue;
-            }
+            // if (usb_initializeDevice(dev) == USB_FAILURE) {
+            //     // Failed to initialize
+            //     usb_deinitializeDevice(dev);
+            //     usb_destroyDevice(hub->intf->dev->c, dev); 
+            //     continue;
+            // }
 
-            // Insert into list
-            list_append(hub->hub_ports, (void*)dev);
+            // // Insert into list
+            // list_append(hub->hub_ports, (void*)dev);
         }
 
     }  
@@ -112,31 +113,42 @@ USB_STATUS usbhub_probe(USBHub_t *hub) {
  * @brief Hub initialize device
  */
 USB_STATUS usbhub_initializeDevice(USBInterface_t *intf) {
-    // Read the hub descriptor in
+    LOG(INFO, "Initializing a USB hub device\n");
     USBHub_t *hub = kmalloc(sizeof(USBHub_t));
     hub->hub_ports = list_create("usb hub ports");
-    if (usb_getDescriptor(intf->dev, USB_RT_CLASS, USB_DESC_HUB, 0, sizeof(USBHubDescriptor_t), &hub->desc) != USB_SUCCESS) {
-        // Failed
-        list_destroy(hub->hub_ports, false);
-        kfree(hub);
-        LOG(ERR, "Error while trying to get USB hub descriptor\n");
-        return USB_FAILURE;
+
+    if (intf->dev->speed == USB_HIGH_SPEED) {
+        LOG(DEBUG, "Looking for multi-TT interface\n");
+
+        USBConfiguration_t *multi_tt = NULL;
+        foreach(config_node, intf->dev->config_list) {
+            USBConfiguration_t *conf = (USBConfiguration_t*)(config_node->value);
+        }
     }
 
-    hub->nports = hub->desc.bNbrPorts;
-    hub->intf = intf;
+    // // Get hub descriptor
+    // if (usb_getDescriptor(intf->dev, USB_RT_CLASS, USB_DESC_HUB, 0, sizeof(USBHubDescriptor_t), &hub->desc) != USB_SUCCESS) {
+    //     // Failed
+    //     list_destroy(hub->hub_ports, false);
+    //     kfree(hub);
+    //     LOG(ERR, "Error while trying to get USB hub descriptor\n");
+    //     return USB_FAILURE;
+    // }
 
-    // Now we've read the hub descriptor, probe it for ports
-    if (usbhub_probe(hub) != USB_SUCCESS) {
-        list_destroy(hub->hub_ports, false);
-        kfree(hub);
-        LOG(ERR, "Error while trying to initialize hub ports\n");
-        return USB_FAILURE;
-    }
+    // hub->nports = hub->desc.bNbrPorts;
+    // hub->intf = intf;
 
-    // Set the interface driver structure
-    intf->driver->s = (void*)hub;
-    return USB_SUCCESS;
+    // // Now we've read the hub descriptor, probe it for ports
+    // if (usbhub_probe(hub) != USB_SUCCESS) {
+    //     list_destroy(hub->hub_ports, false);
+    //     kfree(hub);
+    //     LOG(ERR, "Error while trying to initialize hub ports\n");
+    //     return USB_FAILURE;
+    // }
+
+    // // Set the interface driver structure
+    // intf->driver->s = (void*)hub;
+    // return USB_SUCCESS;
 }
 
 /**
@@ -160,7 +172,7 @@ int usbhub_initialize(int argc, char **argv) {
     }
 
     // Now setup fields
-    driver->name = strdup("Hexahedron USB Hub Driver");
+    driver->name = strdup("USB Hub Driver");
     driver->find = kmalloc(sizeof(USBDriverFindParameters_t));
     memset(driver->find, 0, sizeof(USBDriverFindParameters_t));
     driver->find->classcode = HUB_CLASS_CODE; // 0x09 = USB_HUB_CLASSCODE

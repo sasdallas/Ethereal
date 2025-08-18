@@ -302,7 +302,7 @@ void kmain() {
     }
 
     if (file) {
-        char *envp[] = { "TEST_ENV=test1", "FOO=bar", NULL };
+        char *envp[] = { "LD_SHOW_AUXV=1", "FOO=bar", NULL };
         process_execute(argv[0], file, argc, argv, envp);
     } else {
         LOG(WARN, "Init process not found, destroying init and switching\n");

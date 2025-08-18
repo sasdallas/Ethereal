@@ -20,6 +20,7 @@
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:MEM", __VA_ARGS__)
+#pragma GCC diagnostic ignored "-Wtype-limits"
 
 /**
  * @brief Map a file into a process' memory space (mmap() equivalent)
@@ -155,7 +156,10 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
     vas_free(proc->vas, vas_get(proc->vas, (uintptr_t)map->addr), munmapped);
 
     // Cleanup
-    if (proc->mmap) list_delete(proc->mmap, list_find(proc->mmap, (void*)map));
+    if (proc->mmap) {
+        list_delete(proc->mmap, list_find(proc->mmap, (void*)map));
+    }
+    
     kfree(map);
     return 0;
 }
@@ -177,7 +181,6 @@ int process_munmap(void *addr, size_t len) {
                 LOG(ERR, "Partial munmap (%p - %p) of mapping %p - %p\n", addr, (uintptr_t)addr + len, map->addr, (uintptr_t)map->addr + map->size);
                 return -ENOSYS;
             }
-
 
 
             return process_removeMapping(current_cpu->current_process, map);

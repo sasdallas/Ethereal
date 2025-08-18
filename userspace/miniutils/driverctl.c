@@ -12,11 +12,12 @@
  */
 
 #include <stdio.h>
-#include <sys/ethereal/driver.h>
+#include <ethereal/driver.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 void usage() {
     printf("Usage: driverctl [-l FILE] [-u ID] [-q ID]\n");
