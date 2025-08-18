@@ -902,7 +902,8 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 }
 
 ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
-    SYSCALL_UNIMPLEMENTED("sys_readlink");
+    LOG(ERR, "sys_readlink is unimplemented (%s)\n", path);
+    return -EINVAL;
 }
 
 long sys_access(const char *path, int amode) {

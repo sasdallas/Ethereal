@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <termios.h>
 
 #define CSR_SHOW() { putchar('\030'); fflush(stdout); }
 #define CSR_HIDE() { printf("\b"); fflush(stdout); }
@@ -28,6 +29,11 @@
  * @brief Get a fully processed line of input
  */
 char *essence_getInput() {
+    struct termios tios;
+    tcgetattr(STDOUT_FILENO, &tios);
+    tios.c_iflag |= ICRNL;
+    tcsetattr(STDOUT_FILENO, TCSANOW, &tios);
+
     size_t bufsz = DEFAULT_BUFSIZE;
     char *buffer = malloc(bufsz);
     memset(buffer, 0, bufsz);

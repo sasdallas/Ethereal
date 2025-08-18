@@ -337,7 +337,7 @@ extern int video_ks;
     // Exit all other processes
 extern list_t *process_list;
     foreach(process, process_list) {
-        if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL)) {
+        if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL) && (((process_t*)process->value)->pid != 0)) {
             dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
             process_exit((process_t*)process->value, 0);
         }

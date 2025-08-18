@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <ethereal/keyboard.h>
 #include <pty.h>
+#include <sys/ioctl.h>
 #include <poll.h>
 #include <graphics/gfx.h>
 #include <ethereal/ansi.h>
@@ -50,12 +51,21 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     }
 }
 
-int main(int argc, char *argv[]) {
-    wid_t wid = celestial_createWindow(0, 640, 480);
-    window_t *win = celestial_getWindow(wid);
-    celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
+#define TERM_WIDTH          8*80
+#define TERM_HEIGHT         16*24
 
-    gfx_context_t *ctx = celestial_getGraphicsContext(win);
+int main(int argc, char *argv[]) {
+    gfx_context_t *ctx = NULL;
+    window_t *win = NULL;
+
+    if (argc < 2 || strcmp(argv[1], "-f")) {
+        wid_t wid = celestial_createWindow(0, TERM_WIDTH, TERM_HEIGHT);
+        win = celestial_getWindow(wid);
+        celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
+        ctx = celestial_getGraphicsContext(win);
+    } else {
+        ctx = gfx_createFullscreen(CTX_DEFAULT);
+    }
 
     ft_ctx = flanterm_fb_init(
         NULL,NULL,
@@ -81,11 +91,31 @@ int main(int argc, char *argv[]) {
     // Create keyboard object
     kbd = keyboard_create();
 
+
+
+    size_t cols, rows;
+    flanterm_get_dimensions(ft_ctx, &cols, &rows);
+
+    struct winsize size = {
+        .ws_col = cols,
+        .ws_row = rows,
+    };;
+
     // Create the PTY
-    if (openpty(&pty_master, &pty_slave, NULL, NULL, NULL) < 0) {
+    if (openpty(&pty_master, &pty_slave, NULL, NULL, &size) < 0) {
         perror("openpty");
         exit(1);
     }
+
+    struct termios attr;
+    tcgetattr(pty_master, &attr);
+    attr.c_iflag |= INLCR;
+    attr.c_iflag &= ~(ICRNL);
+
+    tcsetattr(pty_master, TCSANOW, &attr);
+
+    // Temporary for ncurses
+    putenv("TERM=vt220");
 
     pid_t cpid = fork();
     if (!cpid) {
@@ -102,7 +132,7 @@ int main(int argc, char *argv[]) {
         // Spawn shell
         // TODO: Support argc/argv
         char *argv[] = { "essence", NULL };
-        execvp("essence", (const char **)argv);
+        execvp("essence", argv);
         exit(1);
     }
 
@@ -112,13 +142,30 @@ int main(int argc, char *argv[]) {
     // Enter main loop
     for (;;) {
         // Get events
-        struct pollfd fds[] = {{ .fd = pty_master, .events = POLLIN }, { .fd = celestial_getSocketFile(), .events = POLLIN }};
-        int p = poll(fds, 2, -1);
+        struct pollfd fds[] = { { .fd = keyboard_fd, .events = POLLIN }, { .fd = pty_master, .events = POLLIN }, { .fd = celestial_getSocketFile(), .events = POLLIN }};
+        int p = poll(fds, 3, -1);
         if (p < 0) return 1;
         if (!p) continue;
 
+        if (fds[0].revents & POLLIN && !win) {
+            key_event_t evp;
+            ssize_t r = read(keyboard_fd, &evp, sizeof(key_event_t));
+            if (r != sizeof(key_event_t)) continue;
 
-        if (fds[0].revents & POLLIN) {
+            keyboard_event_t *ev = keyboard_event(kbd, &evp);
+            
+            if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
+                if (ev->ascii == '\b') ev->ascii = 0x7f;
+                if (ev->ascii) {
+                    char b[] = {ev->ascii};
+                    write(pty_master, b, 1);
+                }
+            }
+
+            free(ev);
+        }
+
+        if (fds[1].revents & POLLIN) {
             // We have data on PTY
             char buf[4096];
             ssize_t r = read(pty_master, buf, 4096);
@@ -128,11 +175,11 @@ int main(int argc, char *argv[]) {
                 flanterm_write(ft_ctx, buf, r);
 
                 gfx_render(ctx);
-                celestial_flip(win);
+                if (win) celestial_flip(win);
             }
         }
 
-        if (fds[1].revents & POLLIN) {
+        if (win && fds[2].revents & POLLIN) {
             celestial_poll();
         }
     }

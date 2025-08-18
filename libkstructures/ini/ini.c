@@ -116,6 +116,7 @@ ini_t *ini_load(char *filename) {
         pch = strtok_r(NULL, "\n", &save);
     }
 
+    free(buffer);
     return ini;
 
 }
