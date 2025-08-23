@@ -71,4 +71,9 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
+/* Aligning macros */
+#define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align)-1))
+#define ALIGN_DOWN(val, align) (((val) & ~((align)-1)))
+#define IS_ALIGNED(val, align) (((val) & ((align)-1))==0)
+
 #endif

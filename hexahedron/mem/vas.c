@@ -51,6 +51,10 @@ vas_t *vas_create(char *name, uintptr_t address, size_t size, int flags) {
     vas->dir = mem_getCurrentDirectory();
     vas->lock = spinlock_create("vas lock");
 
+    if (flags & VAS_ONLY_REAL) {
+        kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "vas", "*** VAS_ONLY_REAL is not implemented\n");
+    }
+
     return vas;
 }
 
@@ -560,6 +564,9 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         // !!!: I REITERATE, ONCE MMAP PROTECTION IS ADDED, COME BACK TO THIS. BAD SOLUTION.
         if (pg && (!PAGE_IS_PRESENT(pg) || !PAGE_IS_WRITABLE(pg))) {
             mem_allocatePage(pg, flags);
+            if (alloc->type == VAS_ALLOC_MMAP || alloc->type == VAS_ALLOC_MMAP_SHARE) {
+                memset((void*)i, 0, PAGE_SIZE);
+            }
         }
     }
 

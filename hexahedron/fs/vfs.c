@@ -320,6 +320,7 @@ int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // Load the file in at the address
     // TODO: False reading!!!! SAVE MEMORY!!
+    // !!!: NOTE FOR FUTURE: If you do this you will have to also patch VAS_FAULT to NOT zero the pages
     ssize_t actual_size = fs_read(node, off, size, addr);
 
     // File is loaded, we're done here.    
