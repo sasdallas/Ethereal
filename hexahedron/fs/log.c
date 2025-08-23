@@ -20,6 +20,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/gfx/term.h>
 #include <kernel/processor_data.h>
+#include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <stdio.h>
@@ -77,14 +78,14 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
         // !!!: This is bad. Should use a mutex here..
         spinlock_acquire(&debug_lock);
     // }
-
-    // TODO
-    // time_t rawtime;
-    // time(&rawtime);
-    // struct tm *timeinfo = localtime(&rawtime);
+    
+    
+    // Determine kernel boot time
+    unsigned long seconds, subseconds;
+    clock_relative(0, 0, &seconds, &subseconds);
 
     char header[256];
-    snprintf(header, 256, "[%s] [PROC] [%s:%d] ", "clock not available", current_cpu->current_process->name, current_cpu->current_process->pid);
+    snprintf(header, 256, "[%lu.%06lu] [PROC] [%s:%d] ", seconds, subseconds, current_cpu->current_process->name, current_cpu->current_process->pid);
     for (size_t i = 0; i < strlen(header); i++) log_print(NULL, header[i]);
     for (size_t i = 0; i < size; i++) log_print(NULL, buf[i]);
 
