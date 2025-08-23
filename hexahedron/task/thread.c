@@ -75,6 +75,7 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
             // TODO: Probably just check if the region needs CoW?
             mem_allocate(thr->stack - THREAD_STACK_SIZE, THREAD_STACK_SIZE + PAGE_SIZE, MEM_DEFAULT, MEM_DEFAULT);
             vas_reserve(parent->vas, MEM_USERMODE_STACK_REGION + (MEM_USERMODE_STACK_SIZE-THREAD_STACK_SIZE), THREAD_STACK_SIZE, VAS_ALLOC_THREAD_STACK);
+            memset((void*)(thr->stack - THREAD_STACK_SIZE), 0, PAGE_SIZE);
         }
     } else {
         // Don't bother, use the parent's kernel stack
