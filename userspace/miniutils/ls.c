@@ -59,7 +59,7 @@ void help() {
 }
 
 void version() {
-    printf("ls (Ethereal miniutils) 1.00\n");
+    printf("ls (Ethereal miniutils) 1.10\n");
     printf("Copyright (C) 2025 The Ethereal Development Team\n");
     exit(EXIT_FAILURE);
 }

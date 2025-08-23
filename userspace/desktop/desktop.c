@@ -167,9 +167,8 @@ void config_load() {
     else fprintf(stderr, "Missing directive: section=\"wallpaper\" value=\"file\"\n");
 
     // TODO: More stuff
-
-    free(ini);
     hashmap_free(ini->sections);
+    free(ini);
 }
 
 
@@ -286,7 +285,7 @@ int main(int argc, char *argv[]) {
 
     // Load config
     fprintf(stderr, "load config...\n");
-    // config_load();
+    config_load();
 
     // Create the background
     fprintf(stderr, "make background..\n");

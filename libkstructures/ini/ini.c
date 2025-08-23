@@ -61,64 +61,51 @@ ini_t *ini_load(char *filename) {
     ini->sections = hashmap_create("ini sections", 20);
 
     // For each line in the file
-    char *save;
+    char *save = NULL;
     char *pch = strtok_r(buffer, "\n", &save);
 
     hashmap_t *current_section = NULL;
 
     while (pch) {
-        if (*pch == '[') {
+        char *dup = strdup(pch);
+        char *key = dup;
+        if (*key == '[') {
             // Start of an INI file section
-            pch++;
-            *(strchrnul(pch, ']')) = 0;
+            key++;
+            *(strchrnul(key, ']')) = 0;
 
-            // Now pch contains the scetion name
+            // Now key contains the scetion name
             current_section = hashmap_create("ini file section", 10);
-            hashmap_set(ini->sections, pch, current_section);
-        } else if (*pch == ';') {
+            hashmap_set(ini->sections, key, current_section);
+        } else if (*key == ';') {
             goto _next_token; // Comment
         } else {
-            // Must be a line
             if (!current_section) goto _next_token;
 
-            // Separate into key value pair
-            char *value = strchr(pch, '=');
-            if (!value) value = strchr(pch, ':');
-            if (!value) goto _next_token;
+            // INI files should have a value...
+            char *eq = strchr(key, '=');
+            char *value = NULL;
+            if (eq) {
+                *eq = 0;
+                value = eq+1;
 
-            *value = 0;
-            value++;
+                if (*value == '\"') {
+                    value++;
+                    *(strchrnul(value, '\"')) = 0;
+                }
 
-            // While we have space, skip past it
-            char *key = pch;
-            while (*key == ' ') key++;
-            if (!key) goto _next_token;
-            *(strchrnul(key, ' ')) = 0;
-
-            // Handle value
-            char *real_value = value;
-            while (*value == ' ') value++;
-            if (*value == '"') {
-                // We have to parse the string
-                value++;
-                real_value = value;
-                while (*value && *value != '"') value++;
-                if (!(*value)) goto _next_token;
-                *value = 0;
+                hashmap_set(current_section, key, strdup(value));
             }
-
-            // After all of that confusing string stuff, key and real_value are our pair
-            hashmap_set(current_section, key, real_value);
         }
 
 
     _next_token:
+        free(dup);
         pch = strtok_r(NULL, "\n", &save);
     }
 
     free(buffer);
     return ini;
-
 }
 
 /**
