@@ -507,7 +507,7 @@ long sys_usleep(useconds_t usec) {
         return 0;
     }
 
-    sleep_untilTime(current_cpu->current_thread, (usec / 10000) / 1000, (usec / 10000) % 1000);
+    sleep_untilTime(current_cpu->current_thread, (usec / 1000000), (usec % 1000000));
     if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
 
     return 0;
@@ -548,13 +548,13 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     }
 
     // Move their arguments into our array
-    char *new_argv[argc+1];
+    char **new_argv = kzalloc((argc+1) * sizeof(char*));
     for (int a = 0; a < argc; a++) {
         new_argv[a] = strdup(argv[a]); // TODO: Leaking memory!!!
     }
 
     // Reallocate envp if specified
-    char *new_envp[envc+1];
+    char **new_envp = kzalloc((envc+1) * sizeof(char*));
     if (envp) {
         for (int e = 0; e < envc; e++) {
             new_envp[e] = strdup(envp[e]); // TODO: Leaking memory!!!

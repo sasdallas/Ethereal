@@ -17,6 +17,7 @@
 #include <kernel/debug.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:MEM", __VA_ARGS__)
@@ -90,6 +91,23 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         // Reserve memory in the VAS
         vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len, (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP);
         if (alloc) {
+            alloc->type = (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP;
+
+            // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
+            if (filedes == -1 || flags & MAP_ANONYMOUS) {
+                LOG(DEBUG, "MAP_FIXED mapping at %p\n", alloc->base);
+                list_append(current_cpu->current_process->mmap, (void*)map);
+                return (void*)alloc->base; // All done
+            }
+
+            // No - call fs_mmap()
+            int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, (void*)alloc->base, len, off);
+            if (mmap_result < 0) {
+                vas_free(vas, vas_get(vas, alloc->base), 0);
+                kfree(map);
+                return (void*)(uintptr_t)mmap_result;
+            }
+
             list_append(current_cpu->current_process->mmap, (void*)map);
             return (void*)alloc->base;
         }

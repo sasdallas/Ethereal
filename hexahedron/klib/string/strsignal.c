@@ -15,44 +15,44 @@
 #include <string.h>
 #include <stdio.h>
 
-static const char *__siglist[] = {
-    [SIGABRT]           = "Aborted",
-    [SIGALRM]           = "Alarm clock",
-    [SIGBUS]            = "Bus error",
-    [SIGCONT]           = "Continued",
-    [SIGCHLD]           = "Child process state change",
-    [SIGFPE]            = "Arithmetic exception",
-    [SIGHUP]            = "Hang up",
-    [SIGILL]            = "Illegal instruction",
-    [SIGINT]            = "Interrupt",
-    [SIGKILL]           = "Killed",
-    [SIGPIPE]           = "Broken pipe",
-    [SIGQUIT]           = "Quit",
-    [SIGSEGV]           = "Segmentation fault",
-    [SIGSTOP]           = "Stopped",
-    [SIGTERM]           = "Terminated",
-    [SIGTSTP]           = "Stopped",
-    [SIGTTIN]           = "Stopped (tty input)",
-    [SIGTTOU]           = "Stopped (tty output)",
-    [SIGUSR1]           = "User-defined signal 1",
-    [SIGUSR2]           = "User-defined signal 2",
-    [SIGPOLL]           = "Pollable event",
-    [SIGPROF]           = "Profiling timer expired",
-    [SIGSYS]            = "Bad system call",
-    [SIGTRAP]           = "Trace/breakpoint trap",
-    [SIGURG]            = "High bandwidth data available",
-    [SIGVTALRM]         = "Virtual timer expired",
-    [SIGXCPU]           = "CPU time limit exceeded",
-    [SIGXFSZ]           = "File size limit exceeded",
-    [SIGWINCH]          = "Window size changed",
-    [NSIG]              = "Unknown signal",
-};
+// static const char *__siglist[] = {
+//     [SIGABRT]           = "Aborted",
+//     [SIGALRM]           = "Alarm clock",
+//     [SIGBUS]            = "Bus error",
+//     [SIGCONT]           = "Continued",
+//     [SIGCHLD]           = "Child process state change",
+//     [SIGFPE]            = "Arithmetic exception",
+//     [SIGHUP]            = "Hang up",
+//     [SIGILL]            = "Illegal instruction",
+//     [SIGINT]            = "Interrupt",
+//     [SIGKILL]           = "Killed",
+//     [SIGPIPE]           = "Broken pipe",
+//     [SIGQUIT]           = "Quit",
+//     [SIGSEGV]           = "Segmentation fault",
+//     [SIGSTOP]           = "Stopped",
+//     [SIGTERM]           = "Terminated",
+//     [SIGTSTP]           = "Stopped",
+//     [SIGTTIN]           = "Stopped (tty input)",
+//     [SIGTTOU]           = "Stopped (tty output)",
+//     [SIGUSR1]           = "User-defined signal 1",
+//     [SIGUSR2]           = "User-defined signal 2",
+//     [SIGPOLL]           = "Pollable event",
+//     [SIGPROF]           = "Profiling timer expired",
+//     [SIGSYS]            = "Bad system call",
+//     [SIGTRAP]           = "Trace/breakpoint trap",
+//     [SIGURG]            = "High bandwidth data available",
+//     [SIGVTALRM]         = "Virtual timer expired",
+//     [SIGXCPU]           = "CPU time limit exceeded",
+//     [SIGXFSZ]           = "File size limit exceeded",
+//     [SIGWINCH]          = "Window size changed",
+//     [NSIG]              = "Unknown signal",
+// };
 
-/* Signal description */
-static char __sigstr[256];
+// /* Signal description */
+// static char __sigstr[256] = { 0 };
 
 char *strsignal(int sig) {
-    if (sig > NSIG || sig < 0) sig = NSIG;
-    strncpy(__sigstr, __siglist[sig], 256);
-    return __sigstr;
+    // if (sig > NSIG || sig < 0) sig = NSIG;
+    // strncpy(__sigstr, __siglist[sig], 256);
+    return "Forgot";
 }

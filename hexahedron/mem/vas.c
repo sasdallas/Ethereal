@@ -564,9 +564,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
         // !!!: I REITERATE, ONCE MMAP PROTECTION IS ADDED, COME BACK TO THIS. BAD SOLUTION.
         if (pg && (!PAGE_IS_PRESENT(pg) || !PAGE_IS_WRITABLE(pg))) {
             mem_allocatePage(pg, flags);
-            if (alloc->type == VAS_ALLOC_MMAP || alloc->type == VAS_ALLOC_MMAP_SHARE) {
-                memset((void*)i, 0, PAGE_SIZE);
-            }
+            memset((void*)i, 0, PAGE_SIZE);
         }
     }
 
