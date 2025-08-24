@@ -19,36 +19,40 @@
 
 /* Default action list */
 const __signal_handler signal_default_action[] = {
-    [SIGABRT]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGALRM]           = SIGNAL_ACTION_TERMINATE,
-    [SIGBUS]            = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGCHLD]           = SIGNAL_ACTION_IGNORE,
-    [SIGCONT]           = SIGNAL_ACTION_CONTINUE,
-    [SIGFPE]            = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGHUP]            = SIGNAL_ACTION_TERMINATE,
-    [SIGILL]            = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGINT]            = SIGNAL_ACTION_TERMINATE,
-    [SIGKILL]           = SIGNAL_ACTION_TERMINATE,      // NOTE: Cannot be ignored
-    [SIGPIPE]           = SIGNAL_ACTION_TERMINATE,
-    [SIGQUIT]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGSEGV]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGSTOP]           = SIGNAL_ACTION_STOP,
-    [SIGTERM]           = SIGNAL_ACTION_TERMINATE,
-    [SIGTSTP]           = SIGNAL_ACTION_STOP,
-    [SIGTTIN]           = SIGNAL_ACTION_STOP,
-    [SIGTTOU]           = SIGNAL_ACTION_STOP,
-    [SIGUSR1]           = SIGNAL_ACTION_TERMINATE,
-    [SIGUSR2]           = SIGNAL_ACTION_TERMINATE,
-    [SIGPOLL]           = SIGNAL_ACTION_TERMINATE,
-    [SIGPROF]           = SIGNAL_ACTION_TERMINATE,
-    [SIGSYS]            = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGTRAP]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGURG]            = SIGNAL_ACTION_IGNORE,
-    [SIGVTALRM]         = SIGNAL_ACTION_TERMINATE,
-    [SIGXCPU]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGXFSZ]           = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGWINCH]          = SIGNAL_ACTION_IGNORE,
-    [SIGCANCEL]         = SIGNAL_ACTION_IGNORE,
+    [SIGHUP]                    = SIGNAL_ACTION_TERMINATE,
+    [SIGINT]                    = SIGNAL_ACTION_TERMINATE,
+    [SIGQUIT]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGILL]                    = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGTRAP]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGABRT]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGBUS]                    = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGFPE]                    = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGKILL]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGUSR1]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGSEGV]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGUSR2]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGPIPE]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGALRM]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGTERM]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGSTKFLT]                 = SIGNAL_ACTION_TERMINATE,
+    [SIGCHLD]                   = SIGNAL_ACTION_IGNORE,
+    [SIGCONT]                   = SIGNAL_ACTION_CONTINUE,
+    [SIGSTOP]                   = SIGNAL_ACTION_STOP,
+    [SIGTSTP]                   = SIGNAL_ACTION_STOP,
+    [SIGTTIN]                   = SIGNAL_ACTION_STOP,
+    [SIGTTOU]                   = SIGNAL_ACTION_STOP,
+    [SIGURG]                    = SIGNAL_ACTION_IGNORE,
+    [SIGXCPU]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGXFSZ]                   = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGVTALRM]                 = SIGNAL_ACTION_TERMINATE,
+    [SIGPROF]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGWINCH]                  = SIGNAL_ACTION_IGNORE,
+    [SIGPOLL]                   = SIGNAL_ACTION_TERMINATE,
+    [SIGPWR]                    = SIGNAL_ACTION_TERMINATE,
+    [SIGSYS]                    = SIGNAL_ACTION_TERMINATE_CORE,
+    [SIGCANCEL]                 = SIGNAL_ACTION_IGNORE, // ???
+    [SIGTIMER]                  = SIGNAL_ACTION_IGNORE, // ???
+    SIGNAL_ACTION_DEFAULT,
 };
 
 /* Pending signal set */
@@ -253,7 +257,8 @@ int signal_handle(struct thread *thr, registers_t *regs) {
     spinlock_acquire(&thr->siglock);
     if (!SIGNAL_ANY_PENDING(thr)) goto _done;
     
-    for (int i = 0; i < NSIG; i++) {
+    // !!!: RT signals are not supported
+    for (int i = 0; i < SIGRTMIN; i++) {
         if (SIGNAL_IS_PENDING(thr, i)) {
             // The signal is pending - let's handle it.
             int h = signal_try_handle(thr, i, regs);
