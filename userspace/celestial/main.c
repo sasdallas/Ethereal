@@ -140,7 +140,8 @@ int main(int argc, char *argv[]) {
         { .name = "log", .has_arg = required_argument, .flag = NULL, .val = 'l' },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
         { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h'},
-        { .name = "virtual", .has_arg = no_argument, .flag = NULL, .val = 'f'}
+        { .name = "virtual", .has_arg = no_argument, .flag = NULL, .val = 'f'},
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
     };
 
     while ((c = getopt_long(argc, argv, "dl:hvf", (const struct option*)longopts, &index)) != -1) {

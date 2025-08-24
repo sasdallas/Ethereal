@@ -43,7 +43,8 @@ int main(int argc, char *argv[]) {
         { .name = "verbose", .has_arg = no_argument, .flag = NULL, .val = 'v' },
         { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h' },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'd' },
-        { .name = "parents", .has_arg = no_argument, .flag = NULL, .val = 'p' }
+        { .name = "parents", .has_arg = no_argument, .flag = NULL, .val = 'p' },
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
     };
 
     int index;

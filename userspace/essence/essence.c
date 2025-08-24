@@ -114,7 +114,8 @@ int main(int argc, char *argv[]) {
     struct option options[] = {
         { .flag = NULL, .name = "command", .has_arg = required_argument, .val = 'c'},
         { .flag = NULL, .name = "version", .has_arg = no_argument, .val = 'v'},
-        { .flag = NULL, .name = "help", .has_arg = no_argument, .val = 'h'}
+        { .flag = NULL, .name = "help", .has_arg = no_argument, .val = 'h'},
+        { .flag = NULL, .name = NULL, .has_arg = no_argument, .val = 0 },
     };
 
     int c;

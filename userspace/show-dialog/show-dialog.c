@@ -162,6 +162,7 @@ int main(int argc, char *argv[]) {
         { .name = "icon", .flag = NULL, .has_arg = required_argument, .val = OPT_ICON }, 
         { .name = "help", .flag = NULL, .has_arg = no_argument, .val = OPT_HELP },
         { .name = "version", .flag = NULL, .has_arg = no_argument, .val = OPT_VERSION, },
+		{ .name = NULL, .flag = NULL, .has_arg = no_argument, .val = 0}
     };
 
     int ch;

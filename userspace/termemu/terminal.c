@@ -427,7 +427,8 @@ int main(int argc, char *argv[]) {
     struct option options[] = {
         { .name = "fullscreen", .has_arg = no_argument, .flag = NULL, .val = 'f' },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
-        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h'}
+        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h'},
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
     };
 
     while ((c = getopt_long(argc, argv, "fvh", (const struct option*)options, &index)) != -1) {

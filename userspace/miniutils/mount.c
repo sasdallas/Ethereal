@@ -42,6 +42,7 @@ int main(int argc, char *argv[]) {
         { .name = "type", .has_arg = required_argument, .flag = NULL, .val = 't' },
         { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h' },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
     };
 
     while ((c = getopt_long(argc, argv, "t:hv", (const struct option*)&options, &index)) != -1) {

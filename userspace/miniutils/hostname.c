@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
     struct option options[] = {
         { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h', },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
     };
 
     int optindex;
