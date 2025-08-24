@@ -78,10 +78,10 @@ int mouse_irq(void *context) {
     int scroll = MOUSE_SCROLL_NONE;
 
     if (mouse_id == 0x03 || mouse_id == 0x04) {
-        if ((int8_t)ps2_mouse_packet[3] < 0) {
+        if ((int8_t)(ps2_mouse_packet[3]) < 0) {
             // Scrolling up
             scroll = MOUSE_SCROLL_UP;
-        } else if ((int8_t)ps2_mouse_packet[3] > 0) {
+        } else if ((int8_t)(ps2_mouse_packet[3]) > 0) {
             // Scrolling down
             scroll = MOUSE_SCROLL_DOWN;
         }
@@ -100,7 +100,7 @@ int mouse_irq(void *context) {
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_RIGHTBTN ? MOUSE_BUTTON_RIGHT : 0) | 
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_MIDDLEBTN ? MOUSE_BUTTON_MIDDLE : 0);
 
-    if (buttons == ps2_last_buttons && !x_diff && !y_diff) return 0;
+    if (buttons == ps2_last_buttons && !x_diff && !y_diff && !scroll) return 0;
     periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, x_diff, y_diff, scroll);
     ps2_last_buttons = buttons;
     return 0;
@@ -145,5 +145,6 @@ void mouse_init(uint8_t p) {
             break;
     }
 
+    LOG(DEBUG, "Mouse ID: %02x\n", mouse_id);
     mouse_enabled = 1;
 }

@@ -46,6 +46,11 @@ static int16_t cursor_y = 0;
 /* Terminal cell array */
 term_cell_t **cell_array = NULL;
 
+/* Scrollback array */
+list_t *scrollback_up = NULL;
+list_t *scrollback_down = NULL;
+int sb_row_count_total = 0;
+
 /* File descriptors */
 int pty_master = -1;
 int pty_slave = -1;
@@ -133,7 +138,7 @@ static void draw_cell(uint16_t x, uint16_t y) {
     gfx_color_t fg = (cell->highlighted ? CELL_FG_HIGHLIGHTED : cell->fg);
     gfx_color_t bg = (cell->highlighted ? CELL_BG_HIGHLIGHTED : cell->bg);
     
-    gfx_font_t *f = (terminal_ansi->flags & ANSI_FLAG_BOLD) ? terminal_font_bold : terminal_font;
+    gfx_font_t *f = cell->bold ? terminal_font_bold : terminal_font;
 
     gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
     gfx_drawRectangleFilled(ctx, &r, bg);
@@ -168,34 +173,124 @@ static void terminal_backspace() {
 }
 
 /**
- * @brief Scroll the terminal up
+ * @brief Duplicate a row
  */
-void terminal_scroll() {
+term_cell_t *terminal_duplicateRow(int y) {
+    term_cell_t *out = malloc(sizeof(term_cell_t) * terminal_width);
+    memcpy(out, cell_array[y], sizeof(term_cell_t) * terminal_width);
+    return out;
+}
+
+void terminal_scrollOne() {
+    // Add a new row into the scrollback up
+    term_cell_t *sb_row = terminal_duplicateRow(0);
+    list_append(scrollback_up, sb_row);
+    sb_row_count_total++;
+
     // Starting from here to terminal_height-1, we must adjust contents
-    for (int y = 0; y < terminal_height-1; y++) {
-        for (int x = 0; x < terminal_width; x++) {
-            memcpy(CELL(x, y), CELL(x, y+1), sizeof(term_cell_t));
-        }
+    for (int y = 0; y < terminal_height - 1; y++) {
+        memcpy(cell_array[y], cell_array[y+1], sizeof(term_cell_t) * terminal_width);
     }
 
     // vmem
     memcpy(ctx->backbuffer, ctx->backbuffer + GFX_PITCH(ctx) * CELL_HEIGHT, (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_PITCH(ctx));
 
-    for (int x = 0; x < terminal_width; x++) {
-        CELL(x, terminal_height-1)->ch = ' ';
-        CELL(x, terminal_height-1)->highlighted = 0;
-        CELL(x, terminal_height-1)->fg = terminal_fg;
-        CELL(x, terminal_height-1)->bg = terminal_bg;
+    // If we need to go down all of them, do that.
+    node_t *n = list_pop(scrollback_down);
 
-        draw_cell(x, terminal_height-1);
+    // Before we zero, check if we have stuff already.
+    if (n) {
+        term_cell_t *down_row = (term_cell_t*)n->value;
+        free(n);
+
+        // memcpy(CELL(0, terminal_height-1), down_row, sizeof(term_cell_t) * terminal_width);
+        for (int x = 0; x < terminal_width; x++) {
+            memcpy(CELL(x, terminal_height-1), &down_row[x], sizeof(term_cell_t));
+            draw_cell(x, terminal_height-1);
+        }
+
+        free(down_row);
+    } else  {
+        for (int x = 0; x < terminal_width; x++) {
+            CELL(x, terminal_height-1)->ch = ' ';
+            CELL(x, terminal_height-1)->highlighted = 0;
+            CELL(x, terminal_height-1)->fg = terminal_fg;
+            CELL(x, terminal_height-1)->bg = terminal_bg;
+
+            draw_cell(x, terminal_height-1);
+        }
     }
 
     // Flush
     gfx_resetClips(ctx);
     gfx_render(ctx);
     if (win) celestial_flip(win);
+}
 
-    // Now zero out the bottom ones
+/**
+ * @brief Scroll the terminal down
+ * @param down How many rows to go down, -1 to go down all of them (plus one)
+ * @param strict Do not create new lines
+ */
+void terminal_scroll(int down, int strict) {
+    if (down == -1) {
+        // Go down as many as possible
+        while (scrollback_down->length) {
+            terminal_scrollOne();
+        }
+    } else {
+        for (int i = 0; i < down; i++) {
+            if (scrollback_down->length || !strict) { 
+                terminal_scrollOne();
+            }
+        }
+    }
+}
+
+
+/**
+ * @brief Scroll up once
+ */
+void terminal_scrollUpOne() {
+    node_t *n = list_pop(scrollback_up);
+    if (!n) return;
+
+    term_cell_t *new_top_row = (term_cell_t*)n->value;
+    free(n);
+
+    // Push the bottom row up
+    term_cell_t *bottom_row = terminal_duplicateRow(terminal_height-1);
+    list_append(scrollback_down, bottom_row); // NOTE: It would be nicer to use popleft?
+    memmove(ctx->backbuffer + GFX_PITCH(ctx) * CELL_HEIGHT, ctx->backbuffer, (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_PITCH(ctx));
+
+    // Shift everything
+    for (int y = terminal_height - 2; y >= 0; y--) {
+        memcpy(cell_array[y+1], cell_array[y], sizeof(term_cell_t) * terminal_width);
+    }
+
+    for (int x = 0; x < terminal_width; x++) {
+        memcpy(CELL(x, 0), &new_top_row[x], sizeof(term_cell_t));
+        draw_cell(x, 0);
+    }
+
+    free(new_top_row);
+
+    // Flush
+    gfx_resetClips(ctx);
+    gfx_render(ctx);
+    if (win) celestial_flip(win);
+}
+
+/**
+ * @brief Scroll the terminal up
+ * @param up How many lines to go up
+ */
+void terminal_scrollUp(int up) {
+    if (up == -1) {
+        while (scrollback_up->length) terminal_scrollUpOne();
+    } else {
+        for (int i = 0; i < up; i++) terminal_scrollUpOne();
+    }
 }
 
 /**
@@ -203,6 +298,7 @@ void terminal_scroll() {
  * @param ch The character to write to the terminal
  */
 static void terminal_write(char ch) {
+    terminal_scroll(-1, 0);
     UNHIGHLIGHT(CURSOR);
 
     // Handle special characters
@@ -232,6 +328,7 @@ static void terminal_write(char ch) {
     }
 
     // Draw the new character
+    CURSOR->bold = !!(terminal_ansi->flags & ANSI_FLAG_BOLD);
     CURSOR->ch = ch;
     CURSOR->fg = terminal_fg;
     CURSOR->bg = terminal_bg;
@@ -249,7 +346,7 @@ _update_cursor:
 
     if (cursor_y >= terminal_height) {
         // We need to scroll the terminal
-        terminal_scroll();
+        terminal_scroll(1, 0);
         cursor_y--;
         cursor_x = 0;
     }
@@ -338,6 +435,14 @@ static void terminal_process(keyboard_event_t *event) {
             }
             break;
 
+        case SCANCODE_PGUP:
+            terminal_scrollUp(1);
+            break;
+        
+        case SCANCODE_PGDOWN:
+            terminal_scroll(1, 1);
+            break;
+
         default:
             if (!event->ascii) return;
             char b[] = {event->ascii};
@@ -359,6 +464,22 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     if (ev->type == KEYBOARD_EVENT_PRESS) {
         if (ev->ascii == '\b') ev->ascii = 0x7F;
         terminal_process(ev);
+    }
+}
+
+/**
+ * @brief Celestial mouse scroll event handler
+ * @param win The window the event happened in
+ * @param event_type The type of evbent
+ * @param event The event
+ */
+void scroll_handler(window_t *win, uint32_t event_type, void *event) {
+    celestial_event_mouse_scroll_t *scroll = (celestial_event_mouse_scroll_t*)event;
+    
+    if (scroll->direction == CELESTIAL_MOUSE_SCROLL_DOWN) {
+        terminal_scroll(5, 1);
+    } else if (scroll->direction == CELESTIAL_MOUSE_SCROLL_UP) {
+        terminal_scrollUp(4);
     }
 }
 
@@ -385,6 +506,12 @@ void terminal_clear() {
     CURSOR->highlighted = 1;
     draw_cell(cursor_x, cursor_y);
     
+    // Flush scrollback buffers
+    list_destroy(scrollback_up, true);
+    list_destroy(scrollback_down, true);
+    scrollback_up = list_create("term scrollback up");
+    scrollback_down = list_create("term scrollback down");
+
     gfx_render(ctx);
     if (win) celestial_flip(win);
 }
@@ -409,11 +536,7 @@ void terminal_setCell(int16_t x, int16_t y, char ch) {
  * @brief Scroll method
  */
 void terminal_scrollAnsi(int lines) {
-    if (lines) {
-        for (int i = 0; i < lines; i++) terminal_scroll();
-    } else {
-        fprintf(stderr, "termemu: Cannot scroll up lines as this is not implemented\n");
-    }
+    fprintf(stderr, "termemu: Cannot scroll lines as this is not implemented\n");
 }
 
 /**
@@ -456,11 +579,12 @@ int main(int argc, char *argv[]) {
         ctx = gfx_createFullscreen(CTX_DEFAULT);
     } else {
         // Initialize the graphics context for celestial
-        wid_t wid = celestial_createWindow(0, 640, 480);
+        wid_t wid = celestial_createWindow(0, 640, 476);
         win = celestial_getWindow(wid);
-        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT);
+        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT | CELESTIAL_EVENT_MOUSE_SCROLL);
         celestial_setTitle(win, "Terminal");
         celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_SCROLL, scroll_handler);
         ctx = celestial_getGraphicsContext(win);
     }
 
@@ -507,6 +631,10 @@ int main(int argc, char *argv[]) {
             cell_array[i][x].ch = ' ';
         }
     }
+
+    // Create lists
+    scrollback_up = list_create("term scrollback up");
+    scrollback_down = list_create("term scrollback down");
 
     // Draw cursor
     HIGHLIGHT(CURSOR);

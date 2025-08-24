@@ -13,9 +13,25 @@
 
 #include <string.h>
 
+#ifdef __ARCH_X86_64__
+
+void *memcpy(void *dest, const void *src, size_t n) {
+    asm volatile (
+        "rep movsb"
+        : "=D"(dest), "=S"(src), "=c"(n)
+        : "0"(dest), "1"(src), "2"(n)
+        : "memory"
+    );
+    return dest;
+}
+
+#else
+
 void *memcpy(void *dest, const void *src, size_t n) {
     unsigned char *d = (unsigned char*)dest;
     const unsigned char *s = (const unsigned char*)src;
     for (unsigned i = 0; i < n; i++) *d++ = *s++;
     return dest;
 }
+
+#endif

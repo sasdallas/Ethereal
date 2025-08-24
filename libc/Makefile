@@ -3,6 +3,7 @@
 include ./make.config
 
 OBJ_DIR = $(OBJ_OUTPUT_DIRECTORY)/mlibc
+OBJ_DIR2 = $(OBJ_OUTPUT_DIRECTORY)/mlibc_headers
 LIBC_DIR=$(shell pwd)
 MLIBC_DIR = $(LIBC_DIR)/mlibc
 
@@ -10,6 +11,7 @@ $(info $(MLIBC_DIR))
 
 make_dirs:
 	-mkdir $(OBJ_DIR)
+	-mkdir $(OBJ_DIR2)
 
 install-headers: make_dirs
 	# Install linux headers
@@ -21,7 +23,7 @@ install-headers: make_dirs
 		exit 1; \
 	fi
 
-	cd $(OBJ_DIR); \
+	cd $(OBJ_DIR2); \
 	meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=true -Dprefix=$(PREFIX) -Ddefault_library=both -Dlinux_kernel_headers=$(DESTDIR)/usr/include/ $(MLIBC_DIR); \
 	ninja install; \
 	cd $(LIBC_DIR); 

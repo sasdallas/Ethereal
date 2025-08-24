@@ -38,6 +38,28 @@ keyboard_t *kbd = NULL;
 int pty_master;
 int pty_slave;
 
+static void terminal_sendInput(char *input) {
+    write(pty_master, input, strlen(input));
+}
+
+void term_write(keyboard_event_t *event) {
+    switch (event->scancode) {
+        case SCANCODE_UP_ARROW:
+            terminal_sendInput("\033[A");
+            break;
+
+        case SCANCODE_DOWN_ARROW:
+            terminal_sendInput("\033[B");
+            break;
+
+        default:
+            if (!event->ascii) return;
+            char b[] = {event->ascii};
+            write(pty_master, b, 1);
+            break;
+    } 
+}
+
 void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     celestial_event_key_t *key = (celestial_event_key_t*)event;
     keyboard_event_t *ev = keyboard_event(kbd, &key->ev);
@@ -45,9 +67,8 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     if (ev->type == KEYBOARD_EVENT_PRESS) {
         if (ev->ascii == '\b') ev->ascii = 0x7F;
         
-        if (!ev->ascii) return;
-        char b[] = {ev->ascii};
-        write(pty_master, b, 1);
+        term_write(ev);
+        free(ev);
     }
 }
 
@@ -156,13 +177,11 @@ int main(int argc, char *argv[]) {
             
             if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
                 if (ev->ascii == '\b') ev->ascii = 0x7f;
-                if (ev->ascii) {
-                    char b[] = {ev->ascii};
-                    write(pty_master, b, 1);
-                }
+                term_write(ev);
+                
             }
 
-            free(ev);
+            if (ev) free(ev);
         }
 
         if (fds[1].revents & POLLIN) {

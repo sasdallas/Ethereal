@@ -37,6 +37,7 @@ typedef struct term_cell {
     uint8_t highlighted;    // Cell is highlighted
     gfx_color_t fg;         // Foreground
     gfx_color_t bg;         // Background
+    uint8_t bold;           // Cell is bold
 } term_cell_t;
 
 /**** MACROS ****/
