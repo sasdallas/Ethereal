@@ -376,6 +376,19 @@ int mouse_update() {
         __celestial_previous_buttons = WM_MOUSE_BUTTONS; // To stop spamming mouse press events
     }
 
+    // Send event for scroll
+    if (WM_MOUSE_WINDOW && event.scroll != MOUSE_SCROLL_NONE) {
+        celestial_event_mouse_scroll_t scroll = {
+            .magic = CELESTIAL_MAGIC_EVENT,
+            .type = CELESTIAL_EVENT_MOUSE_SCROLL,
+            .size = sizeof(celestial_event_mouse_scroll_t),
+            .wid = WM_MOUSE_WINDOW->id,
+            .direction = event.scroll == MOUSE_SCROLL_UP ? CELESTIAL_MOUSE_SCROLL_UP : CELESTIAL_MOUSE_SCROLL_DOWN
+        };
+
+        event_send(WM_MOUSE_WINDOW, &scroll);
+    }
+
     // Do we need to adjust?
     if (WM_MOUSEX < 0) WM_MOUSEX = 0;
     if (WM_MOUSEY < 0) WM_MOUSEY = 0;

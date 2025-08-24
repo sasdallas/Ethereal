@@ -50,6 +50,9 @@
 #define CELESTIAL_MOUSE_BUTTON_RIGHT            0x2
 #define CELESTIAL_MOUSE_BUTTON_MIDDLE           0x4
 
+#define CELESTIAL_MOUSE_SCROLL_DOWN             0
+#define CELESTIAL_MOUSE_SCROLL_UP               1
+
 /**** TYPES ****/
 
 typedef struct celestial_event_header {
@@ -120,6 +123,11 @@ typedef struct celestial_event_position_change {
     int32_t x;                          // New window X
     int32_t y;                          // New window Y
 } celestial_event_position_change_t;
+
+typedef struct celestial_event_mouse_scroll {
+    CELESTIAL_EVENT_COMMON
+    int32_t direction;                  // Direction
+} celestial_event_mouse_scroll_t;
 
 /**
  * @brief Celestial event handler

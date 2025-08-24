@@ -41,4 +41,11 @@ typedef struct widget_label {
  */
 widget_t *label_create(widget_t *frame, char *text, size_t size);
 
+/**
+ * @brief Set the text on a label
+ * @param label The label
+ * @param text The text
+ */
+void label_setText(widget_t *label, char *text);
+
 #endif

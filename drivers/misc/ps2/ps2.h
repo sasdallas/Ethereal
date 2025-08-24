@@ -43,6 +43,12 @@
 #define PS2_COMMAND_WRITE_CONOUT        0xD1    // Write controller output port
 #define PS2_COMMAND_WRITE_PORT2         0xD4    // Command to write to PORT2
 
+// Device commands
+#define PS2_DEVCMD_IDENTIFY             0xF2
+#define PS2_DEVCMD_ENABLE_SCANNING      0xF4
+#define PS2_DEVCMD_DISABLE_SCANNING     0xF5
+#define PS2_DEVCMD_RESET                0xFF
+
 // CCB
 #define PS2_CCB_PORT1INT                0x01    // First PS/2 port interrupt
 #define PS2_CCB_PORT2INT                0x02    // Second PS/2 port interrupt
@@ -64,6 +70,8 @@
 // Test results
 #define PS2_PORT_TEST_PASS              0x00
 #define PS2_CONTROLLER_TEST_PASS        0x55
+#define PS2_SELF_TEST_PASS              0xAA
+#define PS2_SELF_TEST_FAIL              0xFC
 
 // IRQs
 #define PS2_KEYBOARD_IRQ                1
@@ -75,8 +83,9 @@
 
 // Mouse shenanigans
 #define PS2_MOUSE_GET_DEVICE_ID             0xF2    // Get device ID
-#define PS2_MOUSE_SET_DEFAUTS               0xF6    // Set device defaults
+#define PS2_MOUSE_SET_DEFAULTS              0xF6    // Set device defaults
 #define PS2_MOUSE_ENABLE_DATA_REPORTING     0xF4    // Enable data reporting
+#define PS2_MOUSE_SET_SAMPLE_RATE           0xF3    // Set sampe rate
 #define PS2_MOUSE_RESET                     0xFF    // Reset the mouse
 
 // Mouse data byte
@@ -88,18 +97,28 @@
 #define PS2_MOUSE_DATA_X_OVERFLOW           0x40
 #define PS2_MOUSE_DATA_Y_OVERFLOW           0x80
 
+/* Responses */
+#define PS2_ACK                             0xFA
+#define PS2_RESEND                          0xFE
+
 
 /**** FUNCTIONS ****/
 
 /**
+ * @brief Read a PS/2 byte
+ * @returns LESS than 0 on error
+ */
+int ps2_readByte();
+
+/**
  * @brief Initialize the PS/2 keyboard
  */
-void kbd_init();
+void kbd_init(uint8_t port);
 
 /**
  * @brief Initialize the PS/2 mouse
  */
-void mouse_init();
+void mouse_init(uint8_t port);
 
 /**
  * @brief Wait for input buffer to be empty
@@ -117,14 +136,14 @@ int ps2_waitForOutput();
  * @brief Send PS/2 command (single-byte)
  * @param command The command byte to send
  */
-void ps2_sendCommand(uint8_t command);
+int ps2_sendCommand(uint8_t command);
 
 /**
  * @brief Send PS/2 command (return value)
  * @param command The command byte to send
- * @returns PS2_DATA value
+ * @returns PS2_DATA value or -1 on failure
  */
-uint8_t ps2_sendCommandResponse(uint8_t command);
+int ps2_sendCommandResponse(uint8_t command);
 
 /**
  * @brief Send a multi-byte command
@@ -132,6 +151,18 @@ uint8_t ps2_sendCommandResponse(uint8_t command);
  * @param data The data byte to send
  */
 void ps2_sendCommandParameter(uint8_t command, uint8_t data);
+
+/**
+ * @brief Send a command to a device
+ */
+void ps2_sendDevice(uint8_t port, uint8_t data);
+
+/**
+ * @brief Send a command to a device and get an ACK response
+ * Will wait for a PS2 ACK response, resend up to 10 times.
+ * @returns 0 on success
+ */
+int ps2_sendDeviceACK(uint8_t port, uint8_t data);
 
 
 #endif

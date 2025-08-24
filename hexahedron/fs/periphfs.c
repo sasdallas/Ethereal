@@ -217,19 +217,22 @@ int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
     return 0;
 }
 
+
 /**
  * @brief Write a new event to the mouse interface
  * @param event_type The type of event to write
  * @param buttons Buttons being pressed
  * @param x_diff The X difference in the mouse
  * @param y_diff The Y difference in the mouse
+ * @param scroll Scroll direction
  */
-int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff) {
+int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff, uint8_t scroll) {
     mouse_event_t event = {
         .event_type = event_type,
         .buttons = buttons,
         .x_difference = x_diff,
-        .y_difference = y_diff
+        .y_difference = y_diff,
+        .scroll = scroll,
     };
 
     // We MUST flush the buffer before we hit the size! If the pipe contains too many mouse events, we will accidentally put this thread to sleep

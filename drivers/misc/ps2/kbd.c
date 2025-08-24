@@ -23,9 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Holding shift key */
-// static int held_shift_key = 0;
-
+uint8_t keyboard_port = 0;
 
 /**
  * @brief Send something to the keyboard PS/2 port (PORT1)
@@ -38,8 +36,6 @@ uint8_t ps2_writeKeyboard(uint8_t data) {
     ps2_waitForOutput();
     return inportb(PS2_DATA);
 }
-
-
 
 /**
  * @brief PS/2 keyboard IRQ
@@ -61,10 +57,12 @@ int ps2_keyboardIRQ(void *context) {
 /**
  * @brief Initialize the PS/2 keyboard
  */
-void kbd_init() {
+void kbd_init(uint8_t port) {
+    keyboard_port = port;
+
     // Setup the keyboard to do translation with scancode mode 2
-    ps2_writeKeyboard(PS2_KEYBOARD_SET_SCANCODE);
-    ps2_writeKeyboard(2);
+    ps2_sendDeviceACK(keyboard_port, PS2_KEYBOARD_SET_SCANCODE);
+    ps2_sendDeviceACK(keyboard_port, 2);
 
     // Register IRQ
     hal_registerInterruptHandler(PS2_KEYBOARD_IRQ, ps2_keyboardIRQ, NULL);

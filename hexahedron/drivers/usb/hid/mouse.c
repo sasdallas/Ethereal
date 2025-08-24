@@ -55,7 +55,8 @@ USB_STATUS usb_mouseFinishReport(USBHidCollection_t *collection) {
     if (mouse->buttons & (1 << 1)) buttons |= MOUSE_BUTTON_RIGHT;
     if (mouse->buttons & (1 << 2)) buttons |= MOUSE_BUTTON_MIDDLE;
 
-    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, mouse->rel_x, mouse->rel_y);
+    // TODO: Scrolling support
+    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, mouse->rel_x, mouse->rel_y, MOUSE_SCROLL_NONE);
 
     return USB_SUCCESS;
 }

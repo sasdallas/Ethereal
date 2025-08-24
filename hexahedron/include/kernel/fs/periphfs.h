@@ -67,6 +67,12 @@
 #define MOUSE_BUTTON_LEFT               0x01    // Left button
 #define MOUSE_BUTTON_RIGHT              0x02    // Right button
 #define MOUSE_BUTTON_MIDDLE             0x04    // Middle button
+#define MOUSE_BUTTON_WHEEL
+
+/* Mouse scroll direction */
+#define MOUSE_SCROLL_NONE               0
+#define MOUSE_SCROLL_UP                 1
+#define MOUSE_SCROLL_DOWN               2
 
 /* Default event queue size */
 #define KBD_QUEUE_EVENTS                4096
@@ -103,6 +109,7 @@ typedef struct mouse_event {
     uint32_t buttons;       // Buttons currently being pushed
     int x_difference;       // X difference
     int y_difference;       // Y difference
+    uint8_t scroll;         // Scroll direction
 } mouse_event_t;
 
 /**
@@ -142,7 +149,8 @@ int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode);
  * @param buttons Buttons being pressed
  * @param x_diff The X difference in the mouse
  * @param y_diff The Y difference in the mouse
+ * @param scroll Scroll direction
  */
-int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff);
+int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff, uint8_t scroll);
 
 #endif

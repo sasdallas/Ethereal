@@ -14,6 +14,7 @@
 #include <ethereal/widget.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 /* TEMPORARY: Default font for label */
 gfx_font_t *label_default_font = NULL;
@@ -53,4 +54,20 @@ widget_t *label_create(widget_t *frame, char *text, size_t size) {
 
     list_append(frame->children, widget);
     return widget;
+}
+
+/**
+ * @brief Set the text on a label
+ * @param label The label
+ * @param text The text
+ */
+void label_setText(widget_t *label, char *text) {
+    assert(label->type == WIDGET_TYPE_LABEL);
+
+    widget_label_t *lbl = (widget_label_t*)label->impl;
+    free(lbl->text);
+    lbl->text = strdup(text);
+
+    label->width = lbl->font_size * strlen(text);
+    label->height = lbl->font_size;
 }
