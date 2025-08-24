@@ -14,6 +14,11 @@
 #ifndef _USER_H
 #define _USER_H
 
+/* !!!: BUILD HACK */
+#ifdef _SYS_USER_H
+#error "You must not include sys/user.h"
+#endif
+
 /**** INCLUDES ****/
 #include <stdint.h>
 

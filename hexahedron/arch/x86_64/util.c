@@ -18,6 +18,8 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/arch/arch.h>
 #include <kernel/processor_data.h>
+#include <kernel/debug.h>
+#include <ethereal/user.h>
 #include <stdio.h>
 
 /* External parameters */
