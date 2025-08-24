@@ -74,11 +74,8 @@ int log_print(void *user, char ch) {
 ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
     if (!size) return 0;
 
-    // if (debug_lock.cpu != arch_current_cpu()) {
-        // !!!: This is bad. Should use a mutex here..
-        spinlock_acquire(&debug_lock);
-    // }
-    
+    // !!!: This is bad. Should use a mutex here..
+    spinlock_acquire(&debug_lock);
     
     // Determine kernel boot time
     unsigned long seconds, subseconds;

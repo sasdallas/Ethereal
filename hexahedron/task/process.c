@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <kernel/mem/pmm.h>
 #include <kernel/loader/elf.h>
+#include <kernel/misc/util.h>
 
 #include <structs/tree.h>
 #include <structs/list.h>
@@ -708,12 +709,20 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
         argv_pointers[a] = (char*)current_cpu->current_thread->stack;
     }
 
+    // Now we can align the stack
+    current_cpu->current_thread->stack = ALIGN_DOWN(current_cpu->current_thread->stack, 16);
+
+    // Realign the stack if we need to. Everything from now on should JUST be a uintptr_t
+    // The pending amount of bytes: 9 auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
+    uintptr_t bytes = (9 * sizeof(uintptr_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
+    if (!IS_ALIGNED(current_cpu->current_thread->stack - bytes, 16)) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
+    }
+    
     // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
 
     // Create SysV auxiliary vector
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_NULL);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_BASE);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phdr);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHDR);
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phnum);
@@ -745,10 +754,9 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
 
     // Enter
-    LOG(DEBUG, "Launching new ELF process\n");
+    LOG(DEBUG, "Launching new ELF process (stack = %p)\n", current_cpu->current_thread->stack);
     arch_prepare_switch(current_cpu->current_thread);
     arch_start_execution(process_entrypoint, current_cpu->current_thread->stack);
-
     return 0;
 }
 
@@ -972,7 +980,7 @@ void process_exit(process_t *process, int status_code) {
             }
 
             // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-            process_switchNextThread(); // !!!: Hopefully that works and they free us..
+            if (process == current_cpu->current_process) process_switchNextThread(); // !!!: Hopefully that works and they free us..
         } 
 
     } 
@@ -1110,7 +1118,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
 
                     // Update wstatus
                     if (wstatus) {
-                        *wstatus = 0x7F;
+                        *wstatus = (child->exit_status << 8) | 0x7F;
                     }
 
                     spinlock_release(&reap_queue_lock);
