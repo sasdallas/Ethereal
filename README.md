@@ -1,6 +1,6 @@
 # Ethereal
 
-A totally from scratch all-in-one operating system, written for speed, memory conservation, and reliability.\
+A custom all-in-one operating system, written for speed, memory conservation, and reliability.\
 Formerly known as reduceOS
 
 ## What is Ethereal?
@@ -37,8 +37,8 @@ Currently, the project is developing its usermode stages.
 - AHCI/IDE support
 - Networking stack with E1000 and RTL8139 network card driver
 - Priority-based round-robin scheduler with a well-tested API
-- Custom C library with support for many functions
-- Full ACPI support with the ACPICA library
+- Support for the `mlibc` C library and its wide variety of functions
+- Full ACPI support with the ACPICA library (with backup MinACPI library that doesn't have AML parsing)
 
 ## Project structure
 
@@ -49,13 +49,14 @@ Currently, the project is developing its usermode stages.
 - `external`: Contains external projects, such as ACPICA. See External Components.
 - `hexahedron`: The main kernel project
 - `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
+- `libc`: Contains mlibc
 
 ## Building
 
 To build Ethereal, you will need an Ethereal toolchain for your target architecture.\
 The Ethereal toolchain can be found at [the repository](https://github.com/sasdallas/Ethereal-Toolchain)
 
-Other packages required: `grub-common`, `xorriso`, `qemu-system`
+Other packages required: `grub-common`, `xorriso`, `qemu-system`, `meson`, `ninja`
 
 Edit `buildscripts/build-arch.sh` to change the target build architecture. \
 Running `make all` will build an ISO in `build-output/ethereal.iso`
@@ -75,7 +76,6 @@ Here is a small list:
 - `--no-acpica`: Disable the ACPICA library and fallback to MinACPI implementation. Only useful in extreme cases.
 - `--no-acpi`: Disable all ACPI implementations. Disables SMP as well.
 - `--disable-smp`: Enable ACPI, but disable SMP
-- `--no-secondary-fb`: Disables the secondary framebuffer. **RECOMMENDED** for real hardware, since double buffering is slow (**warning: scrolling will be extremely slow**)
 - `--disable-cow`: Disable copy-on-write. Not recommended, but can be useful in extreme cases.
 - `--no-psf-font`: Don't load the PSF font from initrd
 
