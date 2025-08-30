@@ -24,6 +24,7 @@
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
+#include <kernel/processor_data.h>
 #include <string.h>
 
 /* Helper macro */
@@ -532,9 +533,10 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
                 // Copy the data
                 memcpy((void*)rm, (void*)remapped, PAGE_SIZE); 
-
                 mem_unmapPhys(remapped, PAGE_SIZE);
                 mem_unmapPhys(rm, PAGE_SIZE);
+
+                mem_invalidatePage(i);
             }
         }
 
@@ -731,10 +733,10 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
         // LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }
 
-    LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p (no CoW)\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);
-
-
 _add_allocation:
+    LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);
+
+
     // Insert the allocation into the VAS
     // !!!: THIS ASSUMES ORDERED
     node->alloc = alloc;

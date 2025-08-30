@@ -154,6 +154,10 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     LOG(DEBUG, "CPU%i online and ready\n", smp_getCurrentCPU());
     ap_startup_finished = 1;
 
+    // NULL
+    page_t *pg = mem_getPage(NULL, 0x0, MEM_CREATE);
+    pg->bits.present = 0;
+
     // Switch
     process_switchNextThread();
 }

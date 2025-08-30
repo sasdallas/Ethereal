@@ -103,9 +103,11 @@ uintptr_t mem_getKernelHeap() {
  * @param addr The address of the page 
  * @warning This function is only to be used when removing P-V mappings. Just free the page if it's identity.
  */
-static inline void mem_invalidatePage(uintptr_t addr) {
+inline void mem_invalidatePage(uintptr_t addr) {
     asm volatile ("invlpg (%0)" :: "r"(addr) : "memory");
-    smp_tlbShootdown(addr);
+
+    // TODO
+    // smp_tlbShootdown(addr);
 }
 
 /**

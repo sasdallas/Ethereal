@@ -286,4 +286,11 @@ uintptr_t mem_getMMIOUsage();
  */
 uintptr_t mem_getDriverUsage();
 
+/**
+ * @brief Invalidate a page in the TLB
+ * @param addr The address of the page 
+ * @warning This function is only to be used when removing P-V mappings. Just free the page if it's identity.
+ */
+void mem_invalidatePage(uintptr_t addr);
+
 #endif

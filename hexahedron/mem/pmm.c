@@ -122,6 +122,21 @@ int pmm_findFirstFrames(size_t n) {
 }
 
 /**
+ * @brief Out of memory
+ */
+void pmm_oom() {
+    kernel_panic_prepare(OUT_OF_MEMORY);
+    LOG(ERR, "*** PMM detected OOM condition\n\n");
+
+    LOG(ERR, "Available physical memory blocks: %d blocks (%d kB)\n", pmm_getMaximumBlocks(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
+    LOG(ERR, "Used physical memory blocks: %d blocks (%d kB)\n", pmm_getUsedBlocks(), pmm_getUsedBlocks() * PMM_BLOCK_SIZE / 1024);
+    LOG(ERR, "Used physical memory blocks: %d blocks (%d kB)\n", pmm_getFreeBlocks(), pmm_getFreeBlocks() * PMM_BLOCK_SIZE / 1024);
+
+
+    kernel_panic_finalize();
+}
+
+/**
  * @brief Initialize a region as available memory
  * @param base The starting address of the region
  * @param size The size of the region
@@ -211,7 +226,7 @@ uintptr_t pmm_allocateBlock() {
 
 _oom:
     spinlock_release(&frame_lock);
-    kernel_panic(OUT_OF_MEMORY, "physmem");
+    pmm_oom();
     __builtin_unreachable();
 }
 
@@ -237,12 +252,12 @@ void pmm_freeBlock(uintptr_t block) {
  */
 uintptr_t pmm_allocateBlocks(size_t blocks) {
     if (!blocks) kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "physmem");
-    if ((pmm_maxBlocks - pmm_usedBlocks) <= blocks) kernel_panic(OUT_OF_MEMORY, "physmem");
+    if ((pmm_maxBlocks - pmm_usedBlocks) <= blocks) pmm_oom();
     
     spinlock_acquire(&frame_lock);
     int frame = pmm_findFirstFrames(blocks);
     if (frame == -ENOMEM) {
-        kernel_panic(OUT_OF_MEMORY, "physmem");
+        pmm_oom();
     }
 
     for (uint32_t i = 0; i < blocks; i++) {

@@ -341,13 +341,12 @@ int main(int argc, char *argv[]) {
     char last_time[28] = { 0 };
 
     while (1) {
-
         // Update time string
         time_t current_time;
-        struct tm *tm;
+        current_time = time(NULL);
+        struct tm *tm = localtime(&current_time);
+
         char time_str[9];
-        time(&current_time);
-        tm = localtime(&current_time);
         strftime(time_str, 9, "%I:%M %p", tm);
 
         char date_str[15];

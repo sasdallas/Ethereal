@@ -13,7 +13,7 @@
 
 #include <string.h>
 
-#ifdef __ARCH_X86_64__
+#if 0
 
 void *memcpy(void *dest, const void *src, size_t n) {
     asm volatile (
