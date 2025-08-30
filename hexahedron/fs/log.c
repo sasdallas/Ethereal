@@ -22,9 +22,12 @@
 #include <kernel/processor_data.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
+#include <sys/ioctl_ethereal.h>
 #include <kernel/debug.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <ctype.h>
 
 void log_open(fs_node_t*, unsigned int);
 void log_close(fs_node_t*);
@@ -32,7 +35,7 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf);
 
 /* Log lock */
 // spinlock_t log_lock = { 0 };
-extern spinlock_t debug_lock;
+ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 
 /**
  * @brief Log device open method
@@ -58,6 +61,19 @@ int logdev_close(fs_node_t *node) {
 }
 
 /**
+ * @brief Log device ioctl method for emulating TTY
+ */
+int logdev_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+    if (request == IOCTLTTYIS) {
+        SYSCALL_VALIDATE_PTR(argp);
+        *(int*)argp = 1;
+        return 0;
+    }
+
+    return -EINVAL;
+}
+
+/**
  * @brief Log device print method
  */
 int log_print(void *user, char ch) {
@@ -74,19 +90,14 @@ int log_print(void *user, char ch) {
 ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
     if (!size) return 0;
 
-    // !!!: This is bad. Should use a mutex here..
-    spinlock_acquire(&debug_lock);
-    
     // Determine kernel boot time
     unsigned long seconds, subseconds;
     clock_relative(0, 0, &seconds, &subseconds);
 
     char header[256];
     snprintf(header, 256, "[%lu.%06lu] [PROC] [%s:%d] ", seconds, subseconds, current_cpu->current_process->name, current_cpu->current_process->pid);
-    for (size_t i = 0; i < strlen(header); i++) log_print(NULL, header[i]);
-    for (size_t i = 0; i < size; i++) log_print(NULL, buf[i]);
-
-    spinlock_release(&debug_lock);
+    debug_write(NULL, 0, strlen(header), (uint8_t*)header);
+    debug_write(NULL, 0, size, buf);
     return size;
 }
 
@@ -104,6 +115,7 @@ void log_mount() {
     log_node->open = logdev_open;
     log_node->close = logdev_close;
     log_node->write = logdev_write;
+    log_node->ioctl = logdev_ioctl;
     log_node->mask = 0600;
 
     vfs_mount(log_node, "/device/log");
