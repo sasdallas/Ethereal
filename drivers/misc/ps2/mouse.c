@@ -112,9 +112,6 @@ int mouse_irq(void *context) {
 void mouse_init(uint8_t p) {
     mouse_port = p;
 
-    // Register IRQ
-    hal_registerInterruptHandler(PS2_MOUSE_IRQ, mouse_irq, NULL);
-
     // Do magic sequence
     ps2_setMouseSampleRate(200);
     ps2_setMouseSampleRate(100);
@@ -147,4 +144,8 @@ void mouse_init(uint8_t p) {
 
     LOG(DEBUG, "Mouse ID: %02x\n", mouse_id);
     mouse_enabled = 1;
+
+
+    // Register IRQ
+    hal_registerInterruptHandler(PS2_MOUSE_IRQ, mouse_irq, NULL);
 }
