@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _MENU_H
-#define _MENU_H
+#ifndef _DESKTOP_MENU_H
+#define _DESKTOP_MENU_H
 
 /**** INCLUDES ****/
 #include <stdint.h>

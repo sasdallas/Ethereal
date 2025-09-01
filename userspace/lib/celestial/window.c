@@ -185,6 +185,7 @@ window_t *celestial_getWindow(wid_t wid) {
     CELESTIAL_HANDLE_RESP_ERROR(resp, NULL);
 
     window_t *win = malloc(sizeof(window_t));
+    memset(win, 0, sizeof(window_t));
     win->shmfd = -1;
     win->buffer = NULL;
     win->wid = wid;

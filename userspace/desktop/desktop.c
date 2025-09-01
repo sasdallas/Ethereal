@@ -13,6 +13,7 @@
  */
 
 #include "menu.h"
+#include "widget.h"
 #include <ethereal/celestial.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@
 #include <structs/ini.h>
 #include <sys/signal.h>
 #include <errno.h>
+#include <poll.h>
 
 /* Disable background drawing */
 int disable_bg = 0;
@@ -242,12 +244,16 @@ void mouse_event_taskbar(window_t *win, uint32_t event_type, void *event) {
             // TODO: Menu system completion
             menu_show(menu_active);
         }
+    } else if (event_type == CELESTIAL_EVENT_MOUSE_MOTION && win == taskbar_window) {
+        celestial_event_mouse_motion_t *motion = (celestial_event_mouse_motion_t*)event;
+        widget_mouseMovement(motion->x, motion->y);
+    } else if (event_type == CELESTIAL_EVENT_MOUSE_EXIT) {
+        widget_mouseExit();
     }
 }
 
 int main(int argc, char *argv[]) {
     struct option options[] = {
-        // { .name = "no-background", .has_arg = no_argument, .flag = NULL, .val = 'b' },
         { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h', },
         { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
         { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
@@ -281,15 +287,12 @@ int main(int argc, char *argv[]) {
     }
 
     // Set reload signal
-    fprintf(stderr, "set reload..\n");
     signal(SIGUSR2, reload_signal);
 
     // Load config
-    fprintf(stderr, "load config...\n");
     config_load();
 
     // Create the background
-    fprintf(stderr, "make background..\n");
     create_background();
 
     // Create the taskbar window
@@ -305,6 +308,8 @@ int main(int argc, char *argv[]) {
 
     // Set event
     celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_event_taskbar);
+    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_MOTION, mouse_event_taskbar);
+    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_EXIT, mouse_event_taskbar);
 
     // Get taskbar + make gradient
     gfx_context_t *taskbar_ctx = celestial_getGraphicsContext(taskbar_window);
@@ -338,34 +343,48 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    char last_time[28] = { 0 };
+    // char last_time[28] = { 0 };
 
+    // Load the widgets
+    widgets_load();
     while (1) {
-        // Update time string
-        time_t current_time;
-        current_time = time(NULL);
-        struct tm *tm = localtime(&current_time);
+        // // Update time string
+        // time_t current_time;
+        // current_time = time(NULL);
+        // struct tm *tm = localtime(&current_time);
 
-        char time_str[9];
-        strftime(time_str, 9, "%I:%M %p", tm);
+        // char time_str[9];
+        // strftime(time_str, 9, "%I:%M %p", tm);
 
-        char date_str[15];
-        strftime(date_str, 15, "%m/%d/%Y", tm);
+        // char date_str[15];
+        // strftime(date_str, 15, "%m/%d/%Y", tm);
         
-        if (!last_time[0] || strcmp(last_time, time_str)) {
-            strcpy(last_time, time_str);
+        // if (!last_time[0] || strcmp(last_time, time_str)) {
+        //     strcpy(last_time, time_str);
             
-            // Render the string
-            gfx_renderString(taskbar_ctx, taskbar_font, time_str, celestial_getServerInformation()->screen_width - 92, 15, GFX_RGB(255, 255, 255));
-            gfx_renderString(taskbar_ctx, taskbar_font, date_str, celestial_getServerInformation()->screen_width - 100, 30, GFX_RGB(255, 255, 255));
-            gfx_render(taskbar_ctx);
-            celestial_flip(taskbar_window);
+        //     // Render the string
+        //     gfx_renderString(taskbar_ctx, taskbar_font, time_str, celestial_getServerInformation()->screen_width - 92, 15, GFX_RGB(255, 255, 255));
+        //     gfx_renderString(taskbar_ctx, taskbar_font, date_str, celestial_getServerInformation()->screen_width - 100, 30, GFX_RGB(255, 255, 255));
+        //     gfx_render(taskbar_ctx);
+        //     celestial_flip(taskbar_window);
 
-            // Cover up
-            create_taskbar_gradient(taskbar_ctx, celestial_getServerInformation()->screen_width - 100);
+        //     // Cover up
+        //     create_taskbar_gradient(taskbar_ctx, celestial_getServerInformation()->screen_width - 100);
+        // }
+        
+        struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};
+        poll(fds, 1, 1000);
+
+        create_taskbar_gradient(taskbar_ctx, 0);
+        widgets_update();
+
+        if (fds[0].revents & POLLIN) {
+            celestial_poll();
         }
 
-        celestial_poll();
+        if (taskbar_ctx->clip) {
+            celestial_flip(taskbar_window);
+        }
     }
 
     return 0;
