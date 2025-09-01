@@ -37,16 +37,26 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf);
 // spinlock_t log_lock = { 0 };
 ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
 
+typedef struct logfs_buffer {
+    char *buffer;
+    size_t size;
+    size_t index;
+    spinlock_t lck;
+} logfs_buffer_t;
+
 /**
  * @brief Log device open method
  * @param node The node to open
  * @param flags The flags with which to open the node
  */
 int logdev_open(fs_node_t *node, unsigned int flags) {
-    char b[256];
-    snprintf(b, 256, "Process %s connected to log daemon\n", current_cpu->current_process->name);
-    node->write(node, 0, strlen(b), (uint8_t*)b);
-    return 0;
+    node->dev = kzalloc(sizeof(logfs_buffer_t));
+    logfs_buffer_t *buf = (logfs_buffer_t*)node->dev;
+
+    buf->buffer = kzalloc(1024);
+    buf->size = 1024;
+    buf->index = 0;
+    return 0;  
 }
 
 /**
@@ -54,9 +64,9 @@ int logdev_open(fs_node_t *node, unsigned int flags) {
  * @param node The node to close
  */
 int logdev_close(fs_node_t *node) {
-    char b[256];
-    snprintf(b, 256, "Process %s disconnected from log daemon\n", current_cpu->current_process->name);
-    node->write(node, 0, strlen(b), (uint8_t*)b);
+    logfs_buffer_t *buf = (logfs_buffer_t*)node->dev;
+    kfree(buf->buffer);
+    kfree(buf);
     return 0;
 }
 
@@ -81,6 +91,23 @@ int log_print(void *user, char ch) {
 }
 
 /**
+ * @brief Flush method
+ */
+void log_flush(logfs_buffer_t *buf) {
+    
+    // Determine kernel boot time
+    unsigned long seconds, subseconds;
+    clock_relative(0, 0, &seconds, &subseconds);
+
+    char header[256];
+    snprintf(header, 256, "[%lu.%06lu] [PROC] [%s:%d] ", seconds, subseconds, current_cpu->current_process->name, current_cpu->current_process->pid);
+    debug_write(NULL, 0, strlen(header), (uint8_t*)header);
+    debug_write(NULL, 0, buf->index, (uint8_t*)buf->buffer);
+
+    buf->index = 0;
+}
+
+/**
  * @brief Log device write method
  * @param node The node to write to
  * @param off The offset
@@ -90,14 +117,16 @@ int log_print(void *user, char ch) {
 ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
     if (!size) return 0;
 
-    // Determine kernel boot time
-    unsigned long seconds, subseconds;
-    clock_relative(0, 0, &seconds, &subseconds);
+    // Push into buffer
+    logfs_buffer_t *b = (logfs_buffer_t*)node->dev;
+    spinlock_acquire(&b->lck);
+    for (unsigned i = 0; i < size; i++) {
+        b->buffer[b->index++] = buf[i];
+        if (b->index >= b->size || buf[i] == '\n') log_flush(b);
+        b->buffer[b->index] = 0;
+    }
+    spinlock_release(&b->lck);
 
-    char header[256];
-    snprintf(header, 256, "[%lu.%06lu] [PROC] [%s:%d] ", seconds, subseconds, current_cpu->current_process->name, current_cpu->current_process->pid);
-    debug_write(NULL, 0, strlen(header), (uint8_t*)header);
-    debug_write(NULL, 0, size, buf);
     return size;
 }
 
