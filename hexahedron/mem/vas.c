@@ -485,6 +485,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
                 // Allocate corresponding to prot flags
                 int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL) | MEM_PAGE_NOALLOC;
                 if (pg && PAGE_IS_PRESENT(pg)) mem_allocatePage(pg, flags);
+                mem_invalidatePage(i);
             } 
         
             // LOG(DEBUG, "CoW released for %p - %p\n", alloc->base, alloc->base + alloc->size);
@@ -734,7 +735,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
     }
 
 _add_allocation:
-    LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);
+    // LOG(DEBUG, "Copied allocation [%s] [%p -> %p] successfully: %p - %p\n", vas_typeToString(alloc->type), source, alloc, alloc->base, alloc->base + alloc->size);
 
 
     // Insert the allocation into the VAS
