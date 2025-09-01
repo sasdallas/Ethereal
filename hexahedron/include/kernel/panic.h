@@ -21,7 +21,7 @@
 
 /**** STOP CODES ****/
 
-#define     KERNEL_STOP_CODES               19
+#define     KERNEL_STOP_CODES               20
 
 #define     KERNEL_DEBUG_TRAP               0x00000000 // Debugging trap
 #define     MEMORY_MANAGEMENT_ERROR         0x00000001 // Memory management failure
@@ -42,6 +42,7 @@
 #define     UBSAN_TYPE_MISMATCH             0x00000010 // UBsan type mismatch
 #define     UBSAN_SHIFT_OUT_OF_BOUNDS       0x00000011 // UBsan shift out of bounds
 #define     UBSAN_POINTER_OVERFLOW          0x00000012 // UBsan pointer overflow
+#define     STACK_SMASHING_DETECTED         0x00000013 // Kernel detected stack smash
 
 /**** MESSAGES ****/
 

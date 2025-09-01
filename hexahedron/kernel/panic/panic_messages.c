@@ -36,7 +36,8 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
     "UNKNOWN_CORRUPTION_DETECTED",
     "UBSAN_TYPE_MISMATCH",
     "UBSAN_SHIFT_OUT_OF_BOUNDS",
-    "UBSAN_POINTER_OVERFLOW"
+    "UBSAN_POINTER_OVERFLOW",
+    "STACK_SMASHING_DETECTED"
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
@@ -58,5 +59,6 @@ char *kernel_panic_messages[KERNEL_STOP_CODES] = {
     "A kernel data structure was corrupted in a way that makes continuing impossible.\n",
     "Undefined behavior sanitizer detected a type match.\n",
     "Undefined behavior sanitizer detected a shift out of bounds.\n",
-    "Undefined behavior sanitizer detected a pointer overflow.\n"
+    "Undefined behavior sanitizer detected a pointer overflow.\n",
+    "Kernel stack smashing detected.\n",
 };
