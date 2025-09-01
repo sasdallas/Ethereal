@@ -74,11 +74,16 @@ void timer_kthread(void *ctx) {
 
                     if (t->reset_value.tv_sec || t->reset_value.tv_usec) {
                         // There is a reset value
+                        t->value.tv_sec = t->reset_value.tv_sec;
+                        t->value.tv_usec = t->reset_value.tv_usec;
                         clock_relative(t->reset_value.tv_sec, t->reset_value.tv_usec, &t->expire_seconds, &t->expire_subseconds);
+                        
                     }
 
                     signal_send(t->process, SIGALRM);
-                } else if (t->value.tv_sec || t->value.tv_usec) {
+                } 
+                
+                if (t->value.tv_sec || t->value.tv_usec) {
                     // Check expiration time
                     if (sleep_seconds == -1 || (sleep_seconds < t->value.tv_sec || (sleep_seconds == t->value.tv_sec && sleep_subseconds < t->value.tv_usec))) {
                         sleep_seconds = t->value.tv_sec;
@@ -97,7 +102,7 @@ void timer_kthread(void *ctx) {
                 } 
             } else {
                 // TODO: ITIMER_VIRTUAL, ITIMER_PROF
-                LOG(ERR, "ITIMER_VIRTUAL/ITIMER_PROF is not supported.\n");
+                LOG(ERR, "ITIMER_VIRTUAL/ITIMER_PROF is not supported (got %d).\n", t->which);
                 list_delete(timer_queue, node);
             }
         }
@@ -151,6 +156,8 @@ int timer_set(struct process *process, int which, struct itimerval *value) {
     }
 
     spinlock_release(&timer_lock);
+
+    LOG(DEBUG, "Created a new timer with value %d/%d\n", timer->value.tv_sec, timer->value.tv_usec);
 
     return 0; 
 }

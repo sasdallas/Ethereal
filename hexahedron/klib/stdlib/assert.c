@@ -13,7 +13,7 @@
 
 #include <kernel/panic.h>
 
-void __assert_fail(const char *file, int line, const char *stmt, const char *function) {
+void __assert_fail(const char *stmt, const char *file, int line, const char *function) {
     kernel_panic_extended(ASSERTION_FAILED, "klib", "*** Assertion (%s:%i) in function %s failed: %s\n", file, line, function, stmt);
     __builtin_unreachable();
 }
