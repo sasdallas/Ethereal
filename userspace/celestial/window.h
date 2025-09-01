@@ -31,6 +31,13 @@
 #define WINDOW_STATE_DRAGGING                   1
 #define WINDOW_STATE_RESIZING                   2
 #define WINDOW_STATE_CLOSING                    3
+#define WINDOW_STATE_OPENING                    4
+#define WINDOW_STATE_CLOSED                     5
+
+
+#define WINDOW_ANIM_NONE                        0
+#define WINDOW_ANIM_OPENING                     1
+#define WINDOW_ANIM_CLOSING                     2
 
 
 /**** TYPES ****/
@@ -44,6 +51,9 @@ typedef struct wm_window {
     size_t height;              // Height of the window
     uint32_t events;            // Events the window subscribed to
     uint8_t state;              // Current window state
+    sprite_t *sp;               // Window sprite
+    uint8_t animation;          // Animation ongoing
+    uint64_t anim_start;        // Animation start
 
     int z_array;                // Z array
 
@@ -138,5 +148,12 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height);
  * @param win A window to ignore if needed
  */
 void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign);
+
+/**
+ * @brief Begin a window animation
+ * @param window The window to begin on
+ * @param anim The animation to begin
+ */
+void window_beginAnimation(wm_window_t *win, int anim);
 
 #endif

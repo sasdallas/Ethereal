@@ -40,7 +40,7 @@ void gfx_tickAnimations(struct gfx_context *ctx) {
             gfx_anim_t *anim = (gfx_anim_t*)an->value;
 
             if (anim->state == GFX_ANIM_RUNNING) {
-                if (now - anim->last_frame > anim->delay) {
+                if (now - anim->last_frame >= anim->delay) {
                     if (!anim->frame) {
                         if (anim->start) anim->start(ctx, anim);
                     
@@ -67,11 +67,6 @@ void gfx_tickAnimations(struct gfx_context *ctx) {
 
                     anim->last_frame = now;
                     anim->frame++;
-
-                    // gfx_clip_t *clip = ctx->clip_last;
-                    // if (ctx->clip == ctx->clip_last) ctx->clip = NULL;
-                    // ctx->clip_last = ctx->clip_last->prev;
-                    // free(clip);
                 } 
 
                 if (anim->frame >= anim->total_frames) {
@@ -165,7 +160,7 @@ gfx_anim_t *gfx_animateFadeIn(struct gfx_context *ctx, sprite_t *sprite, int dur
     // Calculate duration
     a->total_frames = f->end_alpha - f->start_alpha;
     a->frame = 0;
-    a->delay = duration / a->total_frames; // !!!: what lol
+    a->delay = duration * 1000 / a->total_frames; // !!!: what lol
 
     return a;
 }
@@ -192,7 +187,7 @@ gfx_anim_t *gfx_animateFadeOut(struct gfx_context *ctx, sprite_t *sprite, int du
     // Calculate duration
     a->total_frames = f->start_alpha - f->end_alpha;
     a->frame = 0;
-    a->delay = duration / a->total_frames; // !!!: what lol
+    a->delay = duration * 1000 / a->total_frames; // !!!: what lol
 
     return a;
 }
@@ -215,7 +210,7 @@ gfx_anim_t *gfx_animateTransition(struct gfx_context *ctx, sprite_t *sprite, spr
     // Calculate duration
     a->total_frames = 255;
     a->frame = 0;
-    a->delay = duration / a->total_frames; // !!!: what lol
+    a->delay = duration * 1000 / a->total_frames; // !!!: what lol
 
     return a;
 }

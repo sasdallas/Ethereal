@@ -61,6 +61,17 @@ void version() {
  * @brief Main redraw function of Celestial
  */
 void celestial_redraw() {
+    foreach(win_node, WM_WINDOW_LIST_BG) {
+        wm_window_t *win = (wm_window_t*)win_node->value;
+        if (win->animation) window_update(win, GFX_RECT(0,0,win->width,win->height));
+    }
+    foreach(win_node, WM_WINDOW_LIST) {
+        wm_window_t *win = (wm_window_t*)win_node->value;
+        if (win->animation) window_updateRegion(GFX_RECT(win->x,win->y,win->width,win->height));
+    }
+
+
+
     // Redraw windows
     window_redraw();
 

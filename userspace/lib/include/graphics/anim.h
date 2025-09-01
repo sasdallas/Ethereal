@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <graphics/sprite.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 /**** DEFINITIONS ****/
 

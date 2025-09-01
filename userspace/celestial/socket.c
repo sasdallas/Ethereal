@@ -379,11 +379,19 @@ void socket_handle(int sock) {
         
         // Mark the window as requiring a flip
         wm_window_t *win = WID(req->wid);
+        
+        // If this is our first flip request..
+        if (win->state == WINDOW_STATE_OPENING) {
+            window_beginAnimation(win, WINDOW_ANIM_OPENING);
+            return;
+        }
+
+
         if (req->x < 0) req->x = 0;
         if (req->y < 0) req->y = 0;
         if (req->x + req->width > win->width) req->width = win->width - req->x;
         if (req->y + req->height > win->height) req->height = win->height - req->y;
-    
+
         gfx_rect_t upd_rect = { .x = req->x, .y = req->y, .width = req->width, .height = req->height };
         window_update(win, upd_rect);
 

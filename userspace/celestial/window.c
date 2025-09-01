@@ -41,6 +41,17 @@ uint64_t __celestial_last_redraw_time = 0;
 /* Focused window */
 wm_window_t *__celestial_focused_window = NULL;
 
+/* Window animation delays */
+int window_anim_delays[] = {
+    [WINDOW_ANIM_OPENING] = 1000,
+    [WINDOW_ANIM_CLOSING] = 1000,
+};
+
+int window_anim_frames[] = {
+    [WINDOW_ANIM_OPENING] = 100000,
+    [WINDOW_ANIM_CLOSING] = 100000,
+};
+
 /**
  * @brief Allocate a new ID for a window
  */
@@ -70,6 +81,36 @@ static void window_freeID(pid_t id) {
 } 
 
 /**
+ * @brief Begin a window animation
+ * @param window The window to begin on
+ * @param anim The animation to begin
+ */
+void window_beginAnimation(wm_window_t *win, int anim) {
+    if (win->animation != WINDOW_ANIM_NONE) return;
+    win->animation = anim;
+    win->anim_start = CELESTIAL_NOW();
+}
+
+/**
+ * @brief Process window animations
+ */
+void window_processAnimations(wm_window_t *win, int frame) {
+    double tdiff = (double)frame / (double)window_anim_frames[win->animation];
+ 
+    if (win->animation == WINDOW_ANIM_OPENING) {
+        double scale = 0.75 + tdiff * (1.0 - 0.75); // Starting scale at 75%, scale up to 100%
+        double off_x = (win->width - (win->width * scale)) / 2.0f;
+        double off_y = (win->height - (win->height * scale)) / 2.0f;
+        gfx_renderSpriteScaled(WM_GFX, win->sp, GFX_RECT(win->x + off_x, win->y + off_y, win->width * scale, win->height * scale));
+    } else if (win->animation == WINDOW_ANIM_CLOSING) {
+        double scale = 1.00 + tdiff * (0.75 - 1.0); // Starting scale at 100%, scale down to 75%
+        double off_x = (win->width - (win->width * scale)) / 2.0f;
+        double off_y = (win->height - (win->height * scale)) / 2.0f;
+        gfx_renderSpriteScaled(WM_GFX, win->sp, GFX_RECT(win->x + off_x, win->y + off_y, win->width * scale, win->height * scale));
+    }
+}
+
+/**
  * @brief Create a new window in the window system
  * @param sock Socket creating the window
  * @param flags Flags for window creation
@@ -79,6 +120,7 @@ static void window_freeID(pid_t id) {
  */
 wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     wm_window_t *win = malloc(sizeof(wm_window_t));
+    memset(win, 0, sizeof(wm_window_t));
     win->id = window_allocateID();
     win->sock = sock;
     win->width = width;
@@ -88,13 +130,18 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->width = width;
     win->height = height;
     win->events = 0x0;
-    win->state = WINDOW_STATE_NORMAL;
+    win->state = WINDOW_STATE_OPENING;
     win->z_array = CELESTIAL_Z_DEFAULT;
 
     // Make buffer for it   
     win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
     win->bufkey = shared_key(win->shmfd);
     win->buffer = mmap(NULL, win->height * win->width * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
+
+    win->sp = gfx_createSprite(0,0);
+    win->sp->width = win->width;
+    win->sp->height = win->height;
+    win->sp->bitmap = (uint32_t*)win->buffer;
 
     CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
 
@@ -161,13 +208,54 @@ void window_redraw() {
         }
 #else
         // Render the sprite
-        sprite_t sp = { .width = upd->win->width, .height = upd->win->height, .bitmap = (uint32_t*)upd->win->buffer };
-        gfx_renderSpriteRegion(WM_GFX, &sp, &upd->rect, upd->win->x, upd->win->y);
+        if (upd->win->animation == WINDOW_ANIM_NONE) {
+            gfx_renderSpriteRegion(WM_GFX, upd->win->sp, &upd->rect, upd->win->x, upd->win->y);
+        } else {
+            // Pending animation that requires rendering!
+            // Calculate the current frame
+            int frame = CELESTIAL_SINCE(upd->win->anim_start);
+
+            if (frame >= window_anim_frames[upd->win->animation]) {
+                // Expired
+                CELESTIAL_LOG("Window %d on frame %d expired animation\n", upd->win->id, frame);
+                switch (upd->win->animation) {
+                    case WINDOW_ANIM_CLOSING:
+                        upd->win->state = WINDOW_STATE_CLOSED;
+                        break;
+                    default:
+                        upd->win->state = WINDOW_STATE_NORMAL;
+                        break;
+                }
+
+                upd->win->animation = WINDOW_ANIM_NONE;
+                upd->win->anim_start = 0;
+                if (upd->win->state == WINDOW_STATE_NORMAL) window_update(upd->win, GFX_RECT(0,0,upd->win->width,upd->win->height));
+            } else {
+                window_processAnimations(upd->win, frame);
+            }
+        }
 #endif
     
     
         // HACK: Is the window closing?
-        if (upd->win && upd->win->state == WINDOW_STATE_CLOSING) {
+        if (upd->win && upd->win->state == WINDOW_STATE_CLOSED) {
+
+            switch (upd->win->z_array) {
+                case CELESTIAL_Z_BACKGROUND:
+                    list_delete(WM_WINDOW_LIST_BG, list_find(WM_WINDOW_LIST_BG, upd->win));
+                    break;
+
+                case CELESTIAL_Z_OVERLAY:
+                    list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST_OVERLAY, upd->win));
+                    break;
+
+                case CELESTIAL_Z_DEFAULT:
+                default:
+                    list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, upd->win));
+                    break;
+            }
+
+
             close(upd->win->shmfd);
             free(upd->win);
         }
@@ -272,22 +360,7 @@ void window_updateRegion(gfx_rect_t rect) {
  */
 void window_close(wm_window_t *win) {
     win->state = WINDOW_STATE_CLOSING;
-
-    // TODO: Animation
-    switch (win->z_array) {
-        case CELESTIAL_Z_BACKGROUND:
-            list_delete(WM_WINDOW_LIST_BG, list_find(WM_WINDOW_LIST_BG, win));
-            break;
-
-        case CELESTIAL_Z_OVERLAY:
-            list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST_OVERLAY, win));
-            break;
-
-        case CELESTIAL_Z_DEFAULT:
-        default:
-            list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, win));
-            break;    
-    }
+    window_beginAnimation(win, WINDOW_ANIM_CLOSING);
 
     // Window is removed from, flip it now
     window_updateRegion((gfx_rect_t){ .x = win->x, .y = win->y, .width = win->width, .height = win->height });

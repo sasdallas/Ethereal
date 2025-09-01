@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include "window.h"
 #include "socket.h"
@@ -89,19 +90,20 @@ extern int __celestial_keyboard_fd;
 #define WM_MOUSE_BUTTONS __celestial_mouse_buttons
 
 
-#define PROFILE_START() { struct timeval t; \
+#define CELESTIAL_PROFILE_START() { struct timeval t; \
                         gettimeofday(&t, NULL);
 
-#define PROFILE_END(name) \
+#define CELESTIAL_PROFILE_END(name) \
                         struct timeval t_now; \
                         gettimeofday(&t_now, NULL); \
                         struct timeval result; \
                         timersub(&t_now, &t, &result); \
-                        CELESTIAL_DEBUG("%s: completed in %ld.%06ld\n", (name), (long int)result.tv_sec, (long int)result.tv_usec); \
+                        CELESTIAL_LOG("%s: completed in %ld.%06ld\n", (name), (long int)result.tv_sec, (long int)result.tv_usec); \
                         }
 
 
-
+#define CELESTIAL_NOW() ({ struct timeval tv; gettimeofday(&tv, NULL); ((uint64_t)(tv.tv_sec * 1000000 + tv.tv_usec)); })
+#define CELESTIAL_SINCE(prev) (CELESTIAL_NOW() - prev)
 
 /**** FUNCTIONS ****/
 
@@ -124,7 +126,6 @@ int celestial_addClient(int fd, int win) ;
  * @returns 0 on success
  */
 int celestial_removeClient(int fd);
-
 
 
 #endif
