@@ -161,6 +161,7 @@ void widget_mouseExit() {
     if (highlighted) {
         highlighted->state = TRAY_WIDGET_STATE_IDLE;
         highlighted->data->icon(highlighted);
+        gfx_render(highlighted->ctx);
         celestial_flip(taskbar_window);
         highlighted = NULL;
     }

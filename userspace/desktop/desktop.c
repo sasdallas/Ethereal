@@ -348,39 +348,16 @@ int main(int argc, char *argv[]) {
     // Load the widgets
     widgets_load();
     while (1) {
-        // // Update time string
-        // time_t current_time;
-        // current_time = time(NULL);
-        // struct tm *tm = localtime(&current_time);
-
-        // char time_str[9];
-        // strftime(time_str, 9, "%I:%M %p", tm);
-
-        // char date_str[15];
-        // strftime(date_str, 15, "%m/%d/%Y", tm);
-        
-        // if (!last_time[0] || strcmp(last_time, time_str)) {
-        //     strcpy(last_time, time_str);
-            
-        //     // Render the string
-        //     gfx_renderString(taskbar_ctx, taskbar_font, time_str, celestial_getServerInformation()->screen_width - 92, 15, GFX_RGB(255, 255, 255));
-        //     gfx_renderString(taskbar_ctx, taskbar_font, date_str, celestial_getServerInformation()->screen_width - 100, 30, GFX_RGB(255, 255, 255));
-        //     gfx_render(taskbar_ctx);
-        //     celestial_flip(taskbar_window);
-
-        //     // Cover up
-        //     create_taskbar_gradient(taskbar_ctx, celestial_getServerInformation()->screen_width - 100);
-        // }
-        
         struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};
         poll(fds, 1, 1000);
 
         create_taskbar_gradient(taskbar_ctx, 0);
-        widgets_update();
 
         if (fds[0].revents & POLLIN) {
             celestial_poll();
         }
+
+        widgets_update();
 
         if (taskbar_ctx->clip) {
             celestial_flip(taskbar_window);

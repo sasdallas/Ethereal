@@ -187,7 +187,7 @@ void menu_init() {
     int f = open("/device/log", O_RDWR);
     dup2(f, STDERR_FILENO);
 
-    wid_t menu_wid = celestial_createWindowUndecorated(0, MENU_WIDTH, MENU_HEIGHT);
+    wid_t menu_wid = celestial_createWindowUndecorated(CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS, MENU_WIDTH, MENU_HEIGHT);
     menu_window = celestial_getWindow(menu_wid);
     celestial_setWindowPosition(menu_window, 0, celestial_getServerInformation()->screen_height - 40 - MENU_HEIGHT);
     menu_ctx = celestial_getGraphicsContext(menu_window);

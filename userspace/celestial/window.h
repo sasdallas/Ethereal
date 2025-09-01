@@ -45,6 +45,7 @@
 typedef struct wm_window {
     pid_t id;                   // ID of the window
     int sock;                   // Socket ID
+    int flags;                  // Window flags
     int32_t x;                  // X position of the window
     int32_t y;                  // Y position of the window
     size_t width;               // Width of the window

@@ -70,6 +70,8 @@ void socket_accept() {
     int fd;
     if ((fd = accept(WM_SOCK, NULL, NULL)) < 0) {
         if (errno == EWOULDBLOCK) return;
+        CELESTIAL_PERROR("accept");
+        celestial_fatal();
     }
 
     // Mark this socket as nonblocking
@@ -186,6 +188,9 @@ void socket_handle(int sock) {
 
             return;
         }
+
+        CELESTIAL_PERROR("recv");
+        celestial_fatal();
     }
 
     // Is this a valid request?
@@ -255,8 +260,12 @@ void socket_handle(int sock) {
         if (req->y < 0) req->y = 0;
         if (req->y + win->height > GFX_HEIGHT(WM_GFX)) req->y = GFX_HEIGHT(WM_GFX) - win->height;
 
+        gfx_rect_t old_rect = GFX_RECT(win->x, win->y, win->width, win->height);
+
         win->x = req->x;
         win->y = req->y;
+
+        window_updateRegion(old_rect);
 
         celestial_resp_set_window_pos_t resp = {
             .magic = CELESTIAL_MAGIC,

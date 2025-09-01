@@ -87,6 +87,19 @@ static void window_freeID(pid_t id) {
  */
 void window_beginAnimation(wm_window_t *win, int anim) {
     if (win->animation != WINDOW_ANIM_NONE) return;
+
+    if (win->flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS) {
+        // No animations.. make it look already completed.
+        if (anim == WINDOW_ANIM_CLOSING) {
+            win->state = WINDOW_STATE_CLOSED;
+        } else {
+            win->state = WINDOW_STATE_NORMAL;
+        }
+
+        window_updateRegion(GFX_RECT(win->x, win->y, win->width, win->height));
+        return;
+    }
+
     win->animation = anim;
     win->anim_start = CELESTIAL_NOW();
 }
@@ -132,6 +145,7 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->events = 0x0;
     win->state = WINDOW_STATE_OPENING;
     win->z_array = CELESTIAL_Z_DEFAULT;
+    win->flags = flags;
 
     // Make buffer for it   
     win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
@@ -145,23 +159,27 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
 
     CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
 
-    // Notify that we have unfocused the previous window
-    if (WM_FOCUSED_WINDOW) {
-        celestial_event_unfocused_t unfocus = {
-            .magic = CELESTIAL_MAGIC_EVENT,
-            .size = sizeof(celestial_event_unfocused_t),
-            .type = CELESTIAL_EVENT_UNFOCUSED,
-            .wid = WM_FOCUSED_WINDOW->id,
-        };
+    if (win->flags & CELESTIAL_WINDOW_FLAG_NO_AUTO_FOCUS) {
+        list_append(WM_WINDOW_LIST, win);
+    } else {
+        // Notify that we have unfocused the previous window
+        if (WM_FOCUSED_WINDOW) {
+            celestial_event_unfocused_t unfocus = {
+                .magic = CELESTIAL_MAGIC_EVENT,
+                .size = sizeof(celestial_event_unfocused_t),
+                .type = CELESTIAL_EVENT_UNFOCUSED,
+                .wid = WM_FOCUSED_WINDOW->id,
+            };
 
-        event_send(WM_FOCUSED_WINDOW, &unfocus);
+            event_send(WM_FOCUSED_WINDOW, &unfocus);
+        }
+
+
+        // Reorder
+        WM_FOCUSED_WINDOW = win;
+        list_append(WM_WINDOW_LIST, win);
+        WM_MOUSE_WINDOW = window_top(WM_MOUSEX, WM_MOUSEY);
     }
-
-
-    // Reorder
-    WM_FOCUSED_WINDOW = win;
-    WM_MOUSE_WINDOW = window_top(WM_MOUSEX, WM_MOUSEY);
-    list_append(WM_WINDOW_LIST, win);
 
     // TODO: Maybe we should send FOCUS event? This resulted in instability last I tried. Decorations work fine :D
 
@@ -257,6 +275,7 @@ void window_redraw() {
 
 
             close(upd->win->shmfd);
+            free(upd->win->sp);
             free(upd->win);
         }
 
@@ -363,7 +382,7 @@ void window_close(wm_window_t *win) {
     window_beginAnimation(win, WINDOW_ANIM_CLOSING);
 
     // Window is removed from, flip it now
-    window_updateRegion((gfx_rect_t){ .x = win->x, .y = win->y, .width = win->width, .height = win->height });
+    // window_updateRegion((gfx_rect_t){ .x = win->x, .y = win->y, .width = win->width, .height = win->height });
 }
 
 /**
