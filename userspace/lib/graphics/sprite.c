@@ -280,8 +280,15 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
 int gfx_renderSpriteAlpha(struct gfx_context *ctx, sprite_t *sprite, int x, int y, uint8_t alpha) {
     gfx_rect_t full_rect = { .x = 0, .y = 0, .width = sprite->width, .height = sprite->height };
 
+
+    uint32_t _left = GFX_MAX(x, 0);
+    uint32_t _top = GFX_MAX(y, 0);
+    uint32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
+    uint32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
+
     for (uint32_t _y = 0; _y < full_rect.height; _y++) {
         for (uint32_t _x = 0; _x < full_rect.width; _x++) {
+            if (x + _x < _left || x + _x > _right || y + _y < _top || y + _y > _bottom) continue;
             uint32_t *pix = &GFX_PIXEL(ctx, x + _x, y + _y);
             uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
 

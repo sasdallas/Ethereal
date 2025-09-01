@@ -57,6 +57,22 @@ char *wallpaper = DEFAULT_WALLPAPER;
 void config_load();
 
 /**
+ * @brief User frame callback
+ */
+static void anim_uframe(gfx_context_t *ctx, gfx_anim_t *anim) {
+    gfx_render(ctx);
+    celestial_flip(background_window);
+} 
+
+
+/**
+ * @brief User frame callback
+ */
+static void anim_end(gfx_context_t *ctx, gfx_anim_t *anim) {
+    gfx_destroySprite(anim->sprite);
+} 
+
+/**
  * @brief Reload signal
  * 
  * Desktop uses SIGUSR2 to signal a reload
@@ -84,12 +100,15 @@ void reload_signal(int signum) {
     }
 
     // Load from file
-    if (gfx_loadSprite(background_sprite, bg_file)) {
+    sprite_t *new = gfx_createSprite(0, 0);
+
+    if (gfx_loadSprite(new, bg_file)) {
         fclose(bg_file);
         goto _fallback;
     }
 
     fclose(bg_file);
+    background_sprite = new;
     gfx_renderSprite(bg_ctx, background_sprite, 0, 0); // TODO: SCALING!
     gfx_render(bg_ctx);
     celestial_flip(background_window);
@@ -343,13 +362,36 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // char last_time[28] = { 0 };
-
     // Load the widgets
     widgets_load();
+    
+    // Launch toast-server
+    cpid = fork();
+    if (!cpid) {
+        char *start = "toast-server";
+        if (argc-optind) {
+            start = argv[optind];
+        }       
+
+        char *args[] = { start, NULL };
+        execvp(start, args);
+        return 1;
+    }
+
+    // Say hi!
+    system("show-toast --text=\"Welcome to Ethereal!\nThank you for supporting development!\" --title=\"Welcome to Ethereal\"");
+
+    // Get graphics context
+    gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
+
+
     while (1) {
         struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};
-        poll(fds, 1, 1000);
+        int p = poll(fds, 1, bg_ctx->animations->length ? 1000 : 0);
+
+        gfx_tickAnimations(bg_ctx);
+
+        if (!p) continue;
 
         create_taskbar_gradient(taskbar_ctx, 0);
 

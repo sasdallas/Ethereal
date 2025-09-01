@@ -25,9 +25,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    char buf[512];
+    realpath(argv[1], buf);
+
     // Validate wallpaper file exists
     struct stat st;
-    if (stat(argv[1], &st) < 0) {
+    if (stat(buf, &st) < 0) {
         fprintf(stderr, "set-wallpaper: %s: %s\n", argv[1], strerror(errno));
         return 1;
     }
@@ -40,7 +43,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (fwrite(argv[1], strlen(argv[1]), 1, wp_file) != 1) {
+    if (fwrite(buf, strlen(buf), 1, wp_file) != 1) {
         fprintf(stderr, "set-wallpaper: Error writing to /tmp/wallpaper: %s\n", strerror(errno));
         return 1;
     }

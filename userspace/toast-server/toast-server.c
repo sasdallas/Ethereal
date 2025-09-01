@@ -130,7 +130,7 @@ void toast_handle(int fd) {
     }
 
     
-    gfx_renderString(ctx, font_title, t.title, title_x, 16, GFX_RGB(255, 255, 255));
+    gfx_renderString(ctx, font_title, t.title, title_x, 15, GFX_RGB(255, 255, 255));
 
 
     int ty = 40;

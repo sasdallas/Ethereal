@@ -19,8 +19,80 @@
 #include <ethereal/toast.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <getopt.h>
+#include <stdlib.h>
+
+char *title = "Title";
+char *description = "Description";
+char *icon = "/usr/share/icons/16/Ethereal.bmp";
+
+enum {
+    OPT_TEXT, 
+    OPT_TITLE,
+    OPT_ICON,
+    OPT_HELP,
+    OPT_VERSION
+};
+
+void usage() {
+    fprintf(stderr, "Usage: show-toast [OPTIONS]\n");
+    fprintf(stderr, "Show a toast of your choosing\n");
+    fprintf(stderr, " --text=TEXT           Set the text of the toast\n");
+    fprintf(stderr, " --title=TITLE         Set the title of the toast\n");
+    fprintf(stderr, " --icon=ICON           Set the icon of the toast\n");
+    fprintf(stderr, " --help                Show this help message\n");
+    fprintf(stderr, " --version             Print the version of show-dialog\n");
+
+    exit(1);
+}
+
+void version() {
+    printf("show-toast version 1.0.0\n");
+    printf("Copyright (C) 2025 The Ethereal Development Team\n");
+    exit(1);
+}
 
 int main(int argc, char *argv[]) {
+
+    const struct option options[] = {
+        { .name = "text", .flag = NULL, .has_arg = required_argument, .val = OPT_TEXT, },
+        { .name = "title", .flag = NULL, .has_arg = required_argument, .val = OPT_TITLE, },
+        { .name = "icon", .flag = NULL, .has_arg = required_argument, .val = OPT_ICON, },
+        { .name = "help", .flag = NULL, .has_arg = no_argument, .val = OPT_HELP, },
+        { .name = "version", .flag = NULL, .has_arg = no_argument, .val = OPT_VERSION, },
+        { .name = NULL, .flag = NULL, .has_arg = no_argument, .val = 0 },
+    };
+
+    int ch;
+    int index;
+
+    while ((ch = getopt_long(argc, argv, "", options, &index)) != -1) {
+        if (!ch) ch = options[index].val;
+
+        switch (ch) {
+            case OPT_TEXT:
+                description = strdup(optarg);
+                break;
+
+            case OPT_TITLE:
+                title = strdup(optarg);
+                break;
+
+            case OPT_ICON:
+                icon = strdup(optarg);
+                break;
+
+            case OPT_VERSION:
+                version();
+                break;
+
+            default:
+                usage();
+        }
+    }
+
+
+
     struct stat st;
     if (stat("/comm/toast-server", &st) < 0) {
         fprintf(stderr, "\033[0;31mError connecting to toast server:\033[0m %s\n", strerror(errno));
@@ -40,17 +112,15 @@ int main(int argc, char *argv[]) {
     }
 
 
-    toast_t t = { 
-        .flags = 0,
-        .icon = "/usr/share/icons/16/Ethereal.bmp",
-        .title = "Title",
-        .description = "Description\nWITH a newline!"
-    };
+    toast_t t;
+    t.flags = 0;
+    strncpy(t.title, title, 128);
+    strncpy(t.description, description, 128);
+    strncpy(t.icon, icon, 64);
 
     send(sock, &t, sizeof(toast_t), 0);
 
     close(sock);
 
-    printf("Toast sent\n");
     return 0;
 }
