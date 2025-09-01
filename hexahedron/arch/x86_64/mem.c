@@ -107,7 +107,7 @@ inline void mem_invalidatePage(uintptr_t addr) {
     asm volatile ("invlpg (%0)" :: "r"(addr) : "memory");
 
     // TODO
-    // smp_tlbShootdown(addr);
+    smp_tlbShootdown(addr);
 }
 
 /**
