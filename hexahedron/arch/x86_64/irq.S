@@ -76,7 +76,7 @@
 
     /* Start popping registers */
     popw %ax
-    // movw %ax, %ds
+    movw %ax, %ds
 
     popq %r8
     popq %r9
