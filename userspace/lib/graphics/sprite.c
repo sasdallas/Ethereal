@@ -38,6 +38,8 @@ sprite_t *gfx_createSprite(size_t width, size_t height) {
         sprite->bitmap = malloc(sizeof(uint32_t) * width * height);
     }
 
+    sprite->alpha = SPRITE_ALPHA_BLEND;
+
     return sprite;
 }
 
@@ -170,6 +172,22 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
     uint32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
     uint32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
 
+    // Solid alpha?
+    if (sprite->alpha == SPRITE_ALPHA_SOLID) {
+        // Render normally like plebeians
+        // uint8_t *tgt = (uint8_t*)&GFX_PIXEL(ctx, rect->x + x, y + rect->y);
+        // uint8_t *src = (uint8_t*)&SPRITE_PIXEL(sprite, rect->x, rect->y);
+        for (uint32_t _y = rect->y; _y < rect->y + rect->height; _y++) {
+            memcpy(&GFX_PIXEL(ctx, rect->x + x, y + _y), &SPRITE_PIXEL(sprite, rect->x, _y), rect->width * 4);
+
+            // memcpy(tgt, src, rect->width*4);
+            // tgt += ctx->pitch;
+            // src += sprite->width;
+        }
+
+        return 0;
+    }
+
     // Calculate SSE masks
 #if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE)
     __m128i mask00ff = _mm_set1_epi16(0x00FF);
@@ -252,6 +270,36 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
 }
 
 /**
+ * @brief Render a sprite with an alpha vector applied
+ * @param ctx The context to render the sprite in
+ * @param sprite The sprite to render
+ * @param x The X to render at
+ * @param y The Y to render at
+ * @param alpha The alpha vector to use
+ */
+int gfx_renderSpriteAlpha(struct gfx_context *ctx, sprite_t *sprite, int x, int y, uint8_t alpha) {
+    gfx_rect_t full_rect = { .x = 0, .y = 0, .width = sprite->width, .height = sprite->height };
+
+    for (uint32_t _y = 0; _y < full_rect.height; _y++) {
+        for (uint32_t _x = 0; _x < full_rect.width; _x++) {
+            uint32_t *pix = &GFX_PIXEL(ctx, x + _x, y + _y);
+            uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
+
+            // Apply alpha blending
+            // TODO: Maybe add some SSE code?
+            uint8_t r = __gfx_premultiply_add_alpha_channel(src_pixel, R, alpha);
+            uint8_t g = __gfx_premultiply_add_alpha_channel(src_pixel, G, alpha);
+            uint8_t b = __gfx_premultiply_add_alpha_channel(src_pixel, B, alpha);
+            uint8_t a = __gfx_premultiply_add_alpha_channel(src_pixel, A, alpha);
+
+            *pix = gfx_alphaBlend(GFX_RGBA(r,g,b,a), *pix);
+        }
+    }
+
+    return 0;
+}
+
+/**
  * @brief Render a sprite to a specific set of coordinates
  * @param sprite The sprite to render
  * @param x The X to render at
@@ -281,4 +329,13 @@ int gfx_renderSpriteScaled(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t scal
     }
 
     return 0;
+}
+
+/**
+ * @brief Destroy sprite
+ * @param sp The sprite to destroy
+ */
+void gfx_destroySprite(sprite_t *sp) {
+    if (sp->bitmap) free(sp->bitmap);
+    free(sp);
 }

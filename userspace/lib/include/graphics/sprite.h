@@ -23,12 +23,16 @@
 
 #define SPRITE_PIXEL(sprite, x, y) (sprite->bitmap[sprite->width * (y) + (x)])
 
+#define SPRITE_ALPHA_BLEND          0
+#define SPRITE_ALPHA_SOLID          1
+
 /**** TYPES ****/
 
 typedef struct _sprite {
     size_t width;           // Width
     size_t height;          // Height
     uint32_t *bitmap;       // Bitmap
+    unsigned char alpha;    // Alpha type
 } sprite_t;
 
 /**** MACROS ****/
@@ -72,6 +76,15 @@ int gfx_renderSprite(struct gfx_context *ctx, sprite_t *sprite, int x, int y);
  */
 int gfx_renderSpriteScaled(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t scaled);
 
+/**
+ * @brief Render a sprite with an alpha vector applied
+ * @param ctx The context to render the sprite in
+ * @param sprite The sprite to render
+ * @param x The X to render at
+ * @param y The Y to render at
+ * @param alpha The alpha vector to use
+ */
+int gfx_renderSpriteAlpha(struct gfx_context *ctx, sprite_t *sprite, int x, int y, uint8_t alpha);
 
 /**
  * @brief Render a rectangle from a sprite
@@ -82,5 +95,11 @@ int gfx_renderSpriteScaled(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t
  * @param y Y coordinate of the sprite
  */
 int gfx_renderSpriteRegion(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t *rect, int x, int y);
+
+/**
+ * @brief Destroy sprite
+ * @param sp The sprite to destroy
+ */
+void gfx_destroySprite(sprite_t *sp);
 
 #endif

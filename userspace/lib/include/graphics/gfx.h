@@ -22,6 +22,8 @@
 #include <graphics/text.h>
 #include <graphics/pattern.h>
 #include <graphics/util.h>
+#include <graphics/anim.h>
+#include <structs/list.h>
 
 /**** DEFINITIONS ****/
 
@@ -60,8 +62,7 @@ typedef struct gfx_context {
     size_t bpp;             // Bits per pixel of the buffer
     size_t pitch;           // Pitch of the buffer
 
-    uint8_t ft_initialized; // FreeType initialized
-    FT_Library ftlib;       // FreeType library
+    list_t *animations;     // Pending animations
 } gfx_context_t;
 
 /**** MACROS ****/
@@ -144,5 +145,13 @@ gfx_color_t gfx_alphaBlend(gfx_color_t top, gfx_color_t bottom);
  * @returns New graphics object 
  */
 gfx_context_t *gfx_createContext(int flags, uint8_t *buffer, size_t width, size_t height);
+
+/**
+ * @brief Create context for a subrect of another context
+ * @param parent The parental context
+ * @param subarea The subarea rectangle to use
+ * @returns New graphical context
+ */
+gfx_context_t *gfx_createContextSubrect(gfx_context_t *parent, gfx_rect_t *subarea);
 
 #endif

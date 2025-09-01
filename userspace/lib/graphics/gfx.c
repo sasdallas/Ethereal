@@ -44,8 +44,6 @@ gfx_context_t *gfx_createFullscreen(int flags) {
         return NULL;
     }
 
-    ctx->ftlib = NULL;
-    ctx->ft_initialized = 0;
     ctx->width = info.screen_width;
     ctx->height = info.screen_height;
     ctx->bpp = info.screen_bpp;
@@ -82,8 +80,6 @@ gfx_context_t *gfx_createFullscreen(int flags) {
  */
 gfx_context_t *gfx_createContext(int flags, uint8_t *buffer, size_t width, size_t height) {
     gfx_context_t *ctx = malloc(sizeof(gfx_context_t));
-    ctx->ftlib = NULL;
-    ctx->ft_initialized = 0;
     ctx->flags = flags;
     ctx->width = width;
     ctx->height = height;
@@ -234,4 +230,33 @@ void gfx_drawClips(gfx_context_t *ctx) {
         gfx_drawRectangle(ctx, &clip->rect, GFX_RGB(255, 0, 0));
         clip = clip->next;
     }
+}
+
+/**
+ * @brief Create context for a subrect of another context
+ * @param parent The parental context
+ * @param subarea The subarea rectangle to use
+ * @returns New graphical context
+ */
+gfx_context_t *gfx_createContextSubrect(gfx_context_t *parent, gfx_rect_t *subarea) {
+    gfx_context_t *ctx = malloc(sizeof(gfx_context_t));
+    memset(ctx, 0, sizeof(gfx_context_t));
+
+    ctx->width = subarea->width;
+    ctx->height = subarea->height;
+
+    ctx->clip = NULL;
+    ctx->clip_last = NULL;
+    ctx->bpp = parent->bpp;
+    ctx->pitch = parent->pitch;
+    ctx->flags = parent->flags;
+
+
+    if (!(ctx->flags & CTX_NO_BACKBUFFER)) {
+        ctx->backbuffer = &GFX_PIXEL(parent, subarea->x, subarea->y);
+    }
+
+    ctx->buffer = &GFX_PIXEL_REAL(parent, subarea->x, subarea->y);
+
+    return ctx;
 }
