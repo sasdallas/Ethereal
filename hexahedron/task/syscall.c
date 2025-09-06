@@ -133,6 +133,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_PTRACE]            = (syscall_func_t)(uintptr_t)sys_ptrace,
     [SYS_REBOOT]            = (syscall_func_t)(uintptr_t)sys_reboot,
     [SYS_READ_ENTRIES]      = (syscall_func_t)(uintptr_t)sys_read_entries,
+    [SYS_FUTEX_WAIT]        = (syscall_func_t)(uintptr_t)sys_futex_wait,
+    [SYS_FUTEX_WAKE]        = (syscall_func_t)(uintptr_t)sys_futex_wake,
 }; 
 
 
@@ -652,6 +654,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     int have_hit = 0;
 
     /* !!!: Currently broken */
+// #define POLL_USES_FS_WAIT
 #ifdef POLL_USES_FS_WAIT
 
     for (size_t i = 0; i < nfds; i++) {
@@ -1508,4 +1511,16 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
     }  
 
     return read;
+}
+
+long sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
+    SYSCALL_VALIDATE_PTR(pointer);
+    if (time) SYSCALL_VALIDATE_PTR(time);
+
+    return futex_wait(pointer, expected, time);
+}
+
+long sys_futex_wake(int *pointer) {
+    SYSCALL_VALIDATE_PTR(pointer);
+    return futex_wakeup(pointer);
 }

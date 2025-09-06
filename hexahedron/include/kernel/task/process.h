@@ -29,6 +29,7 @@
 #include <kernel/task/timer.h>
 #include <kernel/task/ptrace.h>
 #include <kernel/task/syscall.h>
+#include <kernel/task/futex.h>
 
 #include <kernel/mem/vas.h>
 

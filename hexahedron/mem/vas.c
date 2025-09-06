@@ -354,7 +354,7 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
         // Drop pages
         for (uintptr_t i = allocation->base; i < allocation->base + allocation->size; i += PAGE_SIZE) {
             page_t *pg = mem_getPage(vas->dir, i, MEM_DEFAULT);
-            if (pg && PAGE_PRESENT(pg)) {
+            if (pg && PAGE_IS_PRESENT(pg)) {
                 // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
                 mem_freePage(pg);
             }
@@ -569,6 +569,8 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
             mem_allocatePage(pg, flags);
             memset((void*)i, 0, PAGE_SIZE);
         }
+
+        mem_invalidatePage(i);
     }
 
     // LOG(DEBUG, "Created allocation for %p - %p (originally faulted on address: %p)\n", MEM_ALIGN_PAGE_DESTRUCTIVE(address), MEM_ALIGN_PAGE_DESTRUCTIVE(address)+actual_map_size, address);
@@ -677,6 +679,8 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
                 mem_allocatePage(dstpg, flags);
 
                 MEM_SET_FRAME(dstpg, MEM_GET_FRAME(srcpg));
+
+                mem_invalidatePage(i);
             }
 
             // LOG(DEBUG, "Copied page at %016llX - %016llX (CoW for allocation %p)\n", alloc->base, alloc->base + alloc->size, alloc);
@@ -730,6 +734,7 @@ vas_allocation_t *vas_copyAllocation(vas_t *vas, vas_t *parent_vas, vas_allocati
 
         mem_allocatePage(dst, flags);
         MEM_SET_FRAME(dst, new_frame);
+        mem_invalidatePage(i);
 
         // LOG(DEBUG, "Copied page at %016llX (frame %p - %p)\n", i + alloc->base, MEM_GET_FRAME(src), MEM_GET_FRAME(dst));
     }

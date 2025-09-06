@@ -84,6 +84,9 @@ void process_init() {
     // Initialize scheduler
     scheduler_init();
 
+    // Initialize futexes
+    futex_init();
+
     // Initialize reap queue and reaper process
     reap_queue = list_create("process reap queue");
     reaper_proc = process_createKernel("reaper", 0, PRIORITY_MED, process_reaper, NULL);
@@ -814,14 +817,11 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     }
 
     // Clone new directory and destroy the old one
-    LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
-    page_t *last_dir = current_cpu->current_process->dir;
-    current_cpu->current_process->dir = mem_clone(NULL);
     vas_destroy(current_cpu->current_process->vas);
 
     // Create a new VAS
     current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
-    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
+    current_cpu->current_process->dir = current_cpu->current_process->vas->dir;
 
     // Switch to directory
     mem_switchDirectory(current_cpu->current_process->dir);
