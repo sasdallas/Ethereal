@@ -106,6 +106,9 @@
 halCommonExceptionHandler:
     PUSH_REGISTERS // Push registers
 
+    // Clear directional flag
+    cld
+
     leaq 52(%rsp), %rax     // Load address of registers_t
 
     movq %rax, %rdi                 // registers_t
@@ -124,6 +127,9 @@ halCommonExceptionHandler:
 /* Common interrupt handler */
 halCommonIRQHandler:
     PUSH_REGISTERS // Push registers
+
+    // Clear directional flag
+    cld
 
     leaq 52(%rsp), %rax     // Load address of registers_t
 
@@ -317,6 +323,9 @@ halSyscallEntrypoint:
     sgdt (%rsp)
     sidt 10(%rsp)
 
+    // Clear directional flag
+    cld
+    
     movq %cr4, %rax
     pushq %rax
     movq %cr3, %rax
