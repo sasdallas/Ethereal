@@ -22,7 +22,8 @@
 #define TRAY_WIDGET_STATE_DISABLED          0
 #define TRAY_WIDGET_STATE_IDLE              1
 #define TRAY_WIDGET_STATE_HIGHLIGHTED       2
-#define TRAY_WIDGET_STATE_ACTIVE            3
+#define TRAY_WIDGET_STATE_HELD              3
+#define TRAY_WIDGET_STATE_ACTIVE            4
 
 /**** TYPES ****/
 
@@ -57,9 +58,9 @@ typedef void (*twidget_enter_t)(struct desktop_tray_widget *widget);
 typedef void (*twidget_exit_t)(struct desktop_tray_widget *widget);
 
 /**
- * @brief Mouse click method
+ * @brief Set state method
  */
-typedef void (*twidget_click_t)(struct desktop_tray_widget *widget);
+typedef void (*twidget_set_t)(struct desktop_tray_widget *widget, int state);
 
 
 /**
@@ -96,7 +97,7 @@ typedef struct desktop_tray_widget_data {
     twidget_icon_t icon;        // Tray widget icon method
     twidget_enter_t enter;      // Tray widget enter method
     twidget_exit_t exit;        // Tray widget exit method
-    twidget_click_t click;      // Tray widget click method
+    twidget_set_t set;          // Tray widget set method
 } desktop_tray_widget_data_t;
 
 #endif

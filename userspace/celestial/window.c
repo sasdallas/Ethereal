@@ -43,8 +43,8 @@ wm_window_t *__celestial_focused_window = NULL;
 
 /* Window animation delays */
 int window_anim_delays[] = {
-    [WINDOW_ANIM_OPENING] = 1000,
-    [WINDOW_ANIM_CLOSING] = 1000,
+    [WINDOW_ANIM_OPENING] = 2000,
+    [WINDOW_ANIM_CLOSING] = 2000,
 };
 
 int window_anim_frames[] = {
@@ -209,6 +209,10 @@ void window_redraw() {
         wm_update_window_t *upd = (wm_update_window_t*)n->value;
         free(n);
 
+
+        if (upd->win->state == WINDOW_STATE_HIDDEN) { free(upd); continue; }
+        if (upd->win->state == WINDOW_STATE_OPENING && upd->win->animation == WINDOW_ANIM_NONE) { free(upd); continue; }
+
         // CELESTIAL_DEBUG("window: Redraw window %d (X: %d, Y: %d, W: %d, H: %d)\n", upd->win->id, upd->rect.x, upd->rect.y, upd->rect.width, upd->rect.height);
 
         // Now we have a rectangle and a window to draw in that rectangle. The rectangle coordinates are relative to the window's
@@ -322,6 +326,7 @@ void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign) {
     // First, handle the background update
     foreach(win_node, WM_WINDOW_LIST_BG) {
         wm_window_t *win = (wm_window_t*)win_node->value;
+        if (win->state == WINDOW_STATE_HIDDEN) continue;
 
         // Determine if this window collides with our rectanlg
         gfx_rect_t collider = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };

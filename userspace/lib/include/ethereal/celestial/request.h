@@ -44,6 +44,7 @@
 #define CELESTIAL_REQ_SET_Z_ARRAY           0x100D
 #define CELESTIAL_REQ_FLIP                  0x100E
 #define CELESTIAL_REQ_RESIZE                0x100F
+#define CELESTIAL_REQ_SET_WINDOW_VISIBLE    0x1010
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -144,6 +145,12 @@ typedef struct celestial_req_resize {
     size_t width;                       // Width
     size_t height;                      // Height
 } celestial_req_resize_t;
+
+typedef struct celestial_req_set_window_visible {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint8_t visible;                    // Visible
+} celestial_req_set_window_visible_t;
 
 /* RESPONSES */
 

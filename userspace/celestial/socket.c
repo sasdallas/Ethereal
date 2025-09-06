@@ -126,6 +126,8 @@ void socket_error(int sock, int type, int error) {
         .error = error
     };
 
+    CELESTIAL_LOG("Warning: Sending error %d to socket\n", strerror(error));
+
     socket_sendResponse(sock, &err);
 }
 
@@ -455,6 +457,23 @@ void socket_handle(int sock) {
 
         socket_sendResponse(sock, &resp);
         return;
+    } else if (hdr->type == CELESTIAL_REQ_SET_WINDOW_VISIBLE) {
+        // Set window visible
+        CELESTIAL_VALIDATE(celestial_req_set_window_visible_t, CELESTIAL_REQ_SET_WINDOW_VISIBLE);
+        CELESTIAL_DEBUG("socket: Receieved CELESTIAL_REQ_SET_WINDOW_VISIBLE\n");
+        celestial_req_set_window_visible_t *req = (celestial_req_set_window_visible_t*)hdr;
+        if (!WID_EXISTS(req->wid)) return socket_error(sock, CELESTIAL_REQ_SET_WINDOW_VISIBLE, EINVAL);
+        if (!WID_BELONGS_TO_SOCKET(req->wid, sock)) return socket_error(sock, CELESTIAL_REQ_SET_WINDOW_VISIBLE, EPERM);
+        
+        wm_window_t *win = WID(req->wid);
+        if (!req->visible) {
+            win->state = WINDOW_STATE_HIDDEN; // !!!: Test for bugs
+        } else if (req->visible) {
+            win->state = WINDOW_STATE_NORMAL;
+        }
+
+        window_updateRegion(GFX_RECT(win->x, win->y, win->width, win->height));
+        return socket_ok(sock, CELESTIAL_REQ_SET_WINDOW_VISIBLE);
     } else {
         CELESTIAL_ERR("socket: Unknown request type %d\n", hdr->type);
         return socket_error(sock, hdr->type, ENOTSUP);

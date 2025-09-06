@@ -33,7 +33,7 @@
 #define WINDOW_STATE_CLOSING                    3
 #define WINDOW_STATE_OPENING                    4
 #define WINDOW_STATE_CLOSED                     5
-
+#define WINDOW_STATE_HIDDEN                     6
 
 #define WINDOW_ANIM_NONE                        0
 #define WINDOW_ANIM_OPENING                     1

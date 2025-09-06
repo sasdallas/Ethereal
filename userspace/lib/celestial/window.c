@@ -500,6 +500,34 @@ int celestial_resizeWindow(window_t *win, size_t width, size_t height) {
 }
 
 /**
+ * @brief Set a window as visible or not
+ * @param win The window to set
+ * @param visible Whether or not it is visible
+ */
+int celestial_setWindowVisible(window_t *win, int visible) {
+    celestial_req_set_window_visible_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_set_window_visible_t),
+        .type = CELESTIAL_REQ_SET_WINDOW_VISIBLE,
+        .wid = win->wid,
+        .visible = !!visible,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1;
+
+    // Wait for a resonse
+    celestial_resp_resize_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_WINDOW_VISIBLE);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
  * @brief Complete resize of window (internal method)
  * @param win The window to use
  * @param resize_event The resize event that was received
@@ -574,3 +602,4 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
 int celestial_running() {
     return __celestial_window_count > 0;
 }
+

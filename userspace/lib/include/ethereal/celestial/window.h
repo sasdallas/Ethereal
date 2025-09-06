@@ -37,6 +37,9 @@
 #define CELESTIAL_STATE_RUNNING             0
 #define CELESTIAL_STATE_CLOSED              1
 
+#define CELESTIAL_WINDOW_INVISIBLE          0
+#define CELESTIAL_WINDOW_VISIBLE            1
+
 /**** TYPES ****/
 
 /**
@@ -199,5 +202,12 @@ int celestial_resizeWindow(window_t *win, size_t width, size_t height);
  * @brief Get whether any windows are still running (and thus you need to keep polling) in Celestial
  */
 int celestial_running();
+
+/**
+ * @brief Set a window as visible or not
+ * @param win The window to set
+ * @param visible Whether or not it is visible
+ */
+int celestial_setWindowVisible(window_t *win, int visible);
 
 #endif

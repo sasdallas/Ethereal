@@ -216,6 +216,21 @@ gfx_anim_t *gfx_animateTransition(struct gfx_context *ctx, sprite_t *sprite, spr
 }
 
 /**
+ * @brief Create a move animation
+ * @param ctx The context to create the animation for
+ * @param sprite The sprite to create the animation for
+ * @param duration How long the animation will last
+ * @param start_x X coordinate
+ * @param start_y Y coordinate
+ * @param end_x End X
+ * @param end_y End Y
+ * @param flags Flags for the move animation
+ */
+gfx_anim_t *gfx_animateMove(struct gfx_context *ctx, sprite_t *sprite, int duration, int start_x, int start_y, int end_x, int end_y, int flags) {
+    return NULL;
+}
+
+/**
  * @brief Start an animation
  * @param anim The animation to start
  */
