@@ -106,7 +106,7 @@ void terminal_setCursor(int16_t x, int16_t y) {
     if (y < 0) y = 0;
     if (x < 0) x = 0;
     if (y > terminal_height) y = terminal_height;
-    if (x > terminal_width) x= terminal_width;
+    if (x > terminal_width) x = terminal_width;
 
     UNHIGHLIGHT(CURSOR);
     draw_cell(cursor_x, cursor_y);
@@ -168,7 +168,6 @@ static void terminal_backspace() {
     cursor_x--;
 
     HIGHLIGHT(CURSOR);
-    CURSOR->ch = ' ';
     draw_cell(cursor_x, cursor_y);
 }
 
@@ -410,6 +409,8 @@ static void terminal_sendInput(char *input) {
  */
 static void terminal_process(keyboard_event_t *event) {
     // TODO: Send keyboard strings?
+
+    // TODO: Some of these are definitely wrong.. PR me if you have a good resource!
     switch (event->scancode) {
         case SCANCODE_LEFT_ARROW:
             if (event->mods & KEYBOARD_MOD_LEFT_SHIFT || event->mods & KEYBOARD_MOD_RIGHT_SHIFT) {
@@ -434,6 +435,32 @@ static void terminal_process(keyboard_event_t *event) {
                 terminal_sendInput("\033[C");
             }
             break;
+
+        case SCANCODE_UP_ARROW:
+            if (event->mods & KEYBOARD_MOD_LEFT_SHIFT || event->mods & KEYBOARD_MOD_RIGHT_SHIFT) {
+                terminal_sendInput("\033[2A");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_CTRL || event->mods & KEYBOARD_MOD_RIGHT_CTRL) {
+                terminal_sendInput("\033[2A");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_ALT || event->mods & KEYBOARD_MOD_RIGHT_ALT) {
+                terminal_sendInput("\033[3A");
+            } else {
+                terminal_sendInput("\033[A");
+            }
+            break;
+            
+        case SCANCODE_DOWN_ARROW:
+            if (event->mods & KEYBOARD_MOD_LEFT_SHIFT || event->mods & KEYBOARD_MOD_RIGHT_SHIFT) {
+                terminal_sendInput("\033[2B");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_CTRL || event->mods & KEYBOARD_MOD_RIGHT_CTRL) {
+                terminal_sendInput("\033[2B");
+            } else if (event->mods & KEYBOARD_MOD_LEFT_ALT || event->mods & KEYBOARD_MOD_RIGHT_ALT) {
+                terminal_sendInput("\033[3B");
+            } else {
+                terminal_sendInput("\033[B");
+            }
+            break;
+            
+            
 
         case SCANCODE_PGUP:
             terminal_scrollUp(1);

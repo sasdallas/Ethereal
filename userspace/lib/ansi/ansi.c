@@ -24,6 +24,15 @@
 #define ANSI_TO_RGB(arg) (ansi_convert(ansi, arg))
 #define ANSI_SET_OR_CLEAR(arg, flag) (arg > 9) ? (ansi->flags &= ~(flag)) : (ansi->flags |= (flag))
 
+#ifndef max
+#define max(a, b) (((a) > (b)) ? (a) : (b))
+#define min(a, b) (((a) > (b)) ? (b) : (a))
+#endif
+
+
+#define ANSI_CLAMPX(x) (min(max(x, 0), ansi->screen_width))
+#define ANSI_CLAMPY(y) (min(max(y, 0), ansi->screen_height))
+
 uint32_t ansi_default_pallete[] = {
     GFX_RGB(0, 0, 0),               // Black
     GFX_RGB(255, 0, 0),             // Red
@@ -151,168 +160,119 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
         ansi->get_cursor(&cx, &cy);
 
         // What function do we have?
-        switch (ch) {
-            case ED:
-                // Erase display
-                if (ansi->clear) ansi->clear();
-                break;
+        if (ch == ED) {
+            // Erase display
+            if (ansi->clear) ansi->clear();
+        } else if (ch == SGR) {
+            for (int i = 0; i < argc; i++) {
+                int arg = strtol(argv[i], NULL, 10);
 
-            case SGR:
-                for (int i = 0; i < argc; i++) {
-                    int arg = strtol(argv[i], NULL, 10);
-
-                    if (!arg) {
-                        // Zero signifies a reset on everything
-                        ansi->ansi_fg = 15; // TODO: Customize
-                        ansi->ansi_bg = 0;
-                        ansi->flags = 0;
-                    } else if (arg == 1 || arg == 22) {
-                        (arg == 22) ? (ansi->flags &= ~(ANSI_FLAG_BOLD | ANSI_FLAG_FAINT)) : (ansi->flags |= ANSI_FLAG_BOLD);
-                    } else if (arg == 2) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_FAINT);
-                    } else if (arg == 3 || arg == 23) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_ITALIC);
-                    } else if (arg == 4 || arg == 24) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_UNDERLINE);
-                    } else if (arg == 5 || arg == 25) {
-                        if (arg == 5) {
-                            if (i < argc) {
-                                if (strtol(argv[i-1], NULL, 10) == 38) {
-                                    // 38 signals foreground
-                                    ansi->ansi_fg = strtol(argv[i+1], NULL, 10);
-                                    i++;
-                                } else if (strtol(argv[i-1], NULL, 10) == 48) {
-                                    // 48 signals background
-                                    ansi->ansi_bg = strtol(argv[i+1], NULL, 10);
-                                    i++;
-                                }
-                            } else {
-                                ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
+                if (!arg) {
+                    // Zero signifies a reset on everything
+                    ansi->ansi_fg = 15; // TODO: Customize
+                    ansi->ansi_bg = 0;
+                    ansi->flags = 0;
+                } else if (arg == 1 || arg == 22) {
+                    (arg == 22) ? (ansi->flags &= ~(ANSI_FLAG_BOLD | ANSI_FLAG_FAINT)) : (ansi->flags |= ANSI_FLAG_BOLD);
+                } else if (arg == 2) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_FAINT);
+                } else if (arg == 3 || arg == 23) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_ITALIC);
+                } else if (arg == 4 || arg == 24) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_UNDERLINE);
+                } else if (arg == 5 || arg == 25) {
+                    if (arg == 5) {
+                        if (i < argc) {
+                            if (strtol(argv[i-1], NULL, 10) == 38) {
+                                // 38 signals foreground
+                                ansi->ansi_fg = strtol(argv[i+1], NULL, 10);
+                                i++;
+                            } else if (strtol(argv[i-1], NULL, 10) == 48) {
+                                // 48 signals background
+                                ansi->ansi_bg = strtol(argv[i+1], NULL, 10);
+                                i++;
                             }
                         } else {
                             ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
                         }
-                    } else if (arg == 7 || arg == 27) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_INVERSE);
-                    } else if (arg == 8 || arg == 28) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_HIDDEN);
-                    } else if (arg == 9 || arg == 29) {
-                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_STRIKETHROUGH);
+                    } else {
+                        ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
                     }
-                    
-                    // Color code parsing
-                    if (arg >= 30 && arg < 39) {
-                        // Set foreground color code
-                        ansi->ansi_fg = arg - 30;
-                    } else if (arg >= 40 && arg < 49) {
-                        // Set background color code
-                        ansi->ansi_bg = arg - 40;
-                    } else if (arg >= 90 && arg <= 97) {
-                        // Set foreground bright color code
-                        ansi->ansi_fg = arg - 82;
-                    } else if (arg >= 100 && arg <= 107) {
-                        ansi->ansi_bg = arg - 92;
-                    } else if (arg == 39) {
-                        ansi->ansi_fg = 15; // TODO: customize
-                    } else if (arg == 49) {
-                        ansi->ansi_bg = 0;
-                    }
+                } else if (arg == 7 || arg == 27) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_INVERSE);
+                } else if (arg == 8 || arg == 28) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_HIDDEN);
+                } else if (arg == 9 || arg == 29) {
+                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_STRIKETHROUGH);
                 }
-
-
-                // Set colors
-                gfx_color_t fg = (ANSI_TO_RGB(ansi->ansi_fg));
-                gfx_color_t bg = (ANSI_TO_RGB(ansi->ansi_bg));
-                ansi->setfg(fg);
-                ansi->setbg(bg);
-                break;
-            
-            case CUU:
-                // Cursor up
-                int lines_up = 1;
-                if (argc) {
-                    lines_up = strtol(argv[0], NULL, 10);
-                }
-
-                ansi->move_cursor(cx, cy-lines_up);
-                break;
-    
-            case CUD:
-                // Cursor down
-                int lines_down = 1;
-                if (argc) {
-                    lines_down = strtol(argv[0], NULL, 10);
-                }
-
-                ansi->move_cursor(cx, cy+lines_down);
-                break;
-
-            case CUF:
-                // Cursor forward
-                int cols_fwd = 1;
-                if (argc) {
-                    cols_fwd = strtol(argv[0], NULL, 10);
-                }
-
-                ansi->move_cursor(cx+cols_fwd, cy);
-                break;
                 
-            case CUB:
-                // Cursor backwards
-                int cols_backward = 1;
-                if (argc) {
-                    cols_backward = strtol(argv[0], NULL, 10);
+                // Color code parsing
+                if (arg >= 30 && arg < 39) {
+                    // Set foreground color code
+                    ansi->ansi_fg = arg - 30;
+                } else if (arg >= 40 && arg < 49) {
+                    // Set background color code
+                    ansi->ansi_bg = arg - 40;
+                } else if (arg >= 90 && arg <= 97) {
+                    // Set foreground bright color code
+                    ansi->ansi_fg = arg - 82;
+                } else if (arg >= 100 && arg <= 107) {
+                    ansi->ansi_bg = arg - 92;
+                } else if (arg == 39) {
+                    ansi->ansi_fg = 15; // TODO: customize
+                } else if (arg == 49) {
+                    ansi->ansi_bg = 0;
                 }
+            }
 
-                ansi->move_cursor(cx-cols_backward, cy);
-                break;
 
-            case CUP:
-                if (argc < 2) {
-                    ansi->move_cursor(0, 0);
-                } else {
-                    ansi->move_cursor(strtol(argv[1], NULL, 10), strtol(argv[0], NULL, 10));
-                }
-
-                break;
-
-            case EL:
-                int op = 0;
-                if (argc) op = strtol(argv[0], NULL, 10);
-                
-                int x = 0, x_end = 0;
-                switch (op) {
-                    case 0:
-                        x = cx;
-                        x_end = ansi->screen_width;
-                        break;
-
-                    case 1:
-                        x = 0;
-                        x_end = cx;
-                        break;
-
-                    case 2:
-                        x = 0;
-                        x_end = ansi->screen_width;
-                        break;
-                }
-
-                for (int i = x; i < x_end; i++) ansi->set_cell(i, cy, ' ');
-                break;
+            // Set colors
+            gfx_color_t fg = (ANSI_TO_RGB(ansi->ansi_fg));
+            gfx_color_t bg = (ANSI_TO_RGB(ansi->ansi_bg));
+            ansi->setfg(fg);
+            ansi->setbg(bg);
+        } else if (ch == EL) {
+            int op = 0;
+            if (argc) op = strtol(argv[0], NULL, 10);
             
-            case SD:
-                int lines = 1;
-                if (argc) {
-                    lines = strtol(argv[0], NULL, 10);
-                }    
+            int x = 0, x_end = 0;
+            switch (op) {
+                case 0:
+                    x = cx;
+                    x_end = ansi->screen_width;
+                    break;
 
-                ansi->scroll(lines);
-                break;
+                case 1:
+                    x = 0;
+                    x_end = cx;
+                    break;
 
-            default:
-                fprintf(stderr, "ANSI: Unrecognized function '%c'\n", ch);
+                case 2:
+                    x = 0;
+                    x_end = ansi->screen_width;
+                    break;
+            }
+
+            for (int i = x; i < x_end; i++) ansi->set_cell(i, cy, ' ');
+        } else if (ch == SD) {
+            int lines = 1;
+            if (argc) {
+                lines = strtol(argv[0], NULL, 10);
+            }    
+
+            ansi->scroll(lines);
+        } else if (ch == CHA) {
+            // Cursor horizontal absolute
+            int i = cx;
+            if (argc) {
+                i = strtol(argv[0], NULL, 10);
+            }
+
+            ansi->move_cursor(ANSI_CLAMPX(cx - i), cy);
+        } else {
+            fprintf(stderr, "ANSI: Unrecognized function '%c'\n", ch);
         }
+        
 
         ansi->bufidx = 0;
         ansi->state = ANSI_STATE_NONE;
