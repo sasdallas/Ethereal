@@ -104,10 +104,11 @@ static gfx_color_t gfx_freetypeBlend(gfx_color_t bottom, gfx_color_t top, uint8_
     float a = mask / 256.0;
 
     // Use it to mask the rest of the valules
+    uint8_t a_new = GFX_RGB_A(bottom) * (1.0 - a) + GFX_RGB_A(top) * a;
     uint8_t r = GFX_RGB_R(bottom) * (1.0 - a) + GFX_RGB_R(top) * a;
     uint8_t g = GFX_RGB_G(bottom) * (1.0 - a) + GFX_RGB_G(top) * a;
     uint8_t b = GFX_RGB_B(bottom) * (1.0 - a) + GFX_RGB_B(top) * a;
-    return GFX_RGB(r, g, b);
+    return GFX_RGBA(r, g, b, a_new);
 }
 
 
@@ -132,13 +133,14 @@ int gfx_renderCharacter(gfx_context_t *ctx, gfx_font_t *font, char ch, int _x, i
     int cur_y = _y - slot->bitmap_top;
     int cur_x = _x + slot->bitmap_left;
 
+
+
     for (int y = cur_y; y < cur_y + slot->bitmap.rows; y++) {
+        uint32_t *buf = (ctx->flags & CTX_NO_BACKBUFFER ? &GFX_PIXEL_REAL(ctx, cur_x, y) : &GFX_PIXEL(ctx, cur_x, y));
         for (int x = cur_x; x < cur_x + slot->bitmap.width; x++) {
-            if (ctx->flags & CTX_NO_BACKBUFFER) {
-                GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
-            } else {
-                GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
-            }
+            *buf = gfx_freetypeBlend(*buf, color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
+
+            buf++;
         }
     }
 

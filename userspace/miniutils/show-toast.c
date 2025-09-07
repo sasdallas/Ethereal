@@ -118,7 +118,10 @@ int main(int argc, char *argv[]) {
     strncpy(t.description, description, 128);
     strncpy(t.icon, icon, 64);
 
-    send(sock, &t, sizeof(toast_t), 0);
+    if (send(sock, &t, sizeof(toast_t), 0) < 0) {
+        perror("send");
+        return 1;
+    }
 
     close(sock);
 
