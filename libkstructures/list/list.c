@@ -18,6 +18,7 @@
 
 #include <structs/list.h>
 #include <kernel/mem/alloc.h>
+#include <string.h>
 
 /**
  * @brief Create a new list
@@ -85,6 +86,7 @@ void list_append_node(list_t *list, node_t *node) {
  */
 void list_append(list_t *list, void *item) {
     node_t *node = malloc(sizeof(node_t));
+    memset(node, 0, sizeof(node_t));
     node->value = item;
     list_append_node(list, node);
 }
@@ -127,6 +129,7 @@ void list_append_node_after(list_t *list, node_t *append_to, node_t *node) {
  */
 void list_append_after(list_t *list, node_t *append_to, void *item) {
     node_t *node = malloc(sizeof(node_t));
+    memset(node, 0, sizeof(node_t));
     node->value = item;
     list_append_node_after(list, append_to, node);
 }
@@ -172,6 +175,7 @@ void list_append_node_before(list_t *list, node_t *append_before, node_t *node) 
  */
 void list_append_before(list_t *list, node_t *append_before, void *item) {
     node_t *node = malloc(sizeof(node_t));
+    memset(node, 0, sizeof(node_t));
     node->value = item;
     list_append_node_before(list, append_before, node);
 }

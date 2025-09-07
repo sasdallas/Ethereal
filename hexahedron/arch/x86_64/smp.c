@@ -73,12 +73,9 @@ static int last_cpu_number = 1;
  * @brief Handle a TLB shootdown
  */
 int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number, registers_t *regs, extended_registers_t *extended) {
-    if (tlb_shootdown_address) {
-        asm ("invlpg (%0)" :: "r"(tlb_shootdown_address));
-    }
-
-
     // LOG(DEBUG, "TLB shootdown acknowledged for %p\n", tlb_shootdown_address);
+
+    asm ("invlpg (%0)" :: "r"(tlb_shootdown_address));
     return 0;
 }
 

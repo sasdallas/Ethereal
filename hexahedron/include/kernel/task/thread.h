@@ -89,7 +89,9 @@ typedef struct thread {
                                             // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
                                             // NOTE: except the actual object itself, until the process exits.
     spinlock_t joiner_lck;                  // Joiner lock
-    vfs_waiter_t *waiter;                   // Waiter
+
+    // VFS RELATED
+    vfs_waiter_thread_t *waiter;            // The current thread waiter
 } thread_t;
 
 

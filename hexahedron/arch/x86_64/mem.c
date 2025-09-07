@@ -589,7 +589,7 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         }
 
         // TODO: This code can probably bug out - to be extensively tested
-        printf(COLOR_CODE_RED "Process \"%s\" (PID: %d) encountered a page fault at address %p and will be shutdown\n" COLOR_CODE_RESET, current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2);
+        printf(COLOR_CODE_RED "Process \"%s\" (TID: %d, PID: %d) encountered a page fault at address %p and will be shutdown\n" COLOR_CODE_RESET, current_cpu->current_process->name, current_cpu->current_thread->tid, current_cpu->current_process->pid, regs_extended->cr2);
         
         // Dump debug information
         LOG(ERR, "Process \"%s\" (PID: %d) encountered page fault at %p with no valid resolution (error code: 0x%x). Shutdown\n", current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2, regs->err_code);

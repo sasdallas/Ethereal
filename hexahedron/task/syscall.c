@@ -653,31 +653,31 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     int have_hit = 0;
 
-    /* !!!: Currently broken */
-// #define POLL_USES_FS_WAIT
-#ifdef POLL_USES_FS_WAIT
+    // int iters = 10;
+    // while (iters) {
+        for (size_t i = 0; i < nfds; i++) {
+            // Check the file descriptor
+            fds[i].revents = 0;
+            if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+                fds[i].revents |= POLLNVAL;
+                continue;
+            }
 
-    for (size_t i = 0; i < nfds; i++) {
-        // Check the file descriptor
-        fds[i].revents = 0;
-        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-            fds[i].revents |= POLLNVAL;
-            continue;
+            // Does the file descriptor have available contents right now?
+            int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+            int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+            if (ready & events) {
+                // Oh, we already have a hit! :D
+                // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+                fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+                have_hit++;
+            } 
         }
 
-        // Does the file descriptor have available contents right now?
-        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-        if (ready & events) {
-            // Oh, we already have a hit! :D
-            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-            have_hit++;
-        } 
-    }
-
-    if (have_hit) return have_hit;
+        if (have_hit) return have_hit;
+    //     iters--;
+    // }
 
     // We didn't get anything. Did they want us to wait?
     if (timeout == 0) return 0;
@@ -716,7 +716,8 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     return have_hit;   // At least one thread woke us up
 
-#else
+    /* Legacy poll that doesn't sleep. For debugging. */
+#if 0
 
     struct timeval tv_start;
     gettimeofday(&tv_start, NULL);

@@ -21,6 +21,9 @@
 #include <sys/types.h>
 #include <structs/tree.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/misc/mutex.h>
+#include <stdbool.h>
+#include <stdatomic.h>
 
 /**** DEFINITIONS ****/
 
@@ -148,11 +151,18 @@ typedef struct vfs_tree_node {
     fs_node_t *node;
 } vfs_tree_node_t;
 
-// Waiter structure for any processes waiting
+// Waiter structure for any thread
+typedef struct vfs_waiter_thread {
+    struct thread *thread;      // Thread pending structure
+    mutex_t *mutex;             // Mutex for the thread
+    volatile int refcount;      // References remaining on this object
+    volatile int has_woken_up;  // Has woken up
+} vfs_waiter_thread_t;
+
+// Waiter structure for any nodes waiting
 typedef struct vfs_waiter {
-    struct thread *thread;      // Thread
+    vfs_waiter_thread_t *thr;   // Thread
     int events;                 // Events we want to capture
-    int refcount;               // References remaining on the node
 } vfs_waiter_t;
 
 /**** FUNCTIONS ****/
