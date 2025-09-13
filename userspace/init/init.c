@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Open files
-    int stdin = open("/device/stdin", O_RDONLY);
+    int stdin = open("/device/null", O_RDONLY);
     int stdout = open("/device/console", O_RDWR);
     int stderr = open("/device/log", O_RDWR);
 
