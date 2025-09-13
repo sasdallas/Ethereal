@@ -1,4 +1,5 @@
-#include_next <limits.h>
+#define _GCC_NEXT_LIMITS_H
+#include <limits.h>
 
 #ifndef _LIMITS_H
 #error "_LIMITS_H"
