@@ -85,6 +85,8 @@ Certain external components are available in `external`, `libc`, and other parts
 - libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
 - freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
 - mlibc (MIT license): [Ethereal fork available here](https://github.com/sasdallas/mlibc)
+- tinf (zlib license): [available here](https://github.com/jibsen/tinf/)
+- json-parser (BSD 2-clause zlicense): [available here](https://github.com/json-parser/json-parser)
 - Linux 6.16 (GPL license, required for mlibc linux headers): [available here](https://kernel.org)
 
 ## Credits

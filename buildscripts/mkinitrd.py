@@ -2,6 +2,7 @@
 
 import tarfile 
 import sys
+import os
 
 if len(sys.argv) < 3:
     print("Usage: mkinitrd.py <tar file> <directory>")
@@ -9,6 +10,11 @@ if len(sys.argv) < 3:
 
 file = sys.argv[1]
 dir = sys.argv[2]
+
+try:
+    os.unlink(file)
+except FileNotFoundError:
+    pass
 
 mode_overrides = {
     "tmp": 0o775,       # /tmp: drwxrwxr-x
@@ -24,5 +30,5 @@ def ramdisk_filter(tarinfo):
 
     return tarinfo
 
-with tarfile.open(file, "w", format=tarfile.USTAR_FORMAT) as ramdisk:
+with tarfile.open(file, "w:gz", format=tarfile.USTAR_FORMAT) as ramdisk:
     ramdisk.add(dir, arcname="/", filter=ramdisk_filter)

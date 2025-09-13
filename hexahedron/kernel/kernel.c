@@ -70,12 +70,22 @@
 // Tasking
 #include <kernel/task/process.h>
 #include <structs/ini.h>
+#include <structs/tinf.h>
 
 /* Log method of generic */
 #define LOG(status, ...) dprintf_module(status, "GENERIC", __VA_ARGS__)
 
 /* Set when the kernel is beginning to shutdown */
 int kernel_shutdown = 0;
+
+/* Taken from tgunzip example of tinf inflate library */
+static unsigned int read_le32(const unsigned char *p)
+{
+	return ((unsigned int) p[0])
+	     | ((unsigned int) p[1] << 8)
+	     | ((unsigned int) p[2] << 16)
+	     | ((unsigned int) p[3] << 24);
+}
 
 /**
  * @brief Mount the initial ramdisk to /device/initrd/
@@ -103,10 +113,37 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
         __builtin_unreachable();
     }
 
+    // Check if this is a compressed archive
+    uint8_t *gz = (uint8_t*)mod->mod_start;
+    if (gz[0] == 0x1f && gz[1] == 0x8b) {
+        LOG(INFO, "Initial ramdisk is packed into a .GZ file - begin decompression!\n");
+
+        uint32_t extracted_size = read_le32(&gz[mod->mod_end - mod->mod_start - 4]);
+        LOG(INFO, "Extracted file size in memory: %d\n", extracted_size);
+
+        void *mem = kzalloc(MEM_ALIGN_PAGE(extracted_size));
+
+        LOG(INFO, "Decompressing ramdisk...\n");
+        printf("Please wait, decompressing ramdisk...\n");
+
+        uint32_t outlen = extracted_size;
+        int res = tinf_gzip_uncompress((void*)mem, &outlen, (void*)mod->mod_start, mod->mod_end - mod->mod_start);
+        if (res != TINF_OK || outlen != extracted_size) {
+            kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Failed to decompress the initial ramdisk (error code %d, extracted %ld bytes total)\n", res, outlen);
+        }
+
+        LOG(INFO, "Decompression finished\n");
+        
+
+        initrd_ram = ramdev_mount((uintptr_t)mem, MEM_ALIGN_PAGE(extracted_size));
+    } else {
+        LOG(INFO, "Ramdisk is not packed, magic is %x %x\n", gz[0], gz[1]);
+    }
+
     // Now we have to mount tarfs to it.
     char devpath[64];
     snprintf(devpath, 64, "/device/%s", initrd_ram->name);
-    if (vfs_mountFilesystemType("tarfs", devpath, "/device/initrd", NULL) != 0) {
+    if (vfs_mountFilesystemType("tarfs", devpath, "/device/initrd", NULL) != 0 || vfs_mountFilesystemType("tarfs", devpath, "/", NULL) != 0) {
         // Oops, we couldn't mount it.
         LOG(ERR, "Failed to mount initial ramdisk (tarfs)\n");
         kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
@@ -195,8 +232,7 @@ void kmain() {
 
     // Now we need to mount the initial ramdisk
     kernel_mountRamdisk(parameters);
-    vfs_mountFilesystemType("tarfs", "/device/ram0", "/", NULL); // And mount to root
-    
+
     // Load the INI file
     ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
     if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
@@ -258,6 +294,7 @@ void kmain() {
     // Unmap 0x0 (fault detector, temporary)
     page_t *pg = mem_getPage(NULL, 0, MEM_CREATE);
     mem_allocatePage(pg, MEM_PAGE_NOT_PRESENT | MEM_PAGE_NOALLOC | MEM_PAGE_READONLY);
+    mem_invalidatePage(0x0);
 
     // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
     current_cpu->current_thread = NULL;

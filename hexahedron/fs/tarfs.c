@@ -146,7 +146,7 @@ int tarfs_readlink(struct fs_node *node, char *buf, size_t size) {
     memcpy(buf, header->linkname, sz_to_read); 
     kfree(header);
 
-    return 0;
+    return sz_to_read;
 }
 
 

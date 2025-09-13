@@ -7,8 +7,8 @@ OUT_OBJ_KERNEL = $(OBJ_OUTPUT_DIRECTORY)/libkstructures
 OUT_OBJ_LIBC = $(OBJ_OUTPUT_DIRECTORY)/libstructures
 
 # SOURCE DIRECTORIES
-SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini
-SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini
+SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini gzip
+SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip
 OUTPUT_DIRECTORIES_KERNEL = $(addprefix $(OUT_OBJ_KERNEL)/,$(SOURCE_DIRECTORIES_KERNEL))
 OUTPUT_DIRECTORIES_LIBC = $(addprefix $(OUT_OBJ_LIBC)/,$(SOURCE_DIRECTORIES_LIBC))
 
