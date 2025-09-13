@@ -28,6 +28,9 @@ install-headers: make_dirs
 	ninja install; \
 	cd $(LIBC_DIR); 
 
+	x86_64-ethereal-gcc -c limits-test.c -o limits-test.o
+	rm limits-test.o
+
 install:
 	# Install mlibc
 	set -e; \
