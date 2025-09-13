@@ -28,6 +28,8 @@ install-headers: make_dirs
 	ninja install; \
 	cd $(LIBC_DIR); 
 
+	cat $(DESTDIR)/usr/include/limits.h
+
 	x86_64-ethereal-gcc -c limits-test.c -o limits-test.o
 	rm limits-test.o
 
