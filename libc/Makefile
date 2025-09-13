@@ -28,12 +28,6 @@ install-headers: make_dirs
 	ninja install; \
 	cd $(LIBC_DIR); 
 
-	-cat /usr/lib/gcc/x86_64-ethereal/12.2.0/include/limits.h
-	cat /usr/lib/gcc/x86_64-ethereal/12.2.0/include-fixed/limits.h
-
-	x86_64-ethereal-gcc --verbose -c limits-test.c -o limits-test.o
-	rm limits-test.o
-
 install:
 	# Install mlibc
 	set -e; \
