@@ -31,7 +31,7 @@ install-headers: make_dirs
 	echo $(shell x86_64-ethereal-gcc -print-sysroot)
 	cat $(shell x86_64-ethereal-gcc -print-sysroot)/usr/include/limits.h
 
-	x86_64-ethereal-gcc -c limits-test.c -o limits-test.o
+	x86_64-ethereal-gcc --verbose -c limits-test.c -o limits-test.o
 	rm limits-test.o
 
 install:
