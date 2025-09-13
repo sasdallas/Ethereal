@@ -28,8 +28,7 @@ install-headers: make_dirs
 	ninja install; \
 	cd $(LIBC_DIR); 
 
-	echo $(shell x86_64-ethereal-gcc -print-sysroot)
-	cat $(shell x86_64-ethereal-gcc -print-sysroot)/usr/include/limits.h
+	echo $(shell x86_64-ethereal-gcc -v -E -xc - < /dev/null)
 
 	x86_64-ethereal-gcc --verbose -c limits-test.c -o limits-test.o
 	rm limits-test.o
