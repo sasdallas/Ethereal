@@ -1,4 +1,4 @@
-#include <limits.h>
+#include_next <limits.h>
 
 #ifndef _LIMITS_H
 #error "_LIMITS_H"
@@ -9,5 +9,5 @@
 #endif
 
 void _start() {
-    
+
 }
