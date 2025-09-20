@@ -40,7 +40,7 @@ $(OBJ_DIR)/%.o: %.S Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 ./$(OUTPUT_FILE): $(C_OBJS)
-	$(CC) -o $(OUTPUT_FILE) $(C_OBJS) $(LIBS) $(LDFLAGS) 
+	$(CC) -o $(OUTPUT_FILE) $(C_OBJS) $(LIBS) $(LDFLAGS)
 
 ifeq ($(INITRD_INSTALL),YES)
 install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_initrd install_actual
@@ -61,7 +61,3 @@ clean:
 	-rm ./$(OUTPUT_FILE)
 	-rm -rf $(DESTDIR)$(OUTPUT_DIR)/$(OUTPUT_FILE)
 	-rm -rf $(OBJ_DIR)
-	
-bash_symlink:
-	@-mkdir -p $(INITRD)/bin/ $(DESTDIR)/bin/
-	ln -sf /usr/bin/essence $(DESTDIR)/bin/sh
