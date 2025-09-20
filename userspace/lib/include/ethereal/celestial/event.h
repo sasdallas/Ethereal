@@ -38,6 +38,7 @@
 #define CELESTIAL_EVENT_RESIZE                  0x00000200 // Special event. Library automatically resizes
 #define CELESTIAL_EVENT_POSITION_CHANGE         0x00000400
 #define CELESTIAL_EVENT_MOUSE_SCROLL            0x00000800
+#define CELESTIAL_EVENT_MOUSE_MOTION_REL        0x00001000 // Relative mouse motion
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -71,6 +72,14 @@ typedef struct celestial_event_mouse_motion {
     int32_t y;                          // Relative Y position
     int32_t buttons;                    // Held mouse buttons;
 } celestial_event_mouse_motion_t;
+
+typedef struct celestial_event_mouse_motion_rel {
+    CELESTIAL_EVENT_COMMON              // Common
+    int32_t x;                          // Relative X position
+    int32_t y;                          // Relative Y position
+    int32_t buttons;                    // Held mouse buttons
+} celestial_event_mouse_motion_rel_t;
+
 
 typedef struct celesital_event_mouse_button_down {
     CELESTIAL_EVENT_COMMON              // Common

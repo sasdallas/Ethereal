@@ -45,6 +45,7 @@
 #define CELESTIAL_REQ_FLIP                  0x100E
 #define CELESTIAL_REQ_RESIZE                0x100F
 #define CELESTIAL_REQ_SET_WINDOW_VISIBLE    0x1010
+#define CELESTIAL_REQ_SET_MOUSE_CAPTURE     0x1011
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -151,6 +152,12 @@ typedef struct celestial_req_set_window_visible {
     wid_t wid;                          // Window ID
     uint8_t visible;                    // Visible
 } celestial_req_set_window_visible_t;
+
+typedef struct celestial_req_set_mouse_capture {
+    CELESTIAL_REQ_COMMON                // Common
+    wid_t wid;                          // Window ID
+    uint8_t capture;                    // Capture state
+} celestial_req_set_mouse_capture_t;
 
 /* RESPONSES */
 

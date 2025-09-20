@@ -877,6 +877,7 @@ int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info) {
     info->at_phent = ehdr->e_phentsize;
     info->at_phnum = ehdr->e_phnum;
 
+    kfree(buf);
     return 0;
 }
 

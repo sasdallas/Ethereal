@@ -34,7 +34,7 @@ gfx_color_t color_gradient(int i, double t) {
 }
 
 int main(int argc, char *argv[]) {
-    wid_t wid = celestial_createWindow(0, 300, 300);
+    wid_t wid = celestial_createWindow(CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE, 300, 300);
     window_t *win = celestial_getWindow(wid);
     celestial_setTitle(win, "Color Wave");
 

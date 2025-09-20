@@ -29,6 +29,8 @@
 #define CELESTIAL_WINDOW_FLAG_DECORATED         0x1
 #define CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS     0x2
 #define CELESTIAL_WINDOW_FLAG_NO_AUTO_FOCUS     0x4
+#define CELESTIAL_WINDOW_FLAG_SOLID             0x8
+#define CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE     0x10
 
 #define CELESTIAL_Z_BACKGROUND              0
 #define CELESTIAL_Z_DEFAULT                 1
@@ -209,5 +211,12 @@ int celestial_running();
  * @param visible Whether or not it is visible
  */
 int celestial_setWindowVisible(window_t *win, int visible);
+
+/**
+ * @brief Set whether mouse is being captured or not
+ * @param win The window to set
+ * @param captured Whether or not to capture the mouse
+ */
+int celestial_setMouseCapture(window_t *win, int captured);
 
 #endif

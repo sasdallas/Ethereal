@@ -26,6 +26,37 @@ hashmap_t *celestial_window_map = NULL;
 /* Window count */
 int __celestial_window_count = 0;
 
+/* Flag on whether we are already cleaning up */
+static int __celestial_is_cleaning_up = 0;
+static int __celestial_parent_pid = 0;
+
+/**
+ * @brief Celestial cleanup function
+ */
+void __celestial_cleanup() {
+    if (getpid() != __celestial_parent_pid) return;
+    __celestial_is_cleaning_up = 1;
+    list_t *vals  = hashmap_values(celestial_window_map);
+
+    foreach(val, vals) {
+        window_t *win = (window_t*)val->value;
+        if (win->state != CELESTIAL_STATE_CLOSED) {
+            celestial_closeWindow(win);
+        }
+    }
+
+    // TODO: Reclaim resources probably.. but this function is only called if we're exiting so..
+}
+
+/**
+ * @brief Startup function
+ */
+__attribute__((constructor)) void __celestial_init() {
+    celestial_window_map = hashmap_create_int("window map", 20);
+    __celestial_parent_pid = getpid();
+    atexit(__celestial_cleanup);
+}
+
 /**
  * @brief Create a new window in Ethereal (undecorated)
  * @param flags The flags to use when creating the window
@@ -62,6 +93,7 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
 
     // Get window object
     window_t *win = celestial_getWindow(wid);
+    win->flags = flags;
 
     // Ready to start receiving events
     celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
@@ -115,6 +147,8 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
 
     // Now we need to create a window object
     window_t *win = celestial_getWindow(wid);
+
+    win->flags = flags;
 
     // Setup real info
     win->info = malloc(sizeof(decor_window_info_t));
@@ -467,6 +501,10 @@ void celestial_closeWindow(window_t *win) {
     
     win->state = CELESTIAL_STATE_CLOSED;
     __celestial_window_count--; // Hopefully we cleanup...
+
+    if (win->flags & CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE && !__celestial_is_cleaning_up) {
+        exit(0); 
+    }
 }
 
 /**
@@ -603,3 +641,31 @@ int celestial_running() {
     return __celestial_window_count > 0;
 }
 
+
+/**
+ * @brief Set whether mouse is being captured or not
+ * @param win The window to set
+ * @param captured Whether or not to capture the mouse
+ */
+int celestial_setMouseCapture(window_t *win, int captured) {
+    celestial_req_set_mouse_capture_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_set_window_visible_t),
+        .type = CELESTIAL_REQ_SET_MOUSE_CAPTURE,
+        .wid = win->wid,
+        .capture = captured,
+    };
+
+    // Send the request
+    if (celestial_sendRequest(&req, req.size) < 0) return -1;
+
+    // Wait for a resonse
+    celestial_resp_resize_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_MOUSE_CAPTURE);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}

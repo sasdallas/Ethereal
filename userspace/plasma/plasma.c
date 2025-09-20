@@ -40,7 +40,7 @@ gfx_color_t plasma(int x, int y, double t) {
 }
 
 int main(int argc, char *argv[]) {
-    wid_t wid = celestial_createWindow(CELESTIAL_WINDOW_FLAG_SOLID, 300, 300);
+    wid_t wid = celestial_createWindow(CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE, 300, 300);
     window_t *win = celestial_getWindow(wid);
     celestial_setTitle(win, "Plasma");
 
@@ -54,6 +54,7 @@ int main(int argc, char *argv[]) {
             for (uint32_t x = 0; x < 300; x++) {
                 GFX_PIXEL(ctx, x, y) = plasma(x, y, t);
             }
+            celestial_poll();
         }
 
         gfx_render(ctx);

@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <grp.h>
 
 /* ls flags */
 int all = 0;
@@ -98,8 +99,7 @@ void print_entry(char *ent) {
             putchar('-');
         }
 
-        // First, do the permissions printing
-        PRINT_MODE(S_IRUSR, 'r');
+        // First, do the permissions printing        PRINT_MODE(S_IRUSR, 'r');
         PRINT_MODE(S_IWUSR, 'w');
         PRINT_MODE(S_IXUSR, 'x');
         PRINT_MODE(S_IRGRP, 'r');
@@ -114,9 +114,16 @@ void print_entry(char *ent) {
 
         struct passwd *p = getpwuid(st.st_uid);
         if (p) {
-            printf("%-10s   ", p->pw_name);
+            printf("%-8s   ", p->pw_name);
         } else {
-            printf("%10ld   ", st.st_uid);
+            printf("%8ld   ", st.st_uid);
+        }
+
+        p = getpwuid(st.st_gid);
+        if (p) {
+            printf("%-8s   ", p->pw_name);
+        } else {
+            printf("%8ld   ", st.st_uid);
         }
 
         printf("%10ld ", st.st_size);
@@ -124,20 +131,62 @@ void print_entry(char *ent) {
 
 
     // We are a TTY, print some colors
-    if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
-        printf(COLOR_DEVICE);    
-    } else if (S_ISDIR(st.st_mode)) {
-        printf(COLOR_DIRECTORY);
-    } else if (st.st_mode & S_ISUID) {
-        printf(COLOR_SETUID);
-    } else if (st.st_mode & 0111) {
-        printf(COLOR_EXECUTABLE);
+    if (is_tty) {
+        if (S_ISLNK(st.st_mode)) {
+            printf(COLOR_SYMLINK);
+        } else if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
+            printf(COLOR_DEVICE);    
+        } else if (S_ISDIR(st.st_mode)) {
+            printf(COLOR_DIRECTORY);
+        } else if (st.st_mode & S_ISUID) {
+            printf(COLOR_SETUID);
+        } else if (st.st_mode & 0111) {
+            printf(COLOR_EXECUTABLE);
+        }
     }
     
+    if (S_ISLNK(st.st_mode) && list) {
+
+        printf("%s %s-> ", ent, (is_tty ? "\033[0m" : ""));
+
+        char link_buf[512] = { 0 };
+        ssize_t r = readlink(ent, link_buf, 512);
+
+        if (r <= 0) {
+            printf("???\n");
+            return;
+        }
+        link_buf[r] = 0;
+
+        if (is_tty) {
+            if (stat(link_buf, &st) < 0) {
+                printf("%s", link_buf);
+                return;
+            }
+
+            if (S_ISLNK(st.st_mode)) {
+                printf(COLOR_SYMLINK);
+            } else if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode) || S_ISFIFO(st.st_mode)) {
+                printf(COLOR_DEVICE);    
+            } else if (S_ISDIR(st.st_mode)) {
+                printf(COLOR_DIRECTORY);
+            } else if (st.st_mode & S_ISUID) {
+                printf(COLOR_SETUID);
+            } else if (st.st_mode & 0111) {
+                printf(COLOR_EXECUTABLE);
+            }
+
+            printf("%s\033[0m\n", link_buf);
+        } else {
+            printf("%s\n", link_buf);
+        }
+
+        return;
+    }
+
     if (!is_tty || list) {
         printf("%s%s\n", ent, is_tty ? "\033[0m" : "");
     } else {
-
         printf("%s\033[0m", ent);
     
         for (int i = column_size - strlen(ent); i > 0; i--) putchar(' ');

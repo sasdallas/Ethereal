@@ -191,7 +191,7 @@ vas_allocation_t *vas_allocate(vas_t *vas, size_t size) {
     if (!vas || !size) return NULL;
 
     // Align
-    size = MEM_ALIGN_PAGE(size);
+    if (size & (PAGE_SIZE - 1)) size = MEM_ALIGN_PAGE(size);
 
     // Acquire a VAS lock
     spinlock_acquire(vas->lock);
@@ -326,7 +326,9 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
     // Setup chain now
     if (node == vas->head) {
         vas->head = node->next; 
-        if (!vas->head) vas->tail = NULL;
+        if (!vas->head) {
+            vas->tail = NULL;
+        }
     } else {
         if (node->prev) {
             node->prev->next = node->next;
@@ -357,6 +359,7 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
             if (pg && PAGE_IS_PRESENT(pg)) {
                 // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
                 mem_freePage(pg);
+                mem_invalidatePage(i);
             }
         }
 
@@ -511,7 +514,7 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
 
         // Start copying pages
         // TODO: We map the *entire* region in, instead of doing what the other (non-CoW) part does and following the size hint given. This wastes memory in certain cases.
-        for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(alloc->base); i < alloc->base + alloc->size; i += PAGE_SIZE)  {
+        for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(alloc->base); i < MEM_ALIGN_PAGE_DESTRUCTIVE(alloc->base) + alloc->size; i += PAGE_SIZE)  {
             page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
             
             if (pg && PAGE_IS_PRESENT(pg)) {
@@ -555,11 +558,13 @@ int vas_fault(vas_t *vas, uintptr_t address, size_t size) {
     size_t actual_map_size = (alloc->size > size) ? size : alloc->size;
 
     // Too much?
-    if (MEM_ALIGN_PAGE_DESTRUCTIVE(address) + actual_map_size > alloc->base + alloc->size) actual_map_size = (alloc->base + alloc->size) - MEM_ALIGN_PAGE_DESTRUCTIVE(address);
+    if (MEM_ALIGN_PAGE_DESTRUCTIVE(address) + actual_map_size > alloc->base + alloc->size) {
+        actual_map_size = (alloc->base + alloc->size) - MEM_ALIGN_PAGE_DESTRUCTIVE(address);
+    }
 
     for (uintptr_t i = MEM_ALIGN_PAGE_DESTRUCTIVE(address); i < MEM_ALIGN_PAGE_DESTRUCTIVE(address) + actual_map_size; i += PAGE_SIZE) {
         page_t *pg = mem_getPage(NULL, i, MEM_CREATE);
-        
+
         // Allocate corresponding to prot flags
         int flags = (alloc->prot & VAS_PROT_WRITE ? 0 : MEM_PAGE_READONLY) | (alloc->prot & VAS_PROT_EXEC ? 0 : MEM_PAGE_NO_EXECUTE) | (vas->flags & VAS_USERMODE ? 0 : MEM_PAGE_KERNEL);
         
