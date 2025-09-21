@@ -210,3 +210,25 @@ int celestial_query() {
 int celestial_getSocketFile() {
     return __celestial_socket;
 }
+
+/**
+ * @brief Change the Celestial mouse cursor
+ * @param cursor_id The ID of the target cursor (CELESTIAL_MOUSE_xxx)
+ */
+int celestial_setMouseCursor(int cursor_id) {
+    celestial_req_set_mouse_cursor_t req = {
+        .type = CELESTIAL_REQ_SET_MOUSE_CURSOR,
+        .size = sizeof(celestial_req_set_mouse_cursor_t),
+        .magic = CELESTIAL_MAGIC,
+        .cursor = cursor_id
+    };
+
+    celestial_sendRequest(&req, req.size);
+
+    celestial_resp_error_t *e = celestial_getResponse(CELESTIAL_REQ_SET_MOUSE_CURSOR);
+    if (!e) return -1;
+
+    CELESTIAL_HANDLE_RESP_ERROR(e, -1);
+    free(e);
+    return 0;
+}

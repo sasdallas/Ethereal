@@ -142,10 +142,17 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->y = GFX_HEIGHT(WM_GFX) / 2 - (height/2);
     win->width = width;
     win->height = height;
+    win->animation = WINDOW_ANIM_NONE;
     win->events = 0x0;
-    win->state = WINDOW_STATE_OPENING;
+
     win->z_array = CELESTIAL_Z_DEFAULT;
     win->flags = flags;
+
+    if (win->flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS) {
+        win->state = WINDOW_STATE_NORMAL;
+    } else {
+        win->state = WINDOW_STATE_OPENING;
+    }
 
     // Make buffer for it   
     win->shmfd = shared_new(win->height * win->width * 4, SHARED_DEFAULT);
@@ -157,11 +164,15 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->sp->height = win->height;
     win->sp->bitmap = (uint32_t*)win->buffer;
 
+    if (win->flags & CELESTIAL_WINDOW_FLAG_SOLID) {
+        win->sp->alpha = SPRITE_ALPHA_SOLID;
+    }
+
     CELESTIAL_DEBUG("New window %dx%d at X %d Y %d SHM KEY %d created\n", win->width, win->height, win->x, win->y, win->bufkey);
 
-    if (win->flags & CELESTIAL_WINDOW_FLAG_NO_AUTO_FOCUS) {
-        list_append(WM_WINDOW_LIST, win);
-    } else {
+    list_append(WM_WINDOW_LIST, win);
+
+    if (!(win->flags & CELESTIAL_WINDOW_FLAG_NO_AUTO_FOCUS)) {
         // Notify that we have unfocused the previous window
         if (WM_FOCUSED_WINDOW) {
             celestial_event_unfocused_t unfocus = {
@@ -177,8 +188,10 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
 
         // Reorder
         WM_FOCUSED_WINDOW = win;
-        list_append(WM_WINDOW_LIST, win);
         WM_MOUSE_WINDOW = window_top(WM_MOUSEX, WM_MOUSEY);
+        if (WM_MOUSE_WINDOW != WM_FOCUSED_WINDOW) {
+            CELESTIAL_LOG("WM_MOUSE_WINDOW != WM_FOCUSED_WINDOW\n");
+        }
     }
 
     // TODO: Maybe we should send FOCUS event? This resulted in instability last I tried. Decorations work fine :D
@@ -240,9 +253,11 @@ void window_redraw() {
             if (frame >= window_anim_frames[upd->win->animation]) {
                 // Expired
                 CELESTIAL_LOG("Window %d on frame %d expired animation\n", upd->win->id, frame);
+                int did_close = 0;
                 switch (upd->win->animation) {
                     case WINDOW_ANIM_CLOSING:
                         upd->win->state = WINDOW_STATE_CLOSED;
+                        did_close = 1;
                         break;
                     default:
                         upd->win->state = WINDOW_STATE_NORMAL;
@@ -251,7 +266,7 @@ void window_redraw() {
 
                 upd->win->animation = WINDOW_ANIM_NONE;
                 upd->win->anim_start = 0;
-                if (upd->win->state == WINDOW_STATE_NORMAL) window_update(upd->win, GFX_RECT(0,0,upd->win->width,upd->win->height));
+                if (!did_close) window_update(upd->win, GFX_RECT(0,0,upd->win->width,upd->win->height));
             } else {
                 window_processAnimations(upd->win, frame);
             }
@@ -410,7 +425,7 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
     int pos_modified = 0;
 
     size_t old_buffer_size = win->width * win->height * 4;
-    gfx_rect_t update_region = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };
+    gfx_rect_t update_region = { .x = win->x, .y = win->y, .width = new_width, .height = new_height };
 
     if (win->x + new_width >= GFX_WIDTH(WM_GFX)) {
         if (new_width >= GFX_WIDTH(WM_GFX)) return -EINVAL;
@@ -429,6 +444,8 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
     // Set them in the window
     win->width = new_width;
     win->height = new_height;
+    win->sp->width = new_width;
+    win->sp->height = new_height;
 
     // Create a new buffer key
     int new_shm_object = shared_new(win->width * win->height * 4, SHARED_DEFAULT);
@@ -443,6 +460,8 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
 
     // Map the new buffer into memory
     win->buffer = mmap(NULL, win->width * win->height * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
+
+    win->sp->bitmap = (uint32_t*)win->buffer;
 
     // Resize is complete, mostly. Send event to server
     celestial_event_resize_t resize_event = {
@@ -471,9 +490,46 @@ int window_resize(wm_window_t *win, size_t new_width, size_t new_height) {
         event_send(win, &pos_change);
     }
 
+    CELESTIAL_DEBUG("Window ID %d resize to %dx%d pos_modified=%d\n", win->id, win->width, win->height, pos_modified);
+
     // Update the old region where the window was
     window_updateRegion(update_region);
 
     // Resize process is complete
     return 0;
+}
+
+/**
+ * @brief Change focused window
+ * @param window New focused window
+ */
+void window_changeFocused(wm_window_t *win) {
+    if (WM_FOCUSED_WINDOW == win) return;
+
+    // Notify that we have unfocused the previous window
+    if (WM_FOCUSED_WINDOW) {
+        celestial_event_unfocused_t unfocus = {
+            .magic = CELESTIAL_MAGIC_EVENT,
+            .size = sizeof(celestial_event_unfocused_t),
+            .type = CELESTIAL_EVENT_UNFOCUSED,
+            .wid = WM_FOCUSED_WINDOW->id,
+        };
+
+        event_send(WM_FOCUSED_WINDOW, &unfocus);
+    }
+    // Reorder
+    WM_FOCUSED_WINDOW = win;
+
+    // TODO: Store node
+    list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, win));
+    list_append(WM_WINDOW_LIST, win);
+
+    celestial_event_focused_t focus = {
+        .magic = CELESTIAL_MAGIC_EVENT,
+        .size = sizeof(celestial_event_focused_t),
+        .type = CELESTIAL_EVENT_FOCUSED,
+        .wid = WM_FOCUSED_WINDOW->id,
+    };
+
+    event_send(WM_FOCUSED_WINDOW, &focus);
 }

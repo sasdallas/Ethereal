@@ -62,6 +62,7 @@ extern int __celestial_mouse_y;
 extern sprite_t *__celestial_mouse_sprite;
 extern wm_window_t *__celestial_mouse_window;
 extern uint32_t __celestial_mouse_buttons;
+extern int __celestial_mouse_relative;
 
 /* KEYBOARD GLOBALS */
 extern int __celestial_keyboard_fd;
@@ -88,6 +89,7 @@ extern int __celestial_keyboard_fd;
 #define WM_MOUSE_SPRITE __celestial_mouse_sprite
 #define WM_MOUSE_WINDOW __celestial_mouse_window
 #define WM_MOUSE_BUTTONS __celestial_mouse_buttons
+#define WM_MOUSE_RELATIVE __celestial_mouse_relative
 
 
 #define CELESTIAL_PROFILE_START() { struct timeval t; \

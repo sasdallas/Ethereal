@@ -46,12 +46,18 @@
 #define CELESTIAL_REQ_RESIZE                0x100F
 #define CELESTIAL_REQ_SET_WINDOW_VISIBLE    0x1010
 #define CELESTIAL_REQ_SET_MOUSE_CAPTURE     0x1011
+#define CELESTIAL_REQ_SET_MOUSE_CURSOR      0x1012
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
                                             size_t size; \
 
 #define CELESTIAL_DEFAULT_SOCKET_NAME       "/comm/wndsrv"
+
+
+#define CELESTIAL_MOUSE_DEFAULT             0   // Default pointer
+#define CELESTIAL_MOUSE_TEXT                1   // I-Beam for text
+
 
 /**** TYPES ****/
 
@@ -159,6 +165,11 @@ typedef struct celestial_req_set_mouse_capture {
     uint8_t capture;                    // Capture state
 } celestial_req_set_mouse_capture_t;
 
+typedef struct celestial_req_set_mouse_cursor {
+    CELESTIAL_REQ_COMMON                // Common
+    uint8_t cursor;                     // Cursor ID
+} celestial_req_set_mouse_cursor_t;
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -256,5 +267,11 @@ int celestial_query();
  * @returns The socket file descriptor if it exists or -1 if it is not ready
  */
 int celestial_getSocketFile();
+
+/**
+ * @brief Change the Celestial mouse cursor
+ * @param cursor_id The ID of the target cursor (CELESTIAL_MOUSE_xxx)
+ */
+int celestial_setMouseCursor(int cursor_id);
 
 #endif

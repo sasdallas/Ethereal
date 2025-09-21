@@ -187,4 +187,11 @@ void celestial_handleEvent(void *event);
  */
 void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *resize_event);
 
+/**
+ * @brief Lookup event handler (returns NULL if nonexistent)
+ * @param win The window
+ * @param event_type Event type
+ */
+celestial_event_handler_t celestial_lookupEventHandler(window_t *win, uint32_t event_type);
+
 #endif

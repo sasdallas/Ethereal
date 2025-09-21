@@ -324,14 +324,35 @@ int gfx_renderSprite(gfx_context_t *ctx, sprite_t *sprite, int x, int y) {
  * @param scaled The scaled rectangle to render in
  */
 int gfx_renderSpriteScaled(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t scaled) {
+    // See this article for a good picture on bilinear interpolation: https://meghal-darji.medium.com/implementing-bilinear-interpolation-for-image-resizing-357cbb2c2722
     for (size_t y = 0; y < scaled.height; y++) {
-        size_t src_y = y * sprite->height / scaled.height;
+        float src_y = (float)y * sprite->height / scaled.height;
+        size_t y0 = (size_t)src_y;
+        size_t y1 = GFX_MIN(y0 + 1, sprite->height - 1);
+        float y_lerp = src_y - y0;
 
         for (size_t x = 0; x < scaled.width; x++) {
-            size_t src_x = x * sprite->width / scaled.width;
+            float src_x = (float)x * sprite->width / scaled.width;
+            size_t x0 = (size_t)src_x;
+            size_t x1 = GFX_MIN(x0 + 1, sprite->width - 1);
+            float x_lerp = src_x - x0;
 
-            uint32_t pixel = sprite->bitmap[src_y * sprite->width + src_x];
-            GFX_PIXEL(ctx, scaled.x + x, scaled.y + y) = pixel;
+            uint32_t c00 = sprite->bitmap[y0 * sprite->width + x0];
+            uint32_t c01 = sprite->bitmap[y0 * sprite->width + x1];
+            uint32_t c10 = sprite->bitmap[y1 * sprite->width + x0];
+            uint32_t c11 = sprite->bitmap[y1 * sprite->width + x1];
+            
+            // !!!
+            uint8_t r = (1 - y_lerp) * ((1 - x_lerp) * GFX_RGB_R(c00) + x_lerp * GFX_RGB_R(c01)) +
+                        y_lerp * ((1 - x_lerp) * GFX_RGB_R(c10) + x_lerp * GFX_RGB_R(c11));
+            uint8_t g = (1 - y_lerp) * ((1 - x_lerp) * GFX_RGB_G(c00) + x_lerp * GFX_RGB_G(c01)) +
+                        y_lerp * ((1 - x_lerp) * GFX_RGB_G(c10) + x_lerp * GFX_RGB_G(c11));
+            uint8_t b = (1 - y_lerp) * ((1 - x_lerp) * GFX_RGB_B(c00) + x_lerp * GFX_RGB_B(c01)) +
+                        y_lerp * ((1 - x_lerp) * GFX_RGB_B(c10) + x_lerp * GFX_RGB_B(c11));
+            uint8_t a = (1 - y_lerp) * ((1 - x_lerp) * GFX_RGB_A(c00) + x_lerp * GFX_RGB_A(c01)) +
+                        y_lerp * ((1 - x_lerp) * GFX_RGB_A(c10) + x_lerp * GFX_RGB_A(c11));
+
+            GFX_PIXEL(ctx, scaled.x + x, scaled.y + y) = GFX_RGBA(r, g, b, a);
         }
     }
 

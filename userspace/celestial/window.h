@@ -157,4 +157,10 @@ void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign);
  */
 void window_beginAnimation(wm_window_t *win, int anim);
 
+/**
+ * @brief Change focused window
+ * @param window New focused window
+ */
+void window_changeFocused(wm_window_t *win);
+
 #endif

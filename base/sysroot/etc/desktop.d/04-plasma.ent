@@ -1,0 +1,4 @@
+[Desktop]
+Name="Plasma"
+Icon=/usr/share/icons/24/Application.bmp
+Exec="plasma"

@@ -1,0 +1,4 @@
+[Desktop]
+Name="Color Wave"
+Icon=/usr/share/icons/24/Application.bmp
+Exec="colorwave"

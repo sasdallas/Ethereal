@@ -36,4 +36,14 @@ void widget_mouseMovement(unsigned x, unsigned y);
  */
 void widget_mouseExit();
 
+/**
+ * @brief Handle mouse click
+ */
+void widget_mouseClick(unsigned x, unsigned y);
+
+/**
+ * @brief Handle mouse release
+ */
+void widget_mouseRelease(unsigned x, unsigned y);
+
 #endif

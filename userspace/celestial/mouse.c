@@ -42,9 +42,39 @@ uint32_t __celestial_previous_buttons = 0;
 static int mouse_window_off_x = 0;
 static int mouse_window_off_y = 0;
 
+/* Mouse relative */
+int __celestial_mouse_relative = 0;
+static int mouse_rel_x = 0;
+static int mouse_rel_y = 0;
+
 /* Convert mouse x/y to window x/y */
 #define WM_MOUSE_REL_WINDOW_X (WM_MOUSEX - WM_MOUSE_WINDOW->x)
 #define WM_MOUSE_REL_WINDOW_Y (WM_MOUSEY - WM_MOUSE_WINDOW->y)
+
+/* Loaded mouse sprites */
+static sprite_t *mouse_default = NULL;
+static sprite_t *mouse_text = NULL;
+
+/**
+ * @brief Load a mouse sprite
+ */
+void mouse_load(sprite_t **sp, char *filename) {
+    *sp = gfx_createSprite(0, 0);
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        CELESTIAL_ERR("mouse: Failed to load mouse cursor \'%s\'\n", filename);
+        celestial_fatal();
+    }
+
+
+    if (gfx_loadSprite(*sp, f)) {
+        CELESTIAL_ERR("mouse: Failed to load mouse sprite (using \"%s\")\n", filename);
+        celestial_fatal();
+    }
+
+    CELESTIAL_DEBUG("mouse: Loaded \"%s\"\n", filename);   
+}
 
 /**
  * @brief Initialize the mouse system
@@ -57,19 +87,9 @@ int mouse_init() {
         celestial_fatal();
     }
 
-    // Open mouse cursor
-    FILE *f = fopen(CELESTIAL_DEFAULT_MOUSE_CURSOR, "r");
-    if (!f) {
-        // TODO: Maybe we can use a placeholder
-        CELESTIAL_ERR("mouse: Could not open mouse cursor image at " CELESTIAL_DEFAULT_MOUSE_CURSOR "\n");
-        celestial_fatal();
-    }
-
-    __celestial_mouse_sprite = gfx_createSprite(25, 25);
-    if (gfx_loadSprite(__celestial_mouse_sprite, f)) {
-        CELESTIAL_ERR("mouse: Failed to load mouse sprite (using " CELESTIAL_DEFAULT_MOUSE_CURSOR ")\n");
-        celestial_fatal();
-    }
+    mouse_load(&mouse_default, "/usr/share/cursors/default.bmp");
+    mouse_load(&mouse_text, "/usr/share/cursors/text.bmp");
+    __celestial_mouse_sprite = mouse_default;
 
     // Default to center of screen
     WM_MOUSEX = GFX_WIDTH(WM_GFX) / 2;
@@ -85,6 +105,27 @@ int mouse_init() {
  * @brief Send any mouse events
  */
 void mouse_events() {
+
+    if (WM_MOUSE_RELATIVE) {
+        if (WM_MOUSEX != last_mouse_x || WM_MOUSEY != last_mouse_y) {
+            // Is this just a motion event or a drag event?
+            // TODO: Maybe its both?
+                celestial_event_mouse_motion_rel_t motion = {
+                    .magic = CELESTIAL_MAGIC_EVENT,
+                    .type = CELESTIAL_EVENT_MOUSE_MOTION_REL,
+                    .size = sizeof(celestial_event_mouse_motion_rel_t),
+                    .wid = WM_MOUSE_WINDOW->id,
+                    .x = mouse_rel_x,
+                    .y = mouse_rel_y,
+                    .buttons = WM_MOUSE_BUTTONS,
+                };
+
+                event_send(WM_MOUSE_WINDOW, &motion);
+            
+        }
+        return;
+    }
+
     // Check to make sure still in window
     if (WM_MOUSE_WINDOW) {
         // Are we dragging the mouse window?
@@ -358,6 +399,8 @@ int mouse_update() {
 
     last_mouse_x = WM_MOUSEX;
     last_mouse_y = WM_MOUSEY;
+    mouse_rel_x = event.x_difference;
+    mouse_rel_y = event.y_difference;
 
     // Update X and Y
     WM_MOUSEX += event.x_difference;
@@ -395,6 +438,10 @@ int mouse_update() {
     if ((size_t)WM_MOUSEX >= GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width-1) WM_MOUSEX = GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width;
     if ((size_t)WM_MOUSEY >= GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height) WM_MOUSEY = GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height;
 
+    if (abs(WM_MOUSEX - last_mouse_x) >= 100 || abs(WM_MOUSEY - last_mouse_y) >= 100) {
+        CELESTIAL_LOG("WARNING: Suspicious mouse event (dx=%d dy=%d)\n", WM_MOUSEX-last_mouse_x, WM_MOUSEY-last_mouse_y);
+    }
+
     // Did things change?
     if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY || WM_MOUSE_BUTTONS != __celestial_previous_buttons) {
         mouse_events();
@@ -410,5 +457,24 @@ int mouse_update() {
  * @brief Render the mouse
  */
 void mouse_render() {
-    if (WM_GFX->clip) gfx_renderSprite(WM_GFX, WM_MOUSE_SPRITE, WM_MOUSEX, WM_MOUSEY);
+    if (!WM_MOUSE_RELATIVE) {
+        if (WM_GFX->clip) gfx_renderSprite(WM_GFX, WM_MOUSE_SPRITE, WM_MOUSEX, WM_MOUSEY);
+    }
+}
+
+
+/**
+ * @brief Change mouse sprite
+ * @param target The target sprite to change to
+ */
+void mouse_change(int target) {
+    switch (target) {
+        case CELESTIAL_MOUSE_TEXT:
+            WM_MOUSE_SPRITE = mouse_text;
+            break;
+        case CELESTIAL_MOUSE_DEFAULT:
+        default:
+            WM_MOUSE_SPRITE = mouse_default;
+            break;
+    }
 }

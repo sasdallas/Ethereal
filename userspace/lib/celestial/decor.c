@@ -36,6 +36,7 @@ decor_handler_t *celestial_default_decor =  &celestial_mercury_theme;
 
 /* Hack */
 int decor_was_last_in_borders = 0; // Was the last mouse state in the borders?
+int decor_faked_exit_event = 0; // Decor faked last mouse event?
 
 /**
  * @brief Initialize specific decorations for a window
@@ -171,8 +172,46 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
 
 
                 // Fix hack
-                if (!in_borders) decor_was_last_in_borders = 0;
-                else decor_was_last_in_borders = 1;
+                if (!in_borders) {
+                    // Look for event handler
+                    celestial_event_handler_t h = celestial_lookupEventHandler(win, CELESTIAL_EVENT_MOUSE_ENTER);
+                        
+                    if (h) {
+                        // Fake mouse enter event
+                        celestial_event_mouse_enter_t e = {
+                            .magic = CELESTIAL_MAGIC_EVENT,
+                            .size = sizeof(celestial_event_mouse_exit_t),
+                            .type = CELESTIAL_EVENT_MOUSE_ENTER,
+                            .wid = win->wid,
+                            .x = motion->x - win->decor->borders.left_width,
+                            .y = motion->y - win->decor->borders.top_height,
+                        };
+
+                        h(win, CELESTIAL_EVENT_MOUSE_ENTER, &e);
+                    }
+                    
+                    decor_was_last_in_borders = 0;
+                } else {
+                    if (!decor_was_last_in_borders) {
+                        // Look for event handler 
+                        celestial_event_handler_t h = celestial_lookupEventHandler(win, CELESTIAL_EVENT_MOUSE_EXIT);
+                        
+                        if (h) {
+                            celestial_event_mouse_exit_t e = {
+                                .magic = CELESTIAL_MAGIC_EVENT,
+                                .size = sizeof(celestial_event_mouse_exit_t),
+                                .type = CELESTIAL_EVENT_MOUSE_EXIT,
+                                .wid = win->wid,
+                            };
+
+                            h(win, CELESTIAL_EVENT_MOUSE_EXIT, &e);
+                        }
+
+                        decor_faked_exit_event = 1;
+                    }
+                    
+                    decor_was_last_in_borders = 1;
+                }
 
                 return 0;
             } else {
@@ -181,8 +220,19 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                 motion->y -= win->decor->borders.top_height;
                 return 1;
             }
+            
 
         case CELESTIAL_EVENT_MOUSE_ENTER:
+            decor_was_last_in_borders = 1;
+            return 0;
+
+        case CELESTIAL_EVENT_MOUSE_EXIT:
+            if (!decor_faked_exit_event) {
+                return 1;
+            }
+
+
+            decor_faked_exit_event = 0;
             return 0;
 
         case CELESTIAL_EVENT_MOUSE_DRAG:

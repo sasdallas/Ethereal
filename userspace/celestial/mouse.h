@@ -39,4 +39,10 @@ int mouse_update();
  */
 void mouse_render();
 
+/**
+ * @brief Change mouse sprite
+ * @param target The target sprite to change to
+ */
+void mouse_change(int target);
+
 #endif

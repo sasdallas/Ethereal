@@ -23,6 +23,7 @@
 
 list_t *widgets_list = NULL;
 desktop_tray_widget_t *highlighted = NULL;
+desktop_tray_widget_t *active = NULL;
 
 extern window_t *taskbar_window;
 
@@ -111,8 +112,16 @@ void widgets_update() {
     foreach(widgetnode, widgets_list) {
         desktop_tray_widget_t *widget = (desktop_tray_widget_t*)widgetnode->value;
 
-        if (widget->state == TRAY_WIDGET_STATE_HIGHLIGHTED) {
-            gfx_drawRoundedRectangleGradient(widget->ctx, &GFX_RECT(0, 0, widget->width, widget->height), 10, GFX_GRADIENT_VERTICAL, GFX_RGBA(120, 120, 120, 150), GFX_RGBA(120, 120, 120, 30));
+        if (widget->state == TRAY_WIDGET_STATE_HIGHLIGHTED || widget->state == TRAY_WIDGET_STATE_ACTIVE) {
+            gfx_drawRectangleFilled(widget->ctx, &GFX_RECT(0, 5, 1, widget->height - 10), GFX_RGB(170, 170, 170));
+            gfx_drawRectangleFilled(widget->ctx, &GFX_RECT(widget->width - 1, 5, 1, widget->height - 10), GFX_RGB(170, 170, 170));
+        } else if (widget->state == TRAY_WIDGET_STATE_HELD) {
+            // gfx_drawRectangleFilledGradient(widget->ctx, &GFX_RECT(0, 0, GFX_WIDTH(highlighted->ctx), GFX_HEIGHT(highlighted->ctx)), GFX_GRADIENT_VERTICAL, GFX_RGBA(35, 35, 35, 0), GFX_RGBA(35, 35, 35, 200));
+            widget->data->icon(widget);
+            gfx_drawRectangleFilled(widget->ctx, &GFX_RECT(0, 5, 1, widget->height - 10), GFX_RGB(170, 170, 170));
+            gfx_drawRectangleFilled(widget->ctx, &GFX_RECT(widget->width - 1, 5, 1, widget->height - 10), GFX_RGB(170, 170, 170));
+            gfx_render(widget->ctx);
+            continue;
         }
 
         widget->data->icon(widget);
@@ -158,11 +167,43 @@ void widget_mouseMovement(unsigned x, unsigned y) {
  * @brief Handle mouse exit
  */
 void widget_mouseExit() {
-    if (highlighted) {
+    if (highlighted && highlighted->state != TRAY_WIDGET_STATE_ACTIVE) {
         highlighted->state = TRAY_WIDGET_STATE_IDLE;
         highlighted->data->icon(highlighted);
         gfx_render(highlighted->ctx);
         celestial_flip(taskbar_window);
         highlighted = NULL;
+    }
+}
+
+/**
+ * @brief Handle mouse click
+ */
+void widget_mouseClick(unsigned x, unsigned y) {
+    if (highlighted && highlighted->state != TRAY_WIDGET_STATE_ACTIVE) {
+        highlighted->state = TRAY_WIDGET_STATE_HELD;
+    }
+}   
+
+/**
+ * @brief Handle mouse release
+ */
+void widget_mouseRelease(unsigned x, unsigned y) {
+    if (highlighted != active && active) {
+        if (active->data->set) active->data->set(active, 0);
+        active->data->icon(active);
+        gfx_render(active->ctx);
+        celestial_flip(taskbar_window);
+        active = NULL;
+    }
+
+    if (highlighted && highlighted->state != TRAY_WIDGET_STATE_ACTIVE) {
+        highlighted->state = TRAY_WIDGET_STATE_ACTIVE;
+        if (highlighted->data->set) highlighted->data->set(highlighted, 1);
+        active = highlighted;
+    } else if (highlighted && highlighted->state == TRAY_WIDGET_STATE_ACTIVE) {
+        highlighted->state = TRAY_WIDGET_STATE_HIGHLIGHTED;
+        if (highlighted->data->set) highlighted->data->set(highlighted, 0);
+        active = NULL;
     }
 }

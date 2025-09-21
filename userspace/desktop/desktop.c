@@ -257,17 +257,24 @@ _fallback:
 void mouse_event_taskbar(window_t *win, uint32_t event_type, void *event) {
     if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_DOWN && win == taskbar_window) {
         celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)event;
-        if (down->x >= 0 && down->x < 150) {
+        if (down->x >= 0 && down->x < 150 && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
             menu_active ^= 1;
         
             // TODO: Menu system completion
             menu_show(menu_active);
+        } else {
+            if (down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
+                widget_mouseClick(down->x, down->y);
+            }
         }
     } else if (event_type == CELESTIAL_EVENT_MOUSE_MOTION && win == taskbar_window) {
         celestial_event_mouse_motion_t *motion = (celestial_event_mouse_motion_t*)event;
         widget_mouseMovement(motion->x, motion->y);
     } else if (event_type == CELESTIAL_EVENT_MOUSE_EXIT) {
         widget_mouseExit();
+    } else if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_UP) {
+        celestial_event_mouse_button_up_t *up = (celestial_event_mouse_button_up_t*)event;
+        widget_mouseRelease(up->x, up->y);
     }
 }
 
@@ -329,6 +336,7 @@ int main(int argc, char *argv[]) {
     celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_event_taskbar);
     celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_MOTION, mouse_event_taskbar);
     celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_EXIT, mouse_event_taskbar);
+    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_event_taskbar);
 
     // Get taskbar + make gradient
     gfx_context_t *taskbar_ctx = celestial_getGraphicsContext(taskbar_window);
@@ -381,23 +389,13 @@ int main(int argc, char *argv[]) {
     // Say hi!
     system("show-toast --text=\"Welcome to Ethereal!\nThank you for supporting development!\" --title=\"Welcome to Ethereal\"");
 
-    // Get graphics context
-    gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
-
-
     while (1) {
         struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};
-        int p = poll(fds, 1, bg_ctx->animations->length ? 1000 : 0);
-
-        gfx_tickAnimations(bg_ctx);
-
+        int p = poll(fds, 1, 1000);
         if (!p) continue;
 
         create_taskbar_gradient(taskbar_ctx, 0);
-
-        if (fds[0].revents & POLLIN) {
-            celestial_poll();
-        }
+        celestial_poll();
 
         widgets_update();
 

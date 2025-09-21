@@ -144,3 +144,12 @@ void celestial_handleEvent(void *event) {
     if (handler) handler(win, hdr->type, event);
     free(event);
 }
+
+/**
+ * @brief Lookup event handler (returns NULL if nonexistent)
+ * @param win The window
+ * @param event_type Event type
+ */
+celestial_event_handler_t celestial_lookupEventHandler(window_t *win, uint32_t event_type) {
+    return (celestial_event_handler_t)hashmap_get(win->event_handler_map, (void*)(uintptr_t)event_type);
+}

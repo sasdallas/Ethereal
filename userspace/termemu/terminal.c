@@ -481,7 +481,7 @@ static void terminal_process(keyboard_event_t *event) {
 /**
  * @brief Celestial keyboard event handler
  * @param win The window the event happened in
- * @param event_type The type of evbent
+ * @param event_type The type of event
  * @param event The event
  */
 void kbd_handler(window_t *win, uint32_t event_type, void *event) {
@@ -495,9 +495,23 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
 }
 
 /**
+ * @brief Celestial mouse enter/exit handler
+ * @param win The window the event happened in
+ * @param event_type The type of event
+ * @param event The event
+ */
+void mouse_cursor_set(window_t *win, uint32_t event_type, void *event) {
+    if (event_type == CELESTIAL_EVENT_MOUSE_ENTER) {
+        celestial_setMouseCursor(CELESTIAL_MOUSE_TEXT);
+    } else {
+        celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
+    }
+}
+
+/**
  * @brief Celestial mouse scroll event handler
  * @param win The window the event happened in
- * @param event_type The type of evbent
+ * @param event_type The type of event
  * @param event The event
  */
 void scroll_handler(window_t *win, uint32_t event_type, void *event) {
@@ -608,10 +622,12 @@ int main(int argc, char *argv[]) {
         // Initialize the graphics context for celestial
         wid_t wid = celestial_createWindow(0, 640, 476);
         win = celestial_getWindow(wid);
-        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT | CELESTIAL_EVENT_MOUSE_SCROLL);
+        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT | CELESTIAL_EVENT_MOUSE_SCROLL | CELESTIAL_EVENT_MOUSE_ENTER | CELESTIAL_EVENT_MOUSE_EXIT);
         celestial_setTitle(win, "Terminal");
         celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_SCROLL, scroll_handler);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_ENTER, mouse_cursor_set);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_EXIT, mouse_cursor_set);
         ctx = celestial_getGraphicsContext(win);
     }
 
