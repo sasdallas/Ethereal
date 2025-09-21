@@ -197,6 +197,7 @@ smp_info_t *minacpi_parseMADT() {
                 
                 // Sanity check for invalid ID (Acer Nitro 5 AN515)
                 if (lapic->apic_id == 0xFF) {
+                    start_pointer += entry->length;
                     continue;
                 }
 

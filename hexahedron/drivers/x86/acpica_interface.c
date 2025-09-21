@@ -205,6 +205,7 @@ smp_info_t *ACPICA_GetSMPInfo() {
                 
                 // Sanity check for invalid ID (Acer Nitro 5 AN515)
                 if (LocalApic->Id == 0xFF) {
+                    StartPointer += Subtable->Length;
                     continue;
                 }
 
