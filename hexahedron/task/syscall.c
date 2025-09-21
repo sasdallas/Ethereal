@@ -263,6 +263,7 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
     // Create the file descriptor and return
     fd_t *fd = fd_add(current_cpu->current_process, node);
     
+    LOG(DEBUG, "Finish! %d\n", fd->fd_number);
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
         fd->offset = node->length;
@@ -901,8 +902,15 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 }
 
 ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
-    LOG(ERR, "sys_readlink is unimplemented (%s)\n", path);
-    return -EINVAL;
+    SYSCALL_VALIDATE_PTR(path);
+    SYSCALL_VALIDATE_PTR_SIZE(buf, bufsiz);
+
+    fs_node_t *n = kopen_user(path, O_RDONLY | O_NOFOLLOW);
+    if (!n) return -ENOENT;
+
+    ssize_t r = fs_readlink(n, buf, bufsiz);
+    fs_close(n);
+    return r;
 }
 
 long sys_access(const char *path, int amode) {
@@ -977,8 +985,9 @@ pid_t sys_getpid() {
 
 long sys_mmap(sys_mmap_context_t *context) {
     SYSCALL_VALIDATE_PTR(context);
-    LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
-    return (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+    // LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
+    long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+    return r;
 }
 
 long sys_munmap(void *addr, size_t len) {
@@ -1239,6 +1248,7 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
 }
 
 long sys_umount(const char *mountpoint) {
+    LOG(WARN, "sys_umount unimplemented\n");
     return -ENOTSUP;
 }
 

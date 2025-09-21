@@ -60,7 +60,7 @@ typedef struct fs_node* (*finddir_t)(struct fs_node *, char *);
 typedef int (*create_t)(struct fs_node *, char *, mode_t, struct fs_node **);
 typedef int (*mkdir_t)(struct fs_node *, char *, mode_t);
 typedef int (*unlink_t)(struct fs_node *, char *);
-typedef int (*readlink_t)(struct fs_node *, char *, size_t);
+typedef ssize_t (*readlink_t)(struct fs_node *, char *, size_t);
 typedef int (*ioctl_t)(struct fs_node*, unsigned long, void *);
 typedef int (*symlink_t)(struct fs_node*, char *, char *);
 typedef int (*mmap_t)(struct fs_node*, void *, size_t, off_t);
@@ -303,6 +303,14 @@ int fs_wait(fs_node_t *node, int events);
  * @warning This does not check if the node has references, just use @c fs_close if you don't know what you're doing
  */
 void fs_destroy(fs_node_t *node);
+
+/**
+ * @brief Read the link of the symlink
+ * @param node The node to read the link of
+ * @param buf A buffer to hold the symlink path in
+ * @param size The size of the buffer
+ */
+ssize_t fs_readlink(fs_node_t *node, char *buf, size_t size);
 
 /**
  * @brief Create and return a filesystem object

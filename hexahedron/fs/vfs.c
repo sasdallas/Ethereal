@@ -165,7 +165,7 @@ fs_node_t *fs_finddir(fs_node_t *node, char *path) {
  * @param buf A buffer to hold the symlink path in
  * @param size The size of the buffer
  */
-int fs_readlink(fs_node_t *node, char *buf, size_t size) {
+ssize_t fs_readlink(fs_node_t *node, char *buf, size_t size) {
     if (!node) return -EINVAL;
 
     if (node->flags & VFS_SYMLINK && node->readlink) {
@@ -205,6 +205,7 @@ int fs_ioctl(fs_node_t *node, unsigned long request, char *argp) {
     if (node->ioctl) {
         return node->ioctl(node, request, argp);
     } else {
+        LOG(WARN, "ioctl not implemented for this node (%s, request %x)\n", node->name, request);
         return -ENOTSUP;
     }
 }
@@ -457,6 +458,7 @@ int fs_truncate(fs_node_t *node, size_t length) {
         return node->truncate(node, length);
     }
 
+    LOG(WARN, "truncate not implemented for this node\n");
     return -ENOTSUP;
 }
 
@@ -596,7 +598,7 @@ int vfs_mkdir(char *path, mode_t mode) {
  * @param name The name of the file to unlink
  * @returns Error code
  */
-int vfs_unlink(char *name) { return -ENOTSUP; }
+int vfs_unlink(char *name) { LOG(WARN, "vfs_unlink unimplemented\n"); return -ENOTSUP; }
 
 
 /**
@@ -1142,8 +1144,89 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
         fs_open(node, 0);
     }
 
+    if (node && node->flags & VFS_SYMLINK) {
+        // IMPORTANT: Max symlink depth
+        if (depth > 4) {
+            LOG(ERR, "Reached maximum symlink depth\n");
+            fs_close(node);
+            return NULL;
+        }
+
+
+        // This is a symlink, should we follow?
+        if (!(flags & O_NOFOLLOW)) {
+            char symlink_buf[512] = { 0 };
+
+            ssize_t r = fs_readlink(node, symlink_buf, 512);
+            if (r <= 0) {
+                LOG(WARN, "fs_readlink failed with error code %d\n", r);
+                fs_close(node);
+                return NULL;
+            }
+
+            symlink_buf[r] = 0;
+
+            fs_close(node);
+
+            fs_node_t *sym_node = NULL;
+            char *path_offset = NULL;
+
+            if (symlink_buf[0] != '/') {
+                if (symlink_buf[0] == '.') {
+                    // TODO
+                    LOG(ERR, "Relative symlinks are not supported (%s)\n", symlink_buf);
+                    return NULL;
+                }
+
+                sym_node = fs_finddir(current_node, symlink_buf);
+                if (!sym_node) {
+                    return NULL;
+                }
+
+                path_offset = strchr(symlink_buf, '/');
+                if (path_offset) path_offset++;
+            } else {
+                // Chunk up this path...
+                path_offset = (char*)symlink_buf;
+                sym_node = vfs_getMountpoint(symlink_buf, &path_offset);
+                if (!sym_node) {
+                    return NULL;
+                }
+            }
+
+            if (!path_offset || !(*path_offset)) {
+                return sym_node;
+            }
+
+             // Now we can enter a kopen_relative loop
+            char *pch;
+            char *save;
+            pch = strtok_r(path_offset, "/", &save);
+
+            while (pch) {
+                if (!sym_node) break;
+                sym_node = kopen_relative(sym_node, pch, flags, depth+1);
+
+                if (sym_node && sym_node->flags == VFS_FILE) {
+                    // TODO: What if the user has a REALLY weird filesystem?
+                    break;
+                }
+                
+                pch = strtok_r(NULL, "/", &save); 
+            }
+
+            if (sym_node == NULL) {
+                // Not found
+                return NULL;
+            }
+
+            fs_open(sym_node, 0);
+            return sym_node;
+        }
+    }
+
     // Close the previous node
-    // fs_close(current_node);
+    fs_close(current_node);
 
     return node;
 }
