@@ -19,7 +19,7 @@ REMOVE_MD:
 	-rm $(WIDGETS_DEST_DIR)/*.d
 
 install-%:
-	$(CC) -shared -fPIC -I$(DESTDIR)/usr/include/freetype2 -I$(DESTDIR)/usr/include/ $(wildcard $(subst $e-,/,$(patsubst install-%,%,$@))/*.c) -o $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst install-%,%,$@)).so -lgraphics -lfreetype
+	$(CC) -shared -fPIC -I$(DESTDIR)/usr/include/freetype2 -I$(DESTDIR)/usr/include/ $(wildcard $(subst $e-,/,$(patsubst install-%,%,$@))/*.c) -o $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst install-%,%,$@)).so -lwidget -lkeyboard -lcelestial -lstructures -lgraphics -lfreetype -lethereal
 
 clean-%:
 	rm $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst clean-%,%,$@)).so

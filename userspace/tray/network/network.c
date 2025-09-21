@@ -23,14 +23,14 @@ int network_init(desktop_tray_widget_t *widget) {
 
     icon_sprite = gfx_createSprite(0,0);
     gfx_loadSprite(icon_sprite, fopen("/usr/share/icons/24/Ethereal.bmp", "r"));
-    widget->width = icon_sprite->width;
+    widget->width = icon_sprite->width + 2;
     widget->height = icon_sprite->height;
 
     return 0;
 }
 
 int network_drawIcon(desktop_tray_widget_t *widget) {
-    gfx_renderSprite(widget->ctx, icon_sprite, 0, 0);
+    gfx_renderSprite(widget->ctx, icon_sprite, 1, 0);
     gfx_render(widget->ctx);
 
     return 0;
