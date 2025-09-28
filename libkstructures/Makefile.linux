@@ -1,0 +1,30 @@
+OUT_OBJ_LIBC = obj
+
+SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip
+OUTPUT_DIRECTORIES_LIBC = $(addprefix $(OUT_OBJ_LIBC)/,$(SOURCE_DIRECTORIES_LIBC))
+LIBC_C_SOURCES = $(shell find $(SOURCE_DIRECTORIES_LIBC) -maxdepth 1 -name "*.c")
+LIBC_C_OBJECTS = $(patsubst %.c, $(OUT_OBJ_LIBC)/%.o, $(LIBC_C_SOURCES))
+
+PREFIX ?= /usr/
+
+CFLAGS += -Iinclude/
+
+.PHONY: all
+all: mkdirs $(OBJ_OUTPUT_DIRECTORY)/libethereal_structures.a
+
+mkdirs:
+	-mkdir $(OUT_OBJ_LIBC)
+	-mkdir $(OUTPUT_DIRECTORIES_LIBC)
+
+$(OUT_OBJ_LIBC)/%.o: %.c Makefile
+	$(CC) $(CFLAGS) -D__LIBCSTRUCTURES -c $< -o $@
+
+
+$(OBJ_OUTPUT_DIRECTORY)/libethereal_structures.a:
+	$(CC) -shared $(LIBC_C_OBJECTS) -o $(OUT_OBJ_LIBC)/libethereal_structures.so
+	$(AR) rcs $(OUT_OBJ_LIBC)/libethereal_structures.a $(LIBC_C_OBJECTS)
+
+install:
+	cp -r include/structs $(DESTDIR)$(PREFIX)include/
+	cp $(OUT_OBJ_LIBC)/libethereal_structures.a $(DESTDIR)$(PREFIX)lib/
+	cp $(OUT_OBJ_LIBC)/libethereal_structures.so $(DESTDIR)$(PREFIX)lib/

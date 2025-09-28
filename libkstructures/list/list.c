@@ -17,7 +17,6 @@
 #include <stdbool.h>
 
 #include <structs/list.h>
-#include <kernel/mem/alloc.h>
 #include <string.h>
 
 /**

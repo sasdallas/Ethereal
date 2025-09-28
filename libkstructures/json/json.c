@@ -303,8 +303,6 @@ json_value * json_parse_ex (json_settings * settings,
       {
          json_char b = (state.ptr == end ? 0 : *state.ptr);
 
-         #include <kernel/debug.h>
-
          if (flags & flag_string)
          {
             if (!b)

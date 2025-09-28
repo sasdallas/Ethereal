@@ -15,8 +15,7 @@
  */
 
 #include <structs/tree.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/panic.h>
+#include <stdlib.h>
 
 /**
  * @brief Create a new tree
@@ -25,7 +24,7 @@
  */
 tree_t *tree_create(char *name) {
     // TODO: strdup the name? that is probably a very good idea
-    tree_t *tree = kmalloc(sizeof(tree_t));
+    tree_t *tree = malloc(sizeof(tree_t));
     tree->name = name;
     tree->nodes = 0;
     tree->root = NULL; // Setting root nodes is accomplished elsewhere
@@ -36,7 +35,7 @@ tree_t *tree_create(char *name) {
  * @brief Create a new node (static)
  */
 static tree_node_t *tree_create_node(void *value) {
-    tree_node_t *node = kmalloc(sizeof(tree_node_t));
+    tree_node_t *node = malloc(sizeof(tree_node_t));
     node->value = value;
     node->children = list_create("tree node children");
     node->parent = NULL;
@@ -105,7 +104,7 @@ static void tree_node_free(tree_node_t *node) {
     foreach(child, node->children) {
         tree_node_free((tree_node_t*)child->value);
     }
-    kfree(node);
+    free(node);
 }
 
 /**
@@ -165,8 +164,8 @@ void tree_remove_reparent(tree_t *tree, tree_node_t *parent, tree_node_t *node) 
     }
     
     // We can't call list_destroy as it would free the nodes
-    kfree(node->children);
-    kfree(node);
+    free(node->children);
+    free(node);
 }
 
 /**
