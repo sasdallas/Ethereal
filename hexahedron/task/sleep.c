@@ -67,7 +67,6 @@ void sleep_callback(uint64_t ticks) {
         return;
     }
 
-
     node_t *node = sleep_queue->head;
     while (node) {
         thread_sleep_t *sleep = (thread_sleep_t*)node->value;

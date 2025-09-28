@@ -269,7 +269,13 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             }
 
             ansi->move_cursor(ANSI_CLAMPX(cx - i), cy);
-        } else {
+        } else if (ch == CUP) {
+            if (argc < 2) {
+                ansi->move_cursor(0,0);
+            } else {
+                ansi->move_cursor(ANSI_CLAMPX((size_t)strtol(argv[1], NULL, 10))-1, ANSI_CLAMPY((size_t)strtol(argv[0], NULL, 10))-1);
+            }
+        }else {
             fprintf(stderr, "ANSI: Unrecognized function '%c'\n", ch);
         }
         
