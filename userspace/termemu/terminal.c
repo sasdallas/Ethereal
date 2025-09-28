@@ -67,6 +67,11 @@ keyboard_t *kbd = NULL;
 /* Window if we launched in graphical mode */
 window_t *win = NULL;
 
+/* Drag X/Y */
+uint16_t drag_start_x, drag_start_y = 0;
+uint16_t drag_last_x, drag_last_y = 0;
+int is_dragging = 0;
+
 /* Cell macro */
 #define CELL(x, y) (&(cell_array[(y)][(x)]))
 #define CURSOR CELL(cursor_x, cursor_y)
@@ -350,8 +355,10 @@ _update_cursor:
         cursor_x = 0;
     }
 
-    HIGHLIGHT(CURSOR);
-    draw_cell(cursor_x, cursor_y);
+    if (cursor_x < terminal_width && cursor_y < terminal_height) {
+        HIGHLIGHT(CURSOR);
+        draw_cell(cursor_x, cursor_y);
+    }
 }
 
 /**
@@ -524,6 +531,88 @@ void scroll_handler(window_t *win, uint32_t event_type, void *event) {
     }
 }
 
+void mark_drag(uint16_t end_x, uint16_t end_y, int highlight) {
+    int direction = 0; // 0 = backwards, 1 = forwards
+
+    if (end_y > drag_start_y || end_y < drag_start_y) {
+        // One Y is different
+        if (end_y > drag_start_y) direction = 1;
+        else direction = 0;
+    } else {
+        // Both Ys are equal
+        direction = (end_x > drag_start_x) ? 1 : 0;
+    }
+
+    uint16_t cx = drag_start_x;
+    uint16_t cy = drag_start_y;
+    while (cx != end_x || cy != end_y) {
+        if (highlight) {
+            HIGHLIGHT(CELL(cx, cy));
+        } else {
+            UNHIGHLIGHT(CELL(cx, cy));
+        }
+        draw_cell(cx, cy);
+
+        if (direction) {
+            cx++;
+            if (cx >= terminal_width) {
+                cx = 0;
+                cy++;
+            }
+        } else {
+            cx--;
+            if (cx == 0) {
+                cx = terminal_width;
+                cy--;
+            }
+        }
+
+    }
+}
+
+/**
+ * @brief Celestial mouse drag event handler
+ * @param win The window the event happened in
+ * @param event_type The type of event
+ * @param event The event
+ */
+void mouse_drag_handler(window_t *win, uint32_t event_type, void *event) {
+    if (is_dragging == 2) {
+        is_dragging = 0;
+        mark_drag(drag_last_x, drag_last_y, 0);
+        HIGHLIGHT(CURSOR);
+        draw_cell(cursor_x, cursor_y);
+        FLUSH();
+    }
+
+    if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_DOWN) {
+        celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t *)event;
+
+        drag_start_x = down->x / CELL_WIDTH;
+        drag_start_y = down->y / CELL_HEIGHT;
+        drag_last_x = drag_start_x;
+        drag_last_y = drag_start_y;
+        return;;
+    } else if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_UP) {
+        is_dragging = 2; // limbo state, next event will kill it
+        return;
+    }
+    
+    celestial_event_mouse_drag_t *drag = (celestial_event_mouse_drag_t*)event;
+    if (!is_dragging) {
+        is_dragging = 1;
+    }
+
+    uint16_t drag_x = drag->x / CELL_WIDTH;
+    uint16_t drag_y = drag->y / CELL_HEIGHT;
+    mark_drag(drag_last_x, drag_last_y, 0);
+    mark_drag(drag_x, drag_y, 1);
+    drag_last_x = drag_x;
+    drag_last_y = drag_y;
+
+    FLUSH();
+}
+
 /**
  * @brief Clear screen method
  */
@@ -570,7 +659,6 @@ void terminal_setCell(int16_t x, int16_t y, char ch) {
     // Change the character
     CELL(x, y)->ch = ch;
     draw_cell(x, y);
-    FLUSH();
 }
 
 /**
@@ -628,6 +716,10 @@ int main(int argc, char *argv[]) {
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_SCROLL, scroll_handler);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_ENTER, mouse_cursor_set);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_EXIT, mouse_cursor_set);
+        celestial_setHandler(win, CELESTIAL_EVENT_UNFOCUSED, mouse_cursor_set);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_DRAG, mouse_drag_handler);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_drag_handler);
+        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_drag_handler);
         ctx = celestial_getGraphicsContext(win);
     }
 
