@@ -282,4 +282,23 @@ uint32_t ext2_allocateInode(ext2_t *ext2);
  */
 uint32_t ext2_allocateBlock(ext2_t *ext2);
 
+/**
+ * @brief Write a block to an inode
+ * @param ext2 EXT2 filesystem
+ * @param inode The inode to convert the block on
+ * @param block The block number to write
+ * @param buffer Buffer location
+ * @returns Error code
+ */
+int ext2_writeInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t block, uint8_t *buffer);
+
+/**
+ * @brief Set a new inode block
+ * @param ext2 Filesystem
+ * @param inode The inode
+ * @param iblock The block in the inode to set
+ * @param block_num Disk block to set to
+ */
+int ext2_setInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t iblock, uint32_t block_num);
+
 #endif

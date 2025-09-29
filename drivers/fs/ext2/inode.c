@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <string.h>
 #include <kernel/panic.h>
+#include <assert.h>
 
 /**
  * @brief Read the inode metadata from an EXT2 filesystem
@@ -110,8 +111,6 @@ uint32_t ext2_convertInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t bloc
     block -= EXT2_DIRECT_BLOCKS;
     if (block < pointers_per_block) {
         // Single indirect block can be used
-        LOG(DEBUG, "Computing singly indirect address of block: %d\n", block);
-
         // Read the singly indirect block
         uint8_t *singly_indirect;
 
@@ -127,13 +126,145 @@ uint32_t ext2_convertInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t bloc
         return blk;
     } else if (block < pointers_per_block + pointers_per_block * pointers_per_block) {
         // Doubly indirect
-        LOG(ERR, "Doubly indirect is not implemented\n");
-        kernel_panic(KERNEL_DEBUG_TRAP, "ext2");
+
+        // Read the doubly indirect block
+        uint8_t *doubly_indirect;
+        int r = ext2_readBlock(ext2, inode->doubly_indirect_block, &doubly_indirect);
+        if (r) {
+            LOG(ERR, "Error reading doubly indirect block %d\n", inode->doubly_indirect_block);
+            return 0x0;
+        }
+
+        // Determine the index in the doubly indirect block
+        uint32_t doubly_index = block / pointers_per_block;
+        uint32_t singly_index = block % pointers_per_block;
+
+        if (!((uint32_t *)doubly_indirect)[doubly_index]) {
+            // Allocate a singly indirect block
+            uint32_t blk = ext2_allocateBlock(ext2);
+            ((uint32_t *)doubly_indirect)[doubly_index] = blk;
+
+            // Write back the updated doubly indirect block
+            ext2_writeBlock(ext2, inode->doubly_indirect_block, doubly_indirect);
+        }
+
+        // Read the singly indirect block
+        uint8_t *singly_indirect;
+        r = ext2_readBlock(ext2, ((uint32_t *)doubly_indirect)[doubly_index], &singly_indirect);
+        if (r) {
+            LOG(ERR, "Error reading singly indirect block %d\n", ((uint32_t *)doubly_indirect)[doubly_index]);
+            kfree(doubly_indirect);
+            return 0x0;
+        }
+
+        // Get the block number from the singly indirect block
+        uint32_t blk = ((uint32_t *)singly_indirect)[singly_index];
+
+        kfree(singly_indirect);
+        kfree(doubly_indirect);
+        return blk;
     }
 
     // ???
     LOG(ERR, "Block error: 0x%x\n", block);
     return 0x0;
+}
+
+/**
+ * @brief Set a new inode block
+ * @param ext2 Filesystem
+ * @param inode The inode
+ * @param iblock The block in the inode to set
+ * @param block_num Disk block to set to
+ */
+int ext2_setInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t iblock, uint32_t block_num) {
+    if (iblock < EXT2_DIRECT_BLOCKS) {
+        inode->block_ptr[iblock] = block_num;
+        return 0;
+    }
+
+
+    size_t pointers_per_block = ext2->block_size / sizeof(uint32_t);
+
+    // Otherwise, indirect blocks must be used. singly_indirect_block points to a block filled with addresses of inode blocks
+    iblock -= EXT2_DIRECT_BLOCKS;
+    if (iblock < pointers_per_block) {
+        // Single indirect block can be used
+
+        if (!inode->singly_indirect_block) {
+            // Allocate a singly indirect block for the inode (and pray they flush it)
+            uint32_t blk = ext2_allocateBlock(ext2);
+            inode->singly_indirect_block = blk;
+        }
+
+        // Read the singly indirect block
+        uint8_t *singly_indirect;
+
+        int r = ext2_readBlock(ext2, inode->singly_indirect_block, &singly_indirect);
+        if (r) {
+            // What do we do..?
+            LOG(ERR, "Error reading singly indirect block %d\n", inode->singly_indirect_block);
+            return 0x0;
+        }
+
+        ((uint32_t*)singly_indirect)[iblock] = block_num;
+        
+        ext2_writeBlock(ext2, inode->singly_indirect_block, singly_indirect);
+        kfree(singly_indirect);
+        return 0;
+    } else if (iblock < pointers_per_block + pointers_per_block * pointers_per_block) {
+        // Doubly indirect
+
+        if (!inode->doubly_indirect_block) {
+            // Allocate a doubly indirect block for the inode
+            uint32_t blk = ext2_allocateBlock(ext2);
+            inode->doubly_indirect_block = blk;
+        }
+
+        // Read the doubly indirect block
+        uint8_t *doubly_indirect;
+        int r = ext2_readBlock(ext2, inode->doubly_indirect_block, &doubly_indirect);
+        if (r) {
+            LOG(ERR, "Error reading doubly indirect block %d\n", inode->doubly_indirect_block);
+            return -EIO;
+        }
+
+        // Determine the index in the doubly indirect block
+        uint32_t doubly_index = iblock / pointers_per_block;
+        uint32_t singly_index = iblock % pointers_per_block;
+
+        if (!((uint32_t *)doubly_indirect)[doubly_index]) {
+            // Allocate a singly indirect block
+            uint32_t blk = ext2_allocateBlock(ext2);
+            ((uint32_t *)doubly_indirect)[doubly_index] = blk;
+
+            // Write back the updated doubly indirect block
+            ext2_writeBlock(ext2, inode->doubly_indirect_block, doubly_indirect);
+        }
+
+        // Read the singly indirect block
+        uint8_t *singly_indirect;
+        r = ext2_readBlock(ext2, ((uint32_t *)doubly_indirect)[doubly_index], &singly_indirect);
+        if (r) {
+            kfree(doubly_indirect);
+            LOG(ERR, "Error reading singly indirect block %d\n", ((uint32_t *)doubly_indirect)[doubly_index]);
+            return -EIO;
+        }
+
+        // Set the block number in the singly indirect block
+        ((uint32_t *)singly_indirect)[singly_index] = block_num;
+
+        // Write back the updated singly indirect block
+        ext2_writeBlock(ext2, ((uint32_t *)doubly_indirect)[doubly_index], singly_indirect);
+
+        kfree(singly_indirect);
+        kfree(doubly_indirect);
+        return 0;
+    }
+
+    // ???
+    LOG(ERR, "Block error: 0x%x\n", iblock);
+    return -EIO;
 }
 
 /**
@@ -148,6 +279,21 @@ int ext2_readInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t block, uint8
     uint32_t blk = ext2_convertInodeBlock(ext2, inode, block);
     return ext2_readBlock(ext2, blk, buffer);
 }
+
+
+/**
+ * @brief Write a block to an inode
+ * @param ext2 EXT2 filesystem
+ * @param inode The inode to convert the block on
+ * @param block The block number to write
+ * @param buffer Buffer location
+ * @returns Error code
+ */
+int ext2_writeInodeBlock(ext2_t *ext2, ext2_inode_t *inode, uint32_t block, uint8_t *buffer) {
+    uint32_t blk = ext2_convertInodeBlock(ext2, inode, block);
+    return ext2_writeBlock(ext2, blk, buffer);
+}
+
 
 /**
  * @brief Allocate an inode in EXT2
@@ -200,28 +346,4 @@ uint32_t ext2_allocateInode(ext2_t *ext2) {
     kfree(iblock);
 
     return inode;
-}
-
-/**
- * @brief Create a new directory entry
- * @param ext2 EXT2 filesystem
- * @param dir_inode The directory inode
- * @param inode The inode for the new entry
- * @param name The name of the new entry
- */
-int ext2_createDirectoryEntry(ext2_t *ext2, uint32_t dir_inode, uint32_t inode, char *name) {
-    ext2_inode_t *dir;
-    ext2_readInode(ext2, dir_inode, (uint8_t**)&dir);
-
-    // Create a directory entry
-    ext2_dirent_t dent = {
-        .entry_size = sizeof(ext2_dirent_t) + strlen(name),
-        .name_length = strlen(name),
-        .inode = inode,
-        .type_indicator = 0, // TODO
-    };
-
-    dent.entry_size += (dent.entry_size % 4) ? (4 - (dent.entry_size % 4)) : 0;
-
-    return 0;
 }
