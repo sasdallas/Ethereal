@@ -134,6 +134,7 @@ typedef struct pci_device {
     uint32_t            msix_offset;        // MSI-X offset in configuration space (or 0xFF if not found)
 
     int                 valid;              // !!!: Valid device hack
+    uint32_t msix_index;                    // MSIX index
 } pci_device_t;
 
 /**

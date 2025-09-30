@@ -76,4 +76,9 @@
 #define ALIGN_DOWN(val, align) (((val) & ~((align)-1)))
 #define IS_ALIGNED(val, align) (((val) & ((align)-1))==0)
 
+/* Critical */
+#define __NON_INTERRUPTABLE_BEGIN() { int __state = hal_getInterruptState(); hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+#define __NON_INTERRUPTABLE_END() hal_setInterruptState(__state); }
+
+
 #endif

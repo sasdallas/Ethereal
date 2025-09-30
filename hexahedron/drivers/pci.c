@@ -409,11 +409,13 @@ static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t m
     // TODO: FIND A WAY TO CLEAN THIS UP (?)
     uintptr_t r = mem_mapMMIO(bar->address, bar->size);
 
-    pci_msix_entry_t *entry = (pci_msix_entry_t*)&(((pci_msix_entry_t*)(r + offset))[0]);
+    pci_msix_entry_t *entry = (pci_msix_entry_t*)&(((pci_msix_entry_t*)(r + offset))[PCI_DEVICE(bus, slot, func)->msix_index]);
     entry->msg_addr_low = addr & 0xFFFFFFFF;
     entry->msg_addr_high = addr >> 32;
     entry->msg_data = (interrupt & 0xFF);
     entry->vector_ctrl = entry->vector_ctrl & ~1u;
+    
+    PCI_DEVICE(bus, slot, func)->msix_index++;
 
     // Disable MSI + pin
     pci_disableMSI(bus, slot, func);
