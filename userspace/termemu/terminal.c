@@ -297,11 +297,20 @@ void terminal_scrollUp(int up) {
     }
 }
 
+void mark_drag(uint16_t end_x, uint16_t end_y, int highlight);
+
 /**
  * @brief Write character to the terminal
  * @param ch The character to write to the terminal
  */
 static void terminal_write(char ch) {
+    if (is_dragging) {
+        is_dragging = 0;
+        mark_drag(drag_last_x, drag_last_y, 0);
+        HIGHLIGHT(CURSOR);
+        draw_cell(cursor_x, cursor_y);
+    }
+
     terminal_scroll(-1, 0);
     UNHIGHLIGHT(CURSOR);
 
@@ -531,6 +540,9 @@ void scroll_handler(window_t *win, uint32_t event_type, void *event) {
     }
 }
 
+/**
+ * @brief Mark drag
+ */
 void mark_drag(uint16_t end_x, uint16_t end_y, int highlight) {
     int direction = 0; // 0 = backwards, 1 = forwards
 
@@ -554,16 +566,18 @@ void mark_drag(uint16_t end_x, uint16_t end_y, int highlight) {
         draw_cell(cx, cy);
 
         if (direction) {
-            cx++;
             if (cx >= terminal_width) {
                 cx = 0;
                 cy++;
+            } else {
+                cx++;
             }
         } else {
-            cx--;
             if (cx == 0) {
                 cx = terminal_width;
                 cy--;
+            } else {
+                cx--;
             }
         }
 
