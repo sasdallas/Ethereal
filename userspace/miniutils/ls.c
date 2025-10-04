@@ -99,7 +99,8 @@ void print_entry(char *ent) {
             putchar('-');
         }
 
-        // First, do the permissions printing        PRINT_MODE(S_IRUSR, 'r');
+        // First, do the permissions printing        
+        PRINT_MODE(S_IRUSR, 'r');
         PRINT_MODE(S_IWUSR, 'w');
         PRINT_MODE(S_IXUSR, 'x');
         PRINT_MODE(S_IRGRP, 'r');
