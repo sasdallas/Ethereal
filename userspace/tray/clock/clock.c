@@ -112,7 +112,7 @@ static void cal_init(struct tm *tm) {
 
             char d[3] = { 0 };
             if (!out_of_month) {
-                snprintf(d, 3, "%2d", day);
+                snprintf(d, 3, "%2d", day-start+1);
             } else {
                 d[0] = ' ';
                 d[1] = ' ';
@@ -121,8 +121,7 @@ static void cal_init(struct tm *tm) {
 
             gfx_getStringSize(font, d, &s);
 
-            if (tm->tm_mday == day) {
-
+            if (tm->tm_mday == day-start+1) {
                 gfx_drawRoundedRectangle(ctx, &GFX_RECT(x + (cell_size - s.width) / 2 - 1, (55 + 25) + cell_size*i - 1, s.width + 2, s.height + 2), 4, GFX_RGB(93, 163, 236));
                 gfx_drawRoundedRectangle(ctx, &GFX_RECT(x + (cell_size - s.width) / 2, (55 + 25) + cell_size*i, s.width, s.height), 4, GFX_RGB(0xd2, 0xe6, 0xff));
             }
