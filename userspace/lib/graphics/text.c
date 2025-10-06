@@ -148,10 +148,98 @@ int gfx_renderCharacter(gfx_context_t *ctx, gfx_font_t *font, char ch, int _x, i
 }
 
 /**
+ * @brief Render text with a "shadow"
+ * @param ctx The context to render with
+ * @param font The font to render
+ * @param str The UTF-8 encoded string to render
+ * @param x The X coordinate to render the str at
+ * @param y The Y coordinate to render the str at
+ * @param color The color to render with
+ * @param intensity Shadow intensity
+ */
+int gfx_renderStringShadow(gfx_context_t *ctx, gfx_font_t *font, char *str, int _x, int _y, gfx_color_t color, int intensity) {
+    int cur_x = _x;
+    int cur_y = _y;
+
+    gfx_color_t shadow_color = GFX_RGBA(0, 0, 0, GFX_RGB_A(color) / 2); // Shadow color with half the alpha of text color
+    int shadow_offset_x = intensity; // Shadow offset in X direction
+    int shadow_offset_y = intensity; // Shadow offset in Y direction
+
+    while (*str) {
+        // Decode the next UTF-8 codepoint
+        uint32_t codepoint;
+        if ((*str & 0x80) == 0) {
+            codepoint = *str++;
+        } else if ((*str & 0xE0) == 0xC0) {
+            codepoint = (*str++ & 0x1F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF0) == 0xE0) {
+            codepoint = (*str++ & 0x0F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF8) == 0xF0) {
+            codepoint = (*str++ & 0x07) << 18;
+            codepoint |= (*str++ & 0x3F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else {
+            // Invalid UTF-8 sequence, skip
+            str++;
+            continue;
+        }
+
+        // Load the glyph for the codepoint
+        FT_UInt idx = FT_Get_Char_Index(font->face, codepoint);
+
+        if (FT_Load_Glyph(font->face, idx, FT_LOAD_DEFAULT)) return 1;
+        if (FT_Render_Glyph(font->face->glyph, FT_RENDER_MODE_NORMAL)) return 1;
+
+        FT_GlyphSlot slot = font->face->glyph;
+
+        // Render shadow
+        int shadow_x = cur_x + slot->bitmap_left + shadow_offset_x;
+        int shadow_y = cur_y - slot->bitmap_top + shadow_offset_y;
+        for (int y = shadow_y; y < shadow_y + slot->bitmap.rows; y++) {
+            if (y < 0 || y >= (int)ctx->height) continue;
+            for (int x = shadow_x; x < shadow_x + slot->bitmap.width; x++) {
+                if (x < 0 || x >= (int)ctx->width) continue;
+
+                if (ctx->flags & CTX_NO_BACKBUFFER) {
+                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.width + (x-shadow_x)]);
+                } else {
+                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.width + (x-shadow_x)]);
+                }
+            }
+        }
+
+        // Render main text
+        int render_x = cur_x + slot->bitmap_left;
+        int render_y = cur_y - slot->bitmap_top;
+        for (int y = render_y; y < render_y + slot->bitmap.rows; y++) {
+            if (y < 0 || y >= (int)ctx->height) continue;
+            for (int x = render_x; x < render_x + slot->bitmap.width; x++) {
+                if (x < 0 || x >= (int)ctx->width) continue;
+
+                if (ctx->flags & CTX_NO_BACKBUFFER) {
+                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                } else {
+                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                }
+            }
+        }
+
+        cur_x += slot->advance.x >> 6;
+        cur_y += slot->advance.y >> 6;
+    }
+
+    return 0;
+}
+
+/**
  * @brief Render a string of text at specific coordinates
  * @param ctx The context to render with
  * @param font The font to render
- * @param str The string to render
+ * @param str The UTF-8 encoded string to render
  * @param x The X coordinate to render the str at
  * @param y The Y coordinate to render the str at
  * @param color The color to render with
@@ -160,19 +248,45 @@ int gfx_renderString(gfx_context_t *ctx, gfx_font_t *font, char *str, int _x, in
     int cur_x = _x;
     int cur_y = _y;
 
-    for (size_t i = 0; i < strlen(str); i++) {
-        // Load the glyph
-        FT_UInt idx = FT_Get_Char_Index(font->face, str[i]);
+    while (*str) {
+        // Decode the next UTF-8 codepoint
+        uint32_t codepoint;
+        if ((*str & 0x80) == 0) {
+            codepoint = *str++;
+        } else if ((*str & 0xE0) == 0xC0) {
+            codepoint = (*str++ & 0x1F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF0) == 0xE0) {
+            codepoint = (*str++ & 0x0F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF8) == 0xF0) {
+            codepoint = (*str++ & 0x07) << 18;
+            codepoint |= (*str++ & 0x3F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else {
+            // Invalid UTF-8 sequence, skip
+            str++;
+            continue;
+        }
+
+        // Load the glyph for the codepoint
+        FT_UInt idx = FT_Get_Char_Index(font->face, codepoint);
 
         if (FT_Load_Glyph(font->face, idx, FT_LOAD_DEFAULT)) return 1;
         if (FT_Render_Glyph(font->face->glyph, FT_RENDER_MODE_NORMAL)) return 1;
 
         FT_GlyphSlot slot = font->face->glyph;
 
+        // Render main text
         int render_x = cur_x + slot->bitmap_left;
         int render_y = cur_y - slot->bitmap_top;
         for (int y = render_y; y < render_y + slot->bitmap.rows; y++) {
+            if (y < 0 || y >= (int)ctx->height) continue;
             for (int x = render_x; x < render_x + slot->bitmap.width; x++) {
+                if (x < 0 || x >= (int)ctx->width) continue;
+
                 if (ctx->flags & CTX_NO_BACKBUFFER) {
                     GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
                 } else {
@@ -213,17 +327,41 @@ int gfx_getAdvanceX(gfx_context_t *ctx, gfx_font_t *font, char ch) {
  */
 int gfx_getStringSize(gfx_font_t *font, char *string, gfx_string_size_t *s) {
     size_t width = 0;
+    char *str = string;
+    while (*str) {
+        // Decode the next UTF-8 codepoint
+        uint32_t codepoint;
+        if ((*str & 0x80) == 0) {
+            codepoint = *str++;
+        } else if ((*str & 0xE0) == 0xC0) {
+            codepoint = (*str++ & 0x1F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF0) == 0xE0) {
+            codepoint = (*str++ & 0x0F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else if ((*str & 0xF8) == 0xF0) {
+            codepoint = (*str++ & 0x07) << 18;
+            codepoint |= (*str++ & 0x3F) << 12;
+            codepoint |= (*str++ & 0x3F) << 6;
+            codepoint |= (*str++ & 0x3F);
+        } else {
+            // Invalid UTF-8 sequence, skip
+            str++;
+            continue;
+        }
 
-
-    char *p = string;
-    while (*p++) {
-        FT_UInt glyph_index = FT_Get_Char_Index(font->face, *p);
+        FT_UInt glyph_index = FT_Get_Char_Index(font->face, codepoint);
 
         if (FT_Load_Glyph(font->face, glyph_index, FT_LOAD_NO_BITMAP)) {
             continue; // Error
         }
 
-        width += font->face->glyph->advance.x >> 6;
+        if (*(str + 1)) {
+            width += font->face->glyph->advance.x >> 6;
+        } else {
+            width += font->face->glyph->metrics.width >> 6;
+        }
     }
 
     s->width = width;

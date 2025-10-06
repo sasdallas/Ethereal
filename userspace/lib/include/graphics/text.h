@@ -95,6 +95,19 @@ int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, char ch, int 
  */
 int gfx_renderString(struct gfx_context *ctx, gfx_font_t *font, char *str, int x, int y, gfx_color_t color);
 
+
+/**
+ * @brief Render text with a "shadow"
+ * @param ctx The context to render with
+ * @param font The font to render
+ * @param str The UTF-8 encoded string to render
+ * @param x The X coordinate to render the str at
+ * @param y The Y coordinate to render the str at
+ * @param color The color to render with
+ * @param intensity Shadow intensity
+ */
+int gfx_renderStringShadow(struct gfx_context *ctx, gfx_font_t *font, char *str, int _x, int _y, gfx_color_t color, int intensity);
+
 /**
  * @brief Get X advance of a specific glyph
  * @param ctx The context to use
