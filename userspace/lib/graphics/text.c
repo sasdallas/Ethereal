@@ -357,11 +357,7 @@ int gfx_getStringSize(gfx_font_t *font, char *string, gfx_string_size_t *s) {
             continue; // Error
         }
 
-        if (*(str + 1)) {
             width += font->face->glyph->advance.x >> 6;
-        } else {
-            width += font->face->glyph->metrics.width >> 6;
-        }
     }
 
     s->width = width;
