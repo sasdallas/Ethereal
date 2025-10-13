@@ -33,6 +33,10 @@
 #define PRIORITY_MED            2
 #define PRIORITY_LOW            1
 
+#define SCHEDULER_STATE_INACTIVE    0
+#define SCHEDULER_STATE_IDLE        1
+#define SCHEDULER_STATE_ACTIVE      2
+
 /**** VARIABLES ****/
 
 /**
@@ -40,12 +44,25 @@
  */
 extern time_t scheduler_timeslices[];
 
+/**** TYPES ****/
+
+typedef struct scheduler_cpu {
+    uint8_t state;              // Scheduler state
+    list_t *queue;              // Queue data
+    spinlock_t *lock;           // Lock
+} scheduler_cpu_t;
+
 /**** FUNCTIONS ****/
 
 /**
  * @brief Initialize the scheduler
  */
 void scheduler_init();
+
+/**
+ * @brief Initilaize the scheduler for a CPU
+ */
+void scheduler_initCPU();
 
 /**
  * @brief Queue in a new thread

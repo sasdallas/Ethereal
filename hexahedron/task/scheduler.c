@@ -20,80 +20,41 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
+#include <assert.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SCHED", __VA_ARGS__)
 
-/* Scheduler timeslices */
-time_t scheduler_timeslices[] = {
-    [PRIORITY_HIGH] = 5,
-    [PRIORITY_MED] = 4,
-    [PRIORITY_LOW] = 3,
-};
-
-/* Thread queue */
-list_t *thread_queue = NULL;
-
-/* Scheduler lock */
-spinlock_t scheduler_lock = { 0 };
-
-/* Scheduler KernelFS node */
-kernelfs_entry_t *sched_ent = NULL;
-
-/* External helping variables */
-extern volatile uint64_t task_switches;
-extern list_t *process_list;
-extern list_t *sleep_queue;
-extern list_t *reap_queue;
+/* Next CPU */
+int scheduler_next_cpu_to_load_balance = 0;
+bool scheduler_load_balancing_enabled = false;
 
 /**
  * @brief Scheduler tick method, called every update
+ * @returns 1 to preempt
  */
 int scheduler_update(uint64_t ticks) {
-    // Update the current process' time
-    
-#ifdef SCHED_FOLLOW_PRIORITIES
-    if (!current_cpu->current_thread) {
-        return 0; // Before a process was initialized
-    }
-
-    current_cpu->current_thread->total_ticks = clock_getTickCount();
-
-    current_cpu->current_thread->preempt_ticks--;
-    if (current_cpu->current_thread->preempt_ticks <= 0) {
-        // Get out of here, you're out of your timeslice
-        scheduler_reschedule();
-        return 1;
-    }
-
-    return 0;
-#else
-    scheduler_reschedule();
     return 1;
-#endif
-}
-
-/**
- * @brief Get scheduler data
- */
-int scheduler_kernelfsRead(kernelfs_entry_t *entry, void *data) {
-    kernelfs_writeData(entry, 
-                "TotalSystemProcesses:%d\n"
-                "ProcessesWaitingForDestruction:%d\n"
-                "QueuedThreads:%d\n"
-                "SleepingThreads:%d\n"
-                "TaskSwitches:%lld\n", process_list->length, reap_queue->length, thread_queue->length, sleep_queue->length, task_switches);
-
-    return 0;
 }
 
 /**
  * @brief Initialize the scheduler
  */
 void scheduler_init() {
-    thread_queue = list_create("thread queue");
-    sched_ent = kernelfs_createEntry(NULL, "scheduler", scheduler_kernelfsRead, NULL);
-    LOG(INFO, "Scheduler initialized\n");
+    if (processor_count > 1) {
+        scheduler_load_balancing_enabled = true;
+    }
+
+    scheduler_initCPU();
+}
+
+/**
+ * @brief Initilaize the scheduler for a CPU
+ */
+void scheduler_initCPU() {
+    current_cpu->sched.queue = list_create("scheduler deque");
+    current_cpu->sched.lock = spinlock_create("scheduler lock");
+    current_cpu->sched.state = SCHEDULER_STATE_ACTIVE;
 }
 
 
@@ -103,18 +64,11 @@ void scheduler_init() {
  * @returns 0 on success
  */
 int scheduler_insertThread(thread_t *thread) {
-    if (!thread || !thread_queue) return -1;
+    assert(current_cpu->sched.state == SCHEDULER_STATE_ACTIVE);
+    spinlock_acquire(current_cpu->sched.lock);
+    list_append(current_cpu->sched.queue, thread);
+    spinlock_release(current_cpu->sched.lock);
 
-    spinlock_acquire(&scheduler_lock);
-    if (thread->sched_node) {
-        list_append_node(thread_queue, thread->sched_node);
-    } else {
-        list_append(thread_queue, (void*)thread);
-        thread->sched_node = list_find(thread_queue, (void*)thread);
-    }
-    spinlock_release(&scheduler_lock);
-
-    // LOG(INFO, "Inserted thread %p for process '%s' (priority: %d)\n", thread, thread->parent->name, thread->parent->priority);
     return 0;
 }
 
@@ -124,23 +78,7 @@ int scheduler_insertThread(thread_t *thread) {
  * @returns 0 on success
  */
 int scheduler_removeThread(thread_t *thread) {
-    if (!thread) return -1;
-
-    spinlock_acquire(&scheduler_lock);
-    node_t *thread_node = thread->sched_node;
-
-    if (!thread_node) {
-        LOG(WARN, "Could not delete thread %p (process '%s') because it was not found in the queue\n", thread, thread->parent->name);
-        spinlock_release(&scheduler_lock);
-        return -1;
-    }
-
-    list_delete(thread_queue, thread_node);
-    kfree(thread_node); // Node structure is useless
-    spinlock_release(&scheduler_lock);
-
-    LOG(INFO, "Removed thread %p for process '%s' (priority: %d)\n", thread, thread->parent->name, thread->parent->priority);
-    return 0;
+    return 1;
 }
 
 /**
@@ -150,13 +88,22 @@ int scheduler_removeThread(thread_t *thread) {
  * returned to the back of the list.
  */
 void scheduler_reschedule() {
-    if (!current_cpu->current_thread) return;
+}
 
-    // If the current thread is still running, we can append it to the back of the queue
-    if (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) {
-        // Get the thread's timeslice
-        current_cpu->current_thread->preempt_ticks = scheduler_timeslices[current_cpu->current_thread->parent->priority];
+/**
+ * @brief Find the most loaded CPU
+ */
+int scheduler_findMostLoadedCPU() {
+    int most_loaded = -1;
+    size_t highest_length = 0;
+    for (int i = 0; i < processor_count; i++) {
+        if (processor_data[i].sched.state == SCHEDULER_STATE_ACTIVE && processor_data[i].sched.queue->length > highest_length) {
+            most_loaded = i;
+            highest_length = processor_data[i].sched.queue->length;
+        }
     }
+
+    return most_loaded;
 }
 
 /**
@@ -164,64 +111,37 @@ void scheduler_reschedule() {
  * @returns A pointer to the next thread
  */
 thread_t *scheduler_get() {
-    // Is this core fit to schedule?
-    if (current_cpu->idle_process == NULL || current_cpu->idle_process->main_thread == NULL) {
-        // Huh
-        kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "scheduler", "*** Tried to switch tasks with no queue and no idle task\n");
-    }
-
-    // Get lock
-    spinlock_acquire(&scheduler_lock);
-
-    // Is there a queue and does it have a head?
-    if (!thread_queue || !thread_queue->head) {
-        // Release lock
-        spinlock_release(&scheduler_lock);
-
-
-        // No thread queue. This likely means a core entered the switcher before scheduling initialized, which is fine.
-        // We just need to return the kernel idle task's thread
+    if (current_cpu->sched.state != SCHEDULER_STATE_ACTIVE) {
         return current_cpu->idle_process->main_thread;
     }
+
+
+    spinlock_acquire(current_cpu->sched.lock);
     
-    node_t *thread_node;
-    thread_t *thread;
-
-    do {
-        // Pop the next thread off the list
-        thread_node = list_popleft(thread_queue);
-    
-        // Did that work?
-        if (!thread_node || !thread_node->value) {
-            // Normally this would be fatal, but it just in fact means we've cleared our queue of all running processes
-            // This is supposed to be fatal (no init process), but other parts of the code will catch this.
-            // Else, guess it just freezes. Who knows!
-            spinlock_release(&scheduler_lock);
-            return current_cpu->idle_process->main_thread;
+    node_t *n = list_popleft(current_cpu->sched.queue);
+    thread_t *t = current_cpu->idle_process->main_thread;
+    if (n) {
+        t = n->value;
+    } else {
+        int cpu_to_steal_from = scheduler_findMostLoadedCPU();
+        if (cpu_to_steal_from != -1) {
+            spinlock_acquire(processor_data[cpu_to_steal_from].sched.lock);
+            n = list_popleft(processor_data[cpu_to_steal_from].sched.queue);
+            if (n) {
+                t = n->value;
+            }
+            spinlock_release(processor_data[cpu_to_steal_from].sched.lock);
         }
+    }
 
-        // Get thread and free node
-        thread = (thread_t*)(thread_node->value);
+    spinlock_release(current_cpu->sched.lock);
+    if (n) kfree(n);
 
-        if (thread->status & THREAD_STATUS_STOPPING) {
-            // Update status to be STOPPED
-            LOG(INFO, "Thread %p was caught in the scheduler and has been shutdown\n");
-            __sync_or_and_fetch(&thread->status, THREAD_STATUS_STOPPED);
-            thread_destroy(thread);
-            continue;
-        }
+    if (t->status & THREAD_STATUS_STOPPING) {
+        thread_destroy(t);
+        return scheduler_get();
+    }
 
-        if (thread->status & THREAD_STATUS_STOPPED) {
-            kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** Thread %p is corrupt and should not have been owned by the scheduler.\n", thread);
-        }
-
-        break;
-    } while (1);
-    
-
-    // Unlock
-    spinlock_release(&scheduler_lock);
-
-    // Return it
-    return thread;
+    assert(!(t->status & THREAD_STATUS_STOPPED));
+    return t;
 }

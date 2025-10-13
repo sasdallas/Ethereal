@@ -155,6 +155,11 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     page_t *pg = mem_getPage(NULL, 0x0, MEM_CREATE);
     pg->bits.present = 0;
 
+    current_cpu->sched.state = SCHEDULER_STATE_INACTIVE;
+
+    scheduler_initCPU();
+    
+
     // Switch
     process_switchNextThread();
 }

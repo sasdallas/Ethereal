@@ -25,7 +25,6 @@
 #include <kernel/mem/mem.h>
 #include <kernel/task/process.h>
 
-
 /**** TYPES ****/
 
 // Temporary prototypes because this and process file are an include mess
@@ -60,6 +59,7 @@ typedef struct _processor {
     int cpu_family;
 #endif
     
+    scheduler_cpu_t sched;              // Scheduler data
     uint64_t idle_time;                 // Time the processor has spent idling
 } processor_t;
 
