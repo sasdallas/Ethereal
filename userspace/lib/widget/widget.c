@@ -70,10 +70,54 @@ int widget_setHandler(widget_t *widget, uint32_t event, void *handler, void *d) 
             widget->user.click.d = d;
             break;
 
+        case WIDGET_EVENT_RIGHT_CLICK:
+            widget->user.right_click.fn = handler;
+            widget->user.right_click.d = d;
+            break;
+
         default:
             errno = EINVAL;
             return -1;
     }
 
     return 0;
+}
+
+/**
+ * @brief Internal method
+ */
+static int widget_updateReal(widget_t *widget, gfx_context_t *ctx) {
+    // Calculate tick amount
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    uint64_t ticks = tv.tv_sec * 1000000 + tv.tv_usec;
+
+    int r = 0;
+
+    if (widget->update) {
+        int t = widget->update(widget, ctx, ticks);
+        if (!r) r = t;
+    }
+
+    if (widget->children) {    
+        foreach(child, widget->children) {
+            int t = widget_updateReal((widget_t*)child->value, ctx);
+            if (!r) r = t;
+        }
+    }
+
+    return r;
+}
+
+/**
+ * @brief Update widget and all of its children
+ * @param widget The widget to update
+ * @param ctx Graphics context
+ * @returns 1 on updates
+ */
+int widget_update(widget_t *widget, gfx_context_t *ctx) {
+    int r = widget_updateReal(widget, ctx);
+    if (r) gfx_render(ctx);
+    return r;
 }

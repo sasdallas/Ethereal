@@ -20,5 +20,7 @@
 #include <ethereal/widget/widget.h>
 #include <ethereal/widget/button.h>
 #include <ethereal/widget/event.h>
+#include <ethereal/widget/menu.h>
+#include <ethereal/widget/input.h>
 
 #endif

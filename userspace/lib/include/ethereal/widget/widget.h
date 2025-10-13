@@ -20,6 +20,7 @@
 #include <structs/list.h>
 #include <ethereal/widget/geometry.h>
 #include <graphics/gfx.h>
+#include <ethereal/keyboard.h>
 
 /**** DEFINITIONS ****/
 
@@ -27,9 +28,12 @@
 #define WIDGET_TYPE_FRAME                   0
 #define WIDGET_TYPE_LABEL                   1
 #define WIDGET_TYPE_BUTTON                  2
+#define WIDGET_TYPE_MENU                    3
+#define WIDGET_TYPE_INPUT                   4
 
 /* Events */
 #define WIDGET_EVENT_CLICK                  0
+#define WIDGET_EVENT_RIGHT_CLICK            1
 
 /**** TYPES ****/
 
@@ -91,6 +95,30 @@ typedef void (*widget_mouse_motion_t)(struct widget *widget, gfx_context_t *ctx,
 
 
 /**
+ * @brief Widget clicked away function (you were the last widget clicked)
+ * @param widget The widget was clicked away 
+ * @param ctx To render to
+ */
+typedef void (*widget_clicked_away_t)(struct widget *widget, gfx_context_t *ctx);
+
+/**
+ * @brief Widget update callback
+ * @param widget The widget which was clicked
+ * @param ctx To render to
+ * @param ticks The current amount of ticks
+ * @returns 1 on updates
+ */
+typedef int (*widget_update_t)(struct widget *widget, gfx_context_t *ctx, uint64_t ticks);
+
+/**
+ * @brief Widget key callback
+ * @param widget The widget the key occurred on
+ * @param ctx To render to
+ * @param event Key event
+ */
+typedef void (*widget_key_t)(struct widget *widget, gfx_context_t *ctx, keyboard_event_t *event);
+
+/**
  * @brief Widget click function
  * @param widget The widget that was clicked
  * @param d Data parameter
@@ -109,6 +137,7 @@ typedef struct widget_user_callback {
  */
 typedef struct widget_user_callbacks {
     widget_user_callback_t click;
+    widget_user_callback_t right_click;
 } widget_user_callbacks_t;
 
 /**
@@ -122,12 +151,15 @@ typedef struct widget {
     list_t *children;               // List of widget children if it supports them. Will be rendered upon widget_render
 
     // Virtual table
-    widget_render_t render;         // Render the widget
-    widget_mouse_down_t down;       // Mouse down callback
-    widget_mouse_up_t up;           // Mouse up callback
-    widget_mouse_enter_t enter;     // Mouse enter callback
-    widget_mouse_exit_t exit;       // Mouse exit callback
-    widget_mouse_motion_t motion;   // Mouse motion callback
+    widget_render_t render;             // Render the widget
+    widget_mouse_down_t down;           // Mouse down callback
+    widget_mouse_up_t up;               // Mouse up callback
+    widget_mouse_enter_t enter;         // Mouse enter callback
+    widget_mouse_exit_t exit;           // Mouse exit callback
+    widget_mouse_motion_t motion;       // Mouse motion callback
+    widget_update_t update;             // Update callback
+    widget_clicked_away_t click_away;   // Mouse click away from
+    widget_key_t key;                   // Keypress
 
     // User callbacks
     widget_user_callbacks_t user;   // User callbacks
@@ -160,5 +192,13 @@ int widget_render(gfx_context_t *ctx, widget_t *widget);
  * @param d Additional data parameter
  */
 int widget_setHandler(widget_t *widget, uint32_t event, void *handler, void *d);
+
+/**
+ * @brief Update widget and all of its children
+ * @param widget The widget to update
+ * @param ctx Graphics context
+ * @returns 1 on updates
+ */
+int widget_update(widget_t *widget, gfx_context_t *ctx);
 
 #endif

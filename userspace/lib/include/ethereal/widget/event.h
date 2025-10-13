@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 
 #include <ethereal/celestial.h>
+#include <ethereal/keyboard.h>
 
 /**** TYPES ****/
 
@@ -25,6 +26,8 @@ struct widget;
 typedef struct widget_event_state {
     struct widget *frame;               // Parent frame of this event state
     struct widget *held_widget;         // The currently held widget
+    struct widget *last_clicked;        // Last clicked widget
+    keyboard_t *keyboard;               // Keyboard
 } widget_event_state_t;
 
 /**** FUNCTIONS ****/

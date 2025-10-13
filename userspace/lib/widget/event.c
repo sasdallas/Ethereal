@@ -56,6 +56,38 @@ static widget_t *widget_findBestWidget(widget_t *frame, int x, int y) {
 }
 
 /**
+ * @brief Send key event
+ */
+static void widget_sendKeyEvent(widget_t *widget, gfx_context_t *ctx, keyboard_event_t *key) {
+    if (widget->key) {
+        widget->key(widget, ctx, key);
+    }
+
+    if (widget->children) {
+        foreach(child, widget->children) {
+            widget_sendKeyEvent(child->value, ctx, key);
+        }
+    }
+}
+
+/**
+ * @brief Key callback
+ */
+static void widget_keyCallback(window_t *win, uint32_t event_type, void *event) {
+    celestial_event_key_t *key = (celestial_event_key_t*)event;
+    
+    widget_t *frame = (widget_t*)(win->d);
+    widget_frame_t *f = (widget_frame_t*)frame->impl;
+
+    keyboard_event_t *kevent = keyboard_event(f->event->keyboard, &key->ev);
+
+    widget_sendKeyEvent(win->d, celestial_getGraphicsContext(win), kevent);
+    gfx_render(celestial_getGraphicsContext(win));
+    celestial_flip(win);
+    free(kevent);
+}
+
+/**
  * @brief Mouse callback
  */
 static void widget_mouseCallback(window_t *win, uint32_t event_type, void *event) {
@@ -84,8 +116,15 @@ static void widget_mouseCallback(window_t *win, uint32_t event_type, void *event
         int geom_y = 0;
         widget_getCoordinates(w, &geom_x, &geom_y);
 
+        if (ev_state->last_clicked && ev_state->last_clicked->click_away) {
+            ev_state->last_clicked->click_away(ev_state->last_clicked, frame_getContext((widget_t*)win->d));
+        }
+
+        ev_state->last_clicked = w;
+
         if (w->up) w->up(w, frame_getContext((widget_t*)win->d), ev->x - geom_x, ev->y - geom_y, ev->released);
         if (w->user.click.fn) w->user.click.fn(w, w->user.click.d);
+        if (ev->released & CELESTIAL_MOUSE_BUTTON_RIGHT && w->user.right_click.fn) w->user.right_click.fn(w, w->user.right_click.d); 
     } else if (event_type == CELESTIAL_EVENT_MOUSE_MOTION) {
         celestial_event_mouse_motion_t *ev = (celestial_event_mouse_motion_t*)event;
 
@@ -128,11 +167,14 @@ void widget_initEvents(struct widget *frame) {
     f->event = malloc(sizeof(widget_event_state_t));
     f->event->frame = frame;
     f->event->held_widget = NULL;
+    f->event->last_clicked = NULL;
+    f->event->keyboard = keyboard_create();
 
     if (f->window) {
         // Register event handler callbacks
         celestial_setHandler(f->window, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, widget_mouseCallback);
         celestial_setHandler(f->window, CELESTIAL_EVENT_MOUSE_BUTTON_UP, widget_mouseCallback);
         celestial_setHandler(f->window, CELESTIAL_EVENT_MOUSE_MOTION, widget_mouseCallback);
+        celestial_setHandler(f->window, CELESTIAL_EVENT_KEY_EVENT, widget_keyCallback);
     }
 }
