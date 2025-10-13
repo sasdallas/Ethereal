@@ -219,7 +219,6 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
     USBHidCollection_t *collection = kzalloc(sizeof(USBHidCollection_t));
     collection->opcode = HID_REPORT_MAIN_COLLECTION;
     collection->items = list_create("usb hid collection items");
-    collection->usage_id = HID_USAGE_POP(local_state_in);
     collection->usage_page = state->usage_page;
     collection->dev = dev;
 
@@ -229,6 +228,13 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
     USBHidOpcode_t opcode = (USBHidOpcode_t)*p;
     assert(opcode.opcode == HID_REPORT_MAIN_COLLECTION);
     collection->type = *(p+1);
+    
+    if (collection->type != HID_REPORT_COLLECTION_LOGICAL) {
+        collection->usage_id = HID_USAGE_POP(local_state_in);
+    } else {
+        collection->usage_id = 0; // idk?
+    }
+
     p += 2;
 
     while (1) {
@@ -389,6 +395,7 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
                 continue;
             } else {
                 LOG(WARN, "HID parser encountered an unexpected MAIN opcode at this time: 0x%x\n", opcode.opcode);
+                printf("HID bad main opcode 0x%x\n", opcode.opcode);
             }
         } else if (opcode.desc_type == HID_REPORT_GLOBAL) {
             switch (opcode.opcode) {
@@ -408,6 +415,7 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
 
                 default:
                     LOG(ERR, "Unrecognized global opcode: 0x%x\n", opcode.opcode);
+                    printf("HID bad global opcode 0x%x\n", opcode.opcode);
                     break;
             }
         } else if (opcode.desc_type == HID_REPORT_LOCAL) {
@@ -416,6 +424,8 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
                 case HID_REPORT_LOCAL_USAGE_MAXIMUM: local_state.usage_maximum = HID_CAST_REPORT_SIZE(0, val); break;
                 case HID_REPORT_LOCAL_USAGE_MINIMUM: local_state.usage_minimum = HID_CAST_REPORT_SIZE(0, val); break;
             
+                default:
+                    printf("HID bad/unknown local opcode 0x%x\n", opcode.opcode);
                 // TODO: Use the rest?
             }
         }
