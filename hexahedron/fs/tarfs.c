@@ -22,6 +22,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <dirent.h>
+#include <assert.h>
 
 /* Macro to round to 512 (for size) */
 #define USTAR_SIZE(size) ((size % 512) ? (size + (512 - (size % 512))) : size)
@@ -40,10 +41,7 @@ ssize_t tarfs_readlink(struct fs_node *node, char *buf, size_t size);
 /**
  * @brief Convert a file inode to a ustar header
  */
-static ustar_header_t *tarfs_getUstar(fs_node_t *node, uint64_t inode) {
-    ustar_header_t *header = (ustar_header_t*)kmalloc(sizeof(ustar_header_t));
-    memset(header, 0, sizeof(ustar_header_t));
-
+static int tarfs_getUstar(fs_node_t *node, uint64_t inode, ustar_header_t *header) {
     fs_node_t *dev = (fs_node_t*)node->dev;
     if (!node->dev) goto _no_header;
 
@@ -56,13 +54,12 @@ static ustar_header_t *tarfs_getUstar(fs_node_t *node, uint64_t inode) {
     // Validate USTAR header
     if (!strncmp(header->ustar, "ustar", 5)) {
         // Valid!
-        return header;
+        return 0;
     }
 
-    // Not valid, free and return NULL
+    // Not valid, free and return 1
 _no_header:
-    kfree(header);
-    return NULL;
+    return 1;
 }
 
 /**
@@ -83,7 +80,7 @@ static fs_node_t *tarfs_ustarToNode(ustar_header_t *header, uint64_t inode, fs_n
     switch (header->type[0]) {
         case USTAR_HARD_LINK:
             LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header->name);
-            node->flags = VFS_FILE;
+            node->flags = VFS_SYMLINK;
             break;
 
         case USTAR_SYMLINK:
@@ -138,13 +135,13 @@ static fs_node_t *tarfs_ustarToNode(ustar_header_t *header, uint64_t inode, fs_n
  */
 ssize_t tarfs_readlink(struct fs_node *node, char *buf, size_t size) {
     // Read the ustar header for this node
-    ustar_header_t *header = tarfs_getUstar(node, node->inode);
-    if (!header) return -EIO; // Invalid header
+    ustar_header_t header;
+    assert(!tarfs_getUstar(node, node->inode, &header));
+    
 
     // Get the node
-    size_t sz_to_read = strlen(header->linkname) > size ? size : strlen(header->linkname);
-    memcpy(buf, header->linkname, sz_to_read); 
-    kfree(header);
+    size_t sz_to_read = strlen(header.linkname) > size ? size : strlen(header.linkname);
+    memcpy(buf, header.linkname, sz_to_read); 
 
     return sz_to_read;
 }
@@ -160,12 +157,7 @@ ssize_t tarfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) 
         size = node->length - offset;
     }
 
-    // Read the ustar header for this node
-    ustar_header_t *header = tarfs_getUstar(node, node->inode); // TODO: We just need to verify offset bytes are correct, reading the whole header is a bit overkill
-    if (!header) return 0; // Invalid header
-
     uint64_t read_offset = node->inode + 512 + offset;
-    kfree(header);
     return fs_read((fs_node_t*)node->dev, read_offset, size, buffer);
 }
 
@@ -179,12 +171,7 @@ ssize_t tarfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer)
         size = node->length - offset;
     }
 
-    // Read the ustar header for this node
-    ustar_header_t *header = tarfs_getUstar(node, node->inode); // TODO: We just need to verify offset bytes are correct, reading the whole header is a bit overkill
-    if (!header) return 0; // Invalid header
-
     uint64_t write_offset = node->inode + 512 + offset;
-    kfree(header);
     return fs_write((fs_node_t*)node->dev, write_offset, size, buffer);
 }
 
@@ -206,8 +193,8 @@ struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
 
     // Get the header and verify it
     uint64_t ino = node->inode;
-    ustar_header_t *header = tarfs_getUstar(node, ino);
-    if (!header) {
+    ustar_header_t header;
+    if (tarfs_getUstar(node, ino, &header)) {
         // Invalid ustar
         return NULL;
     }
@@ -215,11 +202,11 @@ struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
     int fileidx = 0; // Index of the current file
     
     // Start iterating
-    while (header) {
+    while (1) {
         // Construct the full filename
         char path_filename[256] = { 0 };
-        strncat(path_filename, header->nameprefix, 155);
-        strncat(path_filename, header->name, 150);
+        strncat(path_filename, header.nameprefix, 155);
+        strncat(path_filename, header.name, 150);
 
         int slashes = 0;
         char *s = (char*)path_filename;
@@ -246,15 +233,13 @@ struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
                 strncpy(out->d_name, path_filename, 256);
     
                 // Setup other parameters
-                out->d_reclen = strtoull(header->size, NULL, 8);
+                out->d_reclen = strtoull(header.size, NULL, 8);
                 
                 // Interpret the type now
-                switch (header->type[0]) {
+                switch (header.type[0]) {
                     case USTAR_HARD_LINK:
-                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header->name);
-                        node->flags = DT_REG;
-                        break;
-
+                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header.name);
+                        // Fallthrough
                     case USTAR_SYMLINK:
                         out->d_type = DT_LNK;
                         break;
@@ -280,7 +265,6 @@ struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
                         break;
                 }
 
-                kfree(header);
                 return out;
             }
 
@@ -289,15 +273,16 @@ struct dirent *tarfs_readdir_root(fs_node_t *node, unsigned long index) {
 
         // Go to the next one, get the filesize and increment.
         // Remember that GNU devs sometimes get high, so this is encoded in octal.
-        uint64_t filesize = strtoull(header->size, NULL, 8);
+        uint64_t filesize = strtoull(header.size, NULL, 8);
     
         // Increment ino (512 = sizeof ustar header)
         ino += 512;
         ino += USTAR_SIZE(filesize);
 
         // Get next header
-        kfree(header);
-        header = tarfs_getUstar(node, ino);
+        if (tarfs_getUstar(node, ino, &header)) {
+            break;
+        }
     }
 
     return NULL;
@@ -322,27 +307,25 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
 
     // Get the header and verify it
     uint64_t ino = node->inode;
-    ustar_header_t *header = tarfs_getUstar(node, ino);
-    if (!header) {
-        // Invalid ustar
-        return NULL;
-    }
+    ustar_header_t header; 
+    tarfs_getUstar(node, ino, &header);
+    
     
     // Create the basic search name - files that contain this will be used as indexes
     char search_filename[256];
     memset(search_filename, 0, 256);
-    strncat(search_filename, header->nameprefix, 155);
-    strncat(search_filename, header->name, 100);
+    strncat(search_filename, header.nameprefix, 155);
+    strncat(search_filename, header.name, 100);
     
     int fileidx = 0; // Index of the current file
     
     // Start iterating
-    while (header) {
+    while (1) {
         // Construct the full filename
         char path_filename[256];
         memset(path_filename, 0, 256);
-        strncat(path_filename, header->nameprefix, 155);
-        strncat(path_filename, header->name, 150);
+        strncat(path_filename, header.nameprefix, 155);
+        strncat(path_filename, header.name, 150);
 
         // Count slashes
         int slashes;
@@ -367,15 +350,13 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
                 strncat(out->d_name, path_filename + strlen(search_filename), 256);
     
                 // Setup other parameters
-                out->d_reclen = strtoull(header->size, NULL, 8);
+                out->d_reclen = strtoull(header.size, NULL, 8);
                 
                 // Interpret the type now
-                switch (header->type[0]) {
+                switch (header.type[0]) {
                     case USTAR_HARD_LINK:
-                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - kernel bug\n", header->name);
-                        node->flags = DT_REG;
-                        break;
-
+                        LOG(ERR, "Cannot parse entry '%s' type (USTAR_HARD_LINK) - %s\n", header.name, header.linkname);
+                        // Fallthrough
                     case USTAR_SYMLINK:
                         out->d_type = DT_LNK;
                         break;
@@ -401,7 +382,6 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
                         break;
                 }
 
-                kfree(header);
                 return out;
             }
 
@@ -410,15 +390,14 @@ struct dirent *tarfs_readdir(fs_node_t *node, unsigned long index) {
 
         // Go to the next one, get the filesize and increment.
         // Remember that GNU devs sometimes get high, so this is encoded in octal.
-        uint64_t filesize = strtoull(header->size, NULL, 8);
+        uint64_t filesize = strtoull(header.size, NULL, 8);
     
         // Increment ino (512 = sizeof ustar header)
         ino += 512;
         ino += USTAR_SIZE(filesize);
 
         // Get next header
-        kfree(header);
-        header = tarfs_getUstar(node, ino);
+        if (tarfs_getUstar(node, ino, &header)) break;
     }
 
     return NULL;
@@ -431,32 +410,32 @@ fs_node_t *tarfs_finddir(fs_node_t *node, char *path) {
     if (!node || !path) return NULL;
     uint64_t ino = node->inode;
 
-    ustar_header_t *header = tarfs_getUstar(node, ino);
-    if (!header) {
+    ustar_header_t header;
+    if (tarfs_getUstar(node, ino, &header)) {
         return NULL;
     }
 
-    if (header->type[0] != USTAR_DIRECTORY) {
-        kfree(header);
+    if (header.type[0] != USTAR_DIRECTORY) {
         return NULL;
     }
     
     // Create the search filename
     char search_filename[256] = { 0 };
 
-    if (strcmp(header->name, "/")) {
+    if (strcmp(header.name, "/")) {
         // We are NOT the root, so concatenate node->name and a slash
-        strncat(search_filename, header->nameprefix, 155);
-        strncat(search_filename, header->name, 100);
+        strncat(search_filename, header.nameprefix, 155);
+        strncat(search_filename, header.name, 100);
     }  
 
     strncat(search_filename, path, strlen(path));
 
     // Start iterating, we'll increment by filesize until we find the appropriate file
-    while (header) {
+    int found  = 0;
+    while (1) {
         // tarfs prefixes with a header
         char filename[256];
-        snprintf(filename, 256, "%s%s", header->nameprefix, header->name);
+        snprintf(filename, 256, "%s%s", header.nameprefix, header.name);
         filename[255] = 0;
 
         // finddir has nodes provide their path without slashes, so remove trailing slashes.
@@ -467,26 +446,27 @@ fs_node_t *tarfs_finddir(fs_node_t *node, char *path) {
         // Is this the file we want?
         if (!strcmp(filename, search_filename)) {
             // Yes, it is - break
+            found = 1;
             break;
         }
 
         // No, get the filesize and increment.
         // Remember that GNU devs sometimes get high, so this is encoded in octal.
-        uint64_t filesize = strtoull(header->size, NULL, 8);
+        uint64_t filesize = strtoull(header.size, NULL, 8);
     
         // Increment
         ino += 512;
         ino += USTAR_SIZE(filesize);
 
         // Free header and go to next
-        kfree(header);
-        header = tarfs_getUstar(node, ino);
+        if (tarfs_getUstar(node, ino, &header)) {
+            break;
+        }
     }
 
-    if (!header) return NULL;
+    if (!found) return NULL;
 
-    fs_node_t *retnode = tarfs_ustarToNode(header, ino, node);
-    kfree(header);
+    fs_node_t *retnode = tarfs_ustarToNode(&header, ino, node);
     return retnode;
 }
 
@@ -513,17 +493,16 @@ int tarfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
     node->dev = tar_file;
 
     // We can setup the metadata of the root node now
-    ustar_header_t *header = tarfs_getUstar(node, 0); // Root node is always inode 0,
+    ustar_header_t header;
 
-    if (!header) {
+    if (tarfs_getUstar(node, 0, &header)) {
         kfree(node);
         return -EINVAL;
     }
 
     // Now use tarfs_ustarToNode to get the new node
-    fs_node_t *rootnode = tarfs_ustarToNode(header, 0x0, node);
+    fs_node_t *rootnode = tarfs_ustarToNode(&header, 0x0, node);
     kfree(node);
-    kfree(header);
     node = rootnode;
     node->readdir = tarfs_readdir_root;
 
