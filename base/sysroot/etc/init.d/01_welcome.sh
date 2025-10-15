@@ -1,4 +1,4 @@
-#!/usr/bin/essence
+#!/bin/sh
 
 # Execute whatarewe
 whatarewe
