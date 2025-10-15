@@ -135,6 +135,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_READ_ENTRIES]      = (syscall_func_t)(uintptr_t)sys_read_entries,
     [SYS_FUTEX_WAIT]        = (syscall_func_t)(uintptr_t)sys_futex_wait,
     [SYS_FUTEX_WAKE]        = (syscall_func_t)(uintptr_t)sys_futex_wake,
+    [SYS_OPENAT]            = (syscall_func_t)(uintptr_t)sys_openat
 }; 
 
 
@@ -210,10 +211,7 @@ void sys_exit(int status) {
     process_exit(NULL, status);
 }
 
-int sys_open(const char *pathname, int flags, mode_t mode) {
-    // Validate pointer
-    SYSCALL_VALIDATE_PTR(pathname);
-    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
+int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 
     // !!!: HACK
     if (!strcmp(pathname, "/dev/ptmx")) {
@@ -262,7 +260,10 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
 
     // Create the file descriptor and return
     fd_t *fd = fd_add(current_cpu->current_process, node);
-    
+
+    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)pathname);
+    fd->path = p;
+
     LOG(DEBUG, "Finish! %d\n", fd->fd_number);
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
@@ -270,6 +271,13 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
     }
 
     return fd->fd_number;
+}
+
+int sys_open(const char *pathname, int flags, mode_t mode) {
+    // Validate pointer
+    SYSCALL_VALIDATE_PTR(pathname);
+    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
+    return __sys_open_internal((char*)pathname, flags, mode);
 }
 
 ssize_t sys_read(int fd, void *buffer, size_t count) {
@@ -461,6 +469,7 @@ pid_t sys_fork() {
  */
 off_t sys_lseek(int fd, off_t offset, int whence) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+        LOG(ERR, "Bad file descriptor %d\n", fd);
         return -EBADF;
     }
 
@@ -1534,4 +1543,27 @@ long sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
 long sys_futex_wake(int *pointer) {
     SYSCALL_VALIDATE_PTR(pointer);
     return futex_wakeup(pointer);
+}
+
+long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
+    SYSCALL_VALIDATE_PTR(pathname);
+
+    if (dirfd == AT_FDCWD || pathname[0] == '/') {
+        // Easy enough
+        return sys_open(pathname, flags, mode);
+    }
+
+    if (!FD_VALIDATE(current_cpu->current_process, dirfd) || FD(current_cpu->current_process, dirfd)->path == NULL) {
+        return -EBADF;
+    }
+
+    fd_t *f = FD(current_cpu->current_process, dirfd);
+    if (!(f->node->flags & VFS_DIRECTORY)) {
+        return -ENOTDIR;
+    }
+
+    char *p = vfs_canonicalizePath(f->path, (char*)pathname);
+    long r = __sys_open_internal(p, flags, mode);
+    kfree(p);
+    return r;
 }
