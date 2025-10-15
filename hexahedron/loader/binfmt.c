@@ -30,13 +30,47 @@ static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, ch
 /* binfmt table */
 binfmt_entry_t binfmt_table[BINFMT_MAX] = {
     { .name = "ELF Executable", .load = process_execute, .match_count = 4, .bytes = { ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3 } },
-    { 0 },
+    { .name = "Shebang", .load = binfmt_shebang, .match_count = 2, .bytes = { '#', '!' } },
 };
 
 int binfmt_last_entry = 2;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "LOADER:BINFMT", __VA_ARGS__)
+
+/**
+ * @brief Shebang
+ */
+static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+    char buf[256];
+    if (fs_read(file, 0, 256, (uint8_t*)buf) <= 0) return -EIO;
+    fs_close(file);
+
+    char *sb_start = buf + 2;
+    while (*sb_start == ' ') sb_start++;
+    if (!*sb_start) return -ENOEXEC;
+
+    char *nl = strchr(sb_start, '\n');
+    if (!nl) return -ENOEXEC;
+    *nl = 0;
+
+    char *arg = strchr(sb_start, ' ');
+    if (arg) *(arg++) = 0;
+
+    fs_node_t *interp = kopen(sb_start, 0);
+    if (!interp) return -ENOENT;
+
+    int new_argc = argc + (arg ? 2 : 1);
+    char **nargv = kmalloc(sizeof(char*) * (new_argc + 1));
+    nargv[0] = strdup(sb_start);
+    nargv[1] = arg ? strdup(arg) : strdup(path);
+    nargv[2] = arg ? strdup(path) : NULL;
+
+    for (int i = 1, o = arg ? 3 : 2; i < argc; i++, o++) nargv[o] = argv[i];
+    nargv[new_argc] = NULL;
+
+    return binfmt_exec(nargv[0], interp, new_argc, nargv, envp);
+}
 
 /**
  * @brief Register a new entry in the binfmt table

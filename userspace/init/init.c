@@ -1,6 +1,6 @@
 /**
  * @file userspace/init/init.c
- * @brief Basic shell, garbage 
+ * @brief Init program
  * 
  * 
  * @copyright
@@ -18,7 +18,61 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <dirent.h>
 
+int sort_fn(const void *a, const void *b) { return strcmp(((struct dirent*)a)->d_name, ((struct dirent*)b)->d_name); }
+
+void run_init_scripts() {
+    DIR *dir = opendir("/etc/init.d/");
+    if (!dir) {
+        printf("ERROR: Failed to open /etc/init.d/: %s\n", strerror(errno));
+        return;
+    }
+
+    struct dirent *entry;
+    struct dirent **entries = NULL;
+    size_t count = 0;
+
+    // Read all entries
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') {
+            continue; // Skip hidden files and "." or ".."
+        }
+        entries = realloc(entries, sizeof(struct dirent *) * (count + 1));
+        entries[count] = malloc(sizeof(struct dirent));
+        memcpy(entries[count], entry, sizeof(struct dirent));
+        count++;
+    }
+    closedir(dir);
+
+    // Sort entries
+    qsort(entries, count, sizeof(struct dirent *), sort_fn);
+
+    // Execute scripts
+    for (size_t i = 0; i < count; i++) {
+        char path[256];
+        snprintf(path, sizeof(path), "/etc/init.d/%s", entries[i]->d_name);
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            execl(path, path, NULL);
+            printf("ERROR: Failed to execute %s: %s\n", path, strerror(errno));
+            exit(1);
+        } else if (pid > 0) {
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                printf("Script %s exited with status %d\n", entries[i]->d_name, WEXITSTATUS(status));
+            }
+        } else {
+            printf("ERROR: Failed to fork for %s: %s\n", entries[i]->d_name, strerror(errno));
+        }
+
+        free(entries[i]);
+    }
+
+    free(entries);
+}
 
 int main(int argc, char *argv[]) {
     // Are we *really* init?
@@ -27,19 +81,22 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // Open files
-    int stdin = open("/device/null", O_RDONLY);
-    int stdout = open("/device/console", O_RDWR);
-    int stderr = open("/device/log", O_RDWR);
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
 
-    if (stdin != STDIN_FILENO) dup2(stdin, STDIN_FILENO);
-    if (stdout != STDOUT_FILENO) dup2(stdout, STDOUT_FILENO);
-    if (stderr != STDERR_FILENO) dup2(stderr, STDERR_FILENO); 
+    // Open files
+    open("/device/null", O_RDONLY);
+    open("/device/console", O_RDWR);
+    open("/device/log", O_RDWR);
 
     // Setup environment variables
     putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
+    setbuf(stdout, NULL);
 
     printf("\nWelcome to the \033[35mEthereal Operating System\033[0m!\n\n");
+
+    run_init_scripts();
 
     // Read kernel command line
     FILE *f = fopen("/kernel/cmdline", "r");
@@ -49,7 +106,6 @@ int main(int argc, char *argv[]) {
 
     char *cmdline = malloc(size);
     fread(cmdline, size, 1, f);
-
 
     pid_t cpid = fork();
 
@@ -70,7 +126,7 @@ int main(int argc, char *argv[]) {
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         }
 
-        char *nargv[3] = { "/device/initrd/usr/bin/celestial", NULL };
+        char *nargv[3] = { "/device/initrd/usr/bin/celestial", "-d", NULL };
         execvpe("/device/initrd/usr/bin/celestial", nargv, environ);
     
         printf("ERROR: Failed to launch Celestial process: %s\n", strerror(errno));
