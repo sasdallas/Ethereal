@@ -23,7 +23,9 @@
 #include <graphics/pattern.h>
 #include <graphics/util.h>
 #include <graphics/anim.h>
+#include <graphics/matrix.h>
 #include <structs/list.h>
+#include <pthread.h>
 
 /**** DEFINITIONS ****/
 
@@ -63,6 +65,7 @@ typedef struct gfx_context {
     size_t pitch;           // Pitch of the buffer
 
     list_t *animations;     // Pending animations
+    pthread_spinlock_t lck; // Lock
 } gfx_context_t;
 
 /**** MACROS ****/
