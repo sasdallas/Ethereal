@@ -22,6 +22,7 @@ mode_overrides = {
 }
 
 def ramdisk_filter(tarinfo):
+    print("Packaging file: " + tarinfo.name)
     tarinfo.uid = 0
     tarinfo.gid = 0
 
