@@ -272,6 +272,47 @@ typedef struct nvme_create_cq_command {
 STATIC_ASSERT(sizeof(nvme_create_cq_command_t) == 15 * sizeof(uint32_t));
 
 /**
+ * @brief NVMe create submission queue command
+ */
+typedef struct nvme_create_sq_command {
+    uint32_t reserved[5];               // Reserved
+    nvme_data_pointer_t dptr;           // Data pointer
+
+    union {
+        struct {
+            uint16_t qid;               // Queue identifier
+            uint16_t qsize;             // Queue size
+        };
+
+        uint32_t cdw10;
+    };
+
+    union {
+        struct {
+            uint32_t pc:1;              // Physically contiguous
+            uint32_t qprio:2;           // Queue priority
+            uint32_t reserved2:13;      // Reserved
+            uint32_t cqid:16;           // Completion queue ID
+        };
+
+        uint32_t cdw11;
+    };
+
+    union {
+        struct {
+            uint32_t nvmsetid:16;       // NVM set id
+            uint32_t reserved3:16;      // Reserved
+        };
+
+        uint32_t cdw12;
+    };
+
+    uint32_t reserved4[3];              // Reserved
+} __attribute__((packed)) nvme_create_sq_command_t;
+
+STATIC_ASSERT(sizeof(nvme_create_cq_command_t) == 15 * sizeof(uint32_t));
+
+/**
  * @brief NVMe submission queue entry
  */
 typedef struct nvme_sq_entry {
@@ -445,8 +486,93 @@ typedef struct nvme {
     nvme_queue_t *admin_queue;          // Admin queue
     nvme_queue_t *io_queue;             // I/O queue
     pci_device_t *dev;                  // PCI device
+    nvme_ident_t *ident;                // Identification
 } nvme_t;   
 
+
+/**
+ * @brief NVMe namespace structure
+ */
+typedef struct nvme_namespace {
+    nvme_t *controller;                 // Controller
+    uint32_t nsid;                      // Namespace ID
+    uintptr_t dma_region;               // DMA region
+} nvme_namespace_t;
+
+/**
+ * @brief NVMe read command
+ */
+typedef struct nvme_read_command {
+    uint32_t nsid;                      // Namespace ID
+    uint64_t reserved1;                 // Reserved
+    uint64_t mptr;                      // mptr
+    nvme_data_pointer_t dptr;           // Data pointer
+
+    union {
+        struct {
+            uint64_t slba;
+        };
+
+        uint64_t cwd1011;
+    };
+
+
+    union {
+        struct {
+            uint32_t nlb:16;
+            uint32_t reserved2:16;
+        };
+
+        uint32_t cwd12;
+    };
+
+    uint32_t reserved3[3];
+} __attribute__((packed)) nvme_read_command_t;
+
+/**
+ * @ref ALL CREDITS TO  https://github.com/Bananymous/banan-os/blob/f15f88ebd6195d1084b8260afe5027872c77b48b/kernel/include/kernel/Storage/NVMe/Definitions.h#L251
+ */
+typedef struct nvme_namespace_identify {
+    uint64_t nsze;
+    uint64_t ncap;
+    uint64_t nuse;
+    uint8_t nsfeat;
+    uint8_t nlbaf;
+    uint8_t flbas;
+    uint8_t mc;
+    uint8_t dpc;
+    uint8_t dps;
+    uint8_t nmic;
+    uint8_t rescap;
+    uint8_t fpi;
+    uint8_t dlfeat;
+    uint16_t nawun;
+    uint16_t nawupf;
+    uint16_t nacwu;
+    uint16_t nabsn;
+    uint16_t nabo;
+    uint16_t nabspf;
+    uint16_t noiob;
+    uint64_t nvmcap[2];
+    uint16_t npwg;
+    uint16_t npwa;
+    uint16_t npdg;
+    uint16_t npda;
+    uint16_t nows;
+    uint16_t mssrl;
+    uint32_t mcl;
+    uint8_t msrc;
+    uint8_t __reserved0[11];
+    uint32_t adagrpid;
+    uint8_t __reserved1[3];
+    uint8_t nsattr;
+    uint16_t nvmsetid;
+    uint16_t endgid;
+    uint64_t nguid[2];
+    uint64_t eui64;
+    uint32_t lbafN[64];
+    uint8_t vendor_specific[3712];
+} __attribute__((packed)) nvme_namespace_identify_t;
 
 /**** DEFINITIONS ****/
 
@@ -458,6 +584,9 @@ typedef struct nvme {
 #define NVME_OPC_CREATE_SQ              0x01
 #define NVME_OPC_CREATE_CQ              0x05
 #define NVME_OPC_IDENTIFY               0x06
+#define NVME_OPC_WRITE                  0x01
+#define NVME_OPC_READ                   0x02
+
 
 /* CNS values */
 #define NVME_CNS_IDENTIFY_NAMESPACE     0x00

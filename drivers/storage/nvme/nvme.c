@@ -19,7 +19,11 @@
 #include <kernel/debug.h>
 #include <kernel/hal.h>
 #include <kernel/arch/arch.h>
+#include <kernel/drivers/storage/drive.h>
+#include <kernel/misc/util.h>
 #include <string.h>
+#include <errno.h>
+#include <assert.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:NVME", __VA_ARGS__)
@@ -55,6 +59,16 @@ int nvme_irq(void *context) {
 }
 
 /**
+ * @brief NVMe controller global IRQ handler
+ * @param context NVMe object
+ */
+int nvme_irqIO(void *context) {
+    nvme_t *nvme = (nvme_t*)context;
+    nvme_irqQueue(nvme->io_queue);
+    return 0;
+}
+
+/**
  * @brief Create the admin queue for the NVMe
  * @param nvme The NVMe object
  */
@@ -72,11 +86,90 @@ int nvme_createAdminQueue(nvme_t *nvme) {
 }
 
 /**
+ * @brief Submit entry and wait
+ * @param nvme The NVMe object
+ * @param queue The queue to submit to
+ * @param entry The entry to submit
+ */
+int nvme_submitAndWait(nvme_t *nvme, nvme_queue_t *queue, nvme_sq_entry_t *entry) {
+    nvme_submitQueue(queue, entry);
+    
+    // !!!: TEMPORARY
+    while (!queue->completions->length) {
+        arch_pause_single();
+    }
+
+    // Now let's wait for a completion event
+    if (TIMEOUT((queue->completions->length), 1000)) {
+        LOG(ERR, "NVMe command %x timed out\n", entry->opc);
+        
+        return 1;
+    }
+
+    // Get the completion event
+    node_t *n = list_popleft(queue->completions);
+    nvme_completion_t *comp = (nvme_completion_t*)n->value;
+    kfree(n);
+
+    if (comp->status != NVME_STATUS_SUCCESS) {
+        LOG(ERR, "NVMe command %x failed with status: %d\n", entry->opc, comp->status);
+        kfree(comp);
+        return 1;
+    }
+
+    kfree(comp);
+
+    return 0;
+}
+
+/**
  * @brief Create the I/O queue for the NVMe
  * @param nvme The NVMe object
  */
 int nvme_createIOQueue(nvme_t *nvme) {
-    return 1;
+    nvme->io_queue = nvme_createQueue(NVME_IO_QUEUE_DEPTH, NVME_GET_DOORBELL(1));
+    nvme_sq_entry_t entry = { .opc = NVME_OPC_CREATE_CQ };
+
+    nvme_create_cq_command_t cq = {
+        .dptr.prp1 = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->io_queue->cq),
+        .qsize = NVME_IO_QUEUE_DEPTH - 1,
+        .qid = 1,
+        .iv = 1,
+        .ien = 1,
+        .pc = 1,
+    };
+
+    memcpy(&entry.command, &cq, sizeof(nvme_create_cq_command_t));
+
+    if (nvme_submitAndWait(nvme, nvme->admin_queue, &entry)) {
+        LOG(ERR, "NVME_OPC_CREATE_CQ failed\n");
+        return 1;
+    }
+
+    entry.opc = NVME_OPC_CREATE_SQ;
+    nvme_create_sq_command_t sq = {
+        .dptr.prp1 = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->io_queue->sq),
+        .qsize = NVME_IO_QUEUE_DEPTH - 1,
+        .qid = 1,
+        .cqid = 1,
+        .qprio = 0,
+        .pc = 1,
+        .nvmsetid = 0,
+    };
+
+    memcpy(&entry.command, &sq, sizeof(nvme_create_sq_command_t));
+
+    
+    if (nvme_submitAndWait(nvme, nvme->admin_queue, &entry)) {
+        LOG(ERR, "NVME_OPC_CREATE_SQ failed\n");
+        return 1;
+    }
+
+    uint8_t i = pci_enableMSI(nvme->dev->bus, nvme->dev->slot, nvme->dev->function);
+    assert(i != 0xFF);
+
+    hal_registerInterruptHandler(i, nvme_irqIO, nvme);
+    return 0;
 }
 
 /**
@@ -101,16 +194,7 @@ int nvme_identify(nvme_t *nvme) {
     nvme_submitQueue(nvme->admin_queue, &entry);
 
     while (!nvme->admin_queue->completions->length) {
-        LOG(DEBUG, "Waiting for LAPIC to complete interrupt (MSI=%02x MSIX=%02x).\n", nvme->dev->msi_offset, nvme->dev->msix_offset);
-
-        if (nvme->dev->msi_offset != 0xFF) {
-            uint32_t pending = pci_readConfigOffset(nvme->dev->bus, nvme->dev->slot, nvme->dev->function, nvme->dev->msi_offset + 0x14, 4);
-            uint32_t masked = pci_readConfigOffset(nvme->dev->bus, nvme->dev->slot, nvme->dev->function, nvme->dev->msi_offset + 0x10, 4);
-            LOG(DEBUG, "\tPENDING=%08x MASKED=%08x\n", pending, masked);
-        }
-
         arch_pause_single();
-
     }
 
     // Now let's wait for a completion event
@@ -135,17 +219,142 @@ int nvme_identify(nvme_t *nvme) {
     kfree(comp);
 
     // We should have the ID
-    // char model[41] = { 0 };
-    // memcpy((char*)id_page + 24, model, 40);
-    // model[40] = 0;
-    // LOG(DEBUG, "Model: %s\n", model);
-
-    HEXDUMP(id_page, PAGE_SIZE);
-
+    nvme_ident_t *ident = (nvme_ident_t*)id_page;
+    nvme->ident = ident;
+    LOG(DEBUG, "model: %s\n", ident->mn);
 
 
     return 0;
 }
+
+/**
+ * @brief Read sectors
+ */
+ssize_t nvme_read(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer) {
+    nvme_namespace_t *ns = (nvme_namespace_t*)d->driver;
+    size_t sector_offset = 0;
+    while (sector_offset < sectors) {
+        uint16_t count = sectors - sector_offset;
+        if (count > PAGE_SIZE / d->sector_size) {
+            count = PAGE_SIZE / d->sector_size;
+        }
+
+        nvme_sq_entry_t ent = { .opc = NVME_OPC_READ };
+        nvme_read_command_t *cmd = (nvme_read_command_t*)&ent.command;
+
+        cmd->nsid = ns->nsid;
+        cmd->dptr.prp1 = mem_getPhysicalAddress(NULL, ns->dma_region);
+        cmd->slba = lba + sector_offset;
+        cmd->nlb = count - 1;
+        
+        if (nvme_submitAndWait(ns->controller, ns->controller->io_queue, &ent)) {
+            LOG(ERR, "Read failed, NVME_OPC_IO_READ failed\n");
+            return -EIO;
+        }
+
+        memcpy(buffer + sector_offset * d->sector_size, (void*)ns->dma_region, count * d->sector_size);
+
+        sector_offset += count;
+    }
+
+    return sectors;
+}
+
+/**
+ * @brief Initialize NVMe namespace
+ * @param nvme The NVMe drive
+ * @param nsid Namespace ID
+ * @param nsident Namespace identification
+ */
+int nvme_namespaceInit(nvme_t *nvme, uint32_t nsid, nvme_namespace_identify_t *nsident) {
+    nvme_namespace_t *ns = kzalloc(sizeof(nvme_namespace_t));
+
+    ns->controller = nvme;
+    ns->nsid = nsid;
+    ns->dma_region = mem_allocateDMA(PAGE_SIZE);
+
+    drive_t *d = drive_create(DRIVE_TYPE_NVME);
+    
+    char sn[21] = { 0 };
+    strncpy(sn, nvme->ident->sn, 20);
+
+    char mn[41] = { 0 };
+    strncpy(mn, nvme->ident->mn, 40);
+
+    d->serial = strdup(sn);
+    d->model = strdup(mn);
+    d->sectors = nsident->nsze;
+
+    uint64_t format = nsident->lbafN[nsident->flbas & 0x0F];
+    uint64_t block_size = 1 << ((format >> 16) & 0xFF);
+    d->sector_size = block_size;
+
+    d->vendor = NULL;
+    d->revision = NULL; // TODO: fill this
+
+    d->read_sectors = nvme_read;
+
+    d->driver = (void*)ns;
+
+    drive_mount(d);
+
+
+    return 0;
+}
+
+/**
+ * @brief Identify NVMe namespaces
+ * @param nvme The NVMe drive to identify namespaces on
+ */
+int nvme_identifyNamespaces(nvme_t *nvme) {
+    uintptr_t namespace_page = mem_allocateDMA(PAGE_SIZE);
+
+    nvme_sq_entry_t e = { .opc = NVME_OPC_IDENTIFY, };
+    nvme_identify_command_t *ident = (nvme_identify_command_t*)&e.command;
+    ident->dptr.prp1 = mem_getPhysicalAddress(NULL, namespace_page);
+    ident->cns = 0x02;
+
+    if (nvme_submitAndWait(nvme, nvme->admin_queue, &e)) {
+        LOG(ERR, "NVME_OPC_IDENTIFY failed\n");
+        return 1;
+    }
+
+    uint32_t nsids[PAGE_SIZE / sizeof(uint32_t)];
+    memcpy(nsids, (void*)namespace_page, PAGE_SIZE);
+
+    
+    for (unsigned i = 0; i < PAGE_SIZE / sizeof(uint32_t); i++) {
+        if (!nsids[i]) break;
+
+        e.opc = NVME_OPC_IDENTIFY;
+        nvme_identify_command_t *ident = (nvme_identify_command_t*)&e.command;
+        ident->dptr.prp1 = mem_getPhysicalAddress(NULL, namespace_page);
+        ident->cns = NVME_CNS_IDENTIFY_NAMESPACE;
+        ident->nsid = nsids[i];
+
+        LOG(DEBUG, "Identify namespace ID %x\n", nsids[i]);
+
+            
+        if (nvme_submitAndWait(nvme, nvme->admin_queue, &e)) {
+            LOG(ERR, "NVME_OPC_IDENTIFY failed\n");
+            return 1;
+        }
+
+        nvme_namespace_identify_t *ns = (nvme_namespace_identify_t*)namespace_page;
+
+        uint64_t format = ns->lbafN[ns->flbas & 0x0F];
+        uint64_t block_size = 1 << ((format >> 16) & 0xFF);
+
+        LOG(DEBUG, "Block count: %d blocks\n", ns->nsze);
+        LOG(DEBUG, "Block size: %d bytes\n", block_size);
+        LOG(DEBUG, "Total: %d MiB\n", ns->nsze * block_size / (1 << 20));
+
+        nvme_namespaceInit(nvme, nsids[i], ns);
+    }
+
+    return 0;
+}
+
 
 /**
  * @brief Start the NVMe controller
@@ -231,11 +440,21 @@ int nvme_init(pci_device_t *dev) {
         goto _nvme_cleanup;
     }
 
-    // // Create I/O queue
-    // if (nvme_createIOQueue(nvme)) {
-    //     LOG(ERR, "Error creating I/O queue\n");
-    //     goto _nvme_cleanup;
-    // }
+    // Configure IOSQES and IOCQES
+    nvme->regs->cc.iocqes = 4;
+    nvme->regs->cc.iosqes = 6;
+
+    // Create I/O queue
+    if (nvme_createIOQueue(nvme)) {
+        LOG(ERR, "Error creating I/O queue\n");
+        goto _nvme_cleanup;
+    }
+
+    // Identify namespaces
+    if (nvme_identifyNamespaces(nvme)) {
+        LOG(ERR, "Error identifying NVMe namespaces\n");
+        goto _nvme_cleanup;
+    }
 
     kfree(bar);
     return 0;
