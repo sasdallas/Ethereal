@@ -53,6 +53,15 @@ Currently, the project is developing its usermode stages.
 
 ## Building
 
+
+### ACPICA notice
+
+If you use ACPICA (it is on by default), you must download the tarfile from [here](https://downloadmirror.intel.com/834974/acpica-unix-20240927.tar.gz) and extract it to `external/acpica/acpica-src`
+
+Else, you can edit `conf/build/<arch>.mk` and set `USE_ACPICA` to 0.  
+
+### Building
+
 To build Ethereal, you will need an Ethereal toolchain for your target architecture.\
 The Ethereal toolchain can be found at [the repository](https://github.com/sasdallas/Ethereal-Toolchain)
 
