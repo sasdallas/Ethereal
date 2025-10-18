@@ -26,11 +26,11 @@ baseurl: "/Ethereal" # the subpath of your site, e.g. /blog
 url: "https://sasdallas.github.io" # the base hostname & protocol for your site, e.g. http://example.com
 
 # Build settings
-theme: jekyll-theme-cayman
+theme: jekyll-theme-minima
 plugins:
   - jekyll-feed
 
-cayman:
+minima:
   skin: auto
   
 
