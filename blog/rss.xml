@@ -2,7 +2,7 @@
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
     <channel>
         <title>Ethereal Blog</title>
-        <link>https://sasdallas.github.io/Ethereal/blog/</link>
+        <link>https://sasdallas.github.io/blog/</link>
         <description>Ethereal Blog</description>
         <lastBuildDate>Sun, 01 Aug 2021 00:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
@@ -10,8 +10,8 @@
         <language>en</language>
         <item>
             <title><![CDATA[MDX Blog Post]]></title>
-            <link>https://sasdallas.github.io/Ethereal/blog/mdx-blog-post/</link>
-            <guid>https://sasdallas.github.io/Ethereal/blog/mdx-blog-post/</guid>
+            <link>https://sasdallas.github.io/blog/mdx-blog-post/</link>
+            <guid>https://sasdallas.github.io/blog/mdx-blog-post/</guid>
             <pubDate>Sun, 01 Aug 2021 00:00:00 GMT</pubDate>
             <description><![CDATA[Blog posts support Docusaurus Markdown features, such as MDX.]]></description>
             <content:encoded><![CDATA[<p>Blog posts support <a href="https://docusaurus.io/docs/markdown-features" target="_blank" rel="noopener noreferrer" class="">Docusaurus Markdown features</a>, such as <a href="https://mdxjs.com/" target="_blank" rel="noopener noreferrer" class="">MDX</a>.</p>
@@ -24,8 +24,8 @@
         </item>
         <item>
             <title><![CDATA[Long Blog Post]]></title>
-            <link>https://sasdallas.github.io/Ethereal/blog/long-blog-post/</link>
-            <guid>https://sasdallas.github.io/Ethereal/blog/long-blog-post/</guid>
+            <link>https://sasdallas.github.io/blog/long-blog-post/</link>
+            <guid>https://sasdallas.github.io/blog/long-blog-post/</guid>
             <pubDate>Wed, 29 May 2019 00:00:00 GMT</pubDate>
             <description><![CDATA[This is the summary of a very long blog post,]]></description>
             <content:encoded><![CDATA[<p>This is the summary of a very long blog post,</p>
@@ -51,8 +51,8 @@
         </item>
         <item>
             <title><![CDATA[First Blog Post]]></title>
-            <link>https://sasdallas.github.io/Ethereal/blog/first-blog-post/</link>
-            <guid>https://sasdallas.github.io/Ethereal/blog/first-blog-post/</guid>
+            <link>https://sasdallas.github.io/blog/first-blog-post/</link>
+            <guid>https://sasdallas.github.io/blog/first-blog-post/</guid>
             <pubDate>Tue, 28 May 2019 00:00:00 GMT</pubDate>
             <description><![CDATA[Lorem ipsum dolor sit amet...]]></description>
             <content:encoded><![CDATA[<p>Lorem ipsum dolor sit amet...</p>
