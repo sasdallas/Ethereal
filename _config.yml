@@ -26,10 +26,14 @@ baseurl: "/Ethereal" # the subpath of your site, e.g. /blog
 url: "https://sasdallas.github.io" # the base hostname & protocol for your site, e.g. http://example.com
 
 # Build settings
-remote_theme: "jekyll/minima@0f2a803"
+remote_theme: "jekyll/cayman"
 
 plugins:
   - jekyll-feed
+
+cayman:
+  skin: auto
+  
 
 # Exclude from processing.
 # The following items will not be processed, by default.
