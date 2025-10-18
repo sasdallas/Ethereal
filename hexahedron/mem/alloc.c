@@ -28,9 +28,6 @@
 #include <kernel/debug.h>
 
 
-/* Internal copy of the allocator's data */
-static allocator_info_t *alloc_info = NULL; // !!!: What if a bad allocator changes this after giving it to us? 
-
 
 /** FORWARDER FUNCTIONS **/
 
@@ -70,40 +67,9 @@ __attribute__((malloc)) void *kcalloc(size_t elements, size_t size) {
 }
 
 /**
- * @brief Page-aligned memory allocator
- * @param size The size to allocate.
- * 
- * @note Do not rely on this! Allocators can choose not to provide this!
- * @returns A pointer or crashes with an unimplemented exception.
- */
-__attribute__((malloc)) void *kvalloc(size_t size) {
-    if (alloc_canHasValloc()) {
-        void *ptr = alloc_valloc(size);
-        return ptr;
-    } else {
-        kernel_panic_extended(UNSUPPORTED_FUNCTION_ERROR, "alloc", "valloc() is not supported in this context.\n");
-        __builtin_unreachable();
-    }
-}
-
-/**
  * @brief Free kernel memory
  * @param ptr A pointer to the previous memory
  */
 void kfree(void *ptr) {
     alloc_free(ptr);
-}
-
-/** ALLOCATOR-MANAGEMENT FUNCTIONS **/
-
-/**
- * @brief valloc?
- */
-int alloc_canHasValloc() {
-    if (alloc_info == NULL) {
-        /* Get some */
-        alloc_info = alloc_getInfo();
-    }
-
-    return alloc_info->support_valloc;
 }

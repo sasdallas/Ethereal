@@ -272,11 +272,6 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
     // Now, we can initialize memory systems.
     mem_init(memory_size, first_free_page);
 
-    // Print out allocator information
-    allocator_info_t *info = alloc_getInfo();
-    dprintf(INFO, "Allocator information: %s version %i.%i (valloc %s)\n", info->name, info->version_major, info->version_minor,
-                                            info->support_valloc ? "supported" : "not supported");
-
     // Now we can ACTUALLY parse Multiboot information
     if (multiboot_magic == MULTIBOOT_MAGIC) {
         parameters = arch_parse_multiboot1(bootinfo);

@@ -26,28 +26,6 @@
 #define ALLOC_VERSION_MAJOR 1
 #define ALLOC_VERSION_MINOR 1
 
-static allocator_info_t *allocator_information = NULL; 
-
-/**
- * @brief Get information on the allocator.
- */
-allocator_info_t *alloc_getInfo() {
-    // Allocate if not present.
-    // !!!: This probably isn't a good idea. What happens if there was a fault in the allocator?
-    // !!!: (contd) Should panic handle that or should we?
-    if (allocator_information == NULL) {
-        allocator_information = kmalloc(sizeof(allocator_info_t));
-        strncpy((char*)allocator_information->name, ALLOC_NAME, 127);
-        allocator_information->name[strlen(allocator_information->name)] = 0;
-
-        allocator_information->version_major = ALLOC_VERSION_MAJOR;
-        allocator_information->version_minor = ALLOC_VERSION_MINOR;
-
-        allocator_information->support_valloc = 0;
-    }
-    
-    return allocator_information;
-}
 
 /**
  * @brief Fake valloc hook

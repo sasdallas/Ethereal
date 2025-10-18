@@ -108,10 +108,6 @@ extern pool_t *mem_mapPool;
     json_object_push(heap_info, "total_pmm_blocks", json_integer_new(pmm_getMaximumBlocks()));
     json_object_push(heap_info, "free_pmm_blocks", json_integer_new(pmm_getFreeBlocks()));
     json_object_push(heap_info, "pmm_block_size", json_integer_new(PMM_BLOCK_SIZE));
-    
-    allocator_info_t *allocInfo = alloc_getInfo();
-    snprintf(temp_string, 128, "%s %i.%i", allocInfo->name, allocInfo->version_major, allocInfo->version_minor);
-    json_object_push(heap_info, "alloc_name", json_string_new(temp_string));
 
     json_object_push(data, "heap", heap_info);
 
