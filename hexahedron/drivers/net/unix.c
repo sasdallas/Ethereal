@@ -2,11 +2,6 @@
  * @file hexahedron/drivers/net/unix.c
  * @brief UNIX socket driver
  * 
- * UNIX sockets can either operate in datagram mode or streamed mode.
- * In either mode, Hexahedron uses a circular buffer (combined with a datagram data system) that ensures reliable
- * transmission.
- * 
- * Thank you to Stanislas Orsola (@tayoky4848) for helping me see the light in pipe implementations.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
@@ -18,450 +13,124 @@
 
 #include <kernel/drivers/net/unix.h>
 #include <kernel/drivers/net/socket.h>
-#include <kernel/misc/spinlock.h>
-#include <kernel/task/syscall.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/misc/util.h>
-#include <kernel/debug.h>
-#include <structs/hashmap.h>
 #include <sys/un.h>
-#include <stdlib.h>
+#include <kernel/mem/alloc.h>
+#include <kernel/fs/vfs.h>
+#include <string.h>
+#include <assert.h>
 #include <errno.h>
-#include <fcntl.h>
+#include <stdatomic.h>
+#include <structs/hashmap.h>
+#include <kernel/debug.h>
+
+/* Path map */
+hashmap_t *unix_path_map = NULL;
+spinlock_t path_map_lck = { 0 };
 
 /* Log method */
-#define LOG(status, ...) dprintf_module(status, "NET:UNIX", __VA_ARGS__)
+#define LOG(status, ...) dprintf_module(status, "DRIVERS:NET:UNIX", __VA_ARGS__)
 
-/* UNIX mount hashmap */
-hashmap_t *unix_mount_map = NULL;
+/* Get unix socket */
+#define USOCK(sock) ((unix_sock_t*)sock->driver)
 
-/* UNIX mount lock */
-spinlock_t unix_mount_lock = { 0 };
-
-/* Socket close method */
-extern void socket_close(fs_node_t *node);
+/* State */
+#define UNIX_STATE_CHANGE(usock, s) atomic_store(&usock->state, s)
 
 /**
- * @brief Initialize the UNIX socket system
+ * @brief UNIX decrement and free
  */
-void unix_init() {
-    unix_mount_map = hashmap_create("unix mount map", 20);
-    socket_register(AF_UNIX, unix_socket);
-}
-
-/**
- * @brief UNIX socket recvmsg method
- * @param sock The socket to receive messages on
- * @param msg The message to receive
- * @param flags Additional flags
- */
-ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
-    if (!msg->msg_iovlen) return 0;
-
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && !usock->connected_socket) return -ENOTCONN;
-
-    ssize_t total_received = 0;
-    if (sock->type == SOCK_DGRAM) {
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "Multiple iovecs are not supported right now\n");
-            return -ENOTSUP;
-        }
-
-        // Datagram sockets are easy enough, we just need to also pop from the datagram data queue
-        // Reuse the lock from the ringbuffer
-        spinlock_acquire(usock->packet_buffer->lock);
-        if (!usock->dgram_data->length) {
-            if (sock->flags & SOCKET_FLAG_NONBLOCKING) {
-                spinlock_release(usock->packet_buffer->lock);
-                return -EWOULDBLOCK;
-            }
-
-            // There is no length, keep holding the lock and prepare to sleep
-            sleep_untilNever(current_cpu->current_thread);
-            usock->thr = current_cpu->current_thread;
-            
-            spinlock_release(usock->packet_buffer->lock);
-            
-            int w = sleep_enter();
-            if (w == WAKEUP_SIGNAL) return -EINTR;
-
-            // Another thread must've woken us up, reacquire the lock
-            spinlock_acquire(usock->packet_buffer->lock);
-        }
-
-        // We have the lock and there's content available.
-        // Pop the node
-        node_t *n = list_popleft(usock->dgram_data);
-        if (!n) return -EINTR;  // ???
-        unix_datagram_data_t *data = (unix_datagram_data_t*)n->value;
-        kfree(n);
-        spinlock_release(usock->packet_buffer->lock);
-
-        // We have the size of the packet. Which is less?
-        size_t size_to_read = min(msg->msg_iov[0].iov_len, data->packet_size);
-        kfree(data);
-
-        // Read from the buffer
-        ssize_t r = circbuf_read(usock->packet_buffer, size_to_read, msg->msg_iov[0].iov_base);
-        if (r && msg->msg_name && msg->msg_namelen == sizeof(struct sockaddr_un)) {
-            // We got a message name as well
-            memcpy(msg->msg_name, &data->un, sizeof(struct sockaddr_un));
-        }
-
-        return r;
-    } else if (sock->type == SOCK_SEQPACKET) {
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "Multiple iovecs are not supported right now\n");
-            return -ENOTSUP;
-        }
-        
-        // Sequenced packet sockets are easy enough, we just need to also pop from the datagram data queue
-        // Reuse the lock from the ringbuffer
-        spinlock_acquire(usock->packet_buffer->lock);
-        
-        // We really don't want to enter a loop forever...
-        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) {
-            spinlock_release(usock->packet_buffer->lock);
-            return -ECONNRESET;
-        }
-
-        if (!usock->dgram_data->length) {
-            if (sock->flags & SOCKET_FLAG_NONBLOCKING) {
-                spinlock_release(usock->packet_buffer->lock);
-                return -EWOULDBLOCK;
-            }
-
-            // There is no length, keep holding the lock and prepare to sleep
-            sleep_untilNever(current_cpu->current_thread);
-            usock->thr = current_cpu->current_thread;
-            
-            spinlock_release(usock->packet_buffer->lock);
-            
-            int w = sleep_enter();
-            usock->thr = NULL;
-            if (w == WAKEUP_SIGNAL) return -EINTR;
-
-            // Another thread must've woken us up, reacquire the lock
-            spinlock_acquire(usock->packet_buffer->lock);
-        }
-
-        // Double-check
-        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) {
-            spinlock_release(usock->packet_buffer->lock);
-            return -ECONNRESET;
-        }
-
-        // We have the lock and there's content available.
-        // Pop the node
-        node_t *n = list_popleft(usock->dgram_data);
-        if (!n) { spinlock_release(usock->packet_buffer->lock); return -EINTR; }  // ???
-        unix_datagram_data_t *data = (unix_datagram_data_t *)n->value;
-        kfree(n);
-        spinlock_release(usock->packet_buffer->lock);
-
-        // We have the size of the packet. Which is less?
-        size_t size_to_read = min(msg->msg_iov[0].iov_len, data->packet_size);
-
-        // Read from the buffer
-        ssize_t r = circbuf_read(usock->packet_buffer, size_to_read, msg->msg_iov[0].iov_base);
-
-        kfree(data);
-        return r;
-    } else {
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "More than one iovec is not currently supported (KERNEL BUG)\n");
-            return -ENOTSUP;
-        }
-
-        // Streamed sockets are easy, just try to read as much as possible
-        if (usock->packet_buffer->stop && !circbuf_remaining_read(usock->packet_buffer)) return -ECONNRESET;
-        ssize_t r = 0;
-
-        while (!r) {
-            r = circbuf_read(usock->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
-        }
-        
-        return r;
-    }
-
-    return total_received;
-}
-
-/**
- * @brief UNIX socket sendmsg method
- * @param sock The socket to send the message on
- * @param msg The message to send
- * @param flags Additional flags
- */
-ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
-    if (!msg->msg_iovlen) return 0;
-
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-
-    struct sockaddr_un *un = NULL;
-    sock_t *chosen_socket = NULL;
-
-    // Do we accept msg_name?
-    if (sock->type == SOCK_DGRAM) {
-        // Yeah, but did they give one?
-        if (msg->msg_name) {
-            if (msg->msg_namelen < sizeof(struct sockaddr_un)) return -EINVAL;
-            un = (struct sockaddr_un*)msg->msg_name;
-        
-            // Lookup the path they're trying to send to
-            // Canonicalize the path
-            char *canon = vfs_canonicalizePath(current_cpu->current_process->wd_path, un->sun_path);
-            if (!canon) return -EINVAL;
-
-            // Try to get the node at the address
-            sock_t *serv_sock = hashmap_get(unix_mount_map, canon);
-            if (!serv_sock) return -ENOTSOCK; // !!!: ENOENT?
-
-            // Double-check type
-            if (serv_sock->type != SOCK_DGRAM) return -EPROTOTYPE;
-        
-            // Chosen socket
-            chosen_socket = serv_sock;
-            LOG(DEBUG, "Resolved address for \"%s\"\n", un->sun_path);
-        } else {
-            if (!usock->connected_socket) return -ENOTCONN;
-            chosen_socket = usock->connected_socket;
-        }
-    } else {
-        if (!usock->connected_socket) return -ENOTCONN;
-        chosen_socket = usock->connected_socket;
-    }
-
-    ssize_t total_sent = 0;
-
-    if (sock->type == SOCK_DGRAM) {
-        // DGRAM sockets are easy, just throw a packet at them
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "Multiple IOVs not supported yet!\n");
-            return -ENOTSUP;
-        }
-
-        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
-        
-        // Create packet data
-        unix_datagram_data_t *data = kmalloc(sizeof(unix_datagram_data_t));
-        data->packet_size = msg->msg_iov[0].iov_len;
-        data->un.sun_family = AF_UNIX;
-        memcpy(data->un.sun_path, usock->sun_path, 108);
- 
-        // Write to circular buffer
-        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
-        if (r) {
-            // Acquire lock to push packet data
-            spinlock_acquire(usock_target->packet_buffer->lock);
-            list_append(usock_target->dgram_data, data);
-            spinlock_release(usock_target->packet_buffer->lock);
-
-            if (usock_target->thr) sleep_wakeup(usock_target->thr);
-        }
-
-        return r;
-    } else if (sock->type == SOCK_SEQPACKET) {
-        // SEQPACKET sockets are easy, just throw a packet at them
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "Multiple IOVs not supported yet!\n");
-            return -ENOTSUP;
-        }
-
-        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
- 
-        // Avoid blocking if we are non blocking
-        if (sock->flags & SOCKET_FLAG_NONBLOCKING && circbuf_remaining_write(usock_target->packet_buffer) <= 0) {
-            return -EWOULDBLOCK;
-        }
-
-        // Create packet data
-        unix_datagram_data_t *data = kmalloc(sizeof(unix_datagram_data_t));
-        data->packet_size = msg->msg_iov[0].iov_len;
- 
-        // Write to circular buffer
-        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, msg->msg_iov[0].iov_base);
-        
-        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
+void unix_decrementAndFree(unix_sock_t *usock) {
+    refcount_dec(&usock->ref);
+    if (usock->ref) return;
     
-        if (r && !usock_target->packet_buffer->stop) {
-            // Acquire lock to push packet data
-            spinlock_acquire(usock_target->packet_buffer->lock);
-            list_append(usock_target->dgram_data, data);
-            spinlock_release(usock_target->packet_buffer->lock);
-
-            if (usock_target->thr) sleep_wakeup(usock_target->thr);
-
-            fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
-        }
-
-        return r;
-    } else {
-        if (msg->msg_iovlen > 1) {
-            LOG(ERR, "Multiple IOVs not supported yet!\n");
-            return -ENOTSUP;
-        }
-
-        unix_sock_t *usock_target = (unix_sock_t*)chosen_socket->driver;
-
-        // Avoid blocking if we are non blocking
-        if (sock->flags & SOCKET_FLAG_NONBLOCKING && circbuf_remaining_write(usock_target->packet_buffer) <= 0) {
-            return -EWOULDBLOCK;
-        }
-
-        // Streamed sockets are even easier, just write the packet for them.
-        ssize_t r = circbuf_write(usock_target->packet_buffer, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
-        if (!r && usock_target->packet_buffer->stop) return -ECONNRESET;
-
-        // Alert the target node
-        fs_alert(chosen_socket->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
-        return r;
-    }
+    // Destroy the socket
+    LOG(INFO, "Need to destroy UNIX socket\n");
+    if (usock->peer) usock->peer->peer = NULL;
+    if (usock->un_path) kfree(usock->un_path);
     
-    return total_sent;
-}
 
-/**
- * @brief UNIX socket connect method
- * @param sock The socket to connect
- * @param sockaddr The socket address
- * @param addrlen The address length
- */
-int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
-    // Are we already connected?
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    if (usock->connected_socket) {
-        return -EISCONN;
-    }
-
-    if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
-    struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
-
-    // Canonicalize the path
-    char *canon = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
-    if (!canon) return -EINVAL;
-
-    // Try to get the node at the address
-    sock_t *serv_sock = hashmap_get(unix_mount_map, canon);
-    if (!serv_sock) return -ENOTSOCK; // !!!: ENOENT?
-
-    // Is it the same type as us?
-    unix_sock_t *serv = (unix_sock_t*)serv_sock->driver;
-    if (!(sock->type == serv_sock->type)) {
-        LOG(WARN, "Cannot connect to socket of type %d when you are type %d\n", serv_sock->type, sock->type);
-        return -EPROTOTYPE;
-    }
-
-    // If we are a datagram socket, stop now
-    if (sock->type == SOCK_DGRAM) {
-        usock->connected_socket = serv_sock;
-        return 0;
-    }
-
-    // Create a pending connection
-    if (!serv->incoming_connections) return -ECONNREFUSED; // Server has not issued a call to listen()
-
-    // TODO: Handle backlog
-    unix_conn_request_t *creq = kzalloc(sizeof(unix_conn_request_t));
-    creq->sock = sock;
-
-    // Add ourselves to the incoming connections queue
-    spinlock_acquire(&serv->incoming_connect_lock);
-    list_append(serv->incoming_connections, (void*)creq);
-    fs_alert(serv_sock->node, VFS_EVENT_READ);
-    spinlock_release(&serv->incoming_connect_lock);
-
-    // Prepare ourselves if needed
-    sleep_untilTime(current_cpu->current_thread, 1, 0);
-    fs_wait(sock->node, VFS_EVENT_READ);
-    usock->thr = current_cpu->current_thread;
-
-    if (serv->thr && serv->thr->sleep) sleep_wakeup(serv->thr);
-    
-    // Do we need to wait for an acknowledgement?
-    if (sock->type == SOCK_DGRAM) {
-        // Nope, assume that we're bound and set the connected socket.
-        usock->connected_socket = serv_sock; // ???: wasting these extra 8 bytes is probably faster than connected_addr
+    if (usock->sock->type == SOCK_STREAM) {
+        // TODO
+        assert(0 && "unix_decrementAndFree needs implementation for SOCK_STREAM");
     } else {
-        // Yes, we need to wait for an ACCEPT request.
-        // Start waiting in timeout
-        for (int i = 0; i < 3; i++) {
-            int w = sleep_enter();
-            if (w == WAKEUP_SIGNAL) {
-                usock->thr = NULL;
-                return -EINTR;
-            }
-            
-            // Is it accepted?
-            if (creq->new_sock) {
-                LOG(INFO, "Connection request accepted\n");
-                usock->connected_socket = creq->new_sock;        
-                kfree(creq);
-                usock->thr = NULL;
-                return 0;
-            }
+        // DGRAM/SEQPACKET, destroy
+        assert(usock->pkt.d->rx_wait_queue->queue.length == 0);
+        assert(usock->pkt.d->tx_wait_queue->queue.length == 0);
+        kfree(usock->pkt.d->rx_wait_queue);
+        kfree(usock->pkt.d->tx_wait_queue);
+        
+        // Go through packet list and free each one
+        unix_sock_packet_t *p = usock->pkt.d->rx_head;
+        while (p) {
+            unix_sock_packet_t *nxt = p->next;
+            kfree(p);
+            p = nxt;
+        }
+    }
 
-            sleep_untilTime(current_cpu->current_thread, 1, 0);
-            fs_wait(sock->node, VFS_EVENT_READ);
+    if (usock->node) fs_close(usock->node);
+
+    if (usock->is_listener) {
+        mutex_destroy(usock->server.m); // No clients should be connected
+
+        while (!queue_empty(usock->server.conn)) {
+            unix_conn_req_t *c = queue_pop(usock->server.conn);
+            if (c->state == UNIX_CONN_DEAD) free(c);
+            else c->state = UNIX_CONN_DEAD;
         }
 
-        kfree(creq);
-        usock->thr = NULL;
-        return -ETIMEDOUT;
-    }
+        kfree(usock->server.conn);
+        assert(usock->server.accepters->queue.length == 0);
+        kfree(usock->server.accepters);
+    }    
 
-    return 0;
+    kfree(usock);
 }
 
 /**
  * @brief UNIX socket bind method
- * @param sock The socket to bind
- * @param sockaddr The socket address to bind to
+ * @param sock The sock to bind
+ * @param addr The address to bind to
  * @param addrlen The address length
  */
 int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
-    // Are we already bound?
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    if (usock->bound) {
-        return -EINVAL;
+    unix_sock_t *usock = USOCK(sock);
+
+    if (usock->state != UNIX_SOCK_STATE_INIT) {
+        return -EINVAL; // Bound already
     }
 
-    // Is it a UNIX socket address?
     if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
     struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
     if (!(*addr->sun_path)) return -EINVAL;
 
-    // Canonicalize the path
-    char *path = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
-    if (!path) return -EINVAL;
+    // Canonicalize the current path
+    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
+    assert(p);
 
-    // Try to create the file
-    fs_node_t *node = NULL;
-    int r = vfs_creat(&node, path, 0);
+    // Try to create the node at the location
+    fs_node_t *n = NULL;
+    int r = vfs_creat(&n, p, 0);
     if (r != 0) {
         if (r == -EEXIST) return -EADDRINUSE;
         return r;
     }
 
-    // We've created the file successfully, set it to a VFS socket
-    // !!!: I have no idea the purpose of this node in UNIX sockets. Is it a semaphore? Can you read from it? Please enlighten me.
-    node->flags = VFS_SOCKET;
-    node->read = NULL;
-    node->write = NULL;
+    // Let's configure the socket
+    // TODO: Flush this inode back to disk.. need some more VFS functions!
+    // TODO: Maybe more here?
+    n->flags = VFS_SOCKET;
+    n->read = NULL;
+    n->write = NULL;
 
-    // We've bound successfully, set it in the map
-    usock->bound = node;
+    usock->node = n;
 
-    spinlock_acquire(&unix_mount_lock);
-    hashmap_set(unix_mount_map, path, sock);
-    spinlock_release(&unix_mount_lock);
-    
-    usock->map_path = path;
+    spinlock_acquire(&path_map_lck);
+    hashmap_set(unix_path_map, p, sock);
+    spinlock_release(&path_map_lck);
 
-    strncpy(usock->sun_path, addr->sun_path, 108);
-
-    LOG(DEBUG, "Bound socket to %s\n", addr->sun_path);
+    usock->un_path = p;
+    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_BOUND);
 
     return 0;
 }
@@ -472,12 +141,25 @@ int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) 
  * @param backlog The backlog to use
  */
 int unix_listen(sock_t *sock, int backlog) {
-    // Create incoming connections
-    if (sock->type == SOCK_DGRAM) return -EOPNOTSUPP;
+    if (sock->type != SOCK_SEQPACKET && sock->type != SOCK_STREAM) return -EOPNOTSUPP;
 
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    if (usock->connected_socket) return -EINVAL;
-    if (!usock->incoming_connections) usock->incoming_connections = list_create("unix socket incoming connections");
+    unix_sock_t *usock = USOCK(sock); 
+
+    if (usock->state == UNIX_SOCK_STATE_LISTEN) {
+        return 0; // backlog is not needed
+    }
+
+    if (usock->state != UNIX_SOCK_STATE_BOUND) {
+        return -EINVAL;
+    }
+    
+    // Create listening structures
+    usock->server.m = mutex_create("unix connection mutex");
+    usock->server.conn = queue_create();
+    usock->server.accepters = sleep_createQueue("unix socket acceptors");
+
+    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_LISTEN);
+
     return 0;
 }
 
@@ -488,121 +170,324 @@ int unix_listen(sock_t *sock, int backlog) {
  * @param addrlen Address length
  */
 int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
-    // Is this socket bound?
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
-    if (!usock->incoming_connections) return -EINVAL;
-    if (!usock->bound) return -EINVAL;
+    unix_sock_t *u = USOCK(sock);
+    if (u->state != UNIX_SOCK_STATE_LISTEN) return -EINVAL;
 
-    // Is it a datagram socket?
-    if (sock->type == SOCK_DGRAM) return -EOPNOTSUPP;
+    // Look for available connection requests
+    unix_conn_req_t *r = NULL;
+    while (!r) {
+        mutex_acquire(u->server.m);
 
-    unix_conn_request_t *creq = NULL;
+        // Any pending?
+        if (!queue_empty(u->server.conn)) {
+            // Yes, we do have a pending. Pop it!
+            LOG(DEBUG, "Pending connection detected\n");
+            r = queue_pop(u->server.conn);
+            assert(r);
 
-    while (1) {
-        if (!usock->incoming_connections->length) {
-            if (sock->flags & SOCKET_FLAG_NONBLOCKING) return -EWOULDBLOCK;
-            
-            // Wait for a connection event  
-            sleep_untilNever(current_cpu->current_thread);
-            usock->thr = current_cpu->current_thread;
-
-            int w = sleep_enter();
-
-            // Why were we woken up?
-            if (w == WAKEUP_SIGNAL) return -EINTR;
-            if (!usock->incoming_connections) return -ECONNABORTED; // Just in case we close?
+            if (r->state == UNIX_CONN_DEAD) {
+                // Oops
+                free(r);
+                r = NULL;
+            }
         }
 
-        // Another thread woke us up, why?
-        spinlock_acquire(&usock->incoming_connect_lock);
-        if (!usock->incoming_connections->length) {
-            // Nope
-            spinlock_release(&usock->incoming_connect_lock);
-            continue;
-        } 
+        mutex_release(u->server.m);
+    
+        if (!r) {
+            if (sock_nonblocking(sock)) {
+                return -EWOULDBLOCK;
+            } 
 
-        node_t *n = list_popleft(usock->incoming_connections);
-        creq = (unix_conn_request_t*)n->value;
-        spinlock_release(&usock->incoming_connect_lock);
-
-        kfree(n);
-        break;
+            // Wait in acceptor queue
+            sleep_inQueue(u->server.accepters);
+            int w = sleep_enter();
+            if (w == WAKEUP_SIGNAL) return -EINTR;
+        }
     }
 
-    // Make a new socket to receive on
-    int sock_fd = socket_create(current_cpu->current_process, AF_UNIX, sock->type, sock->protocol);
-    if (sock_fd < 0) {
-        kfree(creq);
+    // We should have a pending request, let's build it up
+    unix_sock_t *tgt = USOCK(r->socket);
+    
+    // Create a new peer socket
+    int sfd = socket_create(current_cpu->current_process, AF_UNIX, sock->type, sock->protocol);
+    if (sfd < 0) {
+        // Client should catch itself
         return -ECONNABORTED;
     }
 
-    sock_t *new_sock = (sock_t*)FD(current_cpu->current_process, sock_fd)->node->dev;
+    sock_t *new_sock = (sock_t*)FD(current_cpu->current_process, sfd)->node->dev;
+    unix_sock_t *new_usock = USOCK(new_sock);
 
-    // Got a new socket successfully, say that we're bound already
-    unix_sock_t *new_usock = (unix_sock_t*)new_sock->driver;
-    new_usock->connected_socket = creq->sock;
-    strncpy(new_usock->sun_path, usock->sun_path, 108);
-
-    // Set the new socket
-    creq->new_sock = new_sock;
+    refcount_inc(&new_usock->ref);
+    refcount_inc(&tgt->ref);
+    UNIX_STATE_CHANGE(tgt, UNIX_SOCK_STATE_CONNECTED);
+    UNIX_STATE_CHANGE(new_usock, UNIX_SOCK_STATE_CONNECTED);
     
-    // Wakeup the waiting socket thread
-    sleep_wakeup(((unix_sock_t*)creq->sock->driver)->thr);
 
-    // Fill in accept info if we can
+
+    new_usock->un_path = strdup(u->un_path);
+
+    // Connect up the peers
+    tgt->peer = new_usock;
+    new_usock->peer = tgt;
+
+    assert(r->state == UNIX_CONN_WAITING);
+    atomic_store(&r->state, UNIX_CONN_CONNECTED);
+    sleep_wakeup(r->thr);
+
+    // Fillout addrlen if needed
     if (addrlen) {
         size_t size = (*addrlen > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : *addrlen;
         SYSCALL_VALIDATE_PTR_SIZE(sockaddr, *addrlen);
-
+    
+        
         struct sockaddr_un new_un;
         new_un.sun_family = AF_UNIX;
-        strncpy(new_un.sun_path, usock->sun_path, 108);
-
+        strncpy(new_un.sun_path, u->un_path, 108);
         memcpy(sockaddr, &new_un, size);
     }
 
-    // We are connected
-    return sock_fd;
+
+    return sfd;
 }
 
 /**
- * @brief UNIX socket close method
- * @param sock The socket to close
+ * @brief UNIX socket connect method
+ * @param sock The socket to connect
+ * @param sockaddr The socket address
+ * @param addrlen The address length
  */
-int unix_close(sock_t *sock) {
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
+int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+    if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET) return -EOPNOTSUPP;
+    
+    unix_sock_t *usock = USOCK(sock);
 
-    // !!!: Race condition?
-    if (usock->incoming_connections) {
-        // TODO: Reply with a close?
-        list_destroy(usock->incoming_connections, false); 
-        usock->incoming_connections = NULL;
+    if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
+    struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
+
+    // Canonicalize the path...
+    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
+    assert(p);
+
+    // Get server
+    sock_t *serv = hashmap_get(unix_path_map, p);
+    if (!serv) return -ENOENT; // ???
+    unix_sock_t *userv = USOCK(serv);
+
+    if (!(serv->type == sock->type)) {
+        return -EPROTOTYPE;
     }
 
-    // Stop the other socket's buffer
-    if (usock->connected_socket && sock->type != SOCK_DGRAM) {
-        unix_sock_t *other_sock = (unix_sock_t*)usock->connected_socket->driver;
-        circbuf_stop(other_sock->packet_buffer);
+    if (sock->type == SOCK_DGRAM) {
+        // Don't actually need to do any work since this is a datagram
+        usock->peer = userv;
+        UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CONNECTED);
+        return 0;
+    }
 
-        if (sock->type == SOCK_SEQPACKET && other_sock->thr) {
-            sleep_wakeup(other_sock->thr);
+    // Make sure server is actually listening
+    if (userv->state != UNIX_SOCK_STATE_LISTEN) return -ECONNREFUSED;
+
+    // Create connection request
+    unix_conn_req_t *r = kmalloc(sizeof(unix_conn_req_t));
+    r->socket = sock;
+    r->state = UNIX_CONN_WAITING;
+    r->thr = current_cpu->current_thread;
+
+    // Prepare this thread to sleep
+    sleep_untilTime(current_cpu->current_thread, 1, 0);
+
+    // Insert us into queue
+    mutex_acquire(userv->server.m);
+    queue_push(userv->server.conn, r);
+    sleep_wakeupQueue(userv->server.accepters, 1);
+    mutex_release(userv->server.m);
+
+    int attempts = 0;
+
+    while (1) {
+        attempts++;
+        if (attempts >= 3) {
+            LOG(WARN, "3 connection attempts expired on UNIX socket, assuming dead\n");
+            atomic_store(&r->state, UNIX_CONN_DEAD);
+            return -ETIMEDOUT;
+        }
+        
+        int w = sleep_enter();
+        if (w == WAKEUP_SIGNAL) { atomic_store(&r->state, UNIX_CONN_DEAD); return -EINTR; }
+
+        if (r->state == UNIX_CONN_CONNECTED) {
+            // Connected to the socket successfully
+            break;
+        }
+
+        sleep_untilTime(current_cpu->current_thread, 1, 0);
+    }
+
+    LOG(INFO, "Connection succeeded with %s\n", usock->peer->un_path);
+    free(r);
+    return 0;
+}
+
+
+/**
+ * @brief UNIX socket recvmsg method
+ * @param sock The socket to receive messages on
+ * @param msg The message to receive
+ * @param flags Additional flags
+ */
+ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+    if (!msg->msg_iovlen) return 0;
+    unix_sock_t *usock = USOCK(sock);
+
+    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && usock->state != UNIX_SOCK_STATE_CONNECTED) {
+        // Peer not connected
+        return -ENOTCONN;
+    }
+    
+    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && usock->state != UNIX_SOCK_STATE_CONNECTED && !usock->peer) {
+        // No peer
+        return -ECONNABORTED;
+    }
+
+    // TODO: DGRAM
+
+    // !!!: More than one iovec is not supported yet
+    assert(msg->msg_iovlen == 1);
+
+    ssize_t bytes_received = 0;
+    if (sock->type == SOCK_DGRAM) {
+        assert(0 && "SOCK_DGRAM not implemented yet");
+    } else if (sock->type == SOCK_STREAM) {
+        assert(0 && "SOCK_STREAM not implemented yet");
+    } else if (sock->type == SOCK_SEQPACKET) {
+        // SEQPACKET socket
+        // Acquire Rx lock and try to get a packet
+        for (;;) {
+            spinlock_acquire(&usock->pkt.d->rx_lock);
+            if (usock->pkt.d->rx_head) {
+                // We have something in Rx head!
+                
+                // Remove it from Rx head
+                unix_sock_packet_t *p = usock->pkt.d->rx_head;
+                usock->pkt.d->rx_head = p->next;
+                if (!usock->pkt.d->rx_head) usock->pkt.d->rx_tail = NULL;
+                spinlock_release(&usock->pkt.d->rx_lock);
+
+                // Copy it into the iovec buffer
+                size_t sz = min(msg->msg_iov[0].iov_len, p->data_size);
+                if (sz != p->data_size) {
+                    LOG(WARN, "Losing some packet content (iovlen = %d data_size = %d)\n", msg->msg_iov[0].iov_len, p->data_size);
+                    // TODO: Set MSG_TRUNC
+                }
+
+                memcpy(msg->msg_iov[0].iov_base, p->data, sz);
+                bytes_received += sz;
+                
+                kfree(p);
+
+                return bytes_received;
+            }
+
+            spinlock_release(&usock->pkt.d->rx_lock);
+
+            // Nope.. are we nonblocking?
+            if (sock_nonblocking(sock)) {
+                return -EWOULDBLOCK;
+            }
+
+            // Check if our peer has closed
+            if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+                unix_decrementAndFree(usock->peer);
+                return -ECONNABORTED;
+            }
+
+            // Sleep in the queue
+            sleep_inQueue(usock->pkt.d->rx_wait_queue);
+            int w = sleep_enter();
+            if (w == WAKEUP_SIGNAL) return -EINTR;
+        }
+    } else {
+        assert(0);
+    }
+
+    return bytes_received;
+}
+
+
+/**
+ * @brief UNIX socket sendmsg method
+ * @param sock The socket to send the message on
+ * @param msg The message to send
+ * @param flags Additional flags
+ */
+ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
+    if (!msg->msg_iovlen) return 0;
+    
+    unix_sock_t *usock = USOCK(sock);
+
+    // Ensure target
+    if (sock->type != SOCK_DGRAM) {
+        // Force connected state
+        if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
+            return -ENOTCONN;
+        }
+        
+        if (!usock->peer) {
+            // We are in CONNECTED state but don't have a peer, peer was closed.
+            return -ECONNABORTED;
         }
     }
 
-    if (sock->type != SOCK_DGRAM) circbuf_stop(usock->packet_buffer);
+    // Make sure we don't have more than one iovec
+    assert(msg->msg_iovlen == 1);
 
-    // Drop from hashmap
-    spinlock_acquire(&unix_mount_lock);
-    hashmap_remove(unix_mount_map, usock->map_path);
-    spinlock_release(&unix_mount_lock);
+    ssize_t total_sent = 0;
+    if (sock->type == SOCK_DGRAM) {
+        assert(!msg->msg_name && "msg->msg_name support not yet implemented");
+        assert(0 && "SOCK_DGRAM not implemented yet");
+    } else if (sock->type == SOCK_STREAM) {
+        assert(0 && "SOCK_STREAM not implemented yet");
+    } else if (sock->type == SOCK_SEQPACKET) {
+        // TODO: tx_wait_queue usage, we need to not overwhelm the socket with information
 
-    // Close bound node
-    if (usock->bound) fs_close(usock->bound);
+        // Generate our request
+        unix_sock_packet_t *p = kmalloc(sizeof(unix_sock_packet_t) + msg->msg_iov[0].iov_len);
+        p->data_size = msg->msg_iov[0].iov_len;
+        memcpy(p->data, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
+        p->next = NULL;
 
-    if (sock->type == SOCK_DGRAM) list_destroy(usock->dgram_data, true);
-    circbuf_destroy(usock->packet_buffer);
-    kfree(usock);
-    return 0;
+        spinlock_acquire(&usock->peer->pkt.d->rx_lock);
+        
+        // Add it to the tail
+        if (usock->peer->pkt.d->rx_tail) {
+            usock->peer->pkt.d->rx_tail->next = p;
+            usock->peer->pkt.d->rx_tail = p;
+        } else {
+            usock->peer->pkt.d->rx_head = usock->peer->pkt.d->rx_tail = p;
+        }
+        
+        // Wakeup a sleeper
+        sleep_wakeupQueue(usock->peer->pkt.d->rx_wait_queue, 1);
+        
+        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+            LOG(ERR, "Peer socket is closed\n");
+            spinlock_release(&usock->peer->pkt.d->rx_lock);
+            unix_decrementAndFree(usock->peer);
+            return -ECONNABORTED;
+        }
+
+        fs_alert(usock->peer->sock->node, VFS_EVENT_READ);
+        spinlock_release(&usock->peer->pkt.d->rx_lock);
+
+
+        total_sent += msg->msg_iov[0].iov_len;
+    } else {
+        assert(0);
+    }
+
+    return total_sent;
 }
 
 /**
@@ -611,46 +496,80 @@ int unix_close(sock_t *sock) {
  * @param events Events to check for
  */
 int unix_ready(sock_t *sock, int events) {
-    unix_sock_t *usock = (unix_sock_t*)sock->driver;
+    unix_sock_t *usock = USOCK(sock);
 
-    if (usock->incoming_connections) {
-        int revents = (usock->incoming_connections->length) ? VFS_EVENT_READ : 0;
-        return revents;
+    // Depending on what this socket is...
+    if (usock->state == UNIX_SOCK_STATE_LISTEN) {
+        // Listening
+        return usock->server.conn->size ? VFS_EVENT_READ : 0;
     }
 
-    if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
-        int revents = (usock->dgram_data->length ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
-        return revents;
+    if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+        if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
+            return usock->pkt.d->rx_head ? VFS_EVENT_READ : 0 | VFS_EVENT_WRITE;
+        } else {
+            return (circbuf_remaining_read(usock->stream.cb) ? VFS_EVENT_READ : 0) | (circbuf_remaining_write(usock->peer->stream.cb) ? VFS_EVENT_WRITE : 0);
+        }
     }
+    
+    // The hell do you want to be ready for
+    return 0;
+}
 
-    int revents = (circbuf_remaining_read(usock->packet_buffer) ? VFS_EVENT_READ : 0) | VFS_EVENT_WRITE;
-    return revents;
+/**
+ * @brief UNIX close
+ * @param sock The socket to close
+ */
+int unix_close(sock_t *sock) {
+    unix_sock_t *usock = USOCK(sock);
+    usock->state = UNIX_SOCK_STATE_CLOSED;
+
+    unix_decrementAndFree(usock);
+
+    return 0;
 }
 
 /**
  * @brief Create a UNIX socket
- * @param type The type
- * @param protocol The protocol
  */
 sock_t *unix_socket(int type, int protocol) {
-    if (type != SOCK_STREAM && type != SOCK_DGRAM && type != SOCK_SEQPACKET) return NULL;
+    if (type != SOCK_SEQPACKET && type != SOCK_STREAM && type != SOCK_DGRAM) return NULL;
 
-    sock_t *sock = kzalloc(sizeof(sock_t));
+    // Create UNIX socket data fields
     unix_sock_t *usock = kzalloc(sizeof(unix_sock_t));
+    atomic_store(&usock->state, UNIX_SOCK_STATE_INIT);
+    refcount_init(&usock->ref, 1);
 
-    usock->packet_buffer = circbuf_create("unix packet buffer", UNIX_PACKET_BUFFER_SIZE);
-    if (type == SOCK_DGRAM || type == SOCK_SEQPACKET) usock->dgram_data = list_create("unix packet sizes");
+    if (type == SOCK_SEQPACKET || type == SOCK_DGRAM) {
+        // Initialize data
+        usock->pkt.d = kzalloc(sizeof(unix_packet_data_t));
+        usock->pkt.d->rx_wait_queue = sleep_createQueue("unix rx queue");
+        usock->pkt.d->tx_wait_queue = sleep_createQueue("unix tx queue");
+    } else if (type == SOCK_STREAM) {
+        usock->stream.cb = circbuf_create("unix sock buffer", UNIX_SOCKET_BUFFER_SIZE);
+    }
 
-    sock->sendmsg = unix_sendmsg;
-    sock->recvmsg = unix_recvmsg;
-    sock->close = unix_close;
-    sock->connect = unix_connect;
-    sock->bind = unix_bind;
-    sock->listen = unix_listen;
-    sock->accept = unix_accept;
-    sock->ready = unix_ready;
 
-    sock->driver = (void*)usock;
+    sock_t *s = kzalloc(sizeof(sock_t));
+    usock->sock = s;
+    s->driver = (void*)usock;
+    s->bind = unix_bind;
+    s->accept = unix_accept;
+    s->connect = unix_connect;
+    s->listen = unix_listen;
+    s->recvmsg = unix_recvmsg;
+    s->sendmsg = unix_sendmsg;
+    s->close = unix_close;
+    s->ready = unix_ready;
 
-    return sock;
+
+    return s;
+}
+
+/**
+ * @brief Initialize UNIX sockets
+ */
+void unix_init() {
+    socket_register(AF_UNIX, unix_socket);
+    unix_path_map = hashmap_create("unix path map", 10);
 }

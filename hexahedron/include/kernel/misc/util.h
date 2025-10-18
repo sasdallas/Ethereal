@@ -80,5 +80,10 @@
 #define __NON_INTERRUPTABLE_BEGIN() { int __state = hal_getInterruptState(); hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 #define __NON_INTERRUPTABLE_END() hal_setInterruptState(__state); }
 
+/* refcount */
+typedef atomic_int refcount_t;
+#define refcount_inc(ref) ({ atomic_fetch_add(ref, 1); })
+#define refcount_dec(ref) ({ atomic_fetch_sub(ref, 1); })
+#define refcount_init(ref, val) ({ atomic_store(ref, val); })
 
 #endif

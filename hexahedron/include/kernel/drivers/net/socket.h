@@ -250,4 +250,11 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen);
  */
 sock_t *socket_fromID(int id);
 
+/**
+ * @brief Returns whether a socket is nonblocking
+ */
+static inline int sock_nonblocking(sock_t *sock) {
+    return sock->flags & SOCKET_FLAG_NONBLOCKING;
+}
+
 #endif

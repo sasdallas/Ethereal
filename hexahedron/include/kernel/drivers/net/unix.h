@@ -1,6 +1,6 @@
 /**
  * @file hexahedron/include/kernel/drivers/net/unix.h
- * @brief UNIX socket
+ * @brief UNIX socket implementation
  * 
  * 
  * @copyright
@@ -16,71 +16,89 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <sys/socket.h>
-#include <structs/list.h>
-#include <kernel/fs/vfs.h>
-#include <kernel/drivers/net/socket.h>
-#include <sys/un.h>
 #include <structs/circbuf.h>
-
-/**** DEFINITIONS ****/
-
-#define UNIX_PACKET_BUFFER_SIZE     4096
+#include <kernel/fs/vfs.h>
+#include <kernel/misc/mutex.h>
+#include <kernel/misc/spinlock.h>
+#include <kernel/drivers/net/socket.h>
+#include <kernel/misc/util.h>
+#include <structs/queue.h>
 
 /**** TYPES ****/
 
-typedef struct unix_conn_request {
-    sock_t *sock;                       // Incoming connection request socket
-    sock_t *new_sock;                   // New socket flag (NULL until connection accepted)
-} unix_conn_request_t;
+typedef enum {
+    UNIX_SOCK_STATE_INIT,
+    UNIX_SOCK_STATE_BOUND,
+    UNIX_SOCK_STATE_LISTEN,
+    UNIX_SOCK_STATE_CONNECTING,
+    UNIX_SOCK_STATE_CONNECTED,
+    UNIX_SOCK_STATE_CLOSED
+} unix_sock_state_t;
 
-typedef struct unix_datagram_data {
-    size_t packet_size;                 // Packet size
-    struct sockaddr_un un;              // UNIX address
-} unix_datagram_data_t;
+typedef enum {
+    UNIX_CONN_WAITING,
+    UNIX_CONN_CONNECTED,
+    UNIX_CONN_DEAD,
+} unix_conn_state_t;
+
+typedef struct unix_sock_packet {
+    struct unix_sock_packet *next;
+    size_t data_size;
+    char data[];
+} unix_sock_packet_t;
+
+typedef struct unix_packet_data {
+    unix_sock_packet_t *rx_head;
+    unix_sock_packet_t *rx_tail;
+    spinlock_t rx_lock;
+    sleep_queue_t *rx_wait_queue;
+    sleep_queue_t *tx_wait_queue;
+} unix_packet_data_t;
+
+typedef struct unix_conn_req {
+    unix_conn_state_t state;
+    sock_t *socket;
+    struct thread *thr;
+} unix_conn_req_t;
+
 
 typedef struct unix_sock {
-    sock_t *connected_socket;           // Connected socket
-    struct thread *thr;                 // Thread to wakeup on new packet
-    fs_node_t *bound;                   // Bound node
-    char sun_path[108];                 // Path to socket
-    char *map_path;                     // Map path
+    volatile uint8_t state;         // Socket state
+    sock_t *sock;                   // Socket
+    fs_node_t *node;                // Bound socket node
+    char *un_path;                  // Node path
+    struct unix_sock *peer;         // Peer connected UNIX socket
+    bool is_listener;               // !!!: stupid hack
 
-    circbuf_t *packet_buffer;           // Packet buffer
-    list_t *dgram_data;                 // (datagram/seqpacket only) Packet sizes list
+    // Type specific
+    union {
+        struct {
+            unix_packet_data_t *d;
+        } pkt;
 
-    spinlock_t incoming_connect_lock;   // Incoming socket connections lock
-    list_t *incoming_connections;       // Incoming socket connections
+        struct {
+            circbuf_t *cb;          // Circular buffer
+        } stream; // STREAM 
+
+        struct {
+            mutex_t *m;                 // Mutex
+            queue_t *conn;              // Pending socket connections
+            sleep_queue_t *accepters;   // Acceptor queue
+        } server;
+    }; 
+
+    refcount_t ref;                 // Reference count
 } unix_sock_t;
+
+/**** DEFINITIONS ****/
+
+#define UNIX_SOCKET_BUFFER_SIZE         8192
 
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the UNIX socket system
+ * @brief Initialize UNIX sockets
  */
 void unix_init();
-
-/**
- * @brief Create a UNIX socket
- * @param type The type
- * @param protocol The protocol
- */
-sock_t *unix_socket(int type, int protocol);
-
-/**
- * @brief Send a packet to a connected UNIX socket
- * @param sock The UNIX packet to send on
- * @param packet The packet to send
- * @param size Size of the packet
- * @returns 0 on success (for ordered will block until ACK if needed)
- */
-int unix_sendPacket(sock_t *sock, void *packet, size_t size);
-
-/**
- * @brief Read a packet from a UNIX socket
- * @param sock The UNIX socket to read from
- * @returns Received packet
- */
-sock_recv_packet_t *unix_getPacket(sock_t *sock);
 
 #endif
