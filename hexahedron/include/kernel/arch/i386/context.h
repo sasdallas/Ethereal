@@ -48,10 +48,16 @@ __attribute__((returns_twice)) int arch_save_context(struct arch_context *contex
 
 /**
  * @brief Load the current thread context
+ * @param context The context to switch to
+ * @param unlock_queue Unlock the CPU's thread queue.
  * 
  * Equivalent to the C function for longjmp
+ * 
+ * Thank you to @hyenasky for the idea of @c unlock_queue
+ * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
+ * After getting off of the previous stack in use, this will unlock the queue if @c unlock_queue is set.
  */
-__attribute__((noreturn)) void arch_load_context(struct arch_context *context);
+__attribute__((noreturn)) void arch_load_context(struct arch_context *context, int unlock_queue);
 
 /**** MACROS ****/
 

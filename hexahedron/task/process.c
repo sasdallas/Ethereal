@@ -132,7 +132,7 @@ void __attribute__((noreturn)) process_switchNextThread() {
     // #endif
 
     task_switches += 1;
-    arch_load_context(&current_cpu->current_thread->context);
+    arch_load_context(&current_cpu->current_thread->context, 0); // Didn't bother switching context
     __builtin_unreachable();
 }
 
@@ -203,15 +203,17 @@ void process_yield(uint8_t reschedule) {
 
     // Reschedule thread now. This should leave a VERY slim time window for another CPU to pick up the thread
     // NOTE: You're supposed to not reschedule after putting a thread to sleep but just in case they're trying to disallow it.
+    int need_resched = 0;
     if (prev && reschedule && !(prev->status & THREAD_STATUS_SLEEPING)) {
-        // !!!: It is possible for a race condition to occur here. It is very unlikely, but possible.
-        // !!!: If another CPU picks this thread up and somehow manages to switch to it faster than we can, it will corrupt the stack and cause hell.
-        // !!!: This is why we can't call process_switchNextThread. Sorry, not sorry.
-        scheduler_insertThread(prev);
+        // Acquire BUT DON'T RELEASE the lock (arch_load_context will release the lock after switching stacks).
+        // TODO: Move this into scheduler
+        spinlock_acquire(current_cpu->sched.lock);
+        list_append(current_cpu->sched.queue, prev);
+        need_resched = 1;
     }
 
     task_switches += 1;
-    arch_load_context(&current_cpu->current_thread->context);
+    arch_load_context(&current_cpu->current_thread->context, need_resched);
     __builtin_unreachable();
 }
 
@@ -399,13 +401,12 @@ process_t *process_createKernel(char *name, unsigned int flags, unsigned int pri
  * @brief Idle process function
  */
 static void kernel_idle() {
-    // Pause execution
     arch_pause();
 
     // For the kidle process, this can serve as total "cycles"
     current_cpu->current_thread->total_ticks++; 
+    current_cpu->idle_time++;
 
-    // Switch to next thread
     process_switchNextThread();
 }
 
@@ -634,7 +635,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     // Destroy the current thread
     if (current_cpu->current_thread) {
         __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        thread_destroy(current_cpu->current_thread);
+        // thread_destroy(current_cpu->current_thread);
     }
 
     // Clone new directory and destroy the old one
@@ -686,9 +687,12 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     current_cpu->current_thread = current_cpu->current_process->main_thread;
 
     // Some programs won't play well with an allocation at NULL, but certain things need it. VAS system also gets confused, so this is technically a hack.
-    if (!vas_get(current_cpu->current_process->vas, 0x0)) {
-        vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
-    }
+    // if (!vas_get(current_cpu->current_process->vas, 0x0)) {
+    //     vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
+    // }
+
+    // Done with ELF
+    kfree((void*)elf_binary);
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
@@ -813,7 +817,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     // Destroy the current thread
     if (current_cpu->current_thread) {
         __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        thread_destroy(current_cpu->current_thread);
+        // thread_destroy(current_cpu->current_thread);
     }
 
     // Clone new directory and destroy the old one
@@ -821,7 +825,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
 
     // Create a new VAS
     current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
-    current_cpu->current_process->dir = current_cpu->current_process->vas->dir;
+    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
 
     // Switch to directory
     mem_switchDirectory(current_cpu->current_process->dir);
@@ -880,6 +884,17 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         THREAD_PUSH_STACK_STRING(current_cpu->current_thread->stack, strlen(argv[a]), argv[a]);
         argv_pointers[a] = (char*)current_cpu->current_thread->stack;
     }
+
+    // Now we can align the stack
+    current_cpu->current_thread->stack = ALIGN_DOWN(current_cpu->current_thread->stack, 16);
+
+    // Realign the stack if we need to. Everything from now on should JUST be a uintptr_t
+    // The pending amount of bytes: 9 auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
+    uintptr_t bytes = (9 * sizeof(uintptr_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
+    if (!IS_ALIGNED(current_cpu->current_thread->stack - bytes, 16)) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
+    }
+    
 
     // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
 
@@ -995,7 +1010,11 @@ void process_exit(process_t *process, int status_code) {
     // spinlock_release(&reap_queue_lock);
 
     // To the next process we go
-    if (process == current_cpu->current_process) process_switchNextThread();
+    if (process == current_cpu->current_process) {
+        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
+        scheduler_insertThread(current_cpu->current_thread);
+        process_switchNextThread();
+    }
 }
 
 /**
@@ -1054,7 +1073,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
     for (;;) {
         node_t *n = list_find(current_cpu->current_process->waitpid_queue, current_cpu->current_thread);
         if (n) list_delete(current_cpu->current_process->waitpid_queue, n);
-
+            
         // We need this to stop interferance from other threads also trying to waitpid
         spinlock_acquire(&reap_queue_lock);
 

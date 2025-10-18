@@ -102,6 +102,16 @@ arch_load_context:
     movq 40(%rdi), %r14
     movq 48(%rdi), %r15
 
+    // Need to unlock the current CPU's queue?
+    cmpq $1, %rsi
+    jne .cont
+
+    // We're out of the thread's kernel stack so we need to unlock
+    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
+    movb $0, %cl
+    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
+.cont:
+
     /* Restore FSBASE */
     movl 56(%rdi), %eax
     movl 60(%rdi), %edx
