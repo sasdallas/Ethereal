@@ -134,7 +134,7 @@ uintptr_t ksym_find_best_symbol(uintptr_t address, char **name) {
         // Follow chain
         while (node)  {
             uintptr_t sym_addr = (uintptr_t)node->value;
-            if (sym_addr < address && sym_addr > best_match) {
+            if (sym_addr <= address && sym_addr > best_match) {
                 best_match = sym_addr;
                 *name = node->key;
             }
