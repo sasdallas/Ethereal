@@ -185,12 +185,9 @@ void smp_startAP(uint8_t lapic_id) {
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
 
     // Allocate a stack for the AP
-    if (alloc_canHasValloc()) {
-        _ap_stack_base = (uintptr_t)kvalloc(PAGE_SIZE) + PAGE_SIZE;
-    } else {
-        _ap_stack_base = (uintptr_t)mem_sbrk(PAGE_SIZE * 2) + (PAGE_SIZE);       // !!!: Giving two pages when we're only using one 
+    _ap_stack_base = (uintptr_t)mem_sbrk(PAGE_SIZE * 2) + (PAGE_SIZE);          // !!!: Giving two pages when we're only using one 
                                                                                 // !!!: Stack alignment issues - you can also use kvalloc but some allocators don't support it in Hexahedron
-    }
+
 
     memset((void*)(_ap_stack_base - 4096), 0, PAGE_SIZE);
 
