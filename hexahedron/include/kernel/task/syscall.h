@@ -117,6 +117,11 @@ void syscall_handle(syscall_t *syscall);
  */
 void syscall_pointerValidateFailed(void *ptr);
 
+/**
+ * @brief Finish a system call after setting registers
+ */
+void syscall_finish();
+
 
 /* System calls */
 void sys_exit(int status);

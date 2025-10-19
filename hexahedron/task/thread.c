@@ -63,12 +63,10 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
     mem_switchDirectory(dir);
 
     // Allocate a kstack for the thread
-    thr->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
+    thr->kstack = (uintptr_t)kzalloc(PROCESS_KSTACK_SIZE) + PROCESS_KSTACK_SIZE;
 
     if (!(flags & THREAD_FLAG_KERNEL) ) {
         // Allocate usermode stack 
-        // !!!: This will need a lot of work done for when supporting multiple threads is ready
-        // !!!: We need to have a system where multiple threads can share this memory region
         thr->stack = (MEM_USERMODE_STACK_REGION + MEM_USERMODE_STACK_SIZE);
         if (!(flags & THREAD_FLAG_CHILD)) {
             // !!!: Wow, this is bad. This is a hack for fork() support that prevents reallocating the child's stack as CoW is done on it
@@ -99,11 +97,14 @@ int thread_destroy(thread_t *thr) {
     if (!thr) return 1;
 
     // TODO: Free memory
+    __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPED);
 
     // Free the thread's stack
-    // mem_free(thr->kstack - PROCESS_KSTACK_SIZE, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP);
+    if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
-    LOG(INFO, "Thread %p has exited successfully\n", thr);
+    kfree(thr);
+
+    LOG(DEBUG, "******************************************** Thread %p destroyed, kstack %p\n", thr, thr->kstack);
 
     return 0;
 }

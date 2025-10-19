@@ -797,6 +797,8 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         return -EINVAL;
     }
 
+
+
     // Setup new name
     // TODO: This should be a *pointer* to argv[0], not a duplicate.
     kfree(current_cpu->current_process->name);
@@ -820,7 +822,10 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         // thread_destroy(current_cpu->current_thread);
     }
 
-    // Clone new directory and destroy the old one
+    // Clone new directory and destroy the old oneone
+    LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
+    page_t *last_dir = current_cpu->current_process->dir;
+    current_cpu->current_process->dir = mem_clone(NULL);
     vas_destroy(current_cpu->current_process->vas);
 
     // Create a new VAS

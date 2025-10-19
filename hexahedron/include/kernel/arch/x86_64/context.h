@@ -74,4 +74,13 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context, i
 #define REGS_SP(regs) (regs->rsp)
 #define REGS_BP(regs) (regs->rbp)
 
+#define ARCH_SYSCALL_REGNUM(regs) (regs->rax)
+#define ARCH_SYSCALL_REGRET(regs) (regs->rax)
+#define ARCH_SYSCALL_REG0(regs) (regs->rdi)
+#define ARCH_SYSCALL_REG1(regs) (regs->rsi)
+#define ARCH_SYSCALL_REG2(regs) (regs->rdx)
+#define ARCH_SYSCALL_REG3(regs) (regs->r10)
+#define ARCH_SYSCALL_REG4(regs) (regs->r8)
+#define ARCH_SYSCALL_REG5(regs) (regs->r9)
+
 #endif

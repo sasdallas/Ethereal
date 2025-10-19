@@ -324,6 +324,7 @@ void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) 
     // Handle syscall
     syscall_handle(&syscall);
     regs->rax = syscall.return_value;
+    syscall_finish();
 
     // Handle any signals
     signal_handle(current_cpu->current_thread, regs);
@@ -358,6 +359,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         // Handle system call
         syscall_handle(&syscall);
         regs->rax = syscall.return_value;
+        syscall_finish();
 
         signal_handle(current_cpu->current_thread, regs);
         current_cpu->current_thread->syscall = NULL;

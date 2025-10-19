@@ -30,6 +30,7 @@ hashmap_t *kargs = NULL;
 void kargs_init(char *args) {
     if (!args) return; // No kernel arguments provided
 
+    args = strdup(args);
     kargs = hashmap_create("kernel argument map", 5);
 
     // The only thing about arguments is that they are separated by spaces

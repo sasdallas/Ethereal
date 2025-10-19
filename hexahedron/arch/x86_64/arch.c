@@ -74,7 +74,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), parameters->mem_size);
+        printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
         printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo

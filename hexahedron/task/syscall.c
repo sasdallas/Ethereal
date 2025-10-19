@@ -178,6 +178,13 @@ void syscall_pointerValidateFailed(void *ptr) {
 
 
 /**
+ * @brief Finish a system call after setting registers
+ */
+void syscall_finish() {
+    ptrace_event(PROCESS_TRACE_SYSCALL); // Can only ptrace after we've configured exit registers
+}
+
+/**
  * @brief Handle a system call
  * @param syscall The system call to handle
  * @returns Nothing, but updates @c syscall->return_value
@@ -200,14 +207,13 @@ void syscall_handle(syscall_t *syscall) {
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
 
-    // Exit
-    ptrace_event(PROCESS_TRACE_SYSCALL);
 
     return;
 }
 
 void sys_exit(int status) {
     LOG(DEBUG, "process %s sys_exit %d\n", current_cpu->current_process->name, status);
+    syscall_finish();
     process_exit(NULL, status);
 }
 
