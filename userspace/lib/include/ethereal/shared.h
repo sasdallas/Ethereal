@@ -21,7 +21,6 @@
 /**** DEFINITIONS ****/
 
 #define SHARED_DEFAULT      0x0     // Default shared memory
-#define SHARED_READ_ONLY    0x1     // The shared memory is read-only and any attempts to map it as rw will be ignored
 
 /**** TYPES ****/
 
