@@ -302,6 +302,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     mutex_acquire(userv->server.m);
     queue_push(userv->server.conn, r);
     sleep_wakeupQueue(userv->server.accepters, 1);
+    fs_alert(userv->sock->node, VFS_EVENT_READ);
     mutex_release(userv->server.m);
 
     int attempts = 0;
@@ -390,21 +391,23 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
                 return bytes_received;
             }
 
-            spinlock_release(&usock->pkt.d->rx_lock);
 
             // Nope.. are we nonblocking?
             if (sock_nonblocking(sock)) {
+                spinlock_release(&usock->pkt.d->rx_lock);
                 return -EWOULDBLOCK;
             }
 
             // Check if our peer has closed
             if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+                spinlock_release(&usock->pkt.d->rx_lock);
                 unix_decrementAndFree(usock->peer);
                 return -ECONNABORTED;
             }
 
             // Sleep in the queue
             sleep_inQueue(usock->pkt.d->rx_wait_queue);
+            spinlock_release(&usock->pkt.d->rx_lock);
             int w = sleep_enter();
             if (w == WAKEUP_SIGNAL) return -EINTR;
         }
@@ -477,6 +480,7 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             unix_decrementAndFree(usock->peer);
             return -ECONNABORTED;
         }
+
 
         fs_alert(usock->peer->sock->node, VFS_EVENT_READ);
         spinlock_release(&usock->peer->pkt.d->rx_lock);
