@@ -359,7 +359,6 @@ int vas_free(vas_t *vas, vas_node_t *node, int mem_freed) {
             if (pg && PAGE_IS_PRESENT(pg)) {
                 // LOG(DEBUG, "Dropped page at %016llX (frame %p)\n", i, MEM_GET_FRAME(pg));
                 mem_freePage(pg);
-                mem_invalidatePage(i);
             }
         }
 
