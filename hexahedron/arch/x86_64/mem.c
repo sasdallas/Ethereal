@@ -583,8 +583,8 @@ int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registe
         }
 
         // Check for VAS fault
-        // Default hint is 0x2000
-        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x2000)) {
+        // Default hint is 0x10000
+        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x10000)) {
             return 0;
         }
 
