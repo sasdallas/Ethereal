@@ -112,6 +112,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
             return (void*)alloc->base;
         }
 
+        LOG(ERR, "Error while reserving a region. Failing mmap of %d bytes with ENOMEM\n", len);
+
         return (void*)-ENOMEM;
     }
 
@@ -126,6 +128,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     vas_allocation_t *alloc = vas_allocate(vas, len);
     if (!alloc) {
         // No memory?
+        LOG(ERR, "Error while allocating a region. Failing mmap of %d bytes with ENOMEM\n", len);
+    
         kfree(map);
         return (void*)-ENOMEM;
     }
@@ -163,7 +167,7 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
 
     // If there was a file descriptor, close it
     int munmapped = 0;
-    if (!(map->flags & MAP_ANONYMOUS) && map->filedes) {
+    if (!(map->flags & MAP_ANONYMOUS) && map->filedes != -1) {
         // Sometimes a proc will close a file descriptor before it exited
         if (FD_VALIDATE(proc, map->filedes)) {
             munmapped = !fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
@@ -190,6 +194,7 @@ int process_munmap(void *addr, size_t len) {
     if (!current_cpu->current_process->mmap) return -EINVAL;
 
     // Find a corresponding mapping
+    int mappings = 0;
     foreach(map_node, current_cpu->current_process->mmap) {
         process_mapping_t *map = (process_mapping_t*)(map_node->value);
         if (RANGE_IN_RANGE((uintptr_t)addr, (uintptr_t)addr+len, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
@@ -200,10 +205,11 @@ int process_munmap(void *addr, size_t len) {
                 return -ENOSYS;
             }
 
-
-            return process_removeMapping(current_cpu->current_process, map);
+            int r = process_removeMapping(current_cpu->current_process, map);
+            mappings++;
         }
     }
 
-    return -EINVAL;
+    if (!mappings) return -EINVAL;
+    return 0;
 }

@@ -646,6 +646,9 @@ ssize_t socket_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
  * @returns -ERRNO on error and fd on success
  */
 int socket_create(process_t *proc, int domain, int type, int protocol) {
+    int type_original = type;
+    type = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+
     // Look up the protocol to use
     socket_create_t create = (socket_create_t)hashmap_get(socket_map, (void*)(uintptr_t)domain);
     if (!create) return -EAFNOSUPPORT;
@@ -679,14 +682,23 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
 
     // Setup other parameters
     sock->domain = domain;
-    sock->type = type;
+    sock->type = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
     sock->protocol = protocol;
 
     sock->id = last_socket_id++;
     list_append(socket_list, (void*)sock);
 
+    if (type_original & SOCK_NONBLOCK) {
+        SOCKET_CHANGE_FLAG(SOCKET_FLAG_NONBLOCKING, 1);
+    }
+
     // Add as file descriptor
     fd_t *fd = fd_add(proc, sock->node);
+    
+    if (type_original & SOCK_CLOEXEC) {
+        LOG(WARN, "SOCK_CLOEXEC is not supported\n");
+    }
+
     return fd->fd_number;
 }
 
