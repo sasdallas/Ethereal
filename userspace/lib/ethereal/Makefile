@@ -24,7 +24,6 @@ generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/lib.py
 	@echo -- Generating build rules
 	-@rm -f generated_build_rules.mk
 	
-# I should not be allowed near makefiles
 	$(PYTHON) $< --generate-build-rules $(WORKING_DIR)/lib.conf
 
 

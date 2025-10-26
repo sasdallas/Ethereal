@@ -35,7 +35,7 @@ generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/app.py app.conf
 		[ -n "$${cflags_add}" ] && echo "CFLAGS += $${cflags_add}"; \
 		[ -n "$${ldflags_add}" ] && echo "LDFLAGS += $${ldflags_add}"; \
 		[ -n "$${install_dir}" ] && echo "INSTALL_DIR := $${install_dir}"; \
-	} > generated_build_rules.mkf
+	} > generated_build_rules.mk
 
 
 include generated_build_rules.mk

@@ -125,11 +125,19 @@ if __name__ == "__main__":
 
     if p.create_symlinks:
         if len(a.symlinks) != 0:
+
+            if "SYSROOT" not in os.environ or os.environ["SYSROOT"] == "":
+                raise Exception("$SYSROOT must be set")
             path = os.environ["SYSROOT"]
+
             
+
+            d = path + a.install_dir + "/" + a.name
             for sym in a.symlinks:
                 try:
-                    os.symlink(os.path.join(os.path.join(path, a.install_dir), a.name), os.path.join(path, sym))
+                    if not os.path.exists(os.path.dirname(path + sym)):
+                        os.mkdir(os.path.dirname(path + sym))
+                    os.symlink(d, path + sym)
                 except FileExistsError:
                     pass
         
