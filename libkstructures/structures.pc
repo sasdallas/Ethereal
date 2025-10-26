@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=/usr/lib
+includedir=/usr/include
+
+Name: structures
+Description: "Generic structures library"
+Requires:
+Requires.private:
+Version: 1.1.0
+Libs: -L${libdir} -lstructures
+Libs.private: 
+Cflags: -I${includedir} 

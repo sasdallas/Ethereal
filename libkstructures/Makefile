@@ -7,8 +7,8 @@ OUT_OBJ_KERNEL = $(OBJ_OUTPUT_DIRECTORY)/libkstructures
 OUT_OBJ_LIBC = $(OBJ_OUTPUT_DIRECTORY)/libstructures
 
 # SOURCE DIRECTORIES
-SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini gzip
-SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip
+SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini gzip avl
+SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip avl
 OUTPUT_DIRECTORIES_KERNEL = $(addprefix $(OUT_OBJ_KERNEL)/,$(SOURCE_DIRECTORIES_KERNEL))
 OUTPUT_DIRECTORIES_LIBC = $(addprefix $(OUT_OBJ_LIBC)/,$(SOURCE_DIRECTORIES_LIBC))
 
@@ -61,6 +61,8 @@ PRINT_HEADER:
 install-headers:
 	@-mkdir -pv $(DESTDIR)$(INCLUDE_DIRECTORY)
 	@-cp -R --preserve=timestamps include/. $(DESTDIR)$(INCLUDE_DIRECTORY)/
+	@-mkdir -pv $(DESTDIR)$(LIBDIR)/pkgconfig/
+	cp structures.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 
 install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a $(DESTDIR)$(LIB_DIRECTORY)/libstructures.a
 
