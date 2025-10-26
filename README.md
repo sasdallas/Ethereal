@@ -96,7 +96,6 @@ Certain external components are available in `external`, `libc`, and other parts
 - mlibc (MIT license): [Ethereal fork available here](https://github.com/sasdallas/mlibc)
 - tinf (zlib license): [available here](https://github.com/jibsen/tinf/)
 - json-parser (BSD 2-clause license): [available here](https://github.com/json-parser/json-parser)
-- Linux 6.16 (GPL license, required for mlibc linux headers): [available here](https://kernel.org)
 - PlutoSVG (MIT license): [available here](https://github.com/sammycage/plutosvg)
 
 ## Credits

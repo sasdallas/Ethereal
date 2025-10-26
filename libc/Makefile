@@ -14,9 +14,6 @@ make_dirs:
 	-mkdir $(OBJ_DIR2)
 
 install-headers: make_dirs
-	# Install linux headers
-# 	bash ./linux_install_headers.sh
-
 	# Install mlibc headers
 	if ! [ -d mlibc ]; then \
 		echo -e "\n\nYou forgot to run git submodule init and git submodule update\n\n"; \
