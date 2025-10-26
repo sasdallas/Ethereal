@@ -30,6 +30,8 @@
 #include <structs/hashmap.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <asm/ioctls.h>
+
 
 /* Last used index for PTY */
 static int last_pty_index = 0;
