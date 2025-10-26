@@ -15,7 +15,7 @@ make_dirs:
 
 install-headers: make_dirs
 	# Install linux headers
-	bash ./linux_install_headers.sh
+# 	bash ./linux_install_headers.sh
 
 	# Install mlibc headers
 	if ! [ -d mlibc ]; then \
