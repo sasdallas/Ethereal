@@ -1,3 +1,6 @@
 [submodule "libc/mlibc"]
 	path = libc/mlibc
 	url = https://github.com/sasdallas/mlibc
+[submodule "external/plutosvg/plutosvg"]
+	path = external/plutosvg/plutosvg
+	url = https://github.com/sammycage/plutosvg

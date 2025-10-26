@@ -2,7 +2,7 @@ include ../make.config
 
 ifeq ($(HOSTARCH), i386)
 # Required for I386
-PROJECTS := freetype
+PROJECTS := freetype plutosvg
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
@@ -11,7 +11,7 @@ endif
 
 else ifeq ($(HOSTARCH), x86_64)
 # Required for x86_64
-PROJECTS := freetype
+PROJECTS := freetype plutosvg
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
