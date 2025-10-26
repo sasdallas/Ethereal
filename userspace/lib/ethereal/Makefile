@@ -25,15 +25,7 @@ generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/lib.py
 	-@rm -f generated_build_rules.mk
 	
 # I should not be allowed near makefiles
-	set -e;\
-	lib_prefix="$$($(PYTHON) $< --name $(WORKING_DIR)/lib.conf)";\
-	lib_shared="$$($(PYTHON) $< --shared $(WORKING_DIR)/lib.conf)";\
-	cflags_add="$$($(PYTHON) $< --cflags $(WORKING_DIR)/lib.conf)";\
-	{ \
-		[ -n "$${lib_prefix}" ] && echo "LIB_PREFIX := $${lib_prefix}"; \
-		[ -n "$${lib_shared}" ] && echo "LIB_SHARED := $${lib_shared}"; \
-		[ -n "$${cflags_add}" ] && echo "CFLAGS += $${cflags_add}"; \
-	} > generated_build_rules.mk
+	$(PYTHON) $< --generate-build-rules $(WORKING_DIR)/lib.conf
 
 
 include generated_build_rules.mk

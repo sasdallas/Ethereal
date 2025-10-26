@@ -110,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", action="store_true")
     parser.add_argument("--version", action="store_true")
     parser.add_argument("--shared", action="store_true")
+    parser.add_argument("--generate-build-rules", action="store_true")
     ap = parser.parse_args()
 
     # create library info
@@ -128,6 +129,20 @@ if __name__ == "__main__":
             os.symlink(path, path + "." + a[0])
         except Exception:
             pass
+
+    if ap.generate_build_rules:
+        f = open("generated_build_rules.mk", "w+")
+        l = ""
+
+
+        l = l + "LIB_PREFIX := {}\n".format(lib.name)
+        l = l + "LIB_SHARED := {}\n".format("1" if lib.shared else "0")
+
+        cf = collect_cflags(lib)
+        if cf != "":
+            l = l + "CFLAGS += {}\n".format(cf)
+        f.write(l)
+        f.close()
 
     if ap.cflags:
         print(collect_cflags(lib))
