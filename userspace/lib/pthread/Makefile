@@ -1,5 +1,4 @@
 # Userspace Library Makefile
-# NOTE: YOU CAN MODIFY THIS IF YOU WANT TO ADD ADDITIONAL TARGETS - SEE BOTTOM OF FILE
 
 include ../make.config
 
@@ -13,40 +12,57 @@ ACTUAL_DIR = $(patsubst $(root_userspace_dir)%,%,$(WORKING_DIR))
 OBJ_DIR = $(OBJ_OUTPUT_DIRECTORY)/userspace/$(ACTUAL_DIR)
 OUTPUT_DIR = $(DESTDIR)$(LIBDIR)/
 
-# Output file name
-OUTPUT_FILE = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_lib_info.py $(WORKING_DIR) NAME)
 
 # Source files
-C_SRCS = $(shell find . -name "*.c" -printf '%f ')
-C_OBJS = $(patsubst %.c, $(OBJ_DIR)/%.o, $(C_SRCS))
+C_SRCS = $(shell find . -name "*.c" -type f)
+C_OBJS = $(addprefix $(OBJ_DIR)/,$(C_SRCS:.c=.o))
 
-# freetype-specific
-# TODO: better way
-CFLAGS += -I$(DESTDIR)$(INCLUDE_DIRECTORY)/freetype2
+# Always generate build rules before any target
+.PHONY: MAKE_OUTPUT GENERATE_SHARED_MAYBE CREATE_LIBRARIES GENERATE_PC
 
-PRINT_HEADER:
-	@echo "-- Building library \"$(OUTPUT_FILE)\""
+generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/lib.py
+	@echo -- Generating build rules
+	-@rm -f generated_build_rules.mk
+	
+# I should not be allowed near makefiles
+	set -e;\
+	lib_prefix="$$($(PYTHON) $< --name $(WORKING_DIR)/lib.conf)";\
+	lib_shared="$$($(PYTHON) $< --shared $(WORKING_DIR)/lib.conf)";\
+	cflags_add="$$($(PYTHON) $< --cflags $(WORKING_DIR)/lib.conf)";\
+	echo -e "LIB_PREFIX := $${lib_prefix}\nLIB_SHARED := $${lib_shared}\nCFLAGS += $${cflags_add}" > generated_build_rules.mk
+
+
+include generated_build_rules.mk
+
+# Ensure build rules are generated before all main targets
+install: MAKE_OUTPUT CREATE_LIBRARIES GENERATE_SHARED_MAYBE GENERATE_PC
+
 
 MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)
 	-@mkdir -p $(OUTPUT_DIR)
 
-$(OBJ_DIR)/%.o: %.c Makefile
+$(OBJ_DIR)/%.o: %.c
+	-@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: %.S Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
-./$(OUTPUT_FILE): $(C_OBJS)
-	$(AR) rcs $@ $(C_OBJS)
-	
-install: MAKE_OUTPUT ./$(OUTPUT_FILE)
-	cp -r $(OUTPUT_FILE) $(OUTPUT_DIR)/$(OUTPUT_FILE)
-	rm ./$(OUTPUT_FILE)
+ifeq ($(LIB_SHARED), 1)
+GENERATE_SHARED_MAYBE:
+	$(CC) -shared -o $(OUTPUT_DIR)$(LIB_PREFIX).so $(C_OBJS)
+	$(PYTHON) $(PROJECT_ROOT)/buildscripts/lib.py --build_symlinks $(WORKING_DIR)/lib.conf
+else
+GENERATE_SHARED_MAYBE:
+endif
 
-	-mkdir -pv $(OUTPUT_DIR)/pkgconfig
-	cp pthread.pc $(OUTPUT_DIR)/pkgconfig/
+GENERATE_PC:
+	$(PYTHON) $(PROJECT_ROOT)/buildscripts/genpc.py $(WORKING_DIR)/lib.conf
+
+CREATE_LIBRARIES: $(C_OBJS)
+	$(AR) rcs $(OUTPUT_DIR)$(LIB_PREFIX).a $(C_OBJS)
 
 clean:
 	-rm -rf $(OBJ_DIR)
-
+	-@rm generated_build_rules.mk

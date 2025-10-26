@@ -22,7 +22,7 @@ install-%:
 	$(CC) -shared -fPIC -I$(DESTDIR)/usr/include/freetype2 -I$(DESTDIR)/usr/include/ $(wildcard $(subst $e-,/,$(patsubst install-%,%,$@))/*.c) -o $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst install-%,%,$@)).so -lwidget -lkeyboard -lcelestial -lstructures -lgraphics -lfreetype -lethereal
 
 clean-%:
-	rm $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst clean-%,%,$@)).so
+	-rm $(WIDGETS_DEST_DIR)/$(subst $e-,/,$(patsubst clean-%,%,$@)).so
 
 # Create build directories
 MAKE_DIRS:

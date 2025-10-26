@@ -8,3 +8,4 @@ ser_output2.txt
 *.img
 drivers/test
 drivers/test/*
+**/generated_build_rules.mk

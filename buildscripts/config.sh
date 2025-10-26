@@ -54,6 +54,12 @@ export SYSROOT="$BUILD_OUTPUT_DIRECTORY/sysroot"
 # Configure initial ramdisk
 export INITRD="$BUILD_OUTPUT_DIRECTORY/initrd"
 
+# Configure pkg-config
+export PKG_CONFIG_DIR=''
+export PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig
+export PKG_CONFIG_PATH=$SYSROOT/usr/share/pkgconfig
+export PKG_CONFIG_SYSROOT_DIR=$SYSROOT
+
 # Create the directories just in case they don't exist
 mkdir -p "$BUILD_OUTPUT_DIRECTORY/"
 mkdir -p "$OBJ_OUTPUT_DIRECTORY/"

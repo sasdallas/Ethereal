@@ -34,9 +34,10 @@ decor_handler_t *celestial_default_decor =  &celestial_mercury_theme;
 /* Outside of internal window */
 #define DECOR_IN_BORDERS(x, y) ((int)x < win->decor->borders.left_width || (int)x > (int)win->info->width - win->decor->borders.right_width || (int)y < win->decor->borders.top_height || (int)y > (int)win->info->height - win->decor->borders.bottom_height)
 
-/* Hack */
+/* Hacks */
 int decor_was_last_in_borders = 0; // Was the last mouse state in the borders?
 int decor_faked_exit_event = 0; // Decor faked last mouse event?
+int decor_last_clicked_in_borders = 0; // The last click was in the borders?
 
 /**
  * @brief Initialize specific decorations for a window
@@ -125,6 +126,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
             // Depending on bounds
             celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)hdr;
             if (DECOR_IN_BORDERS(down->x, down->y) && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
+                decor_last_clicked_in_borders = 1;
                 int in_borders = (DECOR_IN_BORDERS(down->x, down->y));
                 int b = in_borders ? win->decor->inbtn(win, down->x, down->y) : DECOR_BTN_NONE;
 
@@ -133,6 +135,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                     return 0;
                 }
             } else {
+                decor_last_clicked_in_borders = 0;
                 down->x -= win->decor->borders.left_width;
                 down->y -= win->decor->borders.top_height;
                 return 1;
@@ -238,7 +241,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
         case CELESTIAL_EVENT_MOUSE_DRAG:
             // Depending on bounds
             celestial_event_mouse_drag_t *drag = (celestial_event_mouse_drag_t*)hdr;
-            if (DECOR_IN_BORDERS(drag->x, drag->y)) {
+            if (DECOR_IN_BORDERS(drag->x, drag->y) && decor_last_clicked_in_borders) {
                 celestial_startDragging(win);
                 return 0;
             } else {

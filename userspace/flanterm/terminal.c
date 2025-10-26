@@ -52,6 +52,16 @@ void term_write(keyboard_event_t *event) {
             terminal_sendInput("\033[B");
             break;
 
+        case SCANCODE_RIGHT_ARROW:
+            terminal_sendInput("\033[C");
+            break;
+
+
+        case SCANCODE_LEFT_ARROW:
+            terminal_sendInput("\033[D");
+            break;
+
+
         default:
             if (!event->ascii) return;
             char b[] = {event->ascii};

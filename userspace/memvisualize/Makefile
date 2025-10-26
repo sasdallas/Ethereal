@@ -17,47 +17,41 @@ $(info $(OBJ_DIR))
 C_SRCS = $(shell find . -name "*.c" -printf '%f ')
 C_OBJS = $(patsubst %.c, $(OBJ_DIR)/%.o, $(C_SRCS))
 
-# Output file name
-OUTPUT_FILE = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) NAME)
-OUTPUT_DIR = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) INSTALL_DIR)
+# Always generate build rules before any target
+generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/app.py app.conf
+	@echo -- Generating build rules
+	-@rm -f generated_build_rules.mk
 
-INITRD_INSTALL = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) INITRD)
+# I should not be allowed near makefiles
+	@set -e; \
+	app_name="$$($(PYTHON) $< --name $(WORKING_DIR)/app.conf)";\
+	cflags_add="$$($(PYTHON) $< --cflags $(WORKING_DIR)/app.conf)";\
+	libs="$$($(PYTHON) $< --libs $(WORKING_DIR)/app.conf)";\
+	ldflags_add="$$($(PYTHON) $< --ldflags $(WORKING_DIR)/app.conf)";\
+	install_dir="$$($(PYTHON) $< --install-dir $(WORKING_DIR)/app.conf)";\
+	echo -e "APP_NAME := $${app_name}\nLIBS := $${libs}\nCFLAGS += $${cflags_add}\nLDFLAGS += $${ldflags_add}\nINSTALL_DIR := $${install_dir}\n" > generated_build_rules.mk
 
-# Additional libraries
-LIBS = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) LIBS)
 
-PRINT_HEADER:
-	@echo "-- Building app \"$(OUTPUT_FILE)\""
+include generated_build_rules.mk
 
-MAKE_OUTPUT:
-	-@mkdir -p $(OBJ_DIR)
-	-@mkdir -p $(OUTPUT_DIR)
+TARGETS = $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/app.py --additional-targets $(WORKING_DIR)/app.conf)
 
-$(OBJ_DIR)/%.o: %.c Makefile
+$(OBJ_DIR)/%.o: %.c
+	-@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: %.S Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
-./$(OUTPUT_FILE): $(C_OBJS)
-	$(CC) -o $(OUTPUT_FILE) $(C_OBJS) $(LIBS) $(LDFLAGS)
+install: install_real $(TARGETS)
 
-ifeq ($(INITRD_INSTALL),YES)
-install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_initrd install_actual
-else
-install: PRINT_HEADER MAKE_OUTPUT ./$(OUTPUT_FILE) $(shell $(PYTHON) $(PROJECT_ROOT)/buildscripts/get_userspace_app_info.py $(WORKING_DIR) ADDITIONAL) install_actual 
-endif
-	
-install_actual:
-	cp -r $(OUTPUT_FILE) $(DESTDIR)$(OUTPUT_DIR)/
-	rm ./$(OUTPUT_FILE)
+install_real: MAKE_OUTPUT $(C_OBJS)
+	$(CC) -o $(DESTDIR)$(INSTALL_DIR)/$(APP_NAME) $(C_OBJS) $(LDFLAGS) $(LIBS)
+	$(PYTHON) $(PROJECT_ROOT)/buildscripts/app.py --create-symlinks $(WORKING_DIR)/app.conf
 
-# hack
-install_initrd:
-	@-mkdir -p $(INITRD)/bin/
-	cp -r $(OUTPUT_FILE) $(INITRD)/bin/
+MAKE_OUTPUT:
+	-@mkdir -p $(OBJ_DIR)
 
 clean:
-	-rm ./$(OUTPUT_FILE)
-	-rm -rf $(DESTDIR)$(OUTPUT_DIR)/$(OUTPUT_FILE)
-	-rm -rf $(OBJ_DIR)
+	-@rm generated_build_rules.mk
+

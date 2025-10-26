@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         }
 
-        char *nargv[3] = { "/device/initrd/usr/bin/celestial", "-d", NULL };
+        char *nargv[3] = { "/device/initrd/usr/bin/celestial",  NULL };
         execvpe("/device/initrd/usr/bin/celestial", nargv, environ);
     
         printf("ERROR: Failed to launch Celestial process: %s\n", strerror(errno));
