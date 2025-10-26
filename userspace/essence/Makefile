@@ -29,7 +29,13 @@ generated_build_rules.mk: $(PROJECT_ROOT)/buildscripts/app.py app.conf
 	libs="$$($(PYTHON) $< --libs $(WORKING_DIR)/app.conf)";\
 	ldflags_add="$$($(PYTHON) $< --ldflags $(WORKING_DIR)/app.conf)";\
 	install_dir="$$($(PYTHON) $< --install-dir $(WORKING_DIR)/app.conf)";\
-	echo -e "APP_NAME := $${app_name}\nLIBS := $${libs}\nCFLAGS += $${cflags_add}\nLDFLAGS += $${ldflags_add}\nINSTALL_DIR := $${install_dir}\n" > generated_build_rules.mk
+	{ \
+		[ -n "$${app_name}" ] && echo "APP_NAME := $${app_name}"; \
+		[ -n "$${libs}" ] && echo "LIBS := $${libs}"; \
+		[ -n "$${cflags_add}" ] && echo "CFLAGS += $${cflags_add}"; \
+		[ -n "$${ldflags_add}" ] && echo "LDFLAGS += $${ldflags_add}"; \
+		[ -n "$${install_dir}" ] && echo "INSTALL_DIR := $${install_dir}"; \
+	} > generated_build_rules.mkf
 
 
 include generated_build_rules.mk
