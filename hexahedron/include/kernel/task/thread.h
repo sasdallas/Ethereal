@@ -117,7 +117,7 @@ typedef struct thread {
  * @param flags Flags of the thread
  * @returns New thread pointer, just save context & add to scheduler queue
  */
-thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoint, int flags);
+thread_t *thread_create(struct process *parent, mmu_dir_t *dir, uintptr_t entrypoint, int flags);
 
 /**
  * @brief Destroys a thread. ONLY CALL ONCE THE THREAD IS FULLY READY TO BE DESTROYED

@@ -31,6 +31,9 @@
 // 0xFFFFF00000000000 - 0xFFFFF00000000000: Kernel code in memory
 // 0xFFFFFF8000000000 - 0xFFFFFF9000000000: High base region for identity mapping
 
+#define MMU_KERNELSPACE_START   (uintptr_t)0xFFFFF00000000000 
+#define MMU_KERNELSPACE_END     (uintptr_t)0xFFFFFFFFFFFFF000
+
 #define MMU_KERNEL_REGION       (uintptr_t)0xFFFFF00000000000
 #define MMU_HHDM_REGION         (uintptr_t)0xFFFFFF8000000000
 #define MMU_HHDM_SIZE           (uintptr_t)0x0000001000000000

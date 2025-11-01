@@ -136,7 +136,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     arch_enable_sse();
 
     // Set current core's directory
-    current_cpu->current_dir = mem_getKernelDirectory();
+    // current_cpu->current_context = mem_getKernelDirectory();
 
     // Reinitialize the APIC
     lapic_initialize(lapic_remapped);

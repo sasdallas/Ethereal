@@ -111,7 +111,7 @@ static int arch_cpu_kernelfs(struct kernelfs_entry *entry, void *data) {
 			cpu->cpu_manufacturer,
 			cpu->cpu_family,
 			cpu->cpu_model_number,
-			cpu->current_dir,
+			cpu->current_context->dir,
 			cpu->current_process ? cpu->current_process->name : "N/A");
 
 	return 0;

@@ -135,7 +135,7 @@ thread_t *scheduler_get() {
     }
 
     spinlock_release(current_cpu->sched.lock);
-    if (n) kfree(n);
+    if (n) kfree(n); // !!!
 
     if (t->status & THREAD_STATUS_STOPPING) {
         thread_destroy(t);

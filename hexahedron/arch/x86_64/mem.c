@@ -361,9 +361,9 @@ extern void arch_panic_traceback(int depth, registers_t *regs);
         if (processor_data[i].cpu_id || !i) {
             // We have valid data here
             if (processor_data[i].current_thread != NULL) {
-                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s') - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_dir);
+                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s') - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_context->dir);
             } else {
-                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", processor_data[i].current_dir);
+                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", processor_data[i].current_context->dir);
             }
         }
     }

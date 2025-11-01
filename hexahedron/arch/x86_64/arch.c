@@ -285,10 +285,6 @@ static pmm_region_t pmm_descs[64]; // !!!: probably a hack
 
 
     vmm_init(pmm_descs);
-    for (;;);
-
-
-    mem_init(memory_size, first_free_page);
 
     // Now we can ACTUALLY parse Multiboot information
     if (multiboot_magic == MULTIBOOT_MAGIC) {

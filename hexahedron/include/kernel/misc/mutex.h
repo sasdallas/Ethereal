@@ -28,6 +28,12 @@ typedef struct mutex {
     sleep_queue_t *queue;   // Sleep queue
 } mutex_t;
 
+/**** MACROS ****/
+
+// AVOID
+#define MUTEX_DEFINE_LOCAL(n) static sleep_queue_t __queue_##n = { 0 }; \
+                                    static mutex_t n = { .lock = -1, .name = NULL, .queue = &__queue_##n};
+
 /**** FUNCTIONS ****/
 
 /**

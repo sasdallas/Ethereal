@@ -34,8 +34,6 @@ static mmu_page_t __mmu_hhdm_pd[128][512] __attribute__((aligned(PAGE_SIZE))) = 
  * @brief Initialize the base components of the MMU system
  */
 void arch_mmu_init() {
-    current_cpu->current_dir = (mmu_dir_t*)__mmu_kernel_pml;
-
     // First build the HHDM structures
     for (int i = 0; i < 128; i++) {
         __mmu_hhdm_pdpt[i].bits.address = (KERNEL_PHYS(&__mmu_hhdm_pd[i]) >> MMU_SHIFT);
@@ -64,7 +62,6 @@ void arch_mmu_init() {
  * @brief Finish initializing the MMU after PMM init
  */
 void arch_mmu_finish(pmm_region_t *region) {
-
     // Calculate kernel size
     pmm_region_t *r = region;
     uintptr_t kstart = 0;
@@ -139,7 +136,8 @@ extern uintptr_t __kernel_start;
     }
 
     // Flush TLB
-    arch_mmu_load((mmu_dir_t*)__mmu_kernel_pml);
+    arch_mmu_load((mmu_dir_t*)KERNEL_PHYS(__mmu_kernel_pml));
+    current_cpu->current_context->dir = (mmu_dir_t*)KERNEL_PHYS(__mmu_kernel_pml);
 }
 
 /**
@@ -278,7 +276,6 @@ void arch_mmu_load(mmu_dir_t *dir) {
     // !!!: Move directory from HHDM
     if ((uintptr_t)dir > MMU_HHDM_REGION) dir = (mmu_dir_t*)((uintptr_t)dir & ~MMU_HHDM_REGION);
     asm volatile ("movq %0, %%cr3" :: "r"((uintptr_t)dir & ~0xFFF));
-
 }
 
 /**
@@ -290,7 +287,7 @@ mmu_dir_t *arch_mmu_new_dir() { STUB(); }
  * @brief Get the current directory
  */
 inline mmu_dir_t *arch_mmu_dir() {
-    return current_cpu->current_dir;
+    return current_cpu->current_context->dir;
 }
 
 /**

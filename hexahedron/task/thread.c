@@ -33,12 +33,12 @@ unsigned long long last_tid = 1; // 0 is a kernel reserved TID
  * 
  * @note No ticks are set and context will need to be saved
  */
-static thread_t *thread_createStructure(process_t *parent, page_t *dir, int status,  int flags) {
+static thread_t *thread_createStructure(process_t *parent, mmu_dir_t *dir, int status,  int flags) {
     thread_t *thr = kmalloc(sizeof(thread_t));
     memset(thr, 0, sizeof(thread_t));
     thr->parent = parent;
     thr->status = status;
-    thr->dir = dir;
+    thr->dir = (page_t*)dir;
     thr->flags = flags;
     thr->tid = last_tid++;
 
@@ -54,13 +54,13 @@ static thread_t *thread_createStructure(process_t *parent, page_t *dir, int stat
  * @param flags Flags of the thread
  * @returns New thread pointer, just save context & add to scheduler queue
  */
-thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoint, int flags) {
+thread_t *thread_create(struct process *parent, mmu_dir_t *dir, uintptr_t entrypoint, int flags) {
     // Create thread
     thread_t *thr = thread_createStructure(parent, dir, THREAD_STATUS_RUNNING, flags);
 
     // Switch directory to directory (as we will be mapping in it)
-    page_t *prev_dir = current_cpu->current_dir;
-    mem_switchDirectory(dir);
+    mmu_dir_t *prev_dir = current_cpu->current_context->dir;
+    arch_mmu_load(dir);
 
     // Allocate a kstack for the thread
     thr->kstack = (uintptr_t)kzalloc(PROCESS_KSTACK_SIZE) + PROCESS_KSTACK_SIZE;
@@ -84,7 +84,7 @@ thread_t *thread_create(struct process *parent, page_t *dir, uintptr_t entrypoin
     arch_initialize_context(thr, entrypoint, thr->stack);
 
     // Switch back out of the directory back to previous directory
-    mem_switchDirectory(prev_dir);
+    arch_mmu_load(prev_dir);
 
     return thr;
 }

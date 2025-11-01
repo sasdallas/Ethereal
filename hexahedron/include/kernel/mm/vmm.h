@@ -23,12 +23,14 @@
 #include <stdint.h>
 #include <kernel/mm/arch_mmu.h>
 #include <kernel/mm/pmm.h>
+#include <kernel/processor_data.h>
 #include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/
 
 #define VMM_DEFAULT         0x0         // Default flags
-#define VMM_FLAG_ALLOCATE   0x1         // VMM allocate
+#define VMM_ALLOCATE        0x1         // Allocate and back the pages
+#define VMM_MUST_BE_EXACT   0x2         // Address hint must be matched exactly
 
 /**** TYPES ****/
 
@@ -45,12 +47,21 @@ typedef struct vmm_memory_range {
     mmu_flags_t mmu_flags;              // MMU flags
 } vmm_memory_range_t;
 
-typedef struct {
-    mutex_t mut;                        // Mutex
+typedef struct vmm_context {
+    mutex_t *mut;                       // Mutex
     vmm_memory_range_t *range;          // Range beginning
+    uintptr_t start;
+    uintptr_t end;
     mmu_dir_t *dir;                     // Directory
 } vmm_context_t;
 
+/**** VARIABLES ****/
+
+extern vmm_context_t *vmm_kernel_context;
+
+/**** MACROS ****/
+
+#define VMM_IS_KERNEL_CTX() current_cpu->current_context == vmm_kernel_context
 
 /**** FUNCTIONS ****/
 
@@ -82,5 +93,35 @@ void vmm_unmap(void *addr, size_t size);
  * @param ctx The context to switch to
  */
 void vmm_switch(vmm_context_t *ctx);
+
+/**
+ * @brief Dump all allocations in a context
+ * @param context The context to dump
+ */
+void vmm_dumpContext(vmm_context_t *ctx);
+
+/**
+ * @brief Find a free spot in a VMM context
+ * @param context The context to search
+ * @param address Address hint. If NULL, ignored.
+ * @param size Size required for the region
+ * @returns The start of the region or NULL on failure
+ */
+uintptr_t vmm_findFree(vmm_context_t *ctx, uintptr_t address, size_t size);
+
+/**
+ * @brief Insert a new range into a VMM context
+ * @param context The context to insert into
+ * @param range The range to insert into the VMM context
+ */
+void vmm_insertRange(vmm_context_t *ctx, vmm_memory_range_t *range);
+
+
+/**
+ * @brief Create a new VMM range (doesn't add it)
+ * @param start The start of the range
+ * @param end The end of the range
+ */
+vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t vmm_flags, mmu_flags_t mmu_flags);
 
 #endif
