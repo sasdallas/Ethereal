@@ -22,6 +22,7 @@
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/misc/util.h>
 
 // Frames bitmap 
 uintptr_t    *frames;
@@ -34,108 +35,33 @@ uintptr_t       pmm_maxBlocks = 0;
 uintptr_t       pmm_reservedBlocks = 0;
 
 
-// Spinlock
-static spinlock_t frame_lock = { 0 };
-
 // Log method
 #define LOG(status, ...) dprintf_module(status, "MEM:PMM", __VA_ARGS__)
 
-/**
- * @brief Initialize the physical memory system.
- * @param memsize Available physical memory in bytes.
- * @param frames_bitmap The bitmap of frames allocated to the system (mapped into memory)
- */
-int pmm_init(uintptr_t memsize, uintptr_t *frames_bitmap) {
-    if (!memsize || !frames_bitmap) kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "physmem");
-
-    pmm_memorySize = memsize;
-    pmm_maxBlocks = pmm_memorySize / PMM_BLOCK_SIZE;
-    pmm_reservedBlocks = pmm_maxBlocks; // By default, all is in use. You must mark valid memory manually
-
-    frames = frames_bitmap;
-    nframes = pmm_maxBlocks;
-
-    // Set the bitmap to be all in use by default
-    memset(frames, 0xF, nframes / 8);
-
-    return 0;
-}
 
 // Set a frame/bit in the frames array
 void pmm_setFrame(int frame) {
-    frames[PMM_INDEX_BIT(frame)] |= ((unsigned)1 << PMM_OFFSET_BIT(frame));
+    STUB();
 }
 
 // Clear a frame/bit in the frames array
 void pmm_clearFrame(int frame) {
-    frames[PMM_INDEX_BIT(frame)] &= ~((unsigned)1 << PMM_OFFSET_BIT(frame));
+    STUB();
 }
 
 // Test whether a frame is set
 int pmm_testFrame(int frame) {
-    return frames[PMM_INDEX_BIT(frame)] & ((unsigned)1 << PMM_OFFSET_BIT(frame));
+    STUB();
 }
 
 // Find the first free frame
 int pmm_findFirstFrame() {
-    for (uint32_t i = 0; i < PMM_INDEX_BIT(nframes); i++) {
-        if (frames[i] != 0xFFFFFFFF) {
-            // At least one bit is free. Which one?
-            for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(frames[i] & ((unsigned)1 << bit))) {
-                    return i * 4 * 8 + bit;
-                }
-            }
-        }
-    }
-
-    // No free frame
-    return -ENOMEM;
+    STUB();
 }
 
 // Find first n frames
 int pmm_findFirstFrames(size_t n) {
-    if (n == 0) return 0x0;
-    if (n == 1) return pmm_findFirstFrame();
-
-    for (uint32_t i = 0; i < PMM_INDEX_BIT(nframes); i++) {
-        if (frames[i] != 0xFFFFFFFF) {
-            // At least one bit is free. Which one?
-            for (uint32_t bit = 0; bit < 32; bit++) {
-                if (!(frames[i] & ((unsigned)1 << bit))) {
-                    // Found it! But are there enough?
-
-                    int starting_bit = i * 32 + bit;
-
-                    uint32_t free_bits = 0;
-                    for (uint32_t check = 0; check < n; check++) {
-                        if (!pmm_testFrame(starting_bit + check)) free_bits++;
-                        else break;
-                    }
-
-                    if (free_bits == n) return i * 4 * 8 + bit;
-                }
-            }
-        }
-    }
-
-    // Not enough free frames
-    return -ENOMEM;
-}
-
-/**
- * @brief Out of memory
- */
-void pmm_oom() {
-    kernel_panic_prepare(OUT_OF_MEMORY);
-    LOG(ERR, "*** PMM detected OOM condition\n\n");
-
-    LOG(ERR, "Available physical memory blocks: %d blocks (%d kB)\n", pmm_getMaximumBlocks(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
-    LOG(ERR, "Used physical memory blocks: %d blocks (%d kB)\n", pmm_getUsedBlocks(), pmm_getUsedBlocks() * PMM_BLOCK_SIZE / 1024);
-    LOG(ERR, "Used physical memory blocks: %d blocks (%d kB)\n", pmm_getFreeBlocks(), pmm_getFreeBlocks() * PMM_BLOCK_SIZE / 1024);
-
-
-    kernel_panic_finalize();
+    STUB();
 }
 
 /**
@@ -144,32 +70,7 @@ void pmm_oom() {
  * @param size The size of the region
  */
 void pmm_initializeRegion(uintptr_t base, uintptr_t size) {
-    if (!size) return;
-
-    spinlock_acquire(&frame_lock);
-
-    // Calculate align and blocks
-    int align = (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
-    int blocks = PMM_ALIGN(size) / PMM_BLOCK_SIZE;
-
-    // Check
-    if ((uintptr_t)align > nframes) {
-        // Nothing we can do
-        LOG(ERR, "Cannot initialize address range %p - %p\n", base, base+size);
-        return;
-    }
-
-    if ((uintptr_t)(align + blocks) > nframes) {
-        LOG(WARN, "Initializing address range %p - %p instead of %p - %p\n", base, base+((nframes-(uintptr_t)align)*PMM_BLOCK_SIZE), base, base+size);
-        blocks = (nframes - (uintptr_t)align);
-    }
-
-    for (; blocks > 0; blocks--) {
-        pmm_clearFrame(align++);
-        pmm_reservedBlocks--;
-    }
-
-    spinlock_release(&frame_lock);
+    STUB();
 }
 
 /**
@@ -178,33 +79,7 @@ void pmm_initializeRegion(uintptr_t base, uintptr_t size) {
  * @param size The size of the region
  */
 void pmm_deinitializeRegion(uintptr_t base, uintptr_t size) {
-    if (!size) return;
-
-    spinlock_acquire(&frame_lock);
-
-    // Careful not to cause a div by zero on base.
-    int align = (base == 0) ? 0 : (PMM_ALIGN(base) / PMM_BLOCK_SIZE);
-    int blocks = PMM_ALIGN(size) / PMM_BLOCK_SIZE;
-
-    // Check
-    if ((uintptr_t)align > nframes) {
-        // Nothing we can do
-        LOG(ERR, "Cannot deinitialize address range %p - %p\n", base, base+size);
-        return;
-    }
-
-    if ((uintptr_t)(align + blocks) > nframes) {
-        LOG(WARN, "Deinitializing address range %p - %p instead of %p - %p\n", base, (nframes-(uintptr_t)align), base, base+size);
-        blocks = (nframes - (uintptr_t)align);
-    }
-
-    for (; blocks > 0; blocks--) {
-        if (pmm_testFrame(align)) { align++; continue; } // Block already marked
-        pmm_setFrame(align++);
-        pmm_reservedBlocks++;
-    }
-
-    spinlock_release(&frame_lock);
+    STUB();
 }
 
 /**
@@ -212,24 +87,7 @@ void pmm_deinitializeRegion(uintptr_t base, uintptr_t size) {
  * @returns A pointer to the block. If we run out of memory it will critically fault
  */
 uintptr_t pmm_allocateBlock() {
-    if ((pmm_maxBlocks - pmm_reservedBlocks - pmm_usedBlocks) <= 0) {
-        goto _oom;
-    }
-
-    spinlock_acquire(&frame_lock);
-
-    int frame = pmm_findFirstFrame();
-    if (frame == -ENOMEM) goto _oom;
-    pmm_setFrame(frame);
-    pmm_usedBlocks++;
-
-    spinlock_release(&frame_lock);    
-    return (uintptr_t)(frame * PMM_BLOCK_SIZE);
-
-_oom:
-    spinlock_release(&frame_lock);
-    pmm_oom();
-    __builtin_unreachable();
+    STUB();
 }
 
 /**
@@ -237,15 +95,7 @@ _oom:
  * @param block The address of the block
  */
 void pmm_freeBlock(uintptr_t block) {
-    if (block % PMM_BLOCK_SIZE != 0) return;
-
-    spinlock_acquire(&frame_lock);
-
-    int frame = block / PMM_BLOCK_SIZE;
-    pmm_clearFrame(frame);
-    pmm_usedBlocks--;
-
-    spinlock_release(&frame_lock);
+    STUB();
 }
 
 /**
@@ -253,22 +103,7 @@ void pmm_freeBlock(uintptr_t block) {
  * @param blocks The amount of blocks to allocate. Must be aligned to PMM_BLOCK_SIZE - do not pass bytes!
  */
 uintptr_t pmm_allocateBlocks(size_t blocks) {
-    if (!blocks) kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "physmem");
-    if ((pmm_maxBlocks - pmm_reservedBlocks - pmm_usedBlocks) <= blocks) pmm_oom();
-    
-    spinlock_acquire(&frame_lock);
-    int frame = pmm_findFirstFrames(blocks);
-    if (frame == -ENOMEM) {
-        pmm_oom();
-    }
-
-    for (uint32_t i = 0; i < blocks; i++) {
-        pmm_setFrame(frame + i);
-    }
-
-    pmm_usedBlocks += blocks;
-    spinlock_release(&frame_lock);
-    return (uintptr_t)(frame * PMM_BLOCK_SIZE);
+    STUB();
 }
 
 /**
@@ -277,41 +112,33 @@ uintptr_t pmm_allocateBlocks(size_t blocks) {
  * @param blocks The amount of blocks to free. Must be aligned to PMM_BLOCK_SIZE
  */
 void pmm_freeBlocks(uintptr_t base, size_t blocks) {
-    if (!blocks) return;
-    
-    spinlock_acquire(&frame_lock);
-
-    int frame = base / PMM_BLOCK_SIZE;
-    for (uint32_t i = 0; i < blocks; i++) pmm_clearFrame(frame + i);
-    pmm_usedBlocks -= blocks;
-
-    spinlock_release(&frame_lock);
+    STUB();
 }
 
 /**
  * @brief Gets the physical memory size
  */
 uintptr_t pmm_getPhysicalMemorySize() {
-    return pmm_memorySize;
+    STUB();
 }
 
 /**
  * @brief Gets the maximum amount of blocks
  */
 uintptr_t pmm_getMaximumBlocks() {
-    return pmm_maxBlocks;
+    STUB();
 }
 
 /**
  * @brief Gets the used amount of blocks
  */
 uintptr_t pmm_getUsedBlocks() {
-    return pmm_usedBlocks;
+    STUB();
 }
 
 /**
  * @brief Gets the free amount of blocks
  */
 uintptr_t pmm_getFreeBlocks() {
-    return (pmm_maxBlocks - pmm_reservedBlocks - pmm_usedBlocks);
+    STUB();
 }

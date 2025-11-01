@@ -22,6 +22,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 #include <ctype.h>
+#include <assert.h>
 
 /**** MACROS ****/
 
@@ -85,5 +86,8 @@ typedef atomic_int refcount_t;
 #define refcount_inc(ref) ({ atomic_fetch_add(ref, 1); })
 #define refcount_dec(ref) ({ atomic_fetch_sub(ref, 1); })
 #define refcount_init(ref, val) ({ atomic_store(ref, val); })
+
+/* stub */
+#define STUB() kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "stub", "%s:%d: \"%s\" is a stub", __FILE__, __LINE__, __func__); __builtin_unreachable();
 
 #endif

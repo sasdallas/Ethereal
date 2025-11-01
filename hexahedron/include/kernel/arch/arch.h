@@ -40,6 +40,7 @@
 #include <kernel/arch/x86_64/registers.h>
 #include <kernel/arch/x86_64/context.h>
 #include <kernel/arch/x86_64/hal.h>
+#include <kernel/arch/x86_64/mmu.h>
 #elif defined(__ARCH_AARCH64__)
 #include <kernel/arch/aarch64/arch.h>
 #include <kernel/arch/aarch64/registers.h>

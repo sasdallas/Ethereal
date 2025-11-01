@@ -24,6 +24,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/mem/mem.h>
 #include <kernel/task/process.h>
+#include <kernel/mm/vmm.h>
 
 /**** TYPES ****/
 
@@ -33,7 +34,7 @@ struct thread;
 
 typedef struct _processor {
     int cpu_id;                         // CPU ID
-    page_t *current_dir;                // Current page directory
+    mmu_dir_t *current_dir;             // Current page directory
     struct thread *current_thread;      // Current thread of the process
 
     struct process *current_process;    // Current process of the CPU

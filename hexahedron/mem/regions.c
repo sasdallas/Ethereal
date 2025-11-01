@@ -29,6 +29,7 @@
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <structs/hashmap.h>
+#include <kernel/misc/util.h>
 
 /* DMA pool */
 pool_t *dma_pool = NULL;
@@ -50,12 +51,7 @@ pool_t *driver_pool = NULL;
  * Call this after your memory system is fully initialized (heap ready)
  */
 void mem_regionsInitialize() {
-    dma_pool = pool_create("dma pool", PAGE_SIZE, MEM_DMA_REGION_SIZE, MEM_DMA_REGION, POOL_DEFAULT);
-    mmio_pool = pool_create("mmio pool", PAGE_SIZE, MEM_MMIO_REGION_SIZE, MEM_MMIO_REGION, POOL_DEFAULT);
-    driver_pool = pool_create("driver pool", PAGE_SIZE, MEM_DRIVER_REGION_SIZE, MEM_DRIVER_REGION, POOL_DEFAULT);
-
-    LOG(INFO, "Initialized region system.\n");
-    LOG(INFO, "DMA region = %p, MMIO region = %p, driver region = %p\n", MEM_DMA_REGION, MEM_MMIO_REGION, MEM_DRIVER_REGION);
+    STUB();
 }
 
 /**
@@ -64,31 +60,7 @@ void mem_regionsInitialize() {
  * DMA regions are contiguous blocks that currently cannot be destroyed
  */
 uintptr_t mem_allocateDMA(uintptr_t size) {
-    if (!size) return 0x0;
-
-    if (!dma_pool) {
-        LOG(WARN, "Function 0x%x attempted to allocate %d bytes from DMA buffer but regions are not ready\n", __builtin_return_address(0), size);
-        return 0x0;
-    }
-    
-    // Align size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    uintptr_t virt = pool_allocateChunks(dma_pool, size / PAGE_SIZE);
-
-    // Success?
-    if (virt == 0x0) {
-        // No
-        kernel_panic_extended(OUT_OF_MEMORY, "dma", "*** Could not allocate %d bytes for DMA\n", size);
-    }
-
-    uintptr_t phys = pmm_allocateBlocks(size / PMM_BLOCK_SIZE);
-
-    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        mem_mapAddress(NULL, phys+i, virt+i, MEM_PAGE_KERNEL | MEM_PAGE_NOT_CACHEABLE);
-    }
-
-    return virt;
+    STUB();
 }
 
 /**
@@ -98,12 +70,7 @@ uintptr_t mem_allocateDMA(uintptr_t size) {
  * @param size The size of the base
  */
 void mem_freeDMA(uintptr_t base, uintptr_t size) {
-    if (!base) return;
-
-    // Free the memory
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    pool_freeChunks(dma_pool, base, size / PAGE_SIZE);
+    STUB();
 }
 
 
@@ -116,30 +83,7 @@ void mem_freeDMA(uintptr_t base, uintptr_t size) {
  * @warning MMIO regions cannot be destroyed.
  */
 uintptr_t mem_mapMMIO(uintptr_t phys, size_t size) {
-    if (!size || !phys) return 0x0;
-    if (!mmio_pool) {
-        LOG(WARN, "Function 0x%x attempted to allocate %d bytes from MMIO buffer but regions are not ready\n", __builtin_return_address(0), size);
-        return 0x0;
-    }
-
-    // Align size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    // Get chunks
-    uintptr_t virt = pool_allocateChunks(mmio_pool, size / PAGE_SIZE);
-
-    // Success?
-    if (virt == 0x0) {
-        // No
-        kernel_panic_extended(OUT_OF_MEMORY, "mmio", "*** Could not allocate %d bytes for MMIO\n", size);
-    }
-
-    // Map
-    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        mem_mapAddress(NULL, phys+i, virt+i, MEM_PAGE_KERNEL | MEM_PAGE_NOT_CACHEABLE);
-    }
-
-    return virt;
+    STUB();
 }
 
 /**
@@ -147,12 +91,7 @@ uintptr_t mem_mapMMIO(uintptr_t phys, size_t size) {
  * @param virt The virtual address returned by @c mem_mapMMIO
  */
 void mem_unmapMMIO(uintptr_t virt, uintptr_t size) {
-    if (!virt) return;
-
-    // Free the memory
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    pool_freeChunks(mmio_pool, virt, size / PAGE_SIZE);
+    STUB();
 }
 
 /**
@@ -161,27 +100,7 @@ void mem_unmapMMIO(uintptr_t virt, uintptr_t size) {
  * @returns A pointer to the mapped space
  */
 uintptr_t mem_mapDriver(size_t size) {
-    if (!size) return 0x0;
-
-    if (!driver_pool) {
-        LOG(WARN, "Function 0x%x attempted to allocate %d bytes from driver buffer but regions are not ready\n", __builtin_return_address(0), size);
-        return 0x0;
-    }
-    
-    // Align size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    uintptr_t virt = pool_allocateChunks(driver_pool, size / PAGE_SIZE);
-
-    // Success?
-    if (virt == 0x0) {
-        // No
-        kernel_panic_extended(OUT_OF_MEMORY, "driver", "*** Could not allocate %d bytes for driver\n", size);
-    }
-
-
-    mem_allocate(virt, size, MEM_ALLOC_CRITICAL, MEM_PAGE_KERNEL);
-    return virt;
+    STUB();
 }
 
 /**
@@ -190,32 +109,26 @@ uintptr_t mem_mapDriver(size_t size) {
  * @param size The size of the driver in memory
  */
 void mem_unmapDriver(uintptr_t base, size_t size) {
-    if (!base) return;
-
-    // Free the memory
-    // Align size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
-
-    pool_freeChunks(driver_pool, base, size / PAGE_SIZE);
+    STUB();
 }
 
 /**
  * @brief Get amount of memory in use by DMA
  */
 uintptr_t mem_getDMAUsage() {
-    return dma_pool->used;
+    STUB();
 }
 
 /**
  * @brief Get amount of memory in use by MMIO
  */
 uintptr_t mem_getMMIOUsage() {
-    return mmio_pool->used;
+    STUB();
 }
 
 /**
  * @brief Get amount of memory in use by drivers
  */
 uintptr_t mem_getDriverUsage() {
-    return driver_pool->used;
+    STUB();
 }

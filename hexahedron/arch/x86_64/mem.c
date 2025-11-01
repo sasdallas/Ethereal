@@ -829,8 +829,7 @@ extern uintptr_t __kernel_start, __kernel_end;
     uintptr_t *frames = (uintptr_t*)MEM_HEAP_REGION;
 
     // Initialize PMM
-    LOG(DEBUG, "Initializing physical memory manager...\n")
-    pmm_init(mem_size, frames); 
+    LOG(DEBUG, "Initializing physical memory manager...\n");
 
     // Call back to architecture to mark/unmark memory
     // !!!: Unmarking too much memory. Would kernel_addr work?

@@ -18,7 +18,6 @@
 #include <stdint.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mem/mem.h>
 #include <structs/node.h>
 #include <structs/list.h>
 

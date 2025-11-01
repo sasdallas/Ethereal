@@ -41,6 +41,9 @@
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/pmm.h>
 
+#include <kernel/mm/vmm.h>
+#include <kernel/mm/pmm.h>
+
 // Misc
 #include <kernel/misc/spinlock.h>
 #include <kernel/misc/args.h>
@@ -74,7 +77,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
+        // printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
         printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo
@@ -270,6 +273,21 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
     }
 
     // Now, we can initialize memory systems.
+static pmm_region_t pmm_descs[64]; // !!!: probably a hack
+
+    if (multiboot_magic == MULTIBOOT_MAGIC) {
+        assert(0 && "MB1 not supported for this");
+    } else if (multiboot_magic == MULTIBOOT2_MAGIC) {
+        arch_parse_multiboot2_mmap(bootinfo, pmm_descs);
+    } else {
+        kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** Unknown multiboot structure when checking kernel.\n");
+    }
+
+
+    vmm_init(pmm_descs);
+    for (;;);
+
+
     mem_init(memory_size, first_free_page);
 
     // Now we can ACTUALLY parse Multiboot information

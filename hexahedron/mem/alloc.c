@@ -26,6 +26,7 @@
 #include <kernel/mem/mem.h>
 #include <kernel/panic.h>
 #include <kernel/debug.h>
+#include <kernel/misc/util.h>
 
 
 
@@ -38,8 +39,7 @@
  * @returns A pointer. It will crash otherwise.
  */
 __attribute__((malloc)) void *kmalloc(size_t size) {
-    void *ptr = alloc_malloc(size);
-    return ptr;
+    STUB();
 }
 
 /**
@@ -50,8 +50,7 @@ __attribute__((malloc)) void *kmalloc(size_t size) {
  * @returns A pointer. It will crash otherwise.
  */
 __attribute__((malloc)) void *krealloc(void *ptr, size_t size) {
-    void *ret_ptr = alloc_realloc(ptr, size);
-    return ret_ptr;
+    STUB();
 }
 
 /**
@@ -62,8 +61,7 @@ __attribute__((malloc)) void *krealloc(void *ptr, size_t size) {
  * @returns A pointer. It will crash otherwise.
  */
 __attribute__((malloc)) void *kcalloc(size_t elements, size_t size) {
-    void *ptr = alloc_calloc(elements, size);
-    return ptr;
+    STUB();
 }
 
 /**
@@ -71,5 +69,5 @@ __attribute__((malloc)) void *kcalloc(size_t elements, size_t size) {
  * @param ptr A pointer to the previous memory
  */
 void kfree(void *ptr) {
-    alloc_free(ptr);
+    STUB();
 }

@@ -25,7 +25,7 @@
 #include <kernel/generic_mboot.h>
 #include <kernel/multiboot.h>
 #include <kernel/multiboot2.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/pmm.h>
 #include <kernel/mem/mem.h>
 #include <kernel/arch/arch.h>
 
@@ -34,7 +34,15 @@ extern uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size);
 
 #define MBRELOC(x) ((uintptr_t)mem_remapPhys((uintptr_t)(x), 0))
 
-extern uintptr_t __kernel_end_phys;
+static int arch_e820_to_pmm[] = {
+    [MULTIBOOT_MEMORY_AVAILABLE]        = PHYS_MEMORY_AVAILABLE,
+    [MULTIBOOT_MEMORY_RESERVED]         = PHYS_MEMORY_RESERVED,
+    [MULTIBOOT_MEMORY_ACPI_RECLAIMABLE] = PHYS_MEMORY_ACPI_RECLAIMABLE,
+    [MULTIBOOT_MEMORY_NVS]              = PHYS_MEMORY_ACPI_NVS,
+    [MULTIBOOT_MEMORY_BADRAM]           = PHYS_MEMORY_BADRAM,
+};
+
+extern uintptr_t __kernel_end_phys, __kernel_start_phys;
 
 struct multiboot_rsdp {
     char signature[8];      // "RSD PTR ", not null terminated
@@ -382,78 +390,7 @@ static int is_mb2 = 0;
  * @param highest_address The highest kernel address
  * @param mem_size The memory size.
  */
-void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) {
-    if (!stored_bootinfo) {
-        kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "multiboot");
-        __builtin_unreachable();    
-    }
-
-    if (is_mb2) {
-        multiboot2_t *bootinfo = (multiboot2_t*)stored_bootinfo;
-
-        // Find the memory map, we'll parse it first.
-        struct multiboot_tag_mmap *mm = (struct multiboot_tag_mmap*)multiboot2_find_tag((void*)bootinfo->tags, MULTIBOOT_TAG_TYPE_MMAP);
-        if (mm == NULL) {
-            kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
-            __builtin_unreachable();
-        }
-
-        uintptr_t memory_size = 0;
-
-        struct multiboot_mmap_entry *ent = mm->entries;
-
-        while ((uintptr_t)ent < (uintptr_t)mm + mm->size) {
-            dprintf(DEBUG, "Memory map entry type=%d len=%016llX addr=%016llX\n", ent->type, ent->addr, ent->len);
-            if (ent->type == 1 && ent->len && ent->addr + ent->len - 1 > memory_size) {
-                memory_size = ent->addr + ent->len - 1;
-
-                pmm_initializeRegion((uintptr_t)ent->addr, (uintptr_t)ent->len);
-            }
-
-            ent = (struct multiboot_mmap_entry*)((uintptr_t)ent + mm->entry_size);
-        }
-            
-
-        if (!memory_size) {
-            kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
-            __builtin_unreachable();
-        }
-    } else {
-        // Bootinfo needs to be remapped using memory
-        multiboot_t *bootinfo = (multiboot_t*)mem_remapPhys((uintptr_t)stored_bootinfo, MEM_ALIGN_PAGE(sizeof(multiboot_t)));
-
-        multiboot1_mmap_entry_t *mmap = (multiboot1_mmap_entry_t*)mem_remapPhys(bootinfo->mmap_addr, MEM_ALIGN_PAGE(bootinfo->mmap_length));
-
-        while ((uintptr_t)mmap < (uintptr_t)mem_remapPhys(bootinfo->mmap_addr + bootinfo->mmap_length, MEM_ALIGN_PAGE(bootinfo->mmap_length))) {
-            if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
-                // Available!
-                dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as available memory\n", mmap->addr, mmap->addr + mmap->len, mmap->len / 1024);
-                pmm_initializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
-            } else {
-                // Make sure mmap->addr isn't out of memory - most emulators like to have reserved
-                // areas outside of their actual memory space, which the PMM really does not like.
-
-                // !!!: Hack
-                if (mmap->addr >= 0x100000 && mmap->addr + mmap->len < mem_size) {
-                    dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as unavailable memory\n", mmap->addr, mmap->addr + mmap->len, mmap->len / 1024); 
-                    
-                    // Don't deinitialize this region, since the PMM starts out with everything deinitialized
-                    // pmm_deinitializeRegion((uintptr_t)(mmap->addr & ~0x3FF), (uintptr_t)(mmap->len & ~0x3FF));
-                }
-            }
-
-            mmap = (multiboot1_mmap_entry_t*)((uintptr_t)mmap + mmap->size + sizeof(uint32_t)); 
-        }
-    }
-
-    // Unmark kernel regions
-    dprintf(DEBUG, "Marked memory descriptor %016X - %016X (%i KB) as kernel memory\n", 0, highest_address, highest_address / 1024);
-    pmm_deinitializeRegion(0x0, highest_address);
-
-    // Done!
-    dprintf(DEBUG, "Marked valid memory - PMM has %i free blocks / %i max blocks\n", pmm_getFreeBlocks(), pmm_getMaximumBlocks());
-}
-
+void arch_mark_memory(uintptr_t highest_address, uintptr_t mem_size) { }
 
 
 
@@ -524,7 +461,6 @@ void arch_parse_multiboot1_early(multiboot_t *bootinfo, uintptr_t *mem_size, uin
  * (else it will overwrite its own page tables and crash or something, i didn't do much debugging)
  */
 void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, uintptr_t *first_free_page) {
-    dprintf(DEBUG, "bootinfo = %p\n");
     multiboot2_t *bootinfo = (multiboot2_t*)bootinfo1;
     stored_bootinfo = bootinfo1;
     is_mb2 = 1;
@@ -540,7 +476,6 @@ void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, ui
             struct multiboot_mmap_entry *ent = mm->entries;
 
             while ((uintptr_t)ent < (uintptr_t)mm + mm->size) {
-                dprintf(DEBUG, "Memory map entry type=%d len=%016llX addr=%016llX\n", ent->type, ent->addr, ent->len);
                 if (ent->type == 1 && ent->len && ent->addr + ent->len - 1 > memory_size) {
                     memory_size = ent->addr + ent->len - 1;
                 }
@@ -549,9 +484,6 @@ void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, ui
             }
         } else if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
             struct multiboot_tag_module *mod = (struct multiboot_tag_module*)tag;
-            
-            dprintf(DEBUG, "Module %08X - %08X (%s)\n", mod->mod_start, mod->mod_end, mod->cmdline);
-            
             if (mod->mod_end > kend) kend = mod->mod_end;
         }
 
@@ -566,5 +498,179 @@ void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, ui
 
     *first_free_page = kend;
     *mem_size = memory_size;
-    dprintf(INFO, "FFP=%016llx MMSIZE=%016llX\n", kend, memory_size);
+}
+
+static void arch_insert_region(pmm_region_t *region, pmm_region_t *regions, int *i) {
+    // Effectively rebuilds the region map...
+    pmm_region_t tmp[64];
+    int cnt = 0;
+    int added = 0;
+    int orig_count = *i;
+
+    for (int idx = 0; idx < orig_count; idx++) {
+        pmm_region_t *r = &regions[idx];
+
+        if (r->end <= region->start) {
+            assert(cnt < 64 && "Memory region overflow");
+            tmp[cnt++] = *r;
+            continue;
+        }
+
+        if (r->start >= region->end) {
+            if (!added) {
+                assert(cnt < 64 && "Memory region overflow");
+                tmp[cnt].start = region->start;
+                tmp[cnt].end = region->end;
+                tmp[cnt].type = region->type;
+                tmp[cnt].next = NULL;
+                cnt++;
+                added = 1;
+            }
+
+            assert(cnt < 64 && "Memory region overflow");
+            tmp[cnt++] = *r;
+            continue;
+        }
+
+        if (r->start < region->start) {
+            assert(cnt < 64 && "Memory region overflow");
+            tmp[cnt].start = r->start;
+            tmp[cnt].end = region->start;
+            tmp[cnt].type = r->type;
+            tmp[cnt].next = NULL;
+            cnt++;
+        }
+
+        if (!added) {
+            assert(cnt < 64 && "Memory region overflow");
+            tmp[cnt].start = region->start;
+            tmp[cnt].end = region->end;
+            tmp[cnt].type = region->type;
+            tmp[cnt].next = NULL;
+            cnt++;
+            added = 1;
+        }
+
+        if (r->end > region->end) {
+            assert(cnt < 64 && "Memory region overflow");
+            tmp[cnt].start = region->end;
+            tmp[cnt].end = r->end;
+            tmp[cnt].type = r->type;
+            tmp[cnt].next = NULL;
+            cnt++;
+
+            for (int j = idx + 1; j < orig_count; j++) {
+                assert(cnt < 64 && "Memory region overflow");
+                tmp[cnt++] = regions[j];
+            }
+            break;
+        }
+
+    }
+
+    // append region
+    if (!added) {
+        assert(cnt < 64 && "Memory region overflow");
+        tmp[cnt].start = region->start;
+        tmp[cnt].end = region->end;
+        tmp[cnt].type = region->type;
+        tmp[cnt].next = NULL;
+        cnt++;
+    }
+
+    // restore original array
+    for (int k = 0; k < cnt; k++) {
+        regions[k] = tmp[k];
+        regions[k].next = (k + 1 < cnt) ? &regions[k + 1] : NULL;
+    }
+
+    *i = cnt;
+}
+
+/**
+ * @brief Convert the Multiboot2 memory map to an array
+ * @param bootinfo The boot information
+ * @param array The array of PMM memory descriptors
+ */
+void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, pmm_region_t *regions) {
+    multiboot2_t *bootinfo = (multiboot2_t*)_bootinfo;
+    stored_bootinfo = _bootinfo;
+    is_mb2 = 1;
+
+    // Three stage parsing.
+    // 1. Create the initial memory map consisting of pure E820 regions (and calculate kend on the side).
+    // 2. Split the region containing the kernel
+    // 3. Further enshittify the map by splitting regions containing the modules
+    // The last two should work since the modules and kernel MUST be in available memory
+
+    int i = 0;
+    uintptr_t kstart = (uintptr_t)&__kernel_start_phys;
+    uintptr_t kend = (uintptr_t)&__kernel_end_phys;
+
+    // Stage 1 of parsing
+    struct multiboot_tag *tag = (struct multiboot_tag*)(bootinfo->tags);
+    while (tag->type != MULTIBOOT_TAG_TYPE_END) {
+        if (tag->type == MULTIBOOT_TAG_TYPE_MMAP) {
+            struct multiboot_tag_mmap *mm = (struct multiboot_tag_mmap*)tag;
+            struct multiboot_mmap_entry *ent = mm->entries;
+
+            while ((uintptr_t)ent < (uintptr_t)mm + mm->size) {
+                dprintf(DEBUG, "Memory map entry type=%d %016llX-%016llX\n", ent->type, ent->addr, ent->addr + ent->len);
+                
+                regions[i].start = ent->addr;
+                regions[i].end = ent->addr + ent->len;
+                regions[i].type = arch_e820_to_pmm[ent->type];
+                regions[i].next = NULL;
+                
+                if (i != 0) regions[i-1].next = &regions[i];
+
+                i++;
+                assert(i < 64 && "Memory region overflow");
+
+                ent = (struct multiboot_mmap_entry*)((uintptr_t)ent + mm->entry_size);
+            }
+        }
+
+        uintptr_t tag_ptr = (uintptr_t)tag + ((tag->size + 7) & ~7);
+        if (tag_ptr > kend) kend = tag_ptr;
+
+        tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
+    }
+
+    kend = PAGE_ALIGN_UP(kend);
+    assert(i != 0 && "Multiboot memory map tag had no entries or was corrupted");
+
+    // Stage 2 of parsing
+    // Figure out the region containing the kernel
+    pmm_region_t kregion = {
+        .start = PAGE_ALIGN_DOWN(kstart),
+        .end = PAGE_ALIGN_UP(kend),
+        .type = PHYS_MEMORY_KERNEL,
+        .next = NULL
+    };
+
+    arch_insert_region(&kregion, regions, &i);
+
+
+    // Stage 3 of parsing
+    // !!!: The shitty part
+    tag = (struct multiboot_tag*)(bootinfo->tags);
+    while (tag->type != MULTIBOOT_TAG_TYPE_END) {
+        if (tag->type == MULTIBOOT_TAG_TYPE_MODULE) {
+            // Find a region containing this
+            struct multiboot_tag_module *mod = (struct multiboot_tag_module*)tag;
+
+            pmm_region_t r = {
+                .start = PAGE_ALIGN_DOWN(mod->mod_start),
+                .end = PAGE_ALIGN_UP(mod->mod_end),
+                .type = PHYS_MEMORY_MODULE,
+                .next = NULL,
+            };
+            
+
+            arch_insert_region(&r, regions, &i);
+        }
+
+        tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
+    }
 }

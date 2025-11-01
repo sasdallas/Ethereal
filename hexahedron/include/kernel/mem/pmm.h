@@ -28,12 +28,6 @@
 
 /**** FUNCTIONS ****/
 
-/**
- * @brief Initialize the physical memory system.
- * @param memsize Available physical memory in bytes.
- * @param frames_bitmap The bitmap of frames allocated to the system (mapped into memory)
- */
-int pmm_init(uintptr_t memsize, uintptr_t *frames_bitmap);
 
 /**
  * @brief Initialize a region as available memory
