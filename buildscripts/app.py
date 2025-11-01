@@ -132,7 +132,7 @@ if __name__ == "__main__":
 
             
 
-            d = path + a.install_dir + "/" + a.name
+            d = a.install_dir + "/" + a.name
             for sym in a.symlinks:
                 try:
                     if not os.path.exists(os.path.dirname(path + sym)):
