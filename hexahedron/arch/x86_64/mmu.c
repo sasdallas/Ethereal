@@ -125,6 +125,19 @@ extern uintptr_t __kernel_start;
     __mmu_kernel_pml[MMU_PML4_INDEX(((uintptr_t)&__kernel_start))].bits.address = FROM_HHDM(kernel_pdpt) >> MMU_SHIFT;
 
     
+    // Finally, fill the rest of the kernel PML with blank PDPTs to allow cloning easier
+    for (unsigned i = 256; i < 512; i++) {
+        if (!__mmu_kernel_pml[i].bits.present) {
+            uintptr_t fr = TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
+            memset((void*)fr, 0, PAGE_SIZE);
+            
+            __mmu_kernel_pml[i].bits.present = 1;
+            __mmu_kernel_pml[i].bits.rw = 1;
+            __mmu_kernel_pml[i].bits.usermode = 0;
+            __mmu_kernel_pml[i].bits.address = FROM_HHDM(fr) >> MMU_SHIFT;
+        }
+    }
+
     // Flush TLB
     arch_mmu_load((mmu_dir_t*)__mmu_kernel_pml);
 }
@@ -150,20 +163,95 @@ void arch_mmu_unmap_physical(uintptr_t addr, size_t size) {
 }
 
 /**
+ * @brief Get a page (internal)
+ */
+static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt) {
+    if (!dir) dir = arch_mmu_dir();
+    mmu_page_t *d = (mmu_page_t*)dir;
+
+    // PDPT
+    mmu_page_t *pdpt = NULL;
+    
+    if (d[MMU_PML4_INDEX(virt)].bits.present == 0) {
+        // Create a new entry
+        pdpt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
+        memset(pdpt, 0, PAGE_SIZE);
+
+        d[MMU_PML4_INDEX(virt)].bits.address = FROM_HHDM(pdpt) >> MMU_SHIFT;
+        d[MMU_PML4_INDEX(virt)].bits.usermode = 1;
+        d[MMU_PML4_INDEX(virt)].bits.rw = 1;
+        d[MMU_PML4_INDEX(virt)].bits.present = 1;
+    } else {
+        pdpt = (mmu_page_t*)TO_HHDM(d[MMU_PML4_INDEX(virt)].bits.address << MMU_SHIFT);
+    }
+
+    // PD
+    mmu_page_t *pd = NULL;
+
+    if (pdpt[MMU_PDPT_INDEX(virt)].bits.present == 0) {
+        // Create a new entry
+        pd = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
+        memset(pd, 0, PAGE_SIZE);
+
+        pdpt[MMU_PDPT_INDEX(virt)].bits.address = FROM_HHDM(pd) >> MMU_SHIFT;
+        pdpt[MMU_PDPT_INDEX(virt)].bits.usermode = 1;
+        pdpt[MMU_PDPT_INDEX(virt)].bits.rw = 1;
+        pdpt[MMU_PDPT_INDEX(virt)].bits.present = 1;
+    } else {
+        pd = (mmu_page_t*)TO_HHDM(pdpt[MMU_PDPT_INDEX(virt)].bits.address << MMU_SHIFT);
+    }
+
+    // PT
+    mmu_page_t *pt = NULL;
+
+    if (pd[MMU_PAGEDIR_INDEX(virt)].bits.present == 0) {
+        pt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
+        memset(pt, 0, PAGE_SIZE);
+
+        pd[MMU_PAGEDIR_INDEX(virt)].bits.present = 1;
+        pd[MMU_PAGEDIR_INDEX(virt)].bits.rw = 1;
+        pd[MMU_PAGEDIR_INDEX(virt)].bits.usermode = 1;
+        pd[MMU_PAGEDIR_INDEX(virt)].bits.address = FROM_HHDM(pt) >> MMU_SHIFT;
+    } else {
+        pt = (mmu_page_t*)TO_HHDM(pd[MMU_PAGEDIR_INDEX(virt)].bits.address << MMU_SHIFT);
+    }
+
+    return &pt[MMU_PAGETBL_INDEX(virt)];
+}
+
+/**
  * @brief Map a physical address to a virtual address
  * @param dir The directory to map in (or NULL for current)
  * @param virt The virtual address to map
  * @param phys The physical address to map to
  * @param flags The flags for the mapping
  */
-void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t flags) { STUB(); }
+void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t flags) {
+    assert(MMU_IS_CANONICAL(virt));
+    virt = PAGE_ALIGN_DOWN(virt);
+    
+
+    // Configure the bits in the entry
+    mmu_page_t *page = arch_mmu_get_page(dir, virt);
+    page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
+    page->bits.rw = (flags & MMU_FLAG_RW) ? 1 : 0;
+    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
+    page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
+    page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
+    page->bits.address = phys >> MMU_SHIFT;
+}
 
 /**
  * @brief Unmap a virtual address (mark it as non-present)
  * @param dir The directory to unmap in (or NULL for current)
  * @param virt The virtual address to unmap
  */
-void arch_mmu_unmap(mmu_dir_t *dir, uintptr_t virt) { STUB(); }
+void arch_mmu_unmap(mmu_dir_t *dir, uintptr_t virt) {
+    assert(MMU_IS_CANONICAL(virt));
+
+    mmu_page_t *pg = arch_mmu_get_page(dir, virt);
+    pg->data = 0;
+}
 
 /**
  * @brief Invalidate a page range
@@ -201,7 +289,7 @@ mmu_dir_t *arch_mmu_new_dir() { STUB(); }
 /**
  * @brief Get the current directory
  */
-mmu_dir_t *arch_mmu_dir() {
+inline mmu_dir_t *arch_mmu_dir() {
     return current_cpu->current_dir;
 }
 

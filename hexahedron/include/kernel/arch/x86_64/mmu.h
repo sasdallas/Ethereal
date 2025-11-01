@@ -43,6 +43,11 @@
 #define MMU_PAGEDIR_INDEX(x) (((x) >> (MMU_SHIFT + 9)) & 0x1FF)
 #define MMU_PAGETBL_INDEX(x) (((x) >> MMU_SHIFT) & 0x1FF)
 
+#define MMU_CANONICAL_MASK (~0ULL << (48- 1))
+
+#define MMU_IS_CANONICAL(addr) \
+    ((((uint64_t)(addr) & MMU_CANONICAL_MASK) == 0ULL) || \
+     (((uint64_t)(addr) & MMU_CANONICAL_MASK) == MMU_CANONICAL_MASK))
 
 /**** TYPES ****/
 typedef uintptr_t mmu_dir_t;
