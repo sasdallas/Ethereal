@@ -66,7 +66,7 @@ void scheduler_initCPU() {
 int scheduler_insertThread(thread_t *thread) {
     assert(current_cpu->sched.state == SCHEDULER_STATE_ACTIVE);
     spinlock_acquire(current_cpu->sched.lock);
-    list_append(current_cpu->sched.queue, thread);
+    list_append_node(current_cpu->sched.queue, &thread->sched_node);
     spinlock_release(current_cpu->sched.lock);
 
     return 0;
@@ -135,7 +135,6 @@ thread_t *scheduler_get() {
     }
 
     spinlock_release(current_cpu->sched.lock);
-    if (n) kfree(n); // !!!
 
     if (t->status & THREAD_STATUS_STOPPING) {
         thread_destroy(t);
