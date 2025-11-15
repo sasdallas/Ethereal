@@ -24,7 +24,6 @@
 #include <kernel/generic_mboot.h>
 #include <kernel/multiboot.h>
 #include <kernel/multiboot2.h>
-#include <kernel/mem/pmm.h>
 
 extern uintptr_t arch_allocate_structure(size_t bytes);
 extern uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size);

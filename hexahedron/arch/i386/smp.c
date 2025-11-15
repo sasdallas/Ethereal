@@ -21,10 +21,6 @@
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/misc/args.h>
-
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/gfx/term.h>
 

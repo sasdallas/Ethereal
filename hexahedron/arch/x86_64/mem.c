@@ -19,9 +19,6 @@
 #include <kernel/arch/x86_64/hal.h>
 #include <kernel/arch/x86_64/registers.h>
 #include <kernel/arch/x86_64/smp.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/regions.h>
-#include <kernel/mem/pmm.h>
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -127,9 +124,7 @@ int mem_switchDirectory(page_t *pagedir) {
  * @returns A pointer to the VAS
  */
 page_t *mem_createVAS() {
-    page_t *vas = (page_t*)mem_remapPhys(pmm_allocateBlock(), PMM_BLOCK_SIZE);
-    memset((void*)vas, 0, PMM_BLOCK_SIZE);
-    return vas;
+    STUB();
 }
 
 
@@ -258,122 +253,7 @@ uintptr_t mem_getPhysicalAddress(page_t *dir, uintptr_t virtaddr) {
  * @param extended Extended registers
  */
 int mem_pageFault(uintptr_t exception_index, registers_t *regs, extended_registers_t *regs_extended) {
-    // Check if this was a usermode page fault
-    if (regs->cs != 0x08) {
-        // Was this an exception because we didn't map their heap?
-        if (regs_extended->cr2 >= current_cpu->current_process->heap_base && regs_extended->cr2 < current_cpu->current_process->heap) {
-            // Yes, it was, handle appropriately by mapping this page
-            mem_allocatePage(mem_getPage(NULL, regs_extended->cr2, MEM_CREATE), MEM_DEFAULT);
-            return 0;
-        }
-
-        if (regs_extended->cr2 > MEM_USERMODE_STACK_REGION && regs_extended->cr2 < MEM_USERMODE_STACK_REGION + PAGE_SIZE*2) {
-            mem_allocatePage(mem_getPage(NULL, regs_extended->cr2, MEM_CREATE), MEM_DEFAULT);
-            return 0;
-        }
-
-        // Check for VAS fault
-        // Default hint is 0x10000
-        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x10000)) {
-            return 0;
-        }
-
-        // TODO: This code can probably bug out - to be extensively tested
-        printf(COLOR_CODE_RED "Process \"%s\" (TID: %d, PID: %d) encountered a page fault at address %p and will be shutdown\n" COLOR_CODE_RESET, current_cpu->current_process->name, current_cpu->current_thread->tid, current_cpu->current_process->pid, regs_extended->cr2);
-        
-        // Dump debug information
-        LOG(ERR, "Process \"%s\" (PID: %d) encountered page fault at %p with no valid resolution (error code: 0x%x). Shutdown\n", current_cpu->current_process->name, current_cpu->current_process->pid, regs_extended->cr2, regs->err_code);
-        LOG(ERR, "The fault occurred @ IP %04x:%016llX SP %016llX\n", regs->cs, regs->rip, regs->rsp);
-        vas_dump(current_cpu->current_process->vas);
-        
-        // Perform traceback
-        LOG(ERR, "STACK BACKTRACE:\n");
-        LOG(ERR, "Starting @ IP: %016llX\n", regs->rip);
-        stack_frame_t *stk = (stack_frame_t*)regs->rbp;
-        while (stk) {
-            if (!mem_validate(stk, PTR_USER)) {
-                LOG(ERR, "Corrupted stack frame 0x%016llX detected\n", stk);
-                break;
-            }
-
-            LOG(ERR, "FRAME 0x%016llX: 0x%016llX\n", stk, stk->ip);
-        
-            stk = stk->nextframe;
-        }
-
-
-        process_exit(current_cpu->current_process, 1);
-        return 0;
-    }
-
-    if (current_cpu->current_process && current_cpu->current_process->vas) {
-        // Check for fault
-        if (vas_fault(current_cpu->current_process->vas, regs_extended->cr2, 0x2000)) {
-            return 0;
-        }
-    }
-
-    uintptr_t page_fault_addr = 0x0;
-    asm volatile ("movq %%cr2, %0" : "=a"(page_fault_addr));
-
-    LOG(ERR, "#PF (%016llX): IP %04x:%016llX SP %016llX\n", page_fault_addr, regs->cs, regs->rip, regs->rsp);
-
-    // Page fault, get the address
-    kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
-        
-    // Print it out
-    LOG(NOHEADER, COLOR_CODE_RED "*** Page fault at address " COLOR_CODE_RED_BOLD "0x%016llX\n" COLOR_CODE_RED, page_fault_addr);
-
-    // Determine fault cause
-    int present = (regs->err_code & (1 << 0));
-    int write = (regs->err_code & (1 << 1));
-    int rsvd = (regs->err_code & (1 << 3));
-    int instruction = (regs->err_code & (1 << 4));
-
-    LOG(NOHEADER, "*** Memory access type: %s%s%s%s\n\n", 
-                            (present) ? "PRESENT_IN_MEMORY " : "NOT_PRESENT_IN_MEMORY ",
-                            (write) ? "WRITE " : "READ ",
-                            (rsvd) ? "RSVD_BIT_SET " : "",
-                            (instruction) ? "INSTRUCTION_FETCH " : "");
-
-    LOG(NOHEADER, "\033[1;31mFAULT REGISTERS:\n\033[0;31m");
-
-    LOG(NOHEADER, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
-    LOG(NOHEADER, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
-    LOG(NOHEADER, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
-    LOG(NOHEADER, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
-    LOG(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
-
-    LOG(NOHEADER, "CS %04X DS %04X SS %04X\n\n", regs->cs, regs->ds, regs->ss);
-    LOG(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX CR4 %08X\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3, regs_extended->cr4);
-    LOG(NOHEADER, "GDTR %016llX %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
-    LOG(NOHEADER, "IDTR %016llX %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
-
-    // !!!: not conforming (should call kernel_panic_finalize) but whatever
-    // We want to do our own traceback.
-extern void arch_panic_traceback(int depth, registers_t *regs);
-    arch_panic_traceback(10, regs);
-
-    // Show core processes
-    LOG(NOHEADER, COLOR_CODE_RED_BOLD "\nCPU DATA:\n" COLOR_CODE_RED);
-
-    for (int i = 0; i < MAX_CPUS; i++) {
-        if (processor_data[i].cpu_id || !i) {
-            // We have valid data here
-            if (processor_data[i].current_thread != NULL) {
-                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s') - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_context->dir);
-            } else {
-                LOG(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", processor_data[i].current_context->dir);
-            }
-        }
-    }
-
-    // Display message
-    LOG(NOHEADER, COLOR_CODE_RED "\nThe kernel will now permanently halt. Connect a debugger for more information.\n");
-
-    // Disable interrupts & halt
-    asm volatile ("cli\nhlt");
-    for (;;);
+    STUB();
 }
 
 /**

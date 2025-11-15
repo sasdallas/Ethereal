@@ -17,7 +17,6 @@
 #include <kernel/debug.h>
 #include <kernel/misc/mutex.h>
 #include <string.h>
-#include <kernel/mem/pmm.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:DEV ] " __VA_ARGS__);

@@ -87,12 +87,5 @@ void vmm_init(pmm_region_t *region) {
     // Initialize allocator
     alloc_init();
 
-    // Initialize regions
-    mem_regionsInitialize();
-
     vmm_dumpContext(current_cpu->current_context);
-    
-extern void kernel_statistics();
-    kernel_statistics();
-
 }

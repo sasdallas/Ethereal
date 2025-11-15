@@ -22,8 +22,7 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/task/process.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <structs/list.h>

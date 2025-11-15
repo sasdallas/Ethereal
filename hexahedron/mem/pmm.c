@@ -18,7 +18,6 @@
 #include <errno.h>
 
 // Kernel includes
-#include <kernel/mem/pmm.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/misc/spinlock.h>

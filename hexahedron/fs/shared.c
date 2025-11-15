@@ -13,9 +13,7 @@
 
 #include <kernel/fs/shared.h>
 #include <kernel/fs/kernelfs.h> 
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
 #include <string.h>

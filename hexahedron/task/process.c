@@ -22,7 +22,6 @@
 #include <kernel/panic.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
-#include <kernel/mem/pmm.h>
 #include <kernel/loader/elf.h>
 #include <kernel/misc/util.h>
 

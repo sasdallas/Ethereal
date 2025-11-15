@@ -17,9 +17,6 @@
  */
 
 #include <kernel/mem/vas.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/alloc.h>
 #include <kernel/misc/util.h>
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>

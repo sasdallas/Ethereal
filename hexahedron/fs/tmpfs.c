@@ -17,8 +17,7 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <string.h>
 
 /* Size rounding */

@@ -27,8 +27,7 @@
 #include <kernel/debugger.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 
 // Drivers (generic)
 #include <kernel/drivers/serial.h>

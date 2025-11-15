@@ -39,7 +39,6 @@
 // Memory
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/pmm.h>
 
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/pmm.h>

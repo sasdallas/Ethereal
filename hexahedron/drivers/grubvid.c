@@ -16,10 +16,7 @@
 
 #include <kernel/drivers/grubvid.h>
 #include <kernel/drivers/video.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/vas.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/processor_data.h>
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>
@@ -40,13 +37,7 @@ void grubvid_updateScreen(struct _video_driver *driver, uint8_t *buffer) {
  * @brief Unload function
  */
 int grubvid_unload(video_driver_t *driver) {
-    // Unmap
-    for (uintptr_t i = (uintptr_t)driver->videoBuffer; i < (uintptr_t)driver->videoBuffer + (driver->screenHeight * driver->screenPitch);
-        i += PAGE_SIZE) 
-    {
-        mem_allocatePage(mem_getPage(NULL, i, MEM_DEFAULT), MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
-    }
-
+    vmm_unmap(driver->videoBuffer, (size_t)(driver->screenHeight * driver->screenPitch));
     return 0;
 }
 
@@ -84,10 +75,7 @@ int grubvid_unmap(struct _video_driver *driver, size_t size, off_t off, void *ad
     if (off + size > bufsz) size = bufsz-off;
 
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            pg->bits.present = 0;
-        }
+        arch_mmu_unmap(NULL, i);
     }
 
     return 0;

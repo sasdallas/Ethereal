@@ -17,7 +17,6 @@
 #include <kernel/debug.h>
 #include <kernel/misc/mutex.h>
 #include <string.h>
-#include <kernel/mem/pmm.h>
 #include <kernel/misc/args.h>
 
 /* xHCI controller count */
@@ -373,7 +372,7 @@ void xhci_initScratchpad(xhci_t *xhci) {
 
     // Fill scratchpad buffers
     for (size_t i = 0; i < scratchpads; i++) {
-        uintptr_t pg = pmm_allocateBlock();
+        uintptr_t pg = pmm_allocatePage(ZONE_DEFAULT);
         ((uint64_t*)xhci->scratchpad)[i] = pg;
     }
 
