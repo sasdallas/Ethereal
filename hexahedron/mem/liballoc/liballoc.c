@@ -249,8 +249,10 @@ static struct liballoc_major *allocate_new_page( unsigned int size )
 
 		l_allocated += maj->size;
 
-		#ifdef LIBALLOC_DEBUG
-		LOG(INFO, "Resource allocated %x of %i pages (%i bytes) for %i size.\n", maj, st, maj->size, size );
+		#if defined(LIBALLOC_DEBUG) || 1
+		#pragma GCC diagnostic ignored "-Wframe-address"
+		#include <kernel/processor_data.h>
+		LOG(INFO, "On cpu%d process %p/%s function %p resource allocated %x of %i pages (%i bytes) for %i size.\n", arch_current_cpu(), current_cpu->current_process, (current_cpu->current_process ? current_cpu->current_process->name : "N/A"), __builtin_return_address(1), maj, st, maj->size, size );
 
 		LOG(INFO, "Total memory usage = %i KB\n",  (int)((l_allocated / (1024))) );
 		FLUSH();
@@ -728,6 +730,7 @@ void PREFIX(free)(void *ptr)
 		if ( maj->next != NULL ) maj->next->prev = maj->prev;
 		l_allocated -= maj->size;
 
+		LOG(DEBUG, "Freed %d pages\n", maj->pages);
 		liballoc_free( maj, maj->pages );
 	}
 	else

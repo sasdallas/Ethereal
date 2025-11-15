@@ -23,14 +23,33 @@
 #include <stdint.h>
 #include <kernel/mm/arch_mmu.h>
 #include <kernel/mm/pmm.h>
-#include <kernel/processor_data.h>
+#include <kernel/mm/slab.h>
+#include <kernel/mm/alloc.h>
+
 #include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/
 
-#define VMM_DEFAULT         0x0         // Default flags
-#define VMM_ALLOCATE        0x1         // Allocate and back the pages
-#define VMM_MUST_BE_EXACT   0x2         // Address hint must be matched exactly
+#define VM_FLAG_DEFAULT     0x0         // Default flags
+#define VM_FLAG_ALLOC       0x1         // Allocate and back the pages
+#define VM_FLAG_FIXED       0x2         // Address hint must be matched exactly
+
+/* Fault location */
+#define VMM_FAULT_FROM_KERNEL       0
+#define VMM_FAULT_FROM_USER         1
+
+#define VMM_FAULT_PRESENT           0x0 // Set on present access
+#define VMM_FAULT_NONPRESENT        0x1 // Set on non-present access
+#define VMM_FAULT_READ              0x0 // Set on attempted read
+#define VMM_FAULT_WRITE             0x2 // Set on attempted write
+#define VMM_FAULT_EXECUTE           0x4 // Set if attempted execution
+
+#define VMM_FAULT_RESOLVED          0
+#define VMM_FAULT_UNRESOLVED        1
+
+/* Validation constraints */
+#define VMM_PTR_USER                0x01    // Usermode or kernel pointer (STRICT: Only usermode pointer)
+#define VMM_PTR_STRICT              0x02    // Strict pointer validation
 
 /**** TYPES ****/
 
@@ -47,21 +66,29 @@ typedef struct vmm_memory_range {
     mmu_flags_t mmu_flags;              // MMU flags
 } vmm_memory_range_t;
 
-typedef struct vmm_context {
-    mutex_t *mut;                       // Mutex
+// Concept shamelessly taken from @mathewnd (thank you)
+typedef struct vmm_space {
+    uintptr_t start;                    // Start of this
+    uintptr_t end;                      // End of this
     vmm_memory_range_t *range;          // Range beginning
-    uintptr_t start;
-    uintptr_t end;
+    mutex_t *mut;                       // Mutex
+} vmm_space_t;
+
+typedef struct vmm_context {
+    vmm_space_t *space;                 // Default target VMM space
     mmu_dir_t *dir;                     // Directory
 } vmm_context_t;
+
+typedef struct vmm_fault_information {
+    uint8_t from;                       // Where was this exception from?
+    uint8_t exception_type;             // Type of exception
+    uintptr_t address;                  // The address which was faulted on
+} vmm_fault_information_t;
 
 /**** VARIABLES ****/
 
 extern vmm_context_t *vmm_kernel_context;
-
-/**** MACROS ****/
-
-#define VMM_IS_KERNEL_CTX() current_cpu->current_context == vmm_kernel_context
+extern vmm_space_t *vmm_kernel_space;
 
 /**** FUNCTIONS ****/
 
@@ -70,6 +97,17 @@ extern vmm_context_t *vmm_kernel_context;
  * @param region The list of PMM regions to use
  */
 void vmm_init(pmm_region_t *region);
+
+/**
+ * @brief Create a new VMM context
+ */
+vmm_context_t *vmm_createContext();
+
+/**
+ * @brief Get the appropriate VMM space for the address
+ * @param addr The address to get the VMM space for
+ */
+vmm_space_t *vmm_getSpaceForAddress(void *addr);
 
 /**
  * @brief Map VMM memory
@@ -95,6 +133,13 @@ void vmm_unmap(void *addr, size_t size);
 void vmm_switch(vmm_context_t *ctx);
 
 /**
+ * @brief Clone a previous context into a new context
+ * @param ctx The context to clone
+ * @returns A new context
+ */
+vmm_context_t *vmm_clone(vmm_context_t *ctx);
+
+/**
  * @brief Dump all allocations in a context
  * @param context The context to dump
  */
@@ -102,20 +147,19 @@ void vmm_dumpContext(vmm_context_t *ctx);
 
 /**
  * @brief Find a free spot in a VMM context
- * @param context The context to search
+ * @param space The space to search
  * @param address Address hint. If NULL, ignored.
  * @param size Size required for the region
  * @returns The start of the region or NULL on failure
  */
-uintptr_t vmm_findFree(vmm_context_t *ctx, uintptr_t address, size_t size);
+uintptr_t vmm_findFree(vmm_space_t *space, uintptr_t address, size_t size);
 
 /**
  * @brief Insert a new range into a VMM context
- * @param context The context to insert into
+ * @param space The space to insert into
  * @param range The range to insert into the VMM context
  */
-void vmm_insertRange(vmm_context_t *ctx, vmm_memory_range_t *range);
-
+void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range);
 
 /**
  * @brief Create a new VMM range (doesn't add it)
@@ -123,5 +167,71 @@ void vmm_insertRange(vmm_context_t *ctx, vmm_memory_range_t *range);
  * @param end The end of the range
  */
 vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t vmm_flags, mmu_flags_t mmu_flags);
+
+/**
+ * @brief Destroy a VMM memory range
+ * @param range The range to destroy
+ */
+void vmm_destroyRange(vmm_memory_range_t *range);
+
+/**
+ * @brief Get the range containing an allocation
+ * @param space The space
+ * @param start Allocation start
+ * @param size Size of allocation
+ */
+vmm_memory_range_t *vmm_getRange(vmm_space_t *space, uintptr_t start, size_t size);
+
+/**
+ * @brief Try to handle VMM fault
+ * @param info Fault information
+ * @returns VMM_FAULT_RESOLVED on success and VMM_FAULT_UNRESOLVED on failure
+ */
+int vmm_fault(vmm_fault_information_t *info);
+
+/**
+ * @brief Validate a range of memory
+ * @param start Start of the range
+ * @param size The size of the range to submit
+ * @param flags See @c VMM_PTR
+ * 
+ * @warning Pointers are NOT allowed to cross from user-kernel space.
+ */
+int vmm_validate(uintptr_t start, size_t size, int flags);
+
+/**
+ * @brief Destroy a context
+ * @param ctx The context to destroy
+ */
+void vmm_destroyContext(vmm_context_t *ctx);
+
+/**
+ * @brief Map MMIO memory
+ * @param physical The physical address of the MMIO memory
+ * @param size The size of MMIO to map
+ */
+uintptr_t mmio_map(uintptr_t physical, size_t size);
+
+/**
+ * @brief Unmap MMIO memory
+ * @param virt Virtual address of MMIO memory
+ * @param size The size of MMIO to unmap
+ */
+void mmio_unmap(uintptr_t virt, size_t size);
+
+/**
+ * @brief Map DMA memory
+ * @param size The size of DMA memory to allocate
+ * 
+ * Backs with contiguous pages in memory
+ */
+uintptr_t dma_map(size_t size);
+
+/**
+ * @brief Unmap DMA memory
+ * @param virt The virtual address of DMA to umap
+ * @param size The size of DMA to unmap
+ */
+void dma_unmap(uintptr_t virt, size_t size);
 
 #endif

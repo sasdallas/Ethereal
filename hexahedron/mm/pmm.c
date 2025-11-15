@@ -34,15 +34,17 @@ pmm_section_t *zones[NZONES] = { 0 };
 static size_t pmm_internal_memory = 0;
 static uintptr_t pmm_memory_size = 0;
 
-static sleep_queue_t _mq = {
-    .lock = { 0 },
-    .queue = { 0 },
-};
+/* Memory variables */
+static volatile unsigned int pmm_total_blocks = 0;
+static volatile unsigned int pmm_used_blocks = 0;
+
+void pmm_debug();
+
 
 mutex_t pmm_mutex = {
     .lock = -1,
     .name = "physical memory manager mutex",
-    .queue = &_mq,
+    .queue = { .lock = { 0 } },
 };
 
 static char *pmm_memory_types[] = {
@@ -61,9 +63,14 @@ static char *pmm_memory_types[] = {
 void pmm_oom(uintptr_t req) {
     kernel_panic_prepare(OUT_OF_MEMORY);
 
-    dprintf(NOHEADER, "*** PMM detected OOM condition.\n\n");
+    dprintf(NOHEADER, "*** PMM detected OOM condition while allocating %d pages.\n\n", req);
     dprintf(NOHEADER, "A total of %d pages (%d kB) were reserved by the PMM\n", pmm_internal_memory / PAGE_SIZE, pmm_internal_memory / 1000);
-    dprintf(NOHEADER, "The system had a total of %d kB of RAM available\n", pmm_memory_size / 1000);
+    dprintf(NOHEADER, "The system had a total of %d kB of RAM available\n", pmm_memory_size / 1024);
+    dprintf(NOHEADER, "The PMM used %d blocks (%d kB) out of %d total (%d kB)\n\n", pmm_used_blocks, pmm_used_blocks * 4096 / 1000, pmm_total_blocks, pmm_total_blocks * 4096 / 1000);
+
+    pmm_debug();
+    dprintf(NOHEADER, "\n");
+    alloc_stats();
 
     kernel_panic_finalize();
 }
@@ -74,43 +81,38 @@ void pmm_oom(uintptr_t req) {
  */
 static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
     // Calculate the size needed to hold everything
-    size_t size = 0;
-    size += sizeof(pmm_section_t); // Section header
-    size += sizeof(sleep_queue_t);
-    size += sizeof(mutex_t);
-    size += (region->end - region->start) / PAGE_SIZE / 8; // Bitmap size
-    
-    size = PAGE_ALIGN_UP(size);
+    size_t n_pages = (region->end - region->start) / PAGE_SIZE;
+    size_t bmap_bytes = (n_pages + 7) / 8;
+    size_t header_size = sizeof(pmm_section_t) + sizeof(mutex_t) + bmap_bytes;
+    size_t size = PAGE_ALIGN_UP(header_size);
 
     pmm_internal_memory += size;
 
-    if (size > region->end) {
+    if (size > (region->end - region->start)) {
         LOG(ERR, "Too many bytes are required to represent region so it cannot be added.\n");
         return NULL;
     }
 
-    // Map the section
-    pmm_section_t *section = (pmm_section_t*)arch_mmu_map_physical(region->start, sizeof(pmm_section_t) + sizeof(pmm_section_t) + sizeof(sleep_queue_t), REMAP_PERMANENT);
+    // Map the entire header region (section + mutex + bitmap) contiguously
+    pmm_section_t *section = (pmm_section_t*)arch_mmu_remap_physical(region->start, size, REMAP_PERMANENT);
     
     // Create the mutex and sleep queue
-    sleep_queue_t *s = (sleep_queue_t*)((uintptr_t)section + sizeof(pmm_section_t));
-    memset(s, 0, sizeof(sleep_queue_t));
-    mutex_t *m = (mutex_t*)((uintptr_t)section + sizeof(pmm_section_t) + sizeof(sleep_queue_t));
+    mutex_t *m = (mutex_t*)((uintptr_t)section + sizeof(pmm_section_t));
     __atomic_store_n(&m->lock, -1, __ATOMIC_SEQ_CST);
     m->name = "physical memory manager mutex";
-    m->queue = s;
+    memset(&m->queue, 0, sizeof(sleep_queue_t));
 
 
     // Setup the section
     section->start = region->start + size;
     section->size = region->end - region->start - size;
     section->mutex = m;
-    section->bmap = (uint8_t*)arch_mmu_map_physical((region->start  + sizeof(pmm_section_t) + sizeof(mutex_t) + sizeof(sleep_queue_t)), (region->end - region->start) / PAGE_SIZE / 8, REMAP_PERMANENT);
+    section->bmap = (uint8_t*)((uintptr_t)section + sizeof(pmm_section_t) + sizeof(mutex_t));
     section->nfree = section->size / PAGE_SIZE;
     section->next = NULL;
     section->pages = NULL;
     section->ffb = 0;
-    memset(section->bmap, 0, (region->end - region->start) / PAGE_SIZE / 8);
+    memset(section->bmap, 0, bmap_bytes);
 
     if (zones[zone] == NULL) {
         zones[zone] = section;
@@ -120,6 +122,8 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
     pmm_section_t *tgt = zones[zone];
     while (tgt->next) tgt = tgt->next;
     tgt->next = section;
+
+    pmm_total_blocks += section->size / PAGE_SIZE;
     return section;
 }
 
@@ -135,10 +139,12 @@ void pmm_init(pmm_region_t *region) {
     while (r) {
         LOG(DEBUG, "PMM entry %016llX - %016llX (%s)\n", r->start, r->end, pmm_memory_types[r->type]);
 
+        r->end = PAGE_ALIGN_DOWN(r->end); // Shouldn't cause any problems...
+
         if (r->type == PHYS_MEMORY_AVAILABLE) {
             // Create sections for available regions
             pmm_section_t *s = pmm_insertSection(ZONE_DEFAULT, r);
-            if (r->start > memory_size) memory_size = r->start;
+            memory_size += (r->end - r->start);
             if (!biggest || (s && (biggest->size) < (r->end - r->start))) biggest = s;
         }
 
@@ -149,38 +155,53 @@ void pmm_init(pmm_region_t *region) {
 
 
     // Now we need to build the page arrays for each section
+    if (!biggest) {
+        LOG(ERR, "No biggest section found; cannot build page arrays\n");
+        return;
+    }
+
     uintptr_t bo = biggest->start;
-    for (int i = 0; i < NZONES; i++) {
-        pmm_section_t *s = zones[i];
+    for (int zi = 0; zi < NZONES; zi++) {
+        pmm_section_t *s = zones[zi];
         while (s) {
-            size_t size = PAGE_ALIGN_UP(s->size / PAGE_SIZE * sizeof(pmm_page_t));
-            pmm_internal_memory += size;
+            size_t pages_in_section = s->size / PAGE_SIZE;
+            size_t page_array_bytes = PAGE_ALIGN_UP(pages_in_section * sizeof(pmm_page_t));
+            pmm_internal_memory += page_array_bytes;
 
             // Create page array
-            s->pages = (pmm_page_t*)arch_mmu_map_physical(bo, size, REMAP_PERMANENT);
-            memset(s->pages, 0, size);
+            s->pages = (pmm_page_t*)arch_mmu_remap_physical(bo, page_array_bytes, REMAP_PERMANENT);
+            memset(s->pages, 0, page_array_bytes);
 
-            // Mark the pages
-            for (unsigned i = 0; i < s->size / PAGE_SIZE; i++) {
-                s->pages[i].flags |= PAGE_FLAG_FREE;
+            // Mark the pages in the page array as free
+            for (unsigned idx = 0; idx < pages_in_section; idx++) {
+                s->pages[idx].flags |= PAGE_FLAG_FREE;
             }
 
-            // Adjust nfree count
-            biggest->nfree -= size / PAGE_SIZE;
+            // Adjust nfree count to account for pages consumed to hold the page array
+            biggest->nfree -= page_array_bytes / PAGE_SIZE;
 
-            // Adjust for bmap size
-            size_t svd = (bo - biggest->start);
-            bo += size;
-            size += svd;
+            // Advance the physical offset where we place subsequent page arrays
+            bo += page_array_bytes;
 
-            // Rewrite bitmap
-            memset(biggest->bmap, 0xFF, size / PAGE_SIZE / 8);
-            for (unsigned i = 0; i < (size / PAGE_SIZE) % 8; i++) {
-                biggest->bmap[size / PAGE_SIZE / 8] |= (1 << i);
+            // Compute how many pages in 'biggest' are now used to hold page arrays
+            size_t total_used_pages = (bo - biggest->start) / PAGE_SIZE;
+            if (total_used_pages > biggest->size / PAGE_SIZE) {
+                LOG(ERR, "Not enough space in biggest section to store page arrays\n");
+                assert(0 && "Insufficient space in biggest section for page arrays");
             }
 
-            // Recalcaulte FFB
-            biggest->ffb = size / PAGE_SIZE / 8;
+            // Rewrite bitmap in 'biggest' to mark all pages up to total_used_pages as used
+            size_t full_bytes = total_used_pages / 8;
+            size_t rem_bits = total_used_pages % 8;
+
+            if (full_bytes)
+                memset(biggest->bmap, 0xFF, full_bytes);
+            if (rem_bits) {
+                biggest->bmap[full_bytes] |= (uint8_t)((1u << rem_bits) - 1);
+            }
+
+            // Recalculate FFB (first free byte index in bitmap)
+            biggest->ffb = full_bytes;
 
             s = s->next;    
         }
@@ -193,11 +214,6 @@ void pmm_init(pmm_region_t *region) {
     }
 
     // DEBUG
-
-    for (int i = 0; i < 158+18; i++) {
-        pmm_allocatePage(ZONE_DEFAULT);
-    }
-
     pmm_section_t *s = zones[ZONE_DEFAULT];
     while (s) {
         LOG(INFO, "PMM section %p - %p, number of free pages %d (FFB: %d) with page array %p - %p and bitmap %p\n", s->start, s->start + s->size, s->nfree, s->ffb, s->pages, (uintptr_t)s->pages + PAGE_ALIGN_UP(s->size / PAGE_SIZE * sizeof(pmm_page_t)), s->bmap);
@@ -205,7 +221,6 @@ void pmm_init(pmm_region_t *region) {
     }
 
     LOG(INFO, "PMM using %d pages internally\n", pmm_internal_memory / PAGE_SIZE);
-
 }
 
 /**
@@ -228,7 +243,12 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
         LOG(ERR, "FFB was not calculated correctly by last allocator or has been corrupted.\n");
 
         // Recalculate FFB
-        while (s->bmap[s->ffb] == 0xFF) s->ffb++;
+        while (s->bmap[s->ffb] == 0xFF) {
+            if (s->ffb * 8 >= s->size / PAGE_SIZE) {
+                assert(0 && "Bitmap is full, but Nfree does not reflect this.");
+            }
+            s->ffb++;
+        }
     }
     
     // Locate the first free bit
@@ -237,6 +257,11 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
     for (; i < 8; i++) {
         if ((*byte & (1 << i)) == 0) {
             break;
+        }
+
+        if ((s->ffb * 8 + i) >= s->size / PAGE_SIZE) {
+            LOG(ERR, "Region can fit %d chunks, we are chunk %d, nfree %d\n", s->size / PAGE_SIZE, s->ffb * 8 + i, s->nfree);
+            assert(0);
         }
     }
 
@@ -253,6 +278,8 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
     s->nfree--;
 
     mutex_release(s->mutex);
+
+    __atomic_add_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
 
     return s->start + (blk * 4096);
 }
@@ -298,7 +325,10 @@ void pmm_freePage(uintptr_t page) {
 
     s->pages[off].flags |= PAGE_FLAG_FREE;
 
+    s->nfree++;
+
     mutex_release(s->mutex);
+    __atomic_sub_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
 }
 
 /**
@@ -308,4 +338,39 @@ void pmm_freePage(uintptr_t page) {
  */
 void pmm_freePages(uintptr_t page_base, size_t npages) {
     STUB();
+}
+
+/**
+ * @brief debug
+ */
+void pmm_debug() {
+
+    // DEBUG
+    pmm_section_t *s = zones[ZONE_DEFAULT];
+    while (s) {
+        LOG(INFO, "PMM section %p - %p, number of free pages %d (FFB: %d) with page array %p - %p and bitmap %p\n", s->start, s->start + s->size, s->nfree, s->ffb, s->pages, (uintptr_t)s->pages + PAGE_ALIGN_UP(s->size / PAGE_SIZE * sizeof(pmm_page_t)), s->bmap);
+        s = s->next;
+    }
+
+}
+
+/**
+ * @brief Gets the total amount of blocks
+ */
+uintptr_t pmm_getTotalBlocks() {
+    return pmm_total_blocks;
+}
+
+/**
+ * @brief Gets the used amount of blocks
+ */
+uintptr_t pmm_getUsedBlocks() {
+    return pmm_used_blocks;
+}
+
+/**
+ * @brief Gets the free amount of blocks
+ */
+uintptr_t pmm_getFreeBlocks() {
+    return pmm_total_blocks - pmm_used_blocks;
 }

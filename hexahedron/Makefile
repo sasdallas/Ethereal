@@ -9,9 +9,6 @@ OUT_BUILD = $(BUILD_OUTPUT_DIRECTORY)/hexahedron
 SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/sound drivers/storage debug mem misc gfx fs loader task mm
 SOURCE_DIRECTORIES += klib/string klib/stdio klib/stdlib klib/time
 
-# Edit this to change the allocator in use. ONLY ONE.
-SOURCE_DIRECTORIES += mem/liballoc/
-
 # Include the architecture Make configuration
 include arch/$(BUILD_ARCH)/make.config
 

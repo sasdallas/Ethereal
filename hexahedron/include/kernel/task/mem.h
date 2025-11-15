@@ -63,4 +63,9 @@ int process_removeMapping(struct process *proc, process_mapping_t *map);
  */
 int process_munmap(void *addr, size_t len);
 
+/**
+ * @brief Destroy mapping list
+ */
+void process_destroyMappings(struct process *proc);
+
 #endif

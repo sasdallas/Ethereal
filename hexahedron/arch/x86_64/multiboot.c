@@ -26,13 +26,15 @@
 #include <kernel/multiboot.h>
 #include <kernel/multiboot2.h>
 #include <kernel/mm/pmm.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/arch/arch.h>
+#include <kernel/arch/x86_64/smp.h>
+
 
 extern uintptr_t arch_allocate_structure(size_t bytes);
 extern uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size);
 
-#define MBRELOC(x) ((uintptr_t)mem_remapPhys((uintptr_t)(x), 0))
+#define MBRELOC(x) ((uintptr_t)arch_mmu_remap_physical((uintptr_t)(x), 0, REMAP_TEMPORARY))
 
 static int arch_e820_to_pmm[] = {
     [MULTIBOOT_MEMORY_AVAILABLE]        = PHYS_MEMORY_AVAILABLE,
@@ -163,8 +165,8 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
                 target->next = module;
             }
 
-            module->mod_start = mem_remapPhys(mod_tag->mod_start, 0xDEADBEEF);
-            module->mod_end = mem_remapPhys(mod_tag->mod_end, 0xDEADBEEF);
+            module->mod_start = arch_mmu_remap_physical(mod_tag->mod_start, 0xDEADBEEF, REMAP_TEMPORARY);
+            module->mod_end = arch_mmu_remap_physical(mod_tag->mod_end, 0xDEADBEEF, REMAP_TEMPORARY);
             module->cmdline = (char*)arch_relocate_structure(MBRELOC(mod_tag->cmdline), strlen((char*)MBRELOC(mod_tag->cmdline)));
             
             // Null-terminate cmdline
@@ -177,7 +179,7 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
             struct multiboot_tag_old_acpi *acpi = (struct multiboot_tag_old_acpi *)tag;
             if (!hal_getRSDP()) {
                 uintptr_t rsdp = arch_relocate_structure((uintptr_t)acpi->rsdp, 20);
-                hal_setRSDP(mem_getPhysicalAddress(NULL, rsdp));
+                hal_setRSDP(arch_mmu_physical(NULL, rsdp));
             }   
 
             old_rsdp_found = 1;
@@ -189,7 +191,7 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
                 struct multiboot_rsdp *acpi_rsdp = (struct multiboot_rsdp*)acpi->rsdp;
 
                 uintptr_t rsdp = arch_relocate_structure((uintptr_t)acpi_rsdp, (acpi_rsdp->length > sizeof(struct multiboot_rsdp)) ? sizeof(struct multiboot_rsdp) : acpi_rsdp->length);
-                hal_setRSDP(mem_getPhysicalAddress(NULL, rsdp));
+                hal_setRSDP(arch_mmu_physical(NULL, rsdp));
             }
         } else if (tag->type == MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME) {
             struct multiboot_tag_string *bootldr = (struct multiboot_tag_string *)tag; 
@@ -278,7 +280,7 @@ generic_parameters_t *arch_parse_multiboot1(multiboot_t *bootinfo) {
     parameters->module_start->cmdline = (char*)arch_relocate_structure(MBRELOC(module->cmdline), strlen((char*)MBRELOC(module->cmdline)));
     
     dprintf(DEBUG, "Relocating module %p - %p (%d)\n", module->mod_start, module->mod_end, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start);
-    parameters->module_start->mod_start = (uintptr_t)mem_remapPhys(module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start); 
+    parameters->module_start->mod_start = (uintptr_t)arch_mmu_remap_physical(module->mod_start, (uintptr_t)module->mod_end - (uintptr_t)module->mod_start, REMAP_TEMPORARY); 
     parameters->module_start->mod_end = parameters->module_start->mod_start + (module->mod_end - module->mod_start);
 
     // Are we done yet?
@@ -494,7 +496,7 @@ void arch_parse_multiboot2_early(multiboot_t *bootinfo1, uintptr_t *mem_size, ui
         tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     }
 
-    kend = MEM_ALIGN_PAGE(kend);
+    kend = PAGE_ALIGN_UP(kend);
 
     *first_free_page = kend;
     *mem_size = memory_size;
@@ -673,4 +675,13 @@ void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, pmm_region_t *regions) {
 
         tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     }
+
+    pmm_region_t r = {
+        .start = SMP_AP_BOOTSTRAP_PAGE,
+        .end = SMP_AP_BOOTSTRAP_PAGE + PAGE_SIZE,
+        .type = PHYS_MEMORY_KERNEL,
+        .next = NULL
+    };
+
+    arch_insert_region(&r, regions, &i);
 }

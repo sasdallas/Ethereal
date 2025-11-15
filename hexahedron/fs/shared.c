@@ -60,7 +60,7 @@ static int sharedfs_close(fs_node_t *node) {
     if (obj->refcount <= 0) {
         // We hit the bottom of our refcounts, free the object
         for (uintptr_t i = 0; i < obj->size / PAGE_SIZE; i++) {
-            if (obj->blocks[i]) pmm_freeBlock(obj->blocks[i]);
+            if (obj->blocks[i]) pmm_freePage(obj->blocks[i]);
         }
 
         LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
@@ -87,8 +87,8 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // Start mapping
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocateBlock();
-        mem_mapAddress(NULL, obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i, MEM_DEFAULT);
+        if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocatePage(ZONE_DEFAULT);
+        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[i / PAGE_SIZE], MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
         // LOG(DEBUG, "Mapped PMM block %p -> %p\n", obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i);
     }
 
@@ -107,11 +107,13 @@ static int sharedfs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) 
     // Align size to page size
     if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
     
-    // Start mapping
-    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
-        if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
-    }
+    // // Start mapping
+    // for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
+    //     page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
+    //     if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
+    // }
+
+    vmm_unmap(addr, size);
 
     return 0;
 }

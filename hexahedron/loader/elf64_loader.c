@@ -303,17 +303,8 @@ int elf_loadRelocatable(Elf64_Ehdr *ehdr, int flags) {
 
         if ((section->sh_flags & SHF_ALLOC) && section->sh_size && section->sh_type == SHT_NOBITS) {
             // Allocate the section memory
-
-            void *addr;
-            if (flags == ELF_DRIVER) {
-                // Use driver allocation
-                // !!!: wasteful as addresses are page-aligned
-                addr = (void*)mem_mapDriver(section->sh_size);
-            } else {
-                // Use normal allocation
-                addr = kmalloc(section->sh_size);
-            }
-
+            void *addr = vmm_map(NULL, section->sh_size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
+            
             // Clear the memory
             memset(addr, 0, section->sh_size);
             
@@ -379,26 +370,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
                 LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
                 
-                for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
-                    page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
-                    if (pg && !PAGE_IS_PRESENT(pg)) {
-                        mem_allocatePage(pg, MEM_DEFAULT);
-                    }
-                }
-        
-                // !!!: HACK
-                if (current_cpu->current_process) {
-                    vas_node_t *existn = vas_get(current_cpu->current_process->vas, phdr->p_vaddr);
-
-                    if (existn) {
-                        vas_allocation_t *exist = existn->alloc;
-                        if (exist->base + exist->size < phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) {
-                            exist->size = (phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) - exist->base;
-                        }
-                    } else {
-                        vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
-                    }
-                }
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -412,29 +384,8 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
             case PT_TLS:
                 // Basically the same as a PT_LOAD, but don't zero?
                 LOG(DEBUG, "PHDR #%d PT_TLS: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
-                
-                for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
-                    page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
-                    if (pg && !PAGE_IS_PRESENT(pg)) {
-                        mem_allocatePage(pg, MEM_DEFAULT);
-                    }
-                }
-
-                // !!!: HACK
-                if (current_cpu->current_process) {
-                    vas_node_t *existn = vas_get(current_cpu->current_process->vas, phdr->p_vaddr);
-
-                    if (existn) {
-                        vas_allocation_t *exist = existn->alloc;
-                        if (exist->base + exist->size < phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) {
-                            exist->size = (phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) - exist->base;
-                        }
-                    } else {
-                        vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
-                    }
-                }
-
-                
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+    
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
                 break;
@@ -831,26 +782,7 @@ int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info) {
 
         switch (phdr->p_type) {
             case PT_LOAD:
-                for (uintptr_t i = 0; i < phdr->p_memsz; i += PAGE_SIZE) {
-                    page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
-                    if (pg && !PAGE_IS_PRESENT(pg)) {
-                        mem_allocatePage(pg, MEM_DEFAULT);
-                    }
-                }
-        
-                // !!!: HACK
-                if (current_cpu->current_process) {
-                    vas_node_t *existn = vas_get(current_cpu->current_process->vas, phdr->p_vaddr);
-
-                    if (existn) {
-                        vas_allocation_t *exist = existn->alloc;
-                        if (exist->base + exist->size < phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) {
-                            exist->size = (phdr->p_vaddr + MEM_ALIGN_PAGE(phdr->p_memsz)) - exist->base;
-                        }
-                    } else {
-                        vas_reserve(current_cpu->current_process->vas, phdr->p_vaddr, MEM_ALIGN_PAGE(phdr->p_memsz), VAS_ALLOC_EXECUTABLE);
-                    }
-                }
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 

@@ -20,7 +20,7 @@
 .global _ap_bootstrap_end
 .extern smp_finalizeAP
 .extern _ap_stack_base
-.extern mem_kernelPML
+.extern __mmu_kernel_pml
 .section .ap_bootstrap
 
 .code16
@@ -71,7 +71,7 @@ _ap_startup_real:   /* 0x1040 */
     mov %eax, %cr4
 
     /* Load the base PML */
-    mov $(mem_kernelPML - 0xFFFFF00000000000), %eax
+    mov $(__mmu_kernel_pml - 0xFFFFF00000000000), %eax
     mov %eax, %cr3
 
     /* Set LME bit */

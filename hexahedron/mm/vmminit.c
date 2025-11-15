@@ -13,6 +13,8 @@
 
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
+#include <kernel/processor_data.h>
+#include <kernel/mem/mem.h>
 #include <string.h>
 
 /* Log method */
@@ -27,7 +29,6 @@ extern uintptr_t __kernel_start;
 void vmm_init(pmm_region_t *region) {
     current_cpu->current_context = vmm_kernel_context;
 
-
     // Initialize MMU + PMM (both stages)
     arch_mmu_init();
     pmm_init(region);
@@ -36,7 +37,6 @@ void vmm_init(pmm_region_t *region) {
 
     // Setup the kernel context
     vmm_kernel_context->dir = arch_mmu_dir();
-    vmm_kernel_context->range = NULL;
 
     // Switch to kernel context
     vmm_switch(vmm_kernel_context);
@@ -72,15 +72,27 @@ void vmm_init(pmm_region_t *region) {
 #endif
 
     // Map the kernel in
-    assert(vmm_map(&__kernel_start, kernel_map_size, VMM_MUST_BE_EXACT, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
+    assert(vmm_map(&__kernel_start, kernel_map_size, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
 
     // Map HHDM in
 #ifdef MMU_HHDM_REGION
-    assert(vmm_map((void*)MMU_HHDM_REGION, MMU_HHDM_SIZE, VMM_MUST_BE_EXACT, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
+    assert(vmm_map((void*)MMU_HHDM_REGION, MMU_HHDM_SIZE, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
 #endif
     
+    LOG(DEBUG, "Mapped all necessary regions successfully.\n");
+    
+    // Initialize slab allocator
+    slab_init();
 
+    // Initialize allocator
+    alloc_init();
 
-    LOG(DEBUG, "Regions mapped successfully!\n");
+    // Initialize regions
+    mem_regionsInitialize();
+
     vmm_dumpContext(current_cpu->current_context);
+    
+extern void kernel_statistics();
+    kernel_statistics();
+
 }

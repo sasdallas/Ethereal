@@ -34,6 +34,8 @@ typedef struct arch_context {
     uintptr_t rip;      // Instruction pointer
 } arch_context_t;
 
+struct thread;
+
 /**** FUNCTIONS ****/
 
 /**
@@ -53,15 +55,36 @@ __attribute__((returns_twice)) int arch_save_context(struct arch_context *contex
 /**
  * @brief Load the current thread context
  * @param context The context to switch to
- * @param unlock_queue Unlock the CPU's thread queue.
  * 
  * Equivalent to the C function for longjmp
- * 
- * Thank you to @hyenasky for the idea of @c unlock_queue
- * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
- * After getting off of the previous stack in use, this will unlock the queue if @c unlock_queue is set.
  */
-__attribute__((noreturn)) void arch_load_context(struct arch_context *context, int unlock_queue);
+__attribute__((noreturn)) void arch_load_context(struct arch_context *context);
+
+/**
+ * @brief Yield
+ * 
+ * Thank you to @hyenasky for the idea of BOTh unlocks
+ * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
+ * After getting off of the previous stack in use, this will unlock the scheduler's queue.
+ * It will also unlock the prev sleep queue
+ */
+__attribute__((noreturn)) void arch_yield(struct thread *prev, struct thread *next);
+
+/**
+ * @brief Enter kernel thread
+ * 
+ * Pop these from the stack in this order:
+ * 1. kthread pointer
+ * 2. data value
+ */
+extern void arch_enter_kthread();
+
+/**
+ * @brief Restore context from @c registers_t structure
+ * 
+ * The registers at the time of system call are pushed onto the stack. Pop them in your usual order
+ */
+extern void arch_restore_context();
 
 /**** MACROS ****/
 

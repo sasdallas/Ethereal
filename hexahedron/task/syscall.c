@@ -269,8 +269,7 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 
     char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)pathname);
     fd->path = p;
-
-    LOG(DEBUG, "Finish! %d\n", fd->fd_number);
+    
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
         fd->offset = node->length;
@@ -282,7 +281,6 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 int sys_open(const char *pathname, int flags, mode_t mode) {
     // Validate pointer
     SYSCALL_VALIDATE_PTR(pathname);
-    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
     return __sys_open_internal((char*)pathname, flags, mode);
 }
 
@@ -445,7 +443,7 @@ void *sys_brk(void *addr) {
     if ((uintptr_t)addr < current_cpu->current_process->heap) {
         // TODO: Free area in VAS!!!
         size_t free_size = current_cpu->current_process->heap - (uintptr_t)addr;
-        mem_free((uintptr_t)addr, free_size, MEM_DEFAULT);
+        vmm_unmap(addr, free_size);
         current_cpu->current_process->heap = (uintptr_t)addr;
         return addr;
     } else if ((uintptr_t)addr == current_cpu->current_process->heap) {
@@ -454,7 +452,7 @@ void *sys_brk(void *addr) {
 
 
     // Else, "handle"
-    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VAS_ALLOC_PROG_BRK);
+    vmm_map((void*)current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
     
     current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
                                                             // (page fault handler will map this on a critical failure)
@@ -520,7 +518,7 @@ long sys_settimeofday(struct timeval *tv, void *tz) {
  * @brief usleep system call
  */
 long sys_usleep(useconds_t usec) {
-    sleep_untilTime(current_cpu->current_thread, (usec / 1000000), (usec % 1000000));
+    sleep_time((usec / 1000000), (usec % 1000000));
     if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
 
     return 0;
@@ -700,9 +698,9 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     
     // Yes, so prepare ourselves to wait
     if (timeout > 0) {
-        sleep_untilTime(current_cpu->current_thread, 0, timeout*1000);
+        sleep_time(0, timeout*1000);
     } else {
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
     }
 
     // There is a timeout, so put ourselves in the queue for each fd
@@ -975,7 +973,7 @@ long sys_uname(struct utsname *buf) {
 
     // Copy!
     snprintf(buf->sysname, 128, "Hexahedron");
-    snprintf(buf->nodename, 128, "N/A"); // lol, should be hostname
+    snprintf(buf->nodename, 128, __hostname);
     snprintf(buf->release, 128, "%d.%d.%d-%s", 
                     __kernel_version_major, 
                     __kernel_version_minor, 
@@ -1000,12 +998,15 @@ pid_t sys_getpid() {
 
 long sys_mmap(sys_mmap_context_t *context) {
     SYSCALL_VALIDATE_PTR(context);
-    // LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
+    LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
     long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+    
     return r;
 }
 
 long sys_munmap(void *addr, size_t len) {
+    LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
+    return 0;
     return process_munmap(addr, len);
 }
 

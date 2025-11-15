@@ -349,7 +349,7 @@ void arch_mark_memory(generic_parameters_t *parameters, uintptr_t highest_addres
         }
 
         if (mmap->type == GENERIC_MEMORY_AVAILABLE) {
-            dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as available memory\n", mmap->address, mmap->address + mmap->length, mmap->length / 1024);
+            dprintf(DEBUG, "Marked memory descriptor %016llX - %016llX (%i KB) as available memory\n", mmap->address, mmap->address + mmap->length, mmap->length / 10000);
             pmm_initializeRegion((uintptr_t)mmap->address, (uintptr_t)mmap->length);
         } else {
             // Make sure mmap->addr isn't out of memory - most emulators like to have reserved

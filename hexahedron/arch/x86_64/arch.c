@@ -77,7 +77,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        // printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
+        printf("%i system processors\n", smp_getCPUCount());
         printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo
@@ -147,7 +147,7 @@ extern uintptr_t __kernel_start, __kernel_end;
         stk = stk->nextframe;
 
         // Validate
-        if (!mem_validate((void*)stk, PTR_USER)) {
+        if (!(arch_mmu_read_flags(NULL, (uintptr_t)stk) & MMU_FLAG_PRESENT)) {
             dprintf(NOHEADER,   COLOR_CODE_RED      "Backtrace stopped at bad stack frame %p\n", stk);
             break;
         }
@@ -208,7 +208,7 @@ uintptr_t arch_allocate_structure(size_t bytes) {
 uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size) {
     if (!size) return 0x0;
     uintptr_t location = arch_allocate_structure(size);
-    memcpy((void*)location, (void*)mem_remapPhys(structure_ptr, size), size);
+    memcpy((void*)location, (void*)arch_mmu_remap_physical(structure_ptr, size, REMAP_PERMANENT), size);
     return location;
 }
 
@@ -283,7 +283,7 @@ static pmm_region_t pmm_descs[64]; // !!!: probably a hack
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** Unknown multiboot structure when checking kernel.\n");
     }
 
-
+    // Initialize the VMM
     vmm_init(pmm_descs);
 
     // Now we can ACTUALLY parse Multiboot information

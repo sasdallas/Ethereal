@@ -143,7 +143,7 @@ int ioapic_init(void *data) {
     for (int i = 0; i < info->ioapic_count; i++) {
         // Create I/O APIC object
         io_apic_t *apic = kzalloc(sizeof(io_apic_t));
-        apic->mmio_base = mem_mapMMIO(info->ioapic_addrs[i], PAGE_SIZE);
+        apic->mmio_base = mmio_map(info->ioapic_addrs[i], PAGE_SIZE);
         apic->id = ((ioapic_read(apic, IO_APIC_REG_IOAPICID)) >> 24) & 0xF0;
         apic->redir_count = ((ioapic_read(apic, IO_APIC_REG_IOAPICVER)));
         apic->interrupt_base = info->ioapic_irqbases[i];

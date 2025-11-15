@@ -23,45 +23,24 @@
 
 /**** DEFINITIONS ****/
 
-/* Internal sleeping flags */
-#define SLEEP_FLAG_NOCOND           0       // There is no condition under which the thread should wakeup. Dead thread. Should only be used for debugging.
-#define SLEEP_FLAG_WAKEUP           1       // Whatever the case, wake it up NOW!
-#define SLEEP_FLAG_TIME             2       // Thread is sleeping on time.
-#define SLEEP_FLAG_COND             3       // Sleeping on condition
-
 /* Reasons for waking up from sleep */
-#define WAKEUP_SIGNAL               4       // A signal woke you up and you need to return -EINTR
-#define WAKEUP_TIME                 5       // Timeout expired
-#define WAKEUP_COND                 6       // Condition woke you up
-#define WAKEUP_ANOTHER_THREAD       7       // Another thread woke up (also can be a queue)
+#define WAKEUP_SIGNAL               0       // A signal woke you up (interruption)
+#define WAKEUP_TIME                 1       // Timeout expired
+#define WAKEUP_ANOTHER_THREAD       2       // Another thread woke up
 
 /**** TYPES ****/
 
 struct thread;
 
 /**
- * @brief Sleep condition function
- * @param thread Thread to use for sleep condition
- * @param context Context provided by @c thread_blockXXX
- * @returns 0 on not ready to resume, 1 on ready to resume
- */
-typedef int (*sleep_condition_t)(struct thread *thread, void *context);
-
-/**
  * @brief Sleeper structure
  */
 typedef struct thread_sleep {
-    struct thread *thread;                  // Thread which is sleeping
-    node_t *node;                           // Assigned node in the sleeping queue
-    volatile int sleep_state;               // The current sleep state, and will also be set to wakeup reason
-
-    // Conditional-sleeping threads
-    sleep_condition_t condition;            // Condition on which to wakeup
-    void *context;                          // Context for said condition
-
-    // Specific to threads sleeping for time
-    unsigned long seconds;                  // Seconds on which to wakeup
-    unsigned long subseconds;               // Subseconds on which to wakeup
+    struct thread *thread;                  // Used for queues only
+    struct thread_sleep *next;              // Used for queues only
+    spinlock_t lock;                        // Used to prevent modifications to the thread's sleep state until release
+    volatile int wakeup_reason;             // Reason this thread got woken up
+    unsigned long seconds, subseconds;      // Seconds and subseconds
 } thread_sleep_t;
 
 /**
@@ -70,24 +49,10 @@ typedef struct thread_sleep {
  * @note This is just a list object with a lock lmao 
  */
 typedef struct sleep_queue {
-    list_t queue;
     spinlock_t lock;
+    thread_sleep_t *head;                   // Head of the list
 } sleep_queue_t;
 
-
-/**** MACROS ****/
-
-/* Put the entire process to sleep, including all of its threads */
-#define SLEEP_ENTIRE_PROCESS(proc, sleep_run) { \
-    struct thread *t = proc->main_thread; \
-    sleep_run; \
-    if (proc->thread_list) { \
-        foreach(thread_node, proc->thread_list) { \
-            t = (struct thread*)thread_node->value;\
-            if (t) sleep_run; \
-        } \
-    } \
-} \
 
 /**** FUNCTIONS ****/
 
@@ -106,15 +71,12 @@ void sleep_init();
 int sleep_untilNever(struct thread *thread);
 
 /**
- * @brief Put a thread to sleep until a specific condition is ready
- * @param thread The thread to put to sleep
- * @param condition Condition function
- * @param context Optional context passed to condition function
- * @returns 0 on success
+ * @brief Put the current thread to sleep
  * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
+ * Another thread will wake you up with @c sleep_wakeup
+ * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  */
-int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, void *context);
+void sleep_prepare();
 
 /**
  * @brief Put a thread to sleep until a specific amount of time in the future has passed
@@ -128,14 +90,16 @@ int sleep_untilCondition(struct thread *thread, sleep_condition_t condition, voi
 int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long subseconds);
 
 /**
- * @brief Put a thread to sleep until a spinlock has unlocked
- * @param thread The thread to put to sleep
- * @param lock The lock to wait on
- * @returns 0 on success
- * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
+ * @brief Check if you are currently ready to sleep
  */
-int sleep_untilUnlocked(struct thread *thread, spinlock_t *lock);
+int sleep_isSleeping();
+
+/**
+ * @brief Wakeup another thread for a reason
+ * @param thread The thread to wakeup
+ * @param reason The reason to wake the thread up
+ */
+int sleep_wakeupReason(struct thread *thread, int reason);
 
 /**
  * @brief Immediately trigger an early wakeup on a thread
@@ -178,5 +142,18 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts);
  * @returns 0 on success
  */
 int sleep_exit(struct thread *thr);
+
+/**
+ * @brief Put the currently thread to sleep until a certain delay
+ * 
+ * You can still be woken up with @c sleep_wakeup
+ * Use @c sleep_enter to actualyl enter the sleep state, which will also return the reason you woke up
+ * 
+ * @note If you don't listen to the instructions for this function you will fuck the whole kernel
+ * 
+ * @param seconds The seconds to sleep
+ * @param subseconds Subseconds to sleep for
+ */
+void sleep_time(unsigned long seconds, unsigned long subseconds);
 
 #endif

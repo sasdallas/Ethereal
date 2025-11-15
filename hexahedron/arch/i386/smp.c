@@ -196,7 +196,7 @@ int smp_init(smp_info_t *info) {
     smp_data = info;
 
     // Local APIC region is finite size - at least I hope.
-    lapic_remapped = mem_mapMMIO((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
+    lapic_remapped = mmio_map((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
 
     // Initialize the local APIC
     int lapic = lapic_initialize(lapic_remapped);

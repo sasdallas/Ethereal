@@ -27,6 +27,7 @@
 #include <kernel/loader/elf_loader.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -132,7 +133,7 @@ static void driver_handleLoadError(int priority, char *error, char *file) {
  */
 int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv) {
     // First we have to map the driver into memory. The mem subsystem provides functions for this.
-    uintptr_t driver_load_address = mem_mapDriver(driver_file->length);
+    uintptr_t driver_load_address = (uintptr_t)vmm_map(NULL, driver_file->length, VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL);
     memset((void*)driver_load_address, 0, driver_file->length);
 
     // Now we can read the file into this address
@@ -148,7 +149,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     if (elf == 0x0) {
         // Load failed
         driver_handleLoadError(priority, "ELF load error (check to make sure architecture matches)", file);
-        mem_unmapDriver(driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, driver_file->length);
         return -ENOEXEC;
     }
 
@@ -158,7 +159,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
         // No metadata
         driver_handleLoadError(priority, "No driver metadata (checked for driver_metadata symbol)", file);
         elf_cleanup(elf);
-        mem_unmapDriver(driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, driver_file->length);
         return -EINVAL;
     }
 
@@ -171,11 +172,10 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     memcpy(loaded_driver->metadata, metadata, sizeof(driver_metadata_t));
 
 
-    // !!!: VERY VERY VERY VERY VERY BAD!!!!!!!!!! DO NOT ALLOCATE JUST TO SEE WHERE IT PUTS IT
-    uintptr_t driver_end = mem_mapDriver(0x1000);
-    mem_unmapDriver(driver_end, 0x1000);
-
-    ssize_t driver_loaded_size = (ssize_t)(driver_end - driver_load_address);
+    // !!!: VERY VERY VERY VERY VERY BAD!!!!!!!!!!
+    vmm_memory_range_t *r = vmm_getRange(vmm_kernel_space, driver_load_address, 1);
+    assert(r);
+    ssize_t driver_loaded_size = (ssize_t)(r->end - driver_load_address);
 
     // Copy other variables
     loaded_driver->filename = strdup(file);
@@ -204,7 +204,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
         kfree(loaded_driver->metadata);
         kfree(loaded_driver->filename);
         kfree(loaded_driver);
-        // mem_unmapDriver(driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, driver_loaded_size);
         
         switch (loadstatus) {
             case DRIVER_STATUS_UNSUPPORTED:

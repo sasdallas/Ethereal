@@ -20,6 +20,8 @@
 #include <structs/hashmap.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/processor_data.h>
+#include <kernel/misc/util.h>
+#include <kernel/panic.h>
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
@@ -69,10 +71,11 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
         } else {
             sleep_untilNever(current_cpu->current_thread);
         }
-
-        current_cpu->current_thread->sleep->context = __futex_avoid_tripping_sanity_check();
         
-        list_append(&f->queue->queue, (void*)current_cpu->current_thread);
+        STUB();
+
+        // current_cpu->current_thread->sleep->context = __futex_avoid_tripping_sanity_check();
+        // list_append(&f->queue->queue, (void*)current_cpu->current_thread);
 
         mutex_release(futex_mutex);
         
@@ -88,12 +91,12 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
             continue; // Try again
         }
 
-        // Drop us if needed
-        if (!f->queue->queue.length) {
-            hashmap_remove(futex_map, (void*)ptr_phys);
-            kfree(f->queue);
-            kfree(f);
-        }
+        // // Drop us if needed
+        // if (!f->queue->queue.length) {
+        //     hashmap_remove(futex_map, (void*)ptr_phys);
+        //     kfree(f->queue);
+        //     kfree(f);
+        // }
 
         mutex_release(futex_mutex); 
         return 0;

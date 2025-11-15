@@ -65,17 +65,17 @@ int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
     switch (request) {
         case IO_VIDEO_GET_INFO:
             // TODO: check range, possible bad behavior
-            if (mem_validate((void*)argp, PTR_USER | PTR_STRICT)) {
-                video_info_t info = {
-                    .screen_width = current_driver->screenWidth,
-                    .screen_height = current_driver->screenHeight,
-                    .screen_bpp = current_driver->screenBPP,
-                    .screen_pitch = current_driver->screenPitch
-                };
+            SYSCALL_VALIDATE_PTR(argp);
+            video_info_t info = {
+                .screen_width = current_driver->screenWidth,
+                .screen_height = current_driver->screenHeight,
+                .screen_bpp = current_driver->screenBPP,
+                .screen_pitch = current_driver->screenPitch
+            };
 
-                memcpy(argp, (void*)&info, sizeof(video_info_t));
-                return 0;
-            }
+            memcpy(argp, (void*)&info, sizeof(video_info_t));
+            return 0;
+            
 
             return -EINVAL;
 

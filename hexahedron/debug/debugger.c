@@ -105,9 +105,9 @@ extern pool_t *mem_mapPool;
     json_object_push(heap_info, "im_pool_usage", json_integer_new(mem_mapPool ? mem_mapPool->allocated : 0));
     json_object_push(heap_info, "im_cache_size", json_integer_new(mem_identityMapCacheSize));
 
-    json_object_push(heap_info, "total_pmm_blocks", json_integer_new(pmm_getMaximumBlocks()));
-    json_object_push(heap_info, "free_pmm_blocks", json_integer_new(pmm_getFreeBlocks()));
-    json_object_push(heap_info, "pmm_block_size", json_integer_new(PMM_BLOCK_SIZE));
+    // json_object_push(heap_info, "total_pmm_blocks", json_integer_new(pmm_getMaximumBlocks()));
+    // json_object_push(heap_info, "free_pmm_blocks", json_integer_new(pmm_getFreeBlocks()));
+    // json_object_push(heap_info, "pmm_block_size", json_integer_new(PMM_BLOCK_SIZE));
 
     json_object_push(data, "heap", heap_info);
 

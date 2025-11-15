@@ -54,8 +54,6 @@ void unix_decrementAndFree(unix_sock_t *usock) {
         assert(0 && "unix_decrementAndFree needs implementation for SOCK_STREAM");
     } else {
         // DGRAM/SEQPACKET, destroy
-        assert(usock->pkt.d->rx_wait_queue->queue.length == 0);
-        assert(usock->pkt.d->tx_wait_queue->queue.length == 0);
         kfree(usock->pkt.d->rx_wait_queue);
         kfree(usock->pkt.d->tx_wait_queue);
         
@@ -80,7 +78,6 @@ void unix_decrementAndFree(unix_sock_t *usock) {
         }
 
         kfree(usock->server.conn);
-        assert(usock->server.accepters->queue.length == 0);
         kfree(usock->server.accepters);
     }    
 
@@ -296,7 +293,9 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     r->thr = current_cpu->current_thread;
 
     // Prepare this thread to sleep
-    sleep_untilTime(current_cpu->current_thread, 1, 0);
+    // sleep_untilTime(current_cpu->current_thread, 1, 0);
+    LOG(DEBUG, "UNIX connection...\n");
+    sleep_prepare();
 
     // Insert us into queue
     mutex_acquire(userv->server.m);
@@ -406,6 +405,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             }
 
             // Sleep in the queue
+            LOG(DEBUG, "recvmsg, didn't get anything\n");
             sleep_inQueue(usock->pkt.d->rx_wait_queue);
             spinlock_release(&usock->pkt.d->rx_lock);
             int w = sleep_enter();
@@ -480,6 +480,8 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             unix_decrementAndFree(usock->peer);
             return -ECONNABORTED;
         }
+
+        LOG(DEBUG, "sendmsg completed\n");
 
 
         fs_alert(usock->peer->sock->node, VFS_EVENT_READ);

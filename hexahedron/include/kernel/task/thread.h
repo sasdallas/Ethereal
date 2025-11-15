@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <kernel/arch/arch.h>
 #include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>
 #include <kernel/fs/vfs.h>
@@ -57,13 +58,13 @@ typedef struct thread {
     unsigned int flags;                     // Flags of the thread
 
     // SCHEDULER VARIABLES
-    node_t *sched_node;                     // Scheduler node
+    node_t sched_node;                      // Scheduler node
     time_t preempt_ticks;                   // Ticks until the thread is preempted
     time_t total_ticks;                     // Total amount of ticks the thread has been running for
     time_t start_ticks;                     // Starting ticks
 
     // BLOCKING VARIABLES
-    thread_sleep_t *sleep;                  // Sleep structure
+    thread_sleep_t sleep;                   // Sleep structure
 
     // THREAD VARIABLES
     arch_context_t context;                 // Thread context (defined by architecture)
@@ -76,7 +77,7 @@ typedef struct thread {
     sigset_t blocked_signals;               // Blocked signals
 
     // OTHER
-    page_t *dir;                            // Page directory for the thread
+    vmm_context_t *ctx;                     // Context
     struct _registers *regs;                // Registers of the thread
     uintptr_t stack;                        // Thread stack (kernel will load kstack in TSS)
     uintptr_t kstack;                       // Kernel stack
@@ -112,12 +113,12 @@ typedef struct thread {
 /**
  * @brief Create a new thread
  * @param parent The parent process of the thread
- * @param dir Directory to use (process' directory)
+ * @param ctx Context to use
  * @param entrypoint The entrypoint of the thread (you can also set this later)
  * @param flags Flags of the thread
  * @returns New thread pointer, just save context & add to scheduler queue
  */
-thread_t *thread_create(struct process *parent, mmu_dir_t *dir, uintptr_t entrypoint, int flags);
+thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t entrypoint, int flags);
 
 /**
  * @brief Destroys a thread. ONLY CALL ONCE THE THREAD IS FULLY READY TO BE DESTROYED

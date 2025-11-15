@@ -27,16 +27,19 @@
 #define REMAP_TEMPORARY 0x1
 
 /* MMU flags */
-#define MMU_FLAG_NONPRESENT             0x0     // not present in memory
-#define MMU_FLAG_PRESENT                0x1     // present in memory
-#define MMU_FLAG_RO                     0x0     // read-only memory
-#define MMU_FLAG_RW                     0x2     // read-write memory
-#define MMU_FLAG_KERNEL                 0x0     // kernel only memory
-#define MMU_FLAG_USER                   0x4     // userspace memory
-#define MMU_FLAG_EXEC                   0x0     // executable memory
-#define MMU_FLAG_NOEXEC                 0x8     // non-executable memory
-#define MMU_FLAG_GLOBAL                 0x10    // global memory
-
+#define MMU_FLAG_NONPRESENT             0x0     // Not present in memory
+#define MMU_FLAG_PRESENT                0x1     // Present in memory
+#define MMU_FLAG_RO                     0x0     // Read-only memory
+#define MMU_FLAG_RW                     0x2     // Read-write memory
+#define MMU_FLAG_KERNEL                 0x0     // Kernel only memory
+#define MMU_FLAG_USER                   0x4     // Userspace memory
+#define MMU_FLAG_EXEC                   0x0     // Executable memory
+#define MMU_FLAG_NOEXEC                 0x8     // Non-executable memory
+#define MMU_FLAG_GLOBAL                 0x10    // Global memory
+#define MMU_FLAG_WB                     0x00    // Writeback
+#define MMU_FLAG_WC                     0x20    // Write combine
+#define MMU_FLAG_WT                     0x40    // Write through
+#define MMU_FLAG_UC                     0x80    // Not cacheable
 
 /**** TYPES ****/
 
@@ -61,7 +64,7 @@ void arch_mmu_finish(pmm_region_t *region);
  * @param flags Remap flags, for your usage in internal tracking
  * @returns Remapped address
  */
-uintptr_t arch_mmu_map_physical(uintptr_t addr, size_t size, int flags);
+uintptr_t arch_mmu_remap_physical(uintptr_t addr, size_t size, int flags);
 
 /**
  * @brief Unmap a physical address from the HHDM
@@ -102,6 +105,14 @@ void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end);
 mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr);
 
 /**
+ * @brief Get physical address of page
+ * @param dir The directory to get the address in
+ * @param virt The virtual address to retrieve
+ * @returns The physical address or 0x0 if the page is not mapped
+ */
+uintptr_t arch_mmu_physical(mmu_dir_t *dir, uintptr_t addr);
+
+/**
  * @brief Load new directory
  * @param dir The directory to switch to
  */
@@ -122,5 +133,11 @@ mmu_dir_t *arch_mmu_dir();
  * @param dir The directory to destroy
  */
 void arch_mmu_destroy(mmu_dir_t *dir);
+
+/**
+ * @brief Copy kernel mappings into a new directory
+ * @param dir The directory to copy into
+ */
+void arch_mmu_copy_kernel(mmu_dir_t *dir);
 
 #endif

@@ -19,20 +19,21 @@
 #include <stdatomic.h>
 #include <kernel/task/sleep.h>
 #include <sys/types.h>
+#include <string.h>
 
 /**** TYPES ****/
 
 typedef struct mutex {
     char *name;             // Optional mutex name
     volatile pid_t lock;    // Mutex lock
-    sleep_queue_t *queue;   // Sleep queue
+    sleep_queue_t queue;    // Sleep queue
 } mutex_t;
 
 /**** MACROS ****/
 
-// AVOID
-#define MUTEX_DEFINE_LOCAL(n) static sleep_queue_t __queue_##n = { 0 }; \
-                                    static mutex_t n = { .lock = -1, .name = NULL, .queue = &__queue_##n};
+// For manipulating local mutexes
+#define MUTEX_DEFINE_LOCAL(n) static mutex_t n = { .lock = -1, .name = NULL, .queue = { .lock = { 0 } }};
+#define MUTEX_INIT(m) { __atomic_store_n(&((m)->lock), -1, __ATOMIC_SEQ_CST); (m)->name = NULL; memset(&(m)->queue, 0, sizeof(sleep_queue_t)); }
 
 /**** FUNCTIONS ****/
 

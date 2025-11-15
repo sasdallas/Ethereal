@@ -25,7 +25,8 @@ mutex_t *mutex_create(char *name) {
     __atomic_store_n(&(m->lock), -1, __ATOMIC_SEQ_CST);
 
     m->name = name;
-    m->queue = sleep_createQueue("queue");
+    memset(&m->queue, 0, sizeof(sleep_queue_t));
+
     return m;
 }
 
@@ -38,7 +39,7 @@ void mutex_acquire(mutex_t *mutex) {
     pid_t want = (current_cpu->current_thread ? current_cpu->current_thread->tid : 0); // 0 is the kernel reserved TID 
     while (!__atomic_compare_exchange_n(&mutex->lock, &expect, want, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
         if (current_cpu->current_thread) {
-            sleep_inQueue(mutex->queue);
+            sleep_inQueue(&mutex->queue);
             sleep_enter();
         } else {
             arch_pause_single();
@@ -65,7 +66,7 @@ int mutex_tryAcquire(mutex_t *mutex) {
  */
 void mutex_release(mutex_t *mutex) {
     __atomic_store_n(&mutex->lock, -1, __ATOMIC_SEQ_CST);
-    sleep_wakeupQueue(mutex->queue, 1);
+    sleep_wakeupQueue(&mutex->queue, 1);
 }
 
 /**
@@ -73,6 +74,5 @@ void mutex_release(mutex_t *mutex) {
  * @param mutex The mutex to destroy
  */
 void mutex_destroy(mutex_t *mutex) {
-    kfree(mutex->queue);
     kfree(mutex);
 }

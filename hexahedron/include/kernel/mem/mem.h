@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <kernel/mm/vmm.h>
 
 #if defined(__ARCH_I386__)
 #include <kernel/arch/i386/mem.h> // Arch-specific definitions, like directory, entries, etc)

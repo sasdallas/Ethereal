@@ -392,12 +392,10 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // Else, write the content in chunks (carefully avoiding potentially unallocated chunks)
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            if (!pg->bits.present) continue;
-            
+        mmu_flags_t fl = arch_mmu_read_flags(NULL, i);
+        if (fl & MMU_FLAG_PRESENT) {
             // Has the page been touched?
-            if (PAGE_IS_DIRTY(pg)) {
+            if (1) {
                 // Yes, write it to the file
                 // Depending on whether this iteration is the last write as much
                 uintptr_t sz = ((i - (uintptr_t)(addr + size)));

@@ -27,8 +27,7 @@
 #include <kernel/loader/driver.h>
 
 // Memory
-#include <kernel/mem/mem.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/vmm.h>
 
 // VFS
 #include <kernel/fs/vfs.h>
@@ -173,19 +172,20 @@ void kernel_loadDrivers() {
 
 
 /**
+ * @brief Dump kernel statistics to console
+ */
+void kernel_statistics() {
+    LOG(INFO, "===== KERNEL STATISTICS\n");
+    LOG(INFO, "Using %d kB of physical memory\n", pmm_getUsedBlocks() * PAGE_SIZE / 1000);
+    LOG(INFO, "Kernel allocator has %d bytes in use\n", alloc_used());
+}
+
+/**
  * @brief Kernel main function
  */
 void kmain() {
     LOG(INFO, "Reached kernel main, starting Hexahedron...\n");
     generic_parameters_t *parameters = arch_get_generic_parameters();
-
-    // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
-    // Do some sanity checks first.
-    if (!parameters->module_start) {
-        LOG(ERR, "No modules detected - cannot continue\n");
-        kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
-        __builtin_unreachable();
-    }
 
     // Now, initialize the VFS.
     vfs_init();
@@ -229,6 +229,16 @@ void kmain() {
 
     // Setup loopback interface
     loopback_install();
+
+    kernel_statistics();
+
+    // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
+    // Do some sanity checks first.
+    if (!parameters->module_start) {
+        LOG(ERR, "No modules detected - cannot continue\n");
+        kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
+        __builtin_unreachable();
+    }
 
     // Now we need to mount the initial ramdisk
     kernel_mountRamdisk(parameters);
@@ -291,11 +301,6 @@ void kmain() {
     LOG(INFO, "Loaded %i symbols from symbol map\n", symbols);
     printf("Loaded kernel symbol map from initial ramdisk successfully\n");
 
-    // Unmap 0x0 (fault detector, temporary)
-    page_t *pg = mem_getPage(NULL, 0, MEM_CREATE);
-    mem_allocatePage(pg, MEM_PAGE_NOT_PRESENT | MEM_PAGE_NOALLOC | MEM_PAGE_READONLY);
-    mem_invalidatePage(0x0);
-
     // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
     current_cpu->current_thread = NULL;
     current_cpu->current_process = NULL;
@@ -316,6 +321,9 @@ void kmain() {
 
     // Spawn init task for this CPU
     current_cpu->current_process = process_spawnInit();
+
+    // Alright, we are done booting, print post-boot stats
+    kernel_statistics();
 
     // !!!: TEMPORARY
     const char *path = "/device/initrd/usr/bin/init";
@@ -381,10 +389,6 @@ extern list_t *process_list;
     }
 
     printf("[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
-
-    // Syncronize
-    // TODO: Syncronize
-    printf("Syncronizing disk cache\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t" "[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
 
     // Deinitialize all drivers
     foreach(d, driver_list) {

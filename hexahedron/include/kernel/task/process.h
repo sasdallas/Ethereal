@@ -125,7 +125,7 @@ typedef struct process {
 
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)
-    page_t *dir;                        // Page directory
+    vmm_context_t *ctx;                 // VMM context
     arch_context_t sigctx;              // Signal handler context
     pid_t tid_next;                     // Next TID to use
 } process_t;

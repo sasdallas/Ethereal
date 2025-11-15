@@ -339,8 +339,8 @@ int hal_setPowerState(int state) {
         if (hal_acpicaReboot()) {
             // Fuck it, we ball with the IDT
             dprintf(WARN, "ACPICA reboot failure: Using backup method\n");
-            uintptr_t frame = pmm_allocateBlock();
-            uintptr_t fr = mem_remapPhys(frame, 4096);
+            uintptr_t frame = pmm_allocatePage(ZONE_DEFAULT);
+            uintptr_t fr = arch_mmu_remap_physical(frame, 4096, REMAP_PERMANENT);
             memset((void*)fr, 0, 4096);
 
             asm volatile (

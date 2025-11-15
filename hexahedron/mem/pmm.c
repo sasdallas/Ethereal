@@ -122,23 +122,3 @@ uintptr_t pmm_getPhysicalMemorySize() {
     STUB();
 }
 
-/**
- * @brief Gets the maximum amount of blocks
- */
-uintptr_t pmm_getMaximumBlocks() {
-    STUB();
-}
-
-/**
- * @brief Gets the used amount of blocks
- */
-uintptr_t pmm_getUsedBlocks() {
-    STUB();
-}
-
-/**
- * @brief Gets the free amount of blocks
- */
-uintptr_t pmm_getFreeBlocks() {
-    STUB();
-}

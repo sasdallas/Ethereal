@@ -114,49 +114,6 @@ void arch_prepare_switch(struct thread *thread);
 void arch_initialize_context(struct thread *thread, uintptr_t entry, uintptr_t stack);
 
 /**
- * @brief Jump to usermode and execute at an entrypoint
- * @param entrypoint The entrypoint
- * @param stack The stack to use
- */
-extern __attribute__((noreturn))  void arch_start_execution(uintptr_t entrypoint, uintptr_t stack);
-
-/**
- * @brief Save the current thread context
- * 
- * Equivalent to the C function for setjmp
- */
-extern __attribute__((returns_twice)) int arch_save_context(struct arch_context *context);
-
-/**
- * @brief Load the current thread context
- * @param context The context to switch to
- * @param unlock_queue Unlock the CPU's thread queue.
- * 
- * Equivalent to the C function for longjmp
- * 
- * Thank you to @hyenasky for the idea of @c unlock_queue
- * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
- * After getting off of the previous stack in use, this will unlock the queue if @c unlock_queue is set.
- */
-extern __attribute__((noreturn)) void arch_load_context(struct arch_context *context, int unlock_queue);
-
-/**
- * @brief Enter kernel thread
- * 
- * Pop these from the stack in this order:
- * 1. kthread pointer
- * 2. data value
- */
-extern void arch_enter_kthread();
-
-/**
- * @brief Restore context from @c registers_t structure
- * 
- * The registers at the time of system call are pushed onto the stack. Pop them in your usual order
- */
-extern void arch_restore_context();
-
-/**
  * @brief The global signal trampoline
  * 
  * This exists as a signal trampoline for jumping to the usermode handler and returning from it.

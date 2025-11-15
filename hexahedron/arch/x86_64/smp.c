@@ -54,14 +54,21 @@ uintptr_t _ap_stack_base = 0;
 extern uintptr_t _ap_bootstrap_start, _ap_bootstrap_end;
 
 /* AP startup flag. This will change when the AP finishes starting */
-static int ap_startup_finished = 0;
+static volatile int ap_startup_finished = 0;
 
 /* AP shutdown flag. This will change when the AP finishes shutting down. */
-static int ap_shutdown_finished = 0;
+static volatile int ap_shutdown_finished = 0;
 
 /* TLB shootdown */
-static uintptr_t tlb_shootdown_address = 0x0;
-static spinlock_t tlb_shootdown_lock = { 0 };
+struct tlb_shootdown_request {
+    uintptr_t addr;
+    size_t size;
+    atomic_int pending_completion;
+};
+
+// TODO: optimize this into a queue
+static struct tlb_shootdown_request *tlb_shootdown_req = NULL;
+spinlock_t tlb_shootdown_lock = { 0 };
 
 /* Last CPU number */
 static int last_cpu_number = 1;
@@ -73,9 +80,15 @@ static int last_cpu_number = 1;
  * @brief Handle a TLB shootdown
  */
 int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number, registers_t *regs, extended_registers_t *extended) {
-    // LOG(DEBUG, "TLB shootdown acknowledged for %p\n", tlb_shootdown_address);
+    // Acknowledge the request
+    assert(tlb_shootdown_req);
 
-    asm ("invlpg (%0)" :: "r"(tlb_shootdown_address));
+    for (uintptr_t i = 0x0; i < tlb_shootdown_req->size; i += PAGE_SIZE) {
+        asm volatile ("invlpg (%0)" :: "r"(tlb_shootdown_req->addr + i) : "memory");
+    }
+
+    atomic_fetch_sub(&tlb_shootdown_req->pending_completion, 1);
+
     return 0;
 }
 
@@ -108,6 +121,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     // Load new stack
     asm volatile ("movq %0, %%rsp" :: "m"(_ap_stack_base));
 
+
     int id = last_cpu_number++;
 
     // Set GSbase
@@ -136,7 +150,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     arch_enable_sse();
 
     // Set current core's directory
-    // current_cpu->current_context = mem_getKernelDirectory();
+    vmm_switch(vmm_kernel_context);
 
     // Reinitialize the APIC
     lapic_initialize(lapic_remapped);
@@ -150,10 +164,6 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     // Allow BSP to continue
     LOG(DEBUG, "CPU%i online and ready\n", smp_getCurrentCPU());
     ap_startup_finished = 1;
-
-    // NULL
-    page_t *pg = mem_getPage(NULL, 0x0, MEM_CREATE);
-    pg->bits.present = 0;
 
     current_cpu->sched.state = SCHEDULER_STATE_INACTIVE;
 
@@ -179,17 +189,19 @@ static void smp_delay(unsigned int delay) {
  * @param lapic_id The ID of the local APIC to start
  */
 void smp_startAP(uint8_t lapic_id) {
+    LOG(DEBUG, "Starting CPU%d\n", lapic_id);
     ap_startup_finished = 0;
 
     // Copy the bootstrap code. The AP might've messed with it.
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
 
     // Allocate a stack for the AP
-    _ap_stack_base = (uintptr_t)mem_sbrk(PAGE_SIZE * 2) + (PAGE_SIZE);          // !!!: Giving two pages when we're only using one 
-                                                                                // !!!: Stack alignment issues - you can also use kvalloc but some allocators don't support it in Hexahedron
+    _ap_stack_base = (uintptr_t)vmm_map(NULL, PAGE_SIZE * 2, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
 
+    memset((void*)(_ap_stack_base), 0, PAGE_SIZE);
 
-    memset((void*)(_ap_stack_base - 4096), 0, PAGE_SIZE);
+    _ap_stack_base += (PAGE_SIZE);
+
 
     // Send the INIT signal
     lapic_sendInit(lapic_id);
@@ -212,8 +224,10 @@ int smp_init(smp_info_t *info) {
     if (!info) return -EINVAL;
     smp_data = info;
 
-    // Local APIC region is finite size - at least I hope.
-    lapic_remapped = mem_mapMMIO((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
+    // Map local APIC
+    lapic_remapped = (uintptr_t)vmm_map(NULL, PAGE_SIZE, 0, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL | MMU_FLAG_UC);
+    arch_mmu_map(NULL, lapic_remapped, (uintptr_t)smp_data->lapic_address, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL | MMU_FLAG_UC);
+
 
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
@@ -229,18 +243,24 @@ int smp_init(smp_info_t *info) {
 
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 
-    if (info->processor_count == 1 || kargs_has("--disable-smp")) goto _finish_collection;
+    // Don't use SMP?
+    if (info->processor_count == 1 || kargs_has("--disable-smp")) {
+        processor_count = 1;
+        arch_get_generic_parameters()->cpu_count = 1;
+        goto _finish_collection;
+    }
 
     // The AP expects its code to be bootstrapped to a page-aligned address (SIPI expects a starting page number)
     // The remapped page for SMP is stored in the variable SMP_AP_BOOTSTRAP_PAGE
     // Assuming that page has some content in it, copy and store it.
     // !!!: This is a bit hacky as we're playing with fire here. What if PMM_BLOCK_SIZE != PAGE_SIZE?
-    uintptr_t temp_frame = pmm_allocateBlock();
-    uintptr_t temp_frame_remap = mem_remapPhys(temp_frame, PAGE_SIZE);
+    uintptr_t temp_frame = pmm_allocatePage(ZONE_DEFAULT);
+    uintptr_t temp_frame_remap = arch_mmu_remap_physical(temp_frame, PAGE_SIZE, REMAP_TEMPORARY);
 
-    // Temporary map back in 0x1000
-    mem_mapAddress(NULL, SMP_AP_BOOTSTRAP_PAGE, SMP_AP_BOOTSTRAP_PAGE, MEM_PAGE_KERNEL);
+    // Map in the bootstrap page
+    arch_mmu_map(NULL, SMP_AP_BOOTSTRAP_PAGE, SMP_AP_BOOTSTRAP_PAGE, MMU_FLAG_RW | MMU_FLAG_KERNEL | MMU_FLAG_PRESENT);
 
+    // Copy the prior contents
     memcpy((void*)temp_frame_remap, (void*)SMP_AP_BOOTSTRAP_PAGE, PAGE_SIZE);
 
     // Start APs
@@ -253,20 +273,19 @@ int smp_init(smp_info_t *info) {
 
     // Finished! Unmap bootstrap code
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)temp_frame_remap, PAGE_SIZE);
-    mem_unmapPhys(temp_frame_remap, PAGE_SIZE);
+    arch_mmu_unmap_physical(temp_frame_remap, PAGE_SIZE);
 
     // Unmap bootstrap page
-    page_t *bootstrap_page = mem_getPage(NULL, SMP_AP_BOOTSTRAP_PAGE, MEM_DEFAULT);
-    if (bootstrap_page) bootstrap_page->bits.present = 0;
-    
-    pmm_freeBlock(temp_frame);
+    arch_mmu_unmap(NULL, SMP_AP_BOOTSTRAP_PAGE);
+    pmm_freePage(temp_frame);
 
-_finish_collection:
     // Register TLB shootdown IRQ
     hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
 
     processor_count = smp_data->processor_count;
     arch_get_generic_parameters()->cpu_count = smp_getCPUCount();
+
+_finish_collection:
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
 
     return 0;
@@ -288,11 +307,8 @@ int smp_getCurrentCPU() {
 
 /**
  * @brief Acknowledge core shutdown (called by ISR)
- * 
- * @bug On an NMI, we just assume it's a core shutdown - is this okay?
  */
 void smp_acknowledgeCoreShutdown() {
-    LOG(INFO, "CPU%i finished shutting down\n", smp_getCurrentCPU());
     ap_shutdown_finished = 1;
 }
 
@@ -303,7 +319,7 @@ void smp_acknowledgeCoreShutdown() {
  * looping it on a halt instruction.
  */
 void smp_disableCores() {
-    if (smp_data == NULL) return;
+    if (smp_data == NULL || processor_count == 1) return;
     LOG(INFO, "Disabling cores - please wait...\n");
 
     for (int i = 0; i < smp_data->processor_count; i++) {
@@ -311,28 +327,37 @@ void smp_disableCores() {
             lapic_sendNMI(smp_data->lapic_ids[i], 0); // The interrupt vector here doesnt matter as an NMI is sent regardless
 
             // do { asm volatile ("pause"); } while (!ap_shutdown_finished);
-
-
             ap_shutdown_finished = 0;
         }
     }
 }
 
+
 /**
- * @brief Perform a TLB shootdown on a specific page
+ * @brief Perform a TLB shootdown on a specific range
  * @param address The address to perform the TLB shootdown on
+ * @param size The size of the TLB shootdown
  */
-void smp_tlbShootdown(uintptr_t address) {
-    if (!address || !smp_data) return; // no.
+void smp_tlbShootdown(uintptr_t address, size_t size) {
+    if (!size || !smp_data) return; // no.
     if (processor_count < 2) return; // No CPUs
+
+    if (size & 0xfff) size = PAGE_ALIGN_UP(size);
 
     spinlock_acquire(&tlb_shootdown_lock);
 
-    // Send an IPI for the TLB shootdown vector
-    // TODO: Make this vector changeable
-    tlb_shootdown_address    = address;
+    struct tlb_shootdown_request r = {
+        .addr = address,
+        .size = size,
+    };
+
+    atomic_store(&r.pending_completion, processor_count-1);
+
+    tlb_shootdown_req = &r;
+
     lapic_sendIPI(0, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE | LAPIC_ICR_DESTINATION_EXCLUDE_SELF);
+
+    while (atomic_load(&r.pending_completion) > 0) { __builtin_ia32_pause(); }
 
     spinlock_release(&tlb_shootdown_lock);
 }
-

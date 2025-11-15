@@ -97,4 +97,19 @@ void pmm_freePage(uintptr_t page);
  */
 void pmm_freePages(uintptr_t page_base, size_t npages);
 
+/**
+ * @brief Gets the total amount of blocks
+ */
+uintptr_t pmm_getTotalBlocks();
+
+/**
+ * @brief Gets the used amount of blocks
+ */
+uintptr_t pmm_getUsedBlocks();
+
+/**
+ * @brief Gets the free amount of blocks
+ */
+uintptr_t pmm_getFreeBlocks();
+
 #endif

@@ -618,7 +618,7 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             fs_wait(sock->node, VFS_EVENT_READ);
             for (int attempts = 0; attempts < 3; attempts++) {
                 // Wait for an ACK
-                if (!current_cpu->current_thread->sleep) sleep_untilTime(current_cpu->current_thread, 1, 0);
+                if (!sleep_isSleeping()) sleep_untilTime(current_cpu->current_thread, 1, 0);
                 tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &pkt, iov.iov_base + sent_bytes, remain);
             
                 if (!sock->recv_queue->length) {

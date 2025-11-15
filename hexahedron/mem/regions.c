@@ -24,7 +24,7 @@
 #include <kernel/mem/regions.h>
 #include <kernel/mem/mem.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/misc/pool.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -51,7 +51,8 @@ pool_t *driver_pool = NULL;
  * Call this after your memory system is fully initialized (heap ready)
  */
 void mem_regionsInitialize() {
-    STUB();
+    LOG(INFO, "Initialized region system.\n");
+    LOG(INFO, "DMA region = %p, MMIO region = %p, driver region = %p\n", MEM_DMA_REGION, MEM_MMIO_REGION, MEM_DRIVER_REGION);
 }
 
 /**
@@ -100,7 +101,7 @@ void mem_unmapMMIO(uintptr_t virt, uintptr_t size) {
  * @returns A pointer to the mapped space
  */
 uintptr_t mem_mapDriver(size_t size) {
-    STUB();
+    return (uintptr_t)vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
 }
 
 /**
@@ -109,7 +110,7 @@ uintptr_t mem_mapDriver(size_t size) {
  * @param size The size of the driver in memory
  */
 void mem_unmapDriver(uintptr_t base, size_t size) {
-    STUB();
+    return vmm_unmap((void*)base, size);
 }
 
 /**

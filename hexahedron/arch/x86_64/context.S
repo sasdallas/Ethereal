@@ -102,15 +102,6 @@ arch_load_context:
     movq 40(%rdi), %r14
     movq 48(%rdi), %r15
 
-    // Need to unlock the current CPU's queue?
-    cmpq $1, %rsi
-    jne .cont
-
-    // We're out of the thread's kernel stack so we need to unlock
-    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
-    movb $0, %cl
-    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
-.cont:
 
     /* Restore FSBASE */
     movl 56(%rdi), %eax
@@ -170,3 +161,66 @@ arch_restore_context:
     /* swapgs and return */
     swapgs
     iretq
+
+
+/*     // Need to unlock the current CPU's queue?
+    cmpq $1, %rsi
+    jne .cont
+
+    // We're out of the thread's kernel stack so we need to unlock
+    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
+    movb $0, %cl
+    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
+.cont:
+*/
+
+__unlock_thread:
+    movq 0x8(%rdi), %rcx
+    and $0x8, %rcx              // THREAD_STATUS_SLEEPING
+    jz .no_need
+
+    /* unlock thread sleep queue */
+    movq %rdi, %rcx 
+    add $0x64, %rcx
+    movb $0, %al
+    lock xchgb %al, (%rcx)
+
+.no_need:
+    ret
+
+.global arch_yield
+arch_yield:
+    // We have a decent amount of work to do here
+    // thread->status (0x8), thread->sleep (0x48), thread->sleep.lock (0x58), thread->context (0x78)
+    // prev in %rdi and dest in %rsi
+
+    /* Load destination context */
+    addq $0x88, %rsi
+    movq 0(%rsi), %rsp
+    movq 8(%rsi), %rbp
+    movq 16(%rsi), %rbx
+    movq 24(%rsi), %r12
+    movq 32(%rsi), %r13
+    movq 40(%rsi), %r14
+    movq 48(%rsi), %r15
+
+
+    /* Now we are off the thread's stack */
+    call __unlock_thread
+
+    // Unlock the CPU's queue
+    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
+    movb $0, %cl
+    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
+
+    /* Restore FSBASE */
+    movl 56(%rsi), %eax
+    movl 60(%rsi), %edx
+    movq $0xC0000100, %rcx
+    wrmsr
+
+    /* Set RAX to 1 for return value */
+    mov $1, %rax
+
+    /* Jump to RIP */
+    jmpq *64(%rsi)

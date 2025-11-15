@@ -16,6 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <stddef.h>
 
 
 /**** DEFINITIONS ****/
@@ -93,10 +94,11 @@ void smp_disableCores();
 void smp_acknowledgeCoreShutdown();
 
 /**
- * @brief Perform a TLB shootdown on a specific page
+ * @brief Perform a TLB shootdown on a specific range
  * @param address The address to perform the TLB shootdown on
+ * @param size The size of the TLB shootdown
  */
-void smp_tlbShootdown(uintptr_t address);
+void smp_tlbShootdown(uintptr_t address, size_t size);
 
 /**
  * @brief Collect AP information to store in processor_data
