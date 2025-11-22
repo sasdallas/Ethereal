@@ -243,6 +243,7 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
         LOG(ERR, "FFB was not calculated correctly by last allocator or has been corrupted.\n");
 
         // Recalculate FFB
+        s->ffb = 0;
         while (s->bmap[s->ffb] == 0xFF) {
             if (s->ffb * 8 >= s->size / PAGE_SIZE) {
                 assert(0 && "Bitmap is full, but Nfree does not reflect this.");
@@ -285,14 +286,116 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
 }
 
 /**
+ * @brief Try allocate multiple pages
+ */
+static uintptr_t __pmm_try_section(pmm_section_t *s, size_t npages) {
+    mutex_acquire(s->mutex);
+
+    // Check to see if there's enough contiguous pages
+
+    // Use the FFB
+    if (s->bmap[s->ffb] == 0xFF) {
+        LOG(ERR, "FFB was not calculated correctly by last allocator or has been corrupted.\n");
+
+        // Recalculate FFB
+        s->ffb = 0;
+        while (s->bmap[s->ffb] == 0xFF) {
+            if (s->ffb * 8 >= s->size / PAGE_SIZE) {
+                assert(0 && "Bitmap is full, but Nfree does not reflect this.");
+            }
+            s->ffb++;
+        }
+    }
+    
+
+    while (1) {
+        // We should have the lowest possible in s->ffb
+        uint8_t byte = s->ffb;
+    
+        size_t total_pages = s->size / PAGE_SIZE;
+        size_t start_byte = (size_t)byte;
+        size_t bcount = (total_pages + 7) / 8;
+
+        if (start_byte >= bcount) {
+            mutex_release(s->mutex);
+            return 0;
+        }
+
+        for (size_t by = start_byte; by < bcount; ++by) {
+            if (s->bmap[by] == 0xFF) continue;
+
+            int bit_start = (by == start_byte) ? (s->ffb % 8) : 0;
+            for (int bit = bit_start; bit < 8; ++bit) {
+                size_t st = by * 8 + bit;
+                /* cannot fit npages starting at st */
+                if (st + npages > total_pages) {
+                    mutex_release(s->mutex);
+                    return 0;
+                }
+
+                /* check contiguous run */
+                bool ok = true;
+                for (size_t k = 0; k < npages; ++k) {
+                    size_t idx = st + k;
+                    if (s->bmap[idx / 8] & (1 << (idx % 8))) {
+                        ok = false;
+                        break;
+                    }
+                }
+
+                if (!ok) continue;
+
+                /* mark bits and update page metadata */
+                for (size_t k = 0; k < npages; ++k) {
+                    size_t idx = st + k;
+                    s->bmap[idx / 8] |= (1 << (idx % 8));
+                    s->pages[idx].flags &= ~PAGE_FLAG_FREE;
+                }
+
+                s->nfree -= npages;
+
+                /* advance ffb to next partially free byte */
+                while ((size_t)s->ffb < bcount && s->bmap[s->ffb] == 0xFF) {
+                    s->ffb++;
+                }
+
+                mutex_release(s->mutex);
+                __atomic_add_fetch(&pmm_used_blocks, npages, __ATOMIC_RELAXED);
+                return s->start + (st * PAGE_SIZE);
+            }
+            
+
+            mutex_release(s->mutex);
+            return 0;
+        }
+    }
+
+    assert(0);
+}
+
+/**
  * @brief Allocate multiple PMM pages
  * @param npages The amount of pages to allocate
  * @param zone The zone to allocate from
  */
 uintptr_t pmm_allocatePages(size_t npages, pmm_zone_t zone) {
     if (npages == 1) return pmm_allocatePage(zone);
+    pmm_section_t *s = zones[zone];
 
-    STUB();
+    while (1) {
+        while (s && s->nfree < npages) s = s->next;
+        if (!s) pmm_oom(npages);
+
+        // Try and see if there's enough contig in this section
+        uintptr_t try = __pmm_try_section(s, npages);
+        if (try != 0x0) {
+            return try;
+        }
+        
+        s = s->next;
+    }
+
+    assert(0); // Unreachable
 }
 
 /**
@@ -303,7 +406,6 @@ void pmm_freePage(uintptr_t page) {
     // Figure out the zone
     // TODO: this will actually be hard
     int zone = ZONE_DEFAULT;
-
     pmm_section_t *s = zones[zone];
     
     while (s && !(s->start + s->size > page && page >= s->start)) {
@@ -317,7 +419,9 @@ void pmm_freePage(uintptr_t page) {
     mutex_acquire(s->mutex);
 
     int off = ((page - s->start) / PAGE_SIZE);
-    assert(!((s->pages[off].flags & PAGE_FLAG_FREE) == PAGE_FLAG_FREE) && "Bitmap/page array inconsistency.");
+    if (((s->pages[off].flags & PAGE_FLAG_FREE) == PAGE_FLAG_FREE)) {
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Freeing page %p but it was already freed or the page array was touched.", page);
+    }
 
     // Clear bit
     s->bmap[off / 8] &= ~(1 << (off % 8));
@@ -337,7 +441,7 @@ void pmm_freePage(uintptr_t page) {
  * @param npages Amount of pages
  */
 void pmm_freePages(uintptr_t page_base, size_t npages) {
-    STUB();
+    for (size_t i = 0; i < npages; i++) pmm_freePage(page_base + (i * 4096));
 }
 
 /**

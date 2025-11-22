@@ -359,19 +359,6 @@ int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // File is loaded, we're done here.    
 _return:
-    if (!r) {
-        // Create mmap context
-        if (!node->mmap_contexts) node->mmap_contexts = list_create("fs mmap contexts");
-    
-        vfs_mmap_context_t *ctx = kmalloc(sizeof(vfs_mmap_context_t));
-        ctx->proc = current_cpu->current_process;
-        ctx->addr = addr;
-        ctx->size = size;
-        ctx->off = off;
-
-        list_append(node->mmap_contexts, (void*)ctx);
-    }
-
     return r;
 }
 
@@ -418,22 +405,6 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
 int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     if (!node) return -EINVAL;
 
-    // Find the mmap context matching this node
-    node_t *ctx = NULL;
-    foreach(mmap_ctx_node, node->mmap_contexts) {
-        vfs_mmap_context_t *mmap_ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
-        if (mmap_ctx && mmap_ctx->addr == addr && mmap_ctx->size == size && mmap_ctx->off == off) {
-            ctx = mmap_ctx_node;
-            break;
-        }
-    }
-
-    if (!ctx) {
-        LOG(WARN, "Corrupt node? Could not find a valid mmap context for node \"%s\" in fs_munmap.\n", node->name);
-    } else {
-        list_delete(node->mmap_contexts, ctx);
-    }
-
     // Check if the node wants to use its custom munmap
     if (node->munmap) {
         return node->munmap(node, addr, size, off);
@@ -467,33 +438,6 @@ int fs_truncate(fs_node_t *node, size_t length) {
  */
 void fs_destroy(fs_node_t *node) {
     if (!node) return;
-
-    if (node->mmap_contexts) {
-        foreach(mmap_ctx_node, node->mmap_contexts) {
-            vfs_mmap_context_t *ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
-
-            // Is this part of a process?
-            if (ctx->proc) {    
-                foreach(map_node, ctx->proc->mmap) {
-                    process_mapping_t *map = (process_mapping_t*)(map_node->value);
-                    if (RANGE_IN_RANGE((uintptr_t)ctx->addr, (uintptr_t)ctx->addr+ctx->size, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
-                        // TODO: "Close enough" system? 
-                        if (process_removeMapping(ctx->proc, map)) {
-                            LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
-                        }
-                    }
-                }
-            } else {
-                if (fs_munmap(node, ctx->addr, ctx->size, ctx->off)) {
-                    LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
-                }
-            }
-
-            kfree(ctx);
-        }
-
-        list_destroy(node->mmap_contexts, false);
-    }
 
     if (node->waiting_nodes) {
         list_destroy(node->waiting_nodes, true);

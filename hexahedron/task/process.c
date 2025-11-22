@@ -318,8 +318,6 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->ctx = vmm_createContext();
     }
 
-    LOG(DEBUG, "process->ctx = %p current->ctx = %p\n", process->ctx, current_cpu->current_context);
-
     // Create file descriptor table
     if (parent && 0) {
         // Reference parent table
@@ -342,7 +340,6 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
             for (size_t i = 0; i < parent->fd_table->total; i++) {
                 if (parent->fd_table->fds[i]) {
                     process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
-                    LOG(DEBUG, "copy fd %d: %p -> %p\n", i, process->fd_table->fds[i], parent->fd_table->fds[i]);
                     process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
                     process->fd_table->fds[i]->offset = parent->fd_table->fds[i]->offset;
                     process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
@@ -433,6 +430,9 @@ void process_destroy(process_t *proc) {
     // Destroy mmap mappings
     process_destroyMappings(proc);
 
+    // Destroy table of fds
+    fd_destroyTable(proc);
+
     // Destroy the remainder of the context
     if (!(proc->flags & PROCESS_KERNEL)) vmm_destroyContext(proc->ctx);
 
@@ -447,7 +447,6 @@ void process_destroy(process_t *proc) {
 
     // Destroy everything we can
     if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
-    fd_destroyTable(proc);
     
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
@@ -1112,7 +1111,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
             // Sleep until we get woken up
             spinlock_release(&reap_queue_lock);
             sleep_prepare();    
-            list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
+            list_append_node(current_cpu->current_process->waitpid_queue, &current_cpu->current_thread->sched_node);
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }

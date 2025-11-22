@@ -30,10 +30,27 @@ typedef struct queue {
     size_t size;
 } queue_t; 
 
+/**** MACROS ****/
+#define QUEUE_NODE_INITIALIZE(n, v)  { ((n))->val = (v); }
+
 /**** FUNCTIONS ****/
 
 static inline queue_t *queue_create() {
     return calloc(1, sizeof(queue_t));
+}
+
+static inline queue_node_t *queue_node_create(void *v) {
+    queue_node_t *n = malloc(sizeof(queue_node_t));
+    n->data = v;
+    return n;
+}
+
+static inline void queue_push_node(queue_t *queue, queue_node_t *n) {
+    if (!queue->size) { queue->head = queue->tail = n; queue->size++; return; }
+    queue->tail->next = n;
+    queue->tail = n;
+    queue->size++;
+    n->next = NULL;
 }
 
 static inline void queue_push(queue_t *queue, void *d) {

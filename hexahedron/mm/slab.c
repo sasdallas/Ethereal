@@ -201,14 +201,13 @@ void slab_free(slab_cache_t *cache, void *object) {
         if (cache->slabs_free) cache->slabs_free->prev = slab;
         cache->slabs_free = slab;
 
-        // We may want to return some slabs to the VMMf
+        // We may want to return some slabs to the VMM
         if (cache != slab_cache) {
             size_t free_count = 0;
             slab_t *s = cache->slabs_free;
             while (s) { free_count++; s = s->next; }
 
             while (free_count > SLAB_MAX_FREE) {
-                /* Remove the last slab from the free list */
                 slab_t *last = cache->slabs_free;
                 if (!last) break;
                 while (last->next) last = last->next;

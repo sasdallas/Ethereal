@@ -371,6 +371,8 @@ void arch_mmu_unmap(mmu_dir_t *dir, uintptr_t virt) {
  * @returns The physical address or 0x0 if the page is not mapped
  */
 uintptr_t arch_mmu_physical(mmu_dir_t *dir, uintptr_t addr) {
+    if (addr >= MMU_HHDM_REGION && addr < MMU_HHDM_REGION + MMU_HHDM_SIZE) return FROM_HHDM(addr);
+
     uintptr_t off = addr & 0xFFF;
     mmu_page_t *page = arch_mmu_get_page(dir, addr, false);
     if (!page) return 0x0;
@@ -406,7 +408,7 @@ mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr) {
     MMU_FLAG_CASE(present, MMU_FLAG_PRESENT, MMU_FLAG_NONPRESENT);
     MMU_FLAG_CASE(rw, MMU_FLAG_RW, MMU_FLAG_RO);
     MMU_FLAG_CASE(usermode, MMU_FLAG_USER, MMU_FLAG_KERNEL);
-    MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, MMU_FLAG_EXEC);
+    MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, 0);
     MMU_FLAG_CASE(global, MMU_FLAG_GLOBAL, 0);
 #undef MMU_FLAG_CASE
 

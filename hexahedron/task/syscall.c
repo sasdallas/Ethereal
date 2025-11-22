@@ -156,17 +156,14 @@ static size_t __hostnamelen = 0;
  * @returns Only if resolved.
  */
 void syscall_pointerValidateFailed(void *ptr) {
-    // Check to see if this pointer is within process heap boundary
-    if ((uintptr_t)ptr >= current_cpu->current_process->heap_base && (uintptr_t)ptr < current_cpu->current_process->heap) {
-        // Yep, it's valid. Map a page
-        mem_allocatePage(mem_getPage(NULL, (uintptr_t)ptr, MEM_CREATE), MEM_DEFAULT);
-        return;
-    }
+    vmm_fault_information_t i = {
+        .address = (uintptr_t)ptr,
+        .exception_type = VMM_FAULT_NONPRESENT | VMM_FAULT_READ,
+        .from = VMM_FAULT_FROM_USER
+    };
 
-    // Can we resolve via VAS?
-    if (vas_fault(current_cpu->current_process->vas, (uintptr_t)(ptr) & ~0xFFF, PAGE_SIZE*2)) {
-        return;
-    }
+    int r = vmm_fault(&i);
+    if (r == VMM_FAULT_RESOLVED) return;
 
     kernel_panic_prepare(KERNEL_BAD_ARGUMENT_ERROR);
 
@@ -190,8 +187,6 @@ void syscall_finish() {
  * @returns Nothing, but updates @c syscall->return_value
  */
 void syscall_handle(syscall_t *syscall) {
-    // LOG(INFO, "Received system call %d\n", syscall->syscall_number);
-
     // Enter
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
@@ -206,7 +201,6 @@ void syscall_handle(syscall_t *syscall) {
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
-
 
     return;
 }
@@ -279,7 +273,6 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 }
 
 int sys_open(const char *pathname, int flags, mode_t mode) {
-    // Validate pointer
     SYSCALL_VALIDATE_PTR(pathname);
     return __sys_open_internal((char*)pathname, flags, mode);
 }
@@ -292,8 +285,6 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
     }
 
     fd_t *proc_fd = FD(current_cpu->current_process, fd);
-
-    // LOG(DEBUG, "sys_read fd %d buffer %p count %d offset %d\n", fd, buffer, count, proc_fd->offset);
     ssize_t i = fs_read(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
     proc_fd->offset += i;
 
@@ -311,7 +302,6 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     ssize_t i = fs_write(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
     proc_fd->offset += i;
 
-    // LOG(DEBUG, "sys_write fd %d buffer %p count %d\n", fd, buffer, count);
     if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     return i;
 }
@@ -322,10 +312,6 @@ int sys_close(int fd) {
         return -EBADF;
     }
 
-    // // !!! HACK: If you don't want to free this, too bad...
-    // if (FD(current_cpu->current_process, fd)->dev) kfree(FD(current_cpu->current_process, fd)->dev);
-
-    // LOG(DEBUG, "sys_close fd %d\n", fd);
     fd_remove(current_cpu->current_process, fd);
     return 0;
 }
@@ -667,6 +653,8 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     int have_hit = 0;
 
+#if 0
+
     // int iters = 10;
     // while (iters) {
         for (size_t i = 0; i < nfds; i++) {
@@ -698,7 +686,8 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     
     // Yes, so prepare ourselves to wait
     if (timeout > 0) {
-        sleep_time(0, timeout*1000);
+        timeout = timeout*1000;
+        sleep_time(timeout/1000000, timeout%1000000);
     } else {
         sleep_prepare();
     }
@@ -731,7 +720,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     return have_hit;   // At least one thread woke us up
 
     /* Legacy poll that doesn't sleep. For debugging. */
-#if 0
+#else
 
     struct timeval tv_start;
     gettimeofday(&tv_start, NULL);

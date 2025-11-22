@@ -79,15 +79,20 @@ static int sharedfs_close(fs_node_t *node) {
 static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     shared_object_t *obj = (shared_object_t*)node->dev;
 
-    // Align size to page size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
-    if (size > obj->size) size = obj->size;
+    if (off < 0) return -EINVAL;
+    if ((off % PAGE_SIZE) != 0) return -EINVAL;
+    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
+    if ((size_t)off >= obj->size) return -EINVAL;
+    if (off + (off_t)size > (off_t)obj->size) {
+        size = obj->size - (size_t)off;
+        if (size == 0) return 0;
+    }
 
-    // Start mapping
+    uintptr_t start_idx = (uintptr_t)off / PAGE_SIZE;
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocatePage(ZONE_DEFAULT);
-        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[i / PAGE_SIZE], MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
-        // LOG(DEBUG, "Mapped PMM block %p -> %p\n", obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i);
+        uintptr_t block_idx = start_idx + (i / PAGE_SIZE);
+        if (!obj->blocks[block_idx]) obj->blocks[block_idx] = pmm_allocatePage(ZONE_DEFAULT);
+        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
     }
 
     return 0;
@@ -104,13 +109,14 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 static int sharedfs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     // Align size to page size
     if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
-    
+
     // // Start mapping
     // for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
     //     page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
     //     if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
     // }
 
+    LOG(DEBUG, "Unmapping shared filesystem\n");
     vmm_unmap(addr, size);
 
     return 0;

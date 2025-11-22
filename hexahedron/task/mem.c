@@ -53,6 +53,8 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         LOG(WARN, "Protection flags are not implemented\n");
     }
 
+    int anon = (filedes == -1 || flags & MAP_ANONYMOUS);
+
     // Make a new mapping structure
     process_mapping_t *map = kmalloc(sizeof(process_mapping_t));
     map->addr = addr;
@@ -91,7 +93,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         }
 
         // Use the
-        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
         if (b) {
             map->addr = b;
             if (filedes == -1 || flags & MAP_ANONYMOUS) {
@@ -117,7 +119,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // Now let's get an allocation in the directory.
-    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_USER);
+    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_USER);
     if (!alloc) {
         // No memory?
         LOG(ERR, "Error while allocating a region. Failing mmap of %d bytes with ENOMEM\n", len);
@@ -181,26 +183,9 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
  * @returns Negative error code
  */
 int process_munmap(void *addr, size_t len) {
-    if (!current_cpu->current_process->mmap) return -EINVAL;
-
-    // Find a corresponding mapping
-    int mappings = 0;
-    foreach(map_node, current_cpu->current_process->mmap) {
-        process_mapping_t *map = (process_mapping_t*)(map_node->value);
-        if (RANGE_IN_RANGE((uintptr_t)addr, (uintptr_t)addr+len, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
-            // TODO: "Close enough" system? 
-
-            if ((uintptr_t)map->addr != (uintptr_t)addr || map->size != len) {
-                LOG(ERR, "Partial munmap (%p - %p) of mapping %p - %p\n", addr, (uintptr_t)addr + len, map->addr, (uintptr_t)map->addr + map->size);
-                return -ENOSYS;
-            }
-
-            int r = process_removeMapping(current_cpu->current_process, map);
-            mappings++;
-        }
-    }
-
-    if (!mappings) return -EINVAL;
+    if (addr >= (void*)MMU_USERSPACE_END) return -EFAULT;
+    LOG(DEBUG, "TRACE: process_munmap %p %d\n", addr, len);
+    vmm_unmap(addr, len);
     return 0;
 }
 
@@ -208,16 +193,4 @@ int process_munmap(void *addr, size_t len) {
  * @brief Destroy mapping list
  */
 void process_destroyMappings(struct process *proc) {
-    if (!proc || !proc->mmap) return;
-
-    node_t *map_node = proc->mmap->head;
-    while (map_node) {
-        process_mapping_t *map = (process_mapping_t*)(map_node->value);
-        node_t *next = map_node->next;
-        kfree(map);
-        map_node = next;
-    }
-
-    list_destroy(proc->mmap, false);
-    proc->mmap = NULL;
 }

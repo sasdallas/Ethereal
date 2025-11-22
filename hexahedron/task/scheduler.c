@@ -66,7 +66,7 @@ void scheduler_initCPU() {
 int scheduler_insertThread(thread_t *thread) {
     assert(current_cpu->sched.state == SCHEDULER_STATE_ACTIVE);
     spinlock_acquire(current_cpu->sched.lock);
-    list_append(current_cpu->sched.queue, thread);
+    list_append_node(current_cpu->sched.queue, &thread->sched_node);
     spinlock_release(current_cpu->sched.lock);
 
     return 0;
@@ -115,6 +115,8 @@ thread_t *scheduler_get() {
         return current_cpu->idle_process->main_thread;
     }
 
+extern void sleep_callback(uint64_t t);
+    sleep_callback(0);
 
     spinlock_acquire(current_cpu->sched.lock);
     
@@ -128,8 +130,6 @@ thread_t *scheduler_get() {
         /* Nothing on our queue — release our lock before attempting to steal
            to avoid holding two locks at once and potential deadlocks. */
         spinlock_release(current_cpu->sched.lock);
-
-        return  current_cpu->idle_process->main_thread;
 
         int cpu_to_steal_from = scheduler_findMostLoadedCPU();
         if (cpu_to_steal_from != -1) {

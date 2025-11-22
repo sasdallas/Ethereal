@@ -218,9 +218,14 @@ void vmm_destroyRange(vmm_memory_range_t *range) {
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
         mmu_flags_t fl = arch_mmu_read_flags(NULL, i);
-        if (range->vmm_flags & VM_FLAG_ALLOC && fl & MMU_FLAG_PRESENT && fl & MMU_FLAG_RW) {
-            uintptr_t pg = arch_mmu_physical(NULL, i);
-            pmm_freePage(pg);
+
+        if (range->vmm_flags & VM_FLAG_FILE) {
+            // TODO
+        } else {
+            if (range->vmm_flags & VM_FLAG_ALLOC && fl & MMU_FLAG_PRESENT && fl & MMU_FLAG_RW) {
+                uintptr_t pg = arch_mmu_physical(NULL, i);
+                pmm_freePage(pg);
+            }
         }
 
         arch_mmu_unmap(NULL, i);

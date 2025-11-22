@@ -33,7 +33,6 @@
 #define MMU_FLAG_RW                     0x2     // Read-write memory
 #define MMU_FLAG_KERNEL                 0x0     // Kernel only memory
 #define MMU_FLAG_USER                   0x4     // Userspace memory
-#define MMU_FLAG_EXEC                   0x0     // Executable memory
 #define MMU_FLAG_NOEXEC                 0x8     // Non-executable memory
 #define MMU_FLAG_GLOBAL                 0x10    // Global memory
 #define MMU_FLAG_WB                     0x00    // Writeback

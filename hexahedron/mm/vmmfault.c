@@ -15,6 +15,7 @@
 #include <kernel/debug.h>
 
 #define LOG(status, ...) dprintf_module(status, "MM:VMM:FAULT", __VA_ARGS__)
+#pragma GCC diagnostic ignored "-Wtype-limits" // SHUT THE FUCK UP
 
 /**
  * @brief Try to handle VMM fault
@@ -26,7 +27,6 @@ int vmm_fault(vmm_fault_information_t *info) {
     // I believe that the kernel should keep itself optimized enough to use all of the pages
     // which it allocates, and that page faults will simply slow down the system's running performance.
     // Just philosophical. Might add a config option for it.
-#pragma GCC diagnostic ignored "-Wtype-limits" // SHUT THE FUCK UP
     if (info->address < MMU_USERSPACE_START || info->address >= MMU_USERSPACE_END) return VMM_FAULT_UNRESOLVED;
 
     info->address = PAGE_ALIGN_DOWN(info->address);
@@ -58,11 +58,16 @@ int vmm_fault(vmm_fault_information_t *info) {
     // Map in the page
     uint32_t fl = arch_mmu_read_flags(NULL, info->address);
     if (!(fl & MMU_FLAG_PRESENT)) {
-        // Non-present, give them some memory.
-        arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);
-        memset((void*)info->address, 0, PAGE_SIZE);
-
-        // TODO: Implement multi-page allocations so as not to flood with PFs
+        // Non-present - check the range
+        if (r->vmm_flags & VM_FLAG_FILE) {
+            // Map a page in
+            LOG(DEBUG, "Mapping a page in...\n");
+            fs_mmap(r->node, (void*)info->address, PAGE_SIZE, info->address - r->start);
+        } else {
+            // Anonymous memory, map a page
+            arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);
+            memset((void*)info->address, 0, PAGE_SIZE);
+        }
     } else {
         assert(0 && "unimplemented");
     }

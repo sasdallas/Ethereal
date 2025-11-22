@@ -52,19 +52,33 @@ void sleep_callback(uint64_t ticks) {
     unsigned long seconds, subseconds;
     clock_getCurrentTime(&seconds, &subseconds);
 
-    struct internal_time_queue_entry *n = head;
-    struct internal_time_queue_entry *prev = n;
+    struct internal_time_queue_entry *prev = head;
+    struct internal_time_queue_entry *n = head->next;
 
     while (n) {
-        if (!n->sl) { n = n->next; continue; }
+        // Defensive: if the entry no longer has an associated thread, or if that thread
+        // is no longer marked sleeping, remove the entry to avoid dangling pointers.
+        if (!n->sl) {
+            prev->next = n->next;
+            n = prev->next;
+            continue;
+        }
+        if ((n->sl->status & THREAD_STATUS_SLEEPING) == 0) {
+            prev->next = n->next;
+            n = prev->next;
+            continue;
+        }
 
         // Check for expiration
         if (seconds > n->seconds || (seconds == n->seconds && subseconds > n->subseconds)) {
             // Trigger thread wakeup
             sleep_wakeupReason(n->sl, WAKEUP_TIME);
             prev->next = n->next;
+            n = prev->next;
+            continue;
         }
 
+        prev = n;
         n = n->next;
     }
 
@@ -75,7 +89,7 @@ void sleep_callback(uint64_t ticks) {
  * @brief Initialize the sleeper system
  */
 void sleep_init() {
-    clock_registerUpdateCallback(sleep_callback);
+    // clock_registerUpdateCallback(sleep_callback);
 }
 
 
@@ -108,7 +122,7 @@ void sleep_prepare() {
  * @brief Put the currently thread to sleep until a certain delay
  * 
  * You can still be woken up with @c sleep_wakeup
- * Use @c sleep_enter to actualyl enter the sleep state, which will also return the reason you woke up
+ * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  * 
  * @note If you don't listen to the instructions for this function you will fuck the whole kernel
  * 
@@ -142,7 +156,32 @@ int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long 
  * @param reason The reason to wake the thread up
  */
 int sleep_wakeupReason(struct thread *thread, int reason) {
+    if (reason != WAKEUP_TIME && (thread->sleep.seconds || thread->sleep.subseconds)) {
+        // First, remove any pending time-queue entries that reference this thread.
+        // This prevents leaving dangling pointers to a stack-allocated entry when the
+        // thread is woken early and returns from sleep_enter.
+        spinlock_acquire(&time_lock);
+        struct internal_time_queue_entry *prev = head;
+        struct internal_time_queue_entry *n = head->next;
+        while (n) {
+            // Compare pointer values only; do not dereference n->sl here beyond checking for NULL.
+            if (n->sl == thread) {
+                prev->next = n->next;
+                n = prev->next;
+                continue;
+            }
+            prev = n;
+            n = n->next;
+        }
+        spinlock_release(&time_lock);
+    }
+
     spinlock_acquire(&thread->sleep.lock);
+
+    if ((thread->status & THREAD_STATUS_SLEEPING) == 0) {
+        spinlock_release(&thread->sleep.lock);
+        return 1;
+    }
 
     // Thread is no longer sleeping
     __sync_and_and_fetch(&thread->status, ~(THREAD_STATUS_SLEEPING));
@@ -167,7 +206,7 @@ int sleep_wakeup(struct thread *thread) {
  * @returns A sleep wakeup reason
  */
 int sleep_enter() {
-    if (current_cpu->current_thread->sleep.seconds) {
+    if (current_cpu->current_thread->sleep.seconds || current_cpu->current_thread->sleep.subseconds) {
         // We know the drill...
         // !!!: A full time rewrite is necessitated
         unsigned long seconds, subseconds;
@@ -187,7 +226,12 @@ int sleep_enter() {
         spinlock_release(&time_lock);
     }
 
+    
     process_yield(0);
+    
+    // Clear seconds and subseconds
+    current_cpu->current_thread->sleep.seconds = current_cpu->current_thread->sleep.subseconds = 0;
+
     return __atomic_load_n(&current_cpu->current_thread->sleep.wakeup_reason, __ATOMIC_SEQ_CST);
 }
 
@@ -211,6 +255,9 @@ sleep_queue_t *sleep_createQueue(char *name) {
 int sleep_inQueue(sleep_queue_t *queue) {
     spinlock_acquire(&queue->lock);
 
+    current_cpu->current_thread->sleep.next = NULL;
+    current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
+
     // Place ourselves in the queue
     if (queue->head) {
         thread_sleep_t *s = queue->head;
@@ -220,11 +267,9 @@ int sleep_inQueue(sleep_queue_t *queue) {
         queue->head = &current_cpu->current_thread->sleep;
     }
 
-    current_cpu->current_thread->sleep.next = NULL;
-    current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
-
-    // Prepare
+    // Prepare (acquires the thread's sleep lock while still holding queue->lock to keep ordering)
     sleep_prepare();
+
     spinlock_release(&queue->lock);
     return 0;
 }
@@ -240,14 +285,26 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
  
     spinlock_acquire(&queue->lock);
     thread_sleep_t *t = queue->head;
+    thread_sleep_t *prev = NULL;
     while (t) {
         if (amounts != 0 && amnt >= amounts) break;
         
-        // Wakeup the thread
+        thread_sleep_t *next = t->next;
+
+        // Unlink t from the queue
+        if (prev) {
+            prev->next = next;
+        } else {
+            // removing head
+            queue->head = next;
+        }
+
+        // Wakeup the thread (outside of list structure)
         sleep_wakeup(t->thread);
 
         amnt++;
-        t = t->next;
+        // prev remains the same because we've removed t from the list
+        t = next;
     }
     spinlock_release(&queue->lock);
 

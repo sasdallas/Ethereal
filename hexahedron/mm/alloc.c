@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <kernel/panic.h>
 #include <string.h>
+#include <kernel/processor_data.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "MM:ALLOC", __VA_ARGS__)
@@ -114,6 +115,12 @@ static slab_cache_t *alloc_getCache(size_t size) {
 __attribute__((malloc)) void *kmalloc(size_t size) {
     size = size + sizeof(alloc_header_t);
 
+    if (current_cpu->current_thread) {
+        if ((current_cpu->current_thread->status & THREAD_STATUS_SLEEPING) != 0) {
+            LOG(ERR, "Thread %p, function %p - attempted to allocate memory while sleeping.\n", current_cpu->current_thread, __builtin_return_address(0));
+            assert(0);
+        } 
+    }
 
     // Get a cache object
     slab_cache_t *cache = alloc_getCache(size);

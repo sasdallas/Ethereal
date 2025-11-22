@@ -63,8 +63,7 @@ struct tlb_shootdown_request {
     atomic_int pending_completion;
 };
 
-// TODO: optimize this into a queue
-static struct tlb_shootdown_request *tlb_shootdown_req = NULL;
+static struct tlb_shootdown_request tlb_shootdown_req;
 spinlock_t tlb_shootdown_lock = { 0 };
 
 /* Last CPU number */
@@ -78,13 +77,11 @@ static int last_cpu_number = 1;
  */
 int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number, registers_t *regs, extended_registers_t *extended) {
     // Acknowledge the request
-    assert(tlb_shootdown_req);
-
-    for (uintptr_t i = 0x0; i < tlb_shootdown_req->size; i += PAGE_SIZE) {
-        asm volatile ("invlpg (%0)" :: "r"(tlb_shootdown_req->addr + i) : "memory");
-    }
-
-    atomic_fetch_sub(&tlb_shootdown_req->pending_completion, 1);
+    
+    // Reload CR3 to refresh TLB
+    uintptr_t cr3;
+    asm volatile ("mov %%cr3, %0" : "=r"(cr3));
+    asm volatile ("mov %0, %%cr3" :: "r"(cr3));
 
     return 0;
 }
@@ -166,7 +163,6 @@ __attribute__((noreturn)) void smp_finalizeAP() {
 
     scheduler_initCPU();
     
-
     // Switch
     process_switchNextThread();
 }
@@ -341,20 +337,25 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
 
     if (size & 0xfff) size = PAGE_ALIGN_UP(size);
 
-    spinlock_acquire(&tlb_shootdown_lock);
+    // spinlock_acquire(&tlb_shootdown_lock);
 
-    struct tlb_shootdown_request r = {
-        .addr = address,
-        .size = size,
-    };
 
-    atomic_store(&r.pending_completion, processor_count-1);
+    // tlb_shootdown_req.addr = address;
+    // tlb_shootdown_req.size = size;
 
-    tlb_shootdown_req = &r;
+    // atomic_store(&tlb_shootdown_req.pending_completion, processor_count-1);
 
+
+    // for (int i = 0; i < smp_data->processor_count; i++) {
+    //     if (smp_data->lapic_ids[i] != current_cpu->lapic_id) {
+    //         lapic_sendIPI(i, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE);
+    //     }
+    // }
+
+    // while (atomic_load(&tlb_shootdown_req.pending_completion) > 0) { __builtin_ia32_pause(); }
+
+    // spinlock_release(&tlb_shootdown_lock);
+
+    LOG(INFO, "TLB\n");
     lapic_sendIPI(0, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE | LAPIC_ICR_DESTINATION_EXCLUDE_SELF);
-
-    while (atomic_load(&r.pending_completion) > 0) { __builtin_ia32_pause(); }
-
-    spinlock_release(&tlb_shootdown_lock);
 }

@@ -25,7 +25,7 @@
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/slab.h>
 #include <kernel/mm/alloc.h>
-
+#include <kernel/fs/vfs.h>
 #include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/
@@ -33,6 +33,8 @@
 #define VM_FLAG_DEFAULT     0x0         // Default flags
 #define VM_FLAG_ALLOC       0x1         // Allocate and back the pages
 #define VM_FLAG_FIXED       0x2         // Address hint must be matched exactly
+#define VM_FLAG_FILE        0x4         // File mapping
+#define VM_FLAG_SHARED      0x8         // Shared memory mapping
 
 /* Fault location */
 #define VMM_FAULT_FROM_KERNEL       0
@@ -64,6 +66,7 @@ typedef struct vmm_memory_range {
     uintptr_t end;                      // MMU end address
     vmm_flags_t vmm_flags;              // VMM flags
     mmu_flags_t mmu_flags;              // MMU flags
+    fs_node_t *node;                    // Filesystem node this node maps to    
 } vmm_memory_range_t;
 
 // Concept shamelessly taken from @mathewnd (thank you)
@@ -109,15 +112,20 @@ vmm_context_t *vmm_createContext();
  */
 vmm_space_t *vmm_getSpaceForAddress(void *addr);
 
+
 /**
  * @brief Map VMM memory
  * @param addr The address to use
  * @param size The size to map in
  * @param vm_flags VM flags for the mapping
  * @param prot MMU protection flags 
+ * 
+ * The remaining arguments depend on @c vm_flags
+ * For VM_FLAG_FILE, pass the filesystem node to map into memory.
+ * 
  * @returns The address mapped or NULL on failure.
  */
-void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot);
+void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, ...) ;
 
 /**
  * @brief Unmap/free VMM memory

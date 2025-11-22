@@ -16,6 +16,7 @@
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
+#include <stdarg.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "MM:VMM", __VA_ARGS__)
@@ -95,9 +96,13 @@ vmm_context_t *vmm_createContext() {
  * @param size The size to map in
  * @param vm_flags VM flags for the mapping
  * @param prot MMU protection flags 
+ * 
+ * The remaining arguments depend on @c vm_flags
+ * For VM_FLAG_FILE, pass the filesystem node to map into memory.
+ * 
  * @returns The address mapped or NULL on failure.
  */
-void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot) {
+void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, ...) {
     // Locate the free range
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
     if (size & 0xFFF) size = PAGE_ALIGN_UP(size); // !!!: hope I dont forget about this 
@@ -139,7 +144,7 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot) {
     // Otherwise, allocations will be auto-backed by VMM faults.
     if (vm_flags & VM_FLAG_ALLOC && sp == &__vmm_kernel_space) {
         // Back the pages now
-        LOG(DEBUG, "Backing %p - %p, request by %p\n", range->start, range->end, __builtin_return_address(0));
+        LOG(DEBUG, "Backing %p - %p\n", range->start, range->end);
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
             uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
             arch_mmu_map(NULL, i, p, prot);
@@ -191,7 +196,7 @@ void vmm_unmap(void *addr, size_t size) {
     }
 
     // Destroy the range
-    LOG(DEBUG, "Debacking %p - %p, request by %p\n", r->start, r->end, __builtin_return_address(0));
+    LOG(DEBUG, "Debacking %p - %p, range flags: 0x%x\n", r->start, r->end, r->vmm_flags);
     vmm_destroyRange(r);
 
     mutex_release(sp->mut);
@@ -267,7 +272,7 @@ void vmm_destroyContext(vmm_context_t *ctx) {
     vmm_memory_range_t *r = ctx->space->range;
     while (r) {
         vmm_memory_range_t *next = r->next;
-        LOG(DEBUG, "Dropping: %p - %p\n", r->start, r->end);
+        LOG(DEBUG, "Drop: %p - %p\n", r->start, r->end);
         vmm_unmap((void*)r->start, r->end - r->start);
         r = next;
     }

@@ -295,14 +295,16 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     // Prepare this thread to sleep
     // sleep_untilTime(current_cpu->current_thread, 1, 0);
     LOG(DEBUG, "UNIX connection...\n");
-    sleep_prepare();
 
     // Insert us into queue
+    queue_node_t *n = queue_node_create(r);
     mutex_acquire(userv->server.m);
-    queue_push(userv->server.conn, r);
+    sleep_prepare();
+    queue_push_node(userv->server.conn, n);
     sleep_wakeupQueue(userv->server.accepters, 1);
     fs_alert(userv->sock->node, VFS_EVENT_READ);
     mutex_release(userv->server.m);
+
 
     int attempts = 0;
 
