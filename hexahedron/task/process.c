@@ -446,7 +446,7 @@ void process_destroy(process_t *proc) {
     }
 
     // Destroy everything we can
-    if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
+    if (proc->waitpid_queue) kfree(proc->waitpid_queue); // waitpid_queue is a special list of just thread->sched_nodes
     
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
@@ -1022,10 +1022,13 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
     // Put ourselves in our wait queue
     if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
 
+    node_t *n = kmalloc(sizeof(node_t));
+    n->value = current_cpu->current_thread;
+    n->prev = n->next = NULL;
+
     for (;;) {
-        node_t *n = list_find(current_cpu->current_process->waitpid_queue, current_cpu->current_thread);
-        if (n) list_delete(current_cpu->current_process->waitpid_queue, n);
-            
+        // list_delete(current_cpu->current_process->waitpid_queue, n);           
+
         // We need this to stop interferance from other threads also trying to waitpid
         spinlock_acquire(&reap_queue_lock);
 
@@ -1077,7 +1080,6 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 // Take us out and return
                 // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
                 spinlock_release(&reap_queue_lock);
-
                 return ret_pid;
             }
 
@@ -1103,15 +1105,13 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         // There were children available but they didn't seem important
         if (options & WNOHANG) {
             // Return immediately, we didn't get anything.
-            // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
-            
             spinlock_release(&reap_queue_lock);
             return 0;
         } else {
             // Sleep until we get woken up
-            spinlock_release(&reap_queue_lock);
+            list_append_node(current_cpu->current_process->waitpid_queue, n);
             sleep_prepare();    
-            list_append_node(current_cpu->current_process->waitpid_queue, &current_cpu->current_thread->sched_node);
+            spinlock_release(&reap_queue_lock);
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }

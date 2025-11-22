@@ -100,9 +100,9 @@ int signal_sendThread(struct thread *thr, int signal) {
 
     // TODO: Interrupt system calls
 
-    // Syncronously execute sleep callback, because why not
-    extern void sleep_callback(uint64_t ticks);
-    sleep_callback(0);
+    if (thr->status & THREAD_STATUS_SLEEPING) {
+        sleep_wakeupReason(thr, WAKEUP_SIGNAL);
+    }
 
     // Wake them up if they aren't us
     if (thr != current_cpu->current_thread && (thr->parent->flags & PROCESS_SUSPENDED)) {
@@ -210,7 +210,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     // !!!: This probably needs to be refactored?
     extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace) {
-        proc->userspace = vas_allocate(proc->vas, PAGE_SIZE);
+        proc->userspace = vmm_map((void*)0x1000, PAGE_SIZE, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_RW);
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }

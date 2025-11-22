@@ -56,8 +56,6 @@ void sleep_callback(uint64_t ticks) {
     struct internal_time_queue_entry *n = head->next;
 
     while (n) {
-        // Defensive: if the entry no longer has an associated thread, or if that thread
-        // is no longer marked sleeping, remove the entry to avoid dangling pointers.
         if (!n->sl) {
             prev->next = n->next;
             n = prev->next;
@@ -157,14 +155,10 @@ int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long 
  */
 int sleep_wakeupReason(struct thread *thread, int reason) {
     if (reason != WAKEUP_TIME && (thread->sleep.seconds || thread->sleep.subseconds)) {
-        // First, remove any pending time-queue entries that reference this thread.
-        // This prevents leaving dangling pointers to a stack-allocated entry when the
-        // thread is woken early and returns from sleep_enter.
         spinlock_acquire(&time_lock);
         struct internal_time_queue_entry *prev = head;
         struct internal_time_queue_entry *n = head->next;
         while (n) {
-            // Compare pointer values only; do not dereference n->sl here beyond checking for NULL.
             if (n->sl == thread) {
                 prev->next = n->next;
                 n = prev->next;
