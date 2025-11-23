@@ -196,13 +196,12 @@ void vmm_unmap(void *addr, size_t size) {
     }
 
     // Destroy the range
-    LOG(DEBUG, "Debacking %p - %p, range flags: 0x%x\n", r->start, r->end, r->vmm_flags);
-    vmm_destroyRange(r);
+    vmm_destroyRange(sp, r);
 
     mutex_release(sp->mut);
 }
 
-/**
+/**f
  * @brief Dump all allocations in a context
  * @param context The context to dump
  */
@@ -267,18 +266,21 @@ int vmm_validate(uintptr_t start, size_t size, int flags) {
 void vmm_destroyContext(vmm_context_t *ctx) {
     // Kinda stupid
     vmm_context_t *old = current_cpu->current_context;
+
+    mutex_acquire(ctx->space->mut);
     vmm_switch(ctx);
 
     vmm_memory_range_t *r = ctx->space->range;
+    
     while (r) {
         vmm_memory_range_t *next = r->next;
-        LOG(DEBUG, "Drop: %p - %p\n", r->start, r->end);
-        vmm_unmap((void*)r->start, r->end - r->start);
+        vmm_destroyRange(ctx->space, r);
         r = next;
     }
 
-    arch_mmu_destroy(ctx->dir);
     vmm_switch(old);
+    arch_mmu_destroy(ctx->dir);
+    mutex_release(ctx->space->mut);
 
     slab_free(vmm_context_cache, ctx);
 }

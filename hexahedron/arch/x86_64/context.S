@@ -162,18 +162,6 @@ arch_restore_context:
     swapgs
     iretq
 
-
-/*     // Need to unlock the current CPU's queue?
-    cmpq $1, %rsi
-    jne .cont
-
-    // We're out of the thread's kernel stack so we need to unlock
-    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
-    movb $0, %cl
-    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
-.cont:
-*/
-
 __unlock_thread:
     movq 0x8(%rdi), %rcx
     and $0x8, %rcx              // THREAD_STATUS_SLEEPING

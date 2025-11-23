@@ -30,7 +30,6 @@ const int _vmm_entries_per_page = (PAGE_SIZE - sizeof(vmm_range_page_t)) / sizeo
 /* Head entry */
 static vmm_range_page_t *vmm_ranges_head = NULL;
 
-
 /**
  * @brief Find a free spot in a VMM context
  * @param space The space to search
@@ -87,12 +86,14 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
 
     if (!space->range) {
         space->range = range;
+        range->next = range->prev = NULL;
         return;
     }
 
     if (range->end < space->range->start) {
         space->range->prev = range;
         range->next = space->range;
+        range->prev = NULL;
         space->range = range;
         return;
     }
@@ -119,6 +120,7 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
         assert(0);
     }
     r->next = range;
+    range->next = NULL;
     range->prev = r;
 }
 
@@ -127,9 +129,10 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
  */
 static vmm_range_page_t *vmm_createRangePage() {
     vmm_range_page_t *pg = (vmm_range_page_t *)arch_mmu_remap_physical(pmm_allocatePage(ZONE_DEFAULT), PAGE_SIZE, REMAP_PERMANENT);
-    memset(pg, 0, sizeof(vmm_range_page_t));
+    memset(pg, 0, PAGE_SIZE);
     MUTEX_INIT(&pg->mut);
     pg->rem = _vmm_entries_per_page;
+    pg->next = pg->prev = NULL;
     return pg;
 }
 
@@ -171,10 +174,14 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
 
         if (p->rem) {
             // Search the bitmap
+            int bits_per_word = sizeof(uint64_t) * 8;
             for (int i = 0; i < _vmm_entries_per_page; i++) {
-                if (!(p->bitmap[i / (sizeof(uint64_t)*8)] & (1 << (i % (sizeof(uint64_t)*8))))) {
+                int word_idx = i / bits_per_word;
+                int bit_idx  = i % bits_per_word;
+                uint64_t mask = (1ULL << bit_idx);
+                if (!(p->bitmap[word_idx] & mask)) {
                     // We have a free entry here, mark it.
-                    p->bitmap[i / (sizeof(uint64_t)*8)] |= (1 << (i % (sizeof(uint64_t)*8)));
+                    p->bitmap[word_idx] |= mask;
                     p->rem -= 1;
 
                     mutex_release(&p->mut);
@@ -184,7 +191,7 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
                     r->end = end;
                     r->vmm_flags = vmm_flags;
                     r->mmu_flags = mmu_flags;
-                    r->next = r->prev = NULL; 
+                    r->next = r->prev = NULL;
                     return r;
                 }
             }
@@ -201,18 +208,19 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
         p = p->next;
     }
 
-    assert(0 && "Unreachable");
     __builtin_unreachable();
 }
 
 
 /**
  * @brief Destroy a VMM memory range
+ * @param space The space to destroy the range in
  * @param range The range to destroy
  */
-void vmm_destroyRange(vmm_memory_range_t *range) {
+void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
     if (range->next) range->next->prev = range->prev;
     if (range->prev) range->prev->next = range->next;
+    if (range == space->range) space->range = range->next;
 
     // First, destroy the range if it was allocated
     // !!!: Will need to update later, a lot of type support will be needed
@@ -231,31 +239,31 @@ void vmm_destroyRange(vmm_memory_range_t *range) {
         arch_mmu_unmap(NULL, i);
     }
 
-    // Now get the range page
-    vmm_range_page_t *p = (vmm_range_page_t *)PAGE_ALIGN_DOWN((uintptr_t)range);
+    // // Now get the range page
+    // vmm_range_page_t *p = (vmm_range_page_t *)PAGE_ALIGN_DOWN((uintptr_t)range);
 
-    // Index
-    int idx = (int)(range - p->ranges);
-    int bits_per_word = sizeof(uint64_t) * 8;
-    int word = idx / bits_per_word;
-    int bit = idx % bits_per_word;
+    // // Index
+    // int idx = (int)(range - p->ranges);
+    // int bits_per_word = sizeof(uint64_t) * 8;
+    // int word = idx / bits_per_word;
+    // int bit = idx % bits_per_word;
 
-    // Clear the allocation
-    mutex_acquire(&p->mut);
-    assert(p->bitmap[word] & (1ULL << bit));
-    p->bitmap[word] &= ~(1ULL << bit);
-    p->rem += 1;
-    mutex_release(&p->mut);
+    // // Clear the allocation
+    // mutex_acquire(&p->mut);
+    // assert(p->bitmap[word] & (1ULL << bit));
+    // p->bitmap[word] &= ~(1ULL << bit);
+    // p->rem += 1;
+    // mutex_release(&p->mut);
 
     // If the page is totally free, destroy it
-    if (p->rem == _vmm_entries_per_page) {
-        if (p->prev) p->prev->next = p->next;
-        if (p->next) p->next->prev = p->prev;
-        if (vmm_ranges_head == p) vmm_ranges_head = p->next;
+    // if (p->rem == _vmm_entries_per_page) {
+    //     if (p->prev) p->prev->next = p->next;
+    //     if (p->next) p->next->prev = p->prev;
+    //     if (vmm_ranges_head == p) vmm_ranges_head = p->next;
 
-        uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)p);
-        assert(phys);
-        pmm_freePage(phys);
-        arch_mmu_unmap(NULL, (uintptr_t)p);
-    }
+    //     uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)p);
+    //     assert(phys);
+    //     pmm_freePage(phys);
+    //     arch_mmu_unmap(NULL, (uintptr_t)p);
+    // }
 }

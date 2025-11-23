@@ -176,11 +176,14 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range);
  */
 vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t vmm_flags, mmu_flags_t mmu_flags);
 
+
+
 /**
  * @brief Destroy a VMM memory range
+ * @param space The space to destroy the range in
  * @param range The range to destroy
  */
-void vmm_destroyRange(vmm_memory_range_t *range);
+void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range);
 
 /**
  * @brief Get the range containing an allocation
