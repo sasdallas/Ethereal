@@ -147,7 +147,7 @@ int sleep_exit(struct thread *thr);
  * @brief Put the currently thread to sleep until a certain delay
  * 
  * You can still be woken up with @c sleep_wakeup
- * Use @c sleep_enter to actualyl enter the sleep state, which will also return the reason you woke up
+ * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  * 
  * @note If you don't listen to the instructions for this function you will fuck the whole kernel
  * 
@@ -155,5 +155,11 @@ int sleep_exit(struct thread *thr);
  * @param subseconds Subseconds to sleep for
  */
 void sleep_time(unsigned long seconds, unsigned long subseconds);
+
+/**
+ * @brief Put yourself in a sleep queue without preparing
+ * @param queue The queue to sleep in
+ */
+int sleep_addQueue(sleep_queue_t *queue);
 
 #endif

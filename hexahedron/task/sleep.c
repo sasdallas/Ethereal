@@ -242,6 +242,29 @@ sleep_queue_t *sleep_createQueue(char *name) {
 }
 
 /**
+ * @brief Put yourself in a sleep queue without preparing
+ * @param queue The queue to sleep in
+ */
+int sleep_addQueue(sleep_queue_t *queue) {
+    spinlock_acquire(&queue->lock);
+
+    current_cpu->current_thread->sleep.next = NULL;
+    current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
+
+    // Place ourselves in the queue
+    if (queue->head) {
+        thread_sleep_t *s = queue->head;
+        while (s->next) s = s->next;
+        s->next = &(current_cpu->current_thread->sleep);
+    } else {
+        queue->head = &current_cpu->current_thread->sleep;
+    }
+
+    spinlock_release(&queue->lock);
+    return 0;
+}
+
+/**
  * @brief Put yourself in a sleep queue
  * @param queue The queue to sleep in
  * @returns 0 on success. Use sleep_enter to enter your slee
