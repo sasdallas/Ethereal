@@ -16,12 +16,14 @@
 
 /**** INCLUDES ****/
 #include <string.h>
+#include <stdint.h>
 
 /**** MACROS ****/
 #define kzalloc(a) ({ void *p = kmalloc(a); memset(p, 0, a); p; })
 
 /**** DEFINITIONS ****/
 #define KMA_DEFAULT             0x0
+#define KMA_FAST                0x1 // Only use slab fastpath. CANNOT BE USED FOR LARGE ALLOCATIONS.
 
 /**** TYPES ****/
 typedef uint32_t kma_flags_t;

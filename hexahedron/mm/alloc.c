@@ -126,9 +126,14 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
     slab_cache_t *cache = alloc_getCache(size);
     if (cache) {
         // Try to allocate
-        void *m = slab_allocate(cache);
-        if (!m) return NULL;
 
+        sa_flags_t safl = (kmaflags & KMA_FAST) ? SA_FAST : 0;
+        void *m = slab_allocateFlags(cache, safl);
+        if (!m) {
+            LOG(ERR, "Allocation failed for %d bytes (kmaflags 0x%x)\n", size, kmaflags);
+            return NULL;
+        }
+        
         alloc_header_t *h = (alloc_header_t*)m;
         #ifdef ENABLE_TRACKING
             h->function = (uintptr_t)__builtin_return_address(0);
@@ -139,6 +144,10 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
 
         return (void*)((uintptr_t)m + sizeof(alloc_header_t));
     } else {
+        if (kmaflags & KMA_FAST) {
+            assert(0 && "KMA_FAST allocation attempted with a large allocation - no chance");
+        }
+
         // Problem: this allocation is bigger than we can actually handle.
         // Solution: VMM, this one's for you
         LOG(DEBUG, "(%p) Big allocation: %d bytes\n", __builtin_return_address(0), size);
