@@ -17,18 +17,22 @@
 #include <assert.h>
 #include <kernel/panic.h>
 #include <kernel/misc/util.h>
+#include <kernel/processor_data.h>
 #include <string.h>
 
 #define LOG(status, ...) dprintf_module(status, "MM:SLAB", __VA_ARGS__)
 
 /* Cache for slabs */
 static slab_cache_t *slab_cache = NULL;
-
-
+static slab_cache_t *magazine_cache = NULL;
+static slab_cache_t *magazine_list_cache = NULL; // Generated at slab_postSMPHook
 
 /* UNCOMMENT TO ENABLE SLAB DEBUGGING */
 #define SLAB_DEBUG 1
 
+/* Magazine macros */
+#define MAGAZINE_POP(mag) mag->rounds[--mag->nrounds]
+#define MAGAZINE_PUSH(mag, val) (mag)->rounds[(mag)->nrounds++] = (val)
 
 /**
  * @brief (internal) Initialize slab cache
@@ -47,11 +51,46 @@ static void slab_initCache(slab_cache_t *cache, char *name, size_t size, size_t 
     // TODO: There's got to be a better way to do this and conserve memory
     cache->slab_size = PAGE_ALIGN_UP(cache->slab_object_real_size +  sizeof(slab_t));
     cache->slab_object_cnt = (cache->slab_size - sizeof(slab_t)) / cache->slab_object_real_size;
-
     
     cache->init = initializer;
     cache->deinit = deinitializer;
     cache->slabs_partial = cache->slabs_full = cache->slabs_free = NULL;
+    memset(&cache->depot_full, 0, sizeof(magazine_depot_t));
+    memset(&cache->depot_empty, 0, sizeof(magazine_depot_t));
+
+    if (magazine_list_cache) {
+        cache->per_cpu_cache = slab_allocate(magazine_list_cache);
+        assert(cache->per_cpu_cache);
+        memset(cache->per_cpu_cache, 0, sizeof(cpu_magazine_cache_t) * processor_count);
+    } else {
+        cache->per_cpu_cache = NULL;
+    }
+}
+
+/**
+ * @brief Push to depot
+ */
+static void depot_push(magazine_depot_t *depot, magazine_t *mag) {
+    spinlock_acquire(&depot->lock);
+    mag->next = depot->head;
+    depot->head = mag;
+    spinlock_release(&depot->lock);
+}
+
+/**
+ * @brief Pop from depot
+ */
+static magazine_t *depot_pop(magazine_depot_t *depot) {
+    spinlock_acquire(&depot->lock);
+
+    magazine_t *mag = NULL;
+    if (depot->head) {
+        mag = depot->head;
+        depot->head = depot->head->next;
+    }
+
+    spinlock_release(&depot->lock);
+    return mag;
 }
 
 /**
@@ -111,10 +150,9 @@ slab_cache_t *slab_createCache(char *name, size_t size, size_t alignment, slab_i
 }
 
 /**
- * @brief Allocate an object from a cache
- * @param cache The cache to allocate from
+ * @brief Allocate slow path
  */
-void *slab_allocate(slab_cache_t *cache) {
+void *slab_slowAllocate(slab_cache_t *cache, sa_flags_t flags) {
     mutex_acquire(&cache->mut);
 
     // Can we take from the partial list?
@@ -168,15 +206,89 @@ void *slab_allocate(slab_cache_t *cache) {
 
     if (cache->init) cache->init(cache, o);
     return o;
+} 
+
+/**
+ * @brief Fast allocate from cache
+ */
+void *slab_allocateFast(slab_cache_t *cache, sa_flags_t flags) {
+    if (!cache->per_cpu_cache) return NULL;
+
+    cpu_magazine_cache_t *cpu_cache = &cache->per_cpu_cache[arch_current_cpu()];
+    
+    spinlock_acquire(&cpu_cache->lock);
+    
+    // Try loaded
+    if (cpu_cache->loaded && cpu_cache->loaded->nrounds) {
+        void *ret = MAGAZINE_POP(cpu_cache->loaded);
+        spinlock_release(&cpu_cache->lock);
+        return ret;
+    }
+
+    // Try previous and swap magazines
+    if (cpu_cache->previous && cpu_cache->previous->nrounds) {
+        magazine_t *swap = cpu_cache->loaded;
+        cpu_cache->loaded = cpu_cache->previous;
+        cpu_cache->previous = swap;
+
+        void *ret = MAGAZINE_POP(cpu_cache->loaded);
+        spinlock_release(&cpu_cache->lock);
+        return ret;
+    }
+
+    // Depot steal?
+    // NOTE: The ideas from this code are sourced from Astral (which in turn is modeled after the Solaris allocator)
+    magazine_t *mag = depot_pop(&cache->depot_full);
+    if (mag) {
+        // Push the empty magazine into the empty depot
+        if (cpu_cache->previous) depot_push(&cache->depot_empty, cpu_cache->previous);
+        cpu_cache->previous = cpu_cache->loaded;
+        cpu_cache->loaded = mag;
+
+        void *o = MAGAZINE_POP(cpu_cache->loaded);
+        spinlock_release(&cpu_cache->lock);
+        return o;
+    }
+
+
+    spinlock_release(&cpu_cache->lock);
+    return NULL;
+    
 }
 
 /**
- * @brief Free an object to a cache
- * @param cache The cache which the object was allocated to
- * @param object The object which was allocated
+ * @brief Slab allocate with special flags
+ * @param cache The cache to allocate from
+ * @param flags Additional flags to allocate with
  */
-void slab_free(slab_cache_t *cache, void *object) {
-    if (cache->deinit) cache->deinit(cache, object);
+void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags) {
+    void *ptr = slab_allocateFast(cache, flags);
+    if (ptr) {
+        if (cache->init) cache->init(cache, ptr);
+        return ptr;
+    }
+
+    if (flags & SA_FAST) {
+        LOG(ERR, "SA_FAST specified but fast path was exhausted.\n");
+        return NULL;
+    }
+
+    return slab_slowAllocate(cache, flags); // possible sleeping via mutex
+
+}
+
+/**
+ * @brief Allocate an object from a cache
+ * @param cache The cache to allocate from
+ */
+void *slab_allocate(slab_cache_t *cache) {
+    return slab_allocateFlags(cache, SA_DEFAULT);
+}
+
+/**
+ * @brief Slow free
+ */
+void slab_freeSlow(slab_cache_t *cache, void *object) {
     mutex_acquire(&cache->mut);
 
     // Get the slab
@@ -243,6 +355,74 @@ void slab_free(slab_cache_t *cache, void *object) {
     }
 
     mutex_release(&cache->mut);
+} 
+
+/**
+ * @brief Fast free
+ */
+int slab_freeFast(slab_cache_t *cache, void *object) {
+    if (!cache->per_cpu_cache) return 0;
+
+    cpu_magazine_cache_t *cpu_cache = &cache->per_cpu_cache[arch_current_cpu()];
+    spinlock_acquire(&cpu_cache->lock);
+
+    if (cpu_cache->loaded && cpu_cache->loaded->nrounds < MAGAZINE_SIZE) {
+        MAGAZINE_PUSH(cpu_cache->loaded, object);
+        spinlock_release(&cpu_cache->lock);
+        return 1;
+    }
+
+    if (cpu_cache->previous && !cpu_cache->previous->nrounds) {
+        // Empty previous cache, free to that
+        // Swap caches
+        magazine_t *tmp = cpu_cache->loaded;
+        cpu_cache->loaded = cpu_cache->previous;
+        cpu_cache->previous = tmp;
+
+        MAGAZINE_PUSH(cpu_cache->loaded, object);
+        spinlock_release(&cpu_cache->lock);
+        return 1;
+    }
+
+    // Retrieve one from depot if possible
+    magazine_t *new_empty = depot_pop(&cache->depot_empty);
+    if (new_empty) {
+        // Try to push previous magazine
+        if (cpu_cache->previous) depot_push(&cache->depot_full, cpu_cache->previous);
+
+        cpu_cache->previous = cpu_cache->loaded;
+        cpu_cache->loaded = new_empty;
+
+        MAGAZINE_PUSH(cpu_cache->loaded, object);
+        spinlock_release(&cpu_cache->lock);
+        return 1;
+    }
+
+
+    // Allocate a new magazine
+    magazine_t *new = slab_allocate(magazine_cache);
+    if (new) {
+        if (cpu_cache->previous) depot_push(&cache->depot_full, cpu_cache->previous);
+
+        cpu_cache->previous = cpu_cache->loaded;
+        cpu_cache->loaded = new;
+        MAGAZINE_PUSH(cpu_cache->loaded, object);
+        spinlock_release(&cpu_cache->lock);
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Free an object to a cache
+ * @param cache The cache which the object was allocated to
+ * @param object The object which was allocated
+ */
+void slab_free(slab_cache_t *cache, void *object) {
+    if (cache->deinit) cache->deinit(cache, object);
+    if (slab_freeFast(cache, object)) return;
+    return slab_freeSlow(cache, object);
 }
 
 /**
@@ -283,5 +463,38 @@ void slab_stats(slab_cache_t *cache) {
     LOG(DEBUG, "Free slabs: %d (using %d bytes of memory)\n", free_cnt, free_cnt * cache->slab_size);
     LOG(DEBUG, "Partially full slabs: %d (using %d bytes of memory)\n", used_cnt, used_cnt * cache->slab_size);
     LOG(DEBUG, "Full slabs: %d (using %d bytes of memory)\n", full_cnt, full_cnt * cache->slab_size);
+}
 
+/**
+ * @brief Magainze initializer
+ */
+int magazine_initializer(slab_cache_t *cache, void *magazine) {
+    magazine_t *m = (magazine_t*)magazine;
+    m->next = NULL; m->nrounds = 0;
+    return 0;
+}
+
+/**
+ * @brief Reinitialize a cache, post-SMP init
+ * @param cache The cache to reinitialize
+ */
+void slab_reinitializeCache(slab_cache_t *cache) {
+#ifdef SLAB_DEBUG
+    LOG(DEBUG, "Reinitializing cache '%s' for %d CPUs...\n", cache->name, processor_count);
+#endif
+
+    cache->per_cpu_cache = slab_allocate(magazine_list_cache);
+    assert(cache->per_cpu_cache);
+    memset(cache->per_cpu_cache, 0, sizeof(cpu_magazine_cache_t) * processor_count);
+}
+
+/**
+ * @brief Post-SMP hook
+ * 
+ * Needed because slabs and the allocator must be initialized for collecting SMP data.
+ */
+void slab_postSMPInit() {
+    // Initialize the magazine cache
+    magazine_cache = slab_createCache("magazine cache", sizeof(magazine_t) + sizeof(void*)*MAGAZINE_SIZE, 0, magazine_initializer, NULL);
+    magazine_list_cache = slab_createCache("magazine list cache", sizeof(cpu_magazine_cache_t) * processor_count, 0, NULL, NULL);
 }

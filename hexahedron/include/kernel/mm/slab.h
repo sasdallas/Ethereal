@@ -20,9 +20,14 @@
 
 /**** DEFINITIONS ****/
 #define SLAB_MAX_FREE 2
+#define MAGAZINE_SIZE 8
+
+#define SA_DEFAULT      0x0     // Default allocation flags
+#define SA_FAST         0x1     // Only use fast path for slab
 
 /**** TYPES ****/
 
+typedef uint32_t sa_flags_t;
 typedef struct magazine {
     struct magazine *next;          // Next magazine in the list
     size_t nrounds;                 // Number of rounds
@@ -32,8 +37,13 @@ typedef struct magazine {
 typedef struct cpu_magazine_cache {
     magazine_t *loaded;             // Loaded magazine
     magazine_t *previous;           // Previous magazine
-    mutex_t mut;                    // Mutex
+    spinlock_t lock;                // Spinlock
 } cpu_magazine_cache_t;
+
+typedef struct magazine_depot {
+    spinlock_t lock;                // Spinlock
+    magazine_t *head;               // Head
+} magazine_depot_t;
 
 typedef struct slab {
     struct slab *next;              // Next slab in the list
@@ -82,6 +92,11 @@ typedef struct slab_cache {
     char *name;                     // Name of the caches
     mutex_t mut;                    // Mutex
     size_t mem_usage;               // Memory usage
+
+    // Magazine
+    cpu_magazine_cache_t *per_cpu_cache;
+    magazine_depot_t depot_full;    // Astral-inspired, full and empty depots for full/empty magazines
+    magazine_depot_t depot_empty;
 } slab_cache_t;
 
 /**** FUNCTIONS ****/
@@ -103,6 +118,13 @@ void slab_init();
  * @param deinitializer Optional deinitializer
  */
 slab_cache_t *slab_createCache(char *name, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer);
+
+/**
+ * @brief Slab allocate with special flags
+ * @param cache The cache to allocate from
+ * @param flags Additional flags to allocate with
+ */
+void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags);
 
 /**
  * @brief Allocate an object from a cache
@@ -127,5 +149,16 @@ void slab_destroyCache(slab_cache_t *cache);
  * @brief Print cache statistics
  */
 void slab_stats(slab_cache_t *cache);
+
+/**
+ * @brief Reinitialize a cache, post-SMP init
+ * @param cache The cache to reinitialize
+ */
+void slab_reinitializeCache(slab_cache_t *cache);
+
+/**
+ * @brief Post-SMP init hook
+ */
+void slab_postSMPInit();
 
 #endif

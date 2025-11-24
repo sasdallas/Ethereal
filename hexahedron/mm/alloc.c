@@ -110,9 +110,9 @@ static slab_cache_t *alloc_getCache(size_t size) {
 }
 
 /**
- * @brief kmalloc
+ * @brief kmalloc flags
  */
-__attribute__((malloc)) void *kmalloc(size_t size) {
+__attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
     size = size + sizeof(alloc_header_t);
 
     if (current_cpu->current_thread) {
@@ -157,6 +157,14 @@ __attribute__((malloc)) void *kmalloc(size_t size) {
         alloc_in_use += h->alloc_size;
         return (void*)((uintptr_t)m + sizeof(alloc_header_t));
     }
+
+}
+
+/**
+ * @brief kmalloc
+ */
+inline void *kmalloc(size_t size) {
+    return kmalloc_flags(size, KMA_DEFAULT);
 }
 
 
@@ -288,5 +296,14 @@ void alloc_stats() {
 
     for (int i = 0; i < ALLOC_CACHES; i++) {
         LOG(DEBUG, "%d size cache is using %d kB\n", alloc_caches[i]->slab_object_size, alloc_caches[i]->mem_usage / 1000);
+    }
+}
+
+/**
+ * @brief Post-SMP allocator hook
+ */
+void alloc_postSMPInit() {
+    for (int i = 0; i < ALLOC_CACHES; i++) {
+        slab_reinitializeCache(alloc_caches[i]);
     }
 }

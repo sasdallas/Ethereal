@@ -280,6 +280,7 @@ int smp_init(smp_info_t *info) {
 
 _finish_collection:
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
+    vmm_postSMP();
 
     return 0;
 }

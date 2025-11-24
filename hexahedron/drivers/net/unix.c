@@ -483,8 +483,6 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             return -ECONNABORTED;
         }
 
-        LOG(DEBUG, "sendmsg completed\n");
-
 
         fs_alert(usock->peer->sock->node, VFS_EVENT_READ);
         spinlock_release(&usock->peer->pkt.d->rx_lock);

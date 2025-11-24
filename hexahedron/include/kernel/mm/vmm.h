@@ -245,4 +245,9 @@ uintptr_t dma_map(size_t size);
  */
 void dma_unmap(uintptr_t virt, size_t size);
 
+/**
+ * @brief Post-SMP hook
+ */
+void vmm_postSMP();
+
 #endif

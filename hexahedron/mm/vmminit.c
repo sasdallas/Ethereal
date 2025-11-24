@@ -89,3 +89,12 @@ void vmm_init(pmm_region_t *region) {
 
     vmm_dumpContext(current_cpu->current_context);
 }
+
+/**
+ * @brief Post-SMP init
+ */
+void vmm_postSMP() {
+    slab_postSMPInit();
+    alloc_postSMPInit();
+    LOG(INFO, "Post-SMP initialization completed\n");
+}
