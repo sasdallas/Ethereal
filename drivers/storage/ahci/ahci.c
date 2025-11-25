@@ -110,7 +110,7 @@ int ahci_resetController(ahci_t *ahci) {
     ahci->mem->ghc |= HBA_GHC_HR;
 
     // Wait until the controller is done resetting
-    int reset = TIMEOUT(!(ahci->mem->ghc & HBA_GHC_HR), 1000000);
+    int reset = AHCI_TIMEOUT(!(ahci->mem->ghc & HBA_GHC_HR), 1000000);
     if (reset) {
         LOG(ERR, "Controller timed out when resetting.\n");
         return AHCI_ERROR;

@@ -28,7 +28,7 @@
 // Status codes
 #define AHCI_SUCCESS		0	// Success
 #define AHCI_ERROR			1	// Error
-#define AHCI_TIMEOUT		2	// Timeout
+#define AHCI_TIMEDOUT		2	// Timeout
 
 // Flags
 #define AHCI_READ			0
@@ -634,7 +634,7 @@ typedef struct ahci {
 #pragma GCC diagnostic ignored "-Wpedantic"
 
 /* Timeout macro - really should be in base kernel */
-#define TIMEOUT(condition, timeout) \
+#define AHCI_TIMEOUT(condition, timeout) \
 									({							\
 										int time = timeout; 		\
 										while (time) { 				\
