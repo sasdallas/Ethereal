@@ -972,7 +972,7 @@ void process_exit(process_t *process, int status_code) {
  * @returns Depends on what you are. Only call this from system call context.
  */
 pid_t process_fork() {
-    LOG(DEBUG, "On fork: PMM block usage is %d\n", pmm_getUsedBlocks());
+    // LOG(DEBUG, "On fork: PMM block usage is %d\n", pmm_getUsedBlocks());
 
     // First we create our child pprocess
     process_t *parent = current_cpu->current_process;   

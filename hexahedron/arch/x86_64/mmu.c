@@ -129,7 +129,7 @@ void arch_mmu_init() {
             __mmu_hhdm_pd[i][j].bits.present = 1;
             __mmu_hhdm_pd[i][j].bits.size = 1;
             __mmu_hhdm_pd[i][j].bits.rw = 1;
-            __mmu_hhdm_pd[i][j].bits.address = ((i << 30) + (j << 21)) >> MMU_SHIFT;
+            __mmu_hhdm_pd[i][j].bits.address = ((((uint64_t)i) << 30) + (((uint64_t)j) << 21)) >> MMU_SHIFT;
         }
     }
 
@@ -467,7 +467,7 @@ inline mmu_dir_t *arch_mmu_dir() {
  * @param dir The directory to destroy
  */
 void arch_mmu_destroy(mmu_dir_t *dir) {
-    return; // !!!: will be fixed next revision
+    return; // !!!: will be fixed next revision, memory leak btw
     
     // We should free any associated PMM blocks below kernelspace
     for (int i = 0; i < 256; i++) {
