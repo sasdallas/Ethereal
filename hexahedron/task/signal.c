@@ -215,10 +215,8 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
 
-        proc->userspace->type = VAS_ALLOC_SIGNAL_TRAMP;
-
         // Copy in the userspace section
-        memcpy((void*)proc->userspace->base, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
+        memcpy(proc->userspace, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
     }
 
     // Push onto the stack the variables
@@ -237,7 +235,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // Set IP to point to the rebased signal handler
     uintptr_t signal_trampoline_offset = (uintptr_t)arch_signal_trampoline - (uintptr_t)&__userspace_start;
-    REGS_IP(regs) = proc->userspace->base + signal_trampoline_offset;
+    REGS_IP(regs) = (uintptr_t)proc->userspace + signal_trampoline_offset;
     
     LOG(DEBUG, "Redirected IP to 0x%x\n", REGS_IP(regs));
     return 1;

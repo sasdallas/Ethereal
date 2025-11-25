@@ -112,7 +112,7 @@ typedef struct process {
     list_t *mmap;                       // mmap() mappings
 
     // SIGNALS
-    vas_allocation_t *userspace;        // Userspace allocation (only for sigtramp right now)
+    void *userspace;                    // Userspace allocation (only for sigtramp right now)
 
     // ELF
     process_image_t image;              // Image data for the process
