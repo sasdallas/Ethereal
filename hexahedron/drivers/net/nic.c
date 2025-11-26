@@ -14,7 +14,7 @@
 
 #include <kernel/drivers/net/nic.h>
 #include <kernel/drivers/nicdev.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/task/syscall.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mem/alloc.h>

@@ -18,7 +18,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/gfx/term.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/misc/args.h>
 #include <kernel/panic.h>
 #include <errno.h>

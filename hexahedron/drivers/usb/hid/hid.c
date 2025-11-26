@@ -18,7 +18,7 @@
 #include <kernel/drivers/usb/hid/hid.h>
 #include <kernel/drivers/usb/hid/keyboard.h>
 #include <kernel/drivers/usb/hid/mouse.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -638,7 +638,7 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
         size_t desc_length = hid_desc->desc[i].wItemLength;
 
         // Report descriptor located
-        uintptr_t buffer = mem_allocateDMA(desc_length);
+        uintptr_t buffer = dma_map(desc_length);
         if (usb_controlTransferInterface(intf, USB_RT_STANDARD | USB_RT_D2H, USB_REQ_GET_DESC, (USB_DESC_REPORT << 8) | report_desc_count, 0, desc_length, (void*)buffer) != USB_SUCCESS) {
             LOG(ERR, "Failed to read REPORT descriptor %d\n", report_desc_count);
             return USB_FAILURE;
@@ -649,7 +649,7 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
         LOG(INFO, "Got REPORT descriptor %d (size: %d)\n", report_desc_count, desc_length);
 
         list_t *l = hid_parseReportDescriptor(d, (uint8_t*)buffer, desc_length, &uses_report_id);
-        mem_freeDMA(buffer, desc_length);
+        dma_unmap(buffer, desc_length);
     
         foreach(node, l) {
             USBHidCollection_t *col = (USBHidCollection_t*)node->value;
@@ -696,7 +696,7 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
     d->transfer.callback = hid_callback;
     d->transfer.parameter = (void*)intf;
     d->transfer.endp = target;
-    d->transfer.data = (void*)mem_allocateDMA(d->in_endp->desc.wMaxPacketSize & 0x7FF);
+    d->transfer.data = (void*)dma_map(d->in_endp->desc.wMaxPacketSize & 0x7FF);
     d->transfer.length = d->in_endp->desc.wMaxPacketSize & 0x7FF;
     // NOTE: Actual request does not matetr
 

@@ -42,6 +42,7 @@
 #define VFS_EVENT_READ      0x01
 #define VFS_EVENT_WRITE     0x02
 #define VFS_EVENT_ERROR     0x04
+#define VFS_EVENT_HANGUP    0x08
 
 /**** TYPES ****/
 

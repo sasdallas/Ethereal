@@ -14,7 +14,7 @@
 #include "nvme.h"
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -35,11 +35,11 @@ nvme_queue_t *nvme_createQueue(size_t depth, nvme_doorbell_t *doorbell) {
     queue->cq_phase = 1;
 
     // Allocate sq
-    queue->sq = mem_allocateDMA(depth * sizeof(nvme_sq_entry_t));
+    queue->sq = dma_map(depth * sizeof(nvme_sq_entry_t));
     memset((void*)queue->sq, 0, depth * sizeof(nvme_sq_entry_t));
 
     // Allocate cq
-    queue->cq = mem_allocateDMA(depth * sizeof(nvme_cq_entry_t));
+    queue->cq = dma_map(depth * sizeof(nvme_cq_entry_t));
     memset((void*)queue->cq, 0, depth * sizeof(nvme_cq_entry_t));
 
     queue->completions = list_create("nvme queue completions");

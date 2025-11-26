@@ -191,7 +191,7 @@ static uintptr_t memory_size = 0x0;                                         // S
 uintptr_t arch_allocate_structure(size_t bytes) {
     dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
     
-    if (bytes > PAGE_SIZE) return mem_sbrk(MEM_ALIGN_PAGE(bytes));
+    if (bytes > PAGE_SIZE) return (uintptr_t)vmm_map(NULL, MEM_ALIGN_PAGE(bytes), VM_FLAG_ALLOC, MMU_FLAG_KERNEL | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     return (uintptr_t)kmalloc(bytes);
 }
 

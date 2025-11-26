@@ -29,7 +29,7 @@
 
 // Pool creation flags (TODO: expand on this)
 #define POOL_DEFAULT        0       // Allocate via mem_sbrk
-#define POOL_DMA            1       // Allocate via mem_allocateDMA
+#define POOL_DMA            1       // Allocate via dma_map
 #define POOL_NOLOCK         2       // Do not use a pool lock
 
 /**** TYPES ****/

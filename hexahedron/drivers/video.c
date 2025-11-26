@@ -115,10 +115,7 @@ int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
     len = (len > bufsz) ? bufsz : len;
 
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + len; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            pg->bits.present = 0;
-        }
+        arch_mmu_unmap(NULL, i);
     }
 
     // Enable kernel video writes

@@ -14,7 +14,7 @@
 #include "ahci.h"
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/drivefs.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -233,7 +233,7 @@ static int ahci_portFillPRDT(ahci_port_t *port, ahci_cmd_header_t *header, uintp
         AHCI_SET_ADDRESS(table->prdt_entry[entry].dba, buffer);
         
         // temp check
-        if (mem_getPhysicalAddress(NULL, (uintptr_t)buffer) & 1)  {
+        if (arch_mmu_physical(NULL, (uintptr_t)buffer) & 1)  {
             LOG_PORT(WARN, port, "Data not aligned properly: %p\n", buffer);
         }
 
@@ -442,10 +442,10 @@ ahci_port_t *ahci_portInitialize(ahci_t *ahci, int port_number) {
     memory_amount += (sizeof(ahci_prdt_entry_t) * AHCI_PRDT_COUNT);
 
     // Allocate DMA buffer (this will be used for small reads and writes)
-    port->dma_buffer = mem_allocateDMA(PAGE_SIZE);
+    port->dma_buffer = dma_map(PAGE_SIZE);
     
     // Now get that memory from the kernel heap
-    uintptr_t port_buffer = mem_allocateDMA(memory_amount);
+    uintptr_t port_buffer = dma_map(memory_amount);
     memset((void*)port_buffer, 0, memory_amount);
 
     // Start by allocating the command list
@@ -466,7 +466,7 @@ ahci_port_t *ahci_portInitialize(ahci_t *ahci, int port_number) {
 
     // Debug
     LOG_PORT(DEBUG, port, "CMDLIST = %p FIS = %p CMDTABLE = %p\n", port->cmd_list, port->fis, port->cmd_table);
-    LOG_PORT(DEBUG, port, "CMDLISTPHYS = %p FISPHYS = %p CMDTABLEPHYS = %p\n", mem_getPhysicalAddress(NULL, (uintptr_t)port->cmd_list), mem_getPhysicalAddress(NULL, (uintptr_t)port->fis), mem_getPhysicalAddress(NULL, (uintptr_t)port->cmd_table));
+    LOG_PORT(DEBUG, port, "CMDLISTPHYS = %p FISPHYS = %p CMDTABLEPHYS = %p\n", arch_mmu_physical(NULL, (uintptr_t)port->cmd_list), arch_mmu_physical(NULL, (uintptr_t)port->fis), arch_mmu_physical(NULL, (uintptr_t)port->cmd_table));
 
 
     // Now point AHCI registers to our structures

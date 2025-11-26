@@ -18,7 +18,7 @@
 #include <kernel/loader/elf.h>
 #include <kernel/misc/ksym.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/mem/vas.h>
 #include <kernel/processor_data.h>
@@ -384,7 +384,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
             case PT_TLS:
                 // Basically the same as a PT_LOAD, but don't zero?
                 LOG(DEBUG, "PHDR #%d PT_TLS: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
-                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+                // assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
     
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -626,9 +626,10 @@ int elf_cleanup(uintptr_t elf_address) {
                 case PT_LOAD:
                     // We have to unload and unmap it from memory
                     // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
-                    for (uintptr_t i = 0; i < MEM_ALIGN_PAGE(phdr->p_memsz); i += PAGE_SIZE) {
-                        page_t *pg = mem_getPage(NULL, i + phdr->p_vaddr, MEM_CREATE);
-                        if (pg) mem_freePage(pg);
+                    for (uintptr_t i = 0; i < PAGE_ALIGN_UP(phdr->p_memsz); i += PAGE_SIZE) {
+                        uintptr_t blk = arch_mmu_physical(NULL, i + phdr->p_vaddr);
+                        arch_mmu_unmap(NULL, i + phdr->p_vaddr);
+                        if (blk) pmm_freePage(blk);
                     }
 
                     break;
@@ -675,7 +676,7 @@ uintptr_t elf_getHeapLocation(uintptr_t elf_address) {
         }
 
         // Align
-        heap_base = MEM_ALIGN_PAGE(heap_base);
+        heap_base = PAGE_ALIGN_UP(heap_base);
         return heap_base;
     } else {
         // ???

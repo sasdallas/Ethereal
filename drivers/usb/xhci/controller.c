@@ -13,7 +13,7 @@
 
 #include "xhci.h"
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/misc/mutex.h>
 #include <string.h>
@@ -150,13 +150,13 @@ int xhci_processExtendedCapabilities(xhci_t *xhci) {
  */
 void xhci_initCommandRing(xhci_t *xhci) {
     xhci->cmd_ring = kzalloc(sizeof(xhci_cmd_ring_t));
-    xhci->cmd_ring->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    xhci->cmd_ring->trb_list = (xhci_trb_t*)dma_map(XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
     xhci->cmd_ring->cycle = 1;
     memset(xhci->cmd_ring->trb_list, 0, XHCI_COMMAND_RING_TRB_COUNT * sizeof(xhci_trb_t));
 
     // Setup a link TRB to form a big chain
     xhci_link_trb_t *link = (xhci_link_trb_t*)(&xhci->cmd_ring->trb_list[XHCI_COMMAND_RING_TRB_COUNT-1]);
-    link->ring_segment = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
+    link->ring_segment = arch_mmu_physical(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
     link->type = XHCI_TRB_TYPE_LINK;
     link->interrupter_target = 0;
     link->c = 1;
@@ -167,7 +167,7 @@ void xhci_initCommandRing(xhci_t *xhci) {
     xhci->cmd_ring->enqueue = 0;
 
     // Set command ring in CRCR
-    uintptr_t crcr_phys = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
+    uintptr_t crcr_phys = arch_mmu_physical(NULL, (uintptr_t)xhci->cmd_ring->trb_list);
     xhci->op->crcr_lo = ((uint32_t)crcr_phys & 0xFFFFFFFF) | xhci->cmd_ring->cycle;
     xhci->op->crcr_hi = (uint32_t)(crcr_phys >> 32);
     LOG(DEBUG, "Command ring enabled (CRCR = %p)\n", crcr_phys);
@@ -179,13 +179,13 @@ void xhci_initCommandRing(xhci_t *xhci) {
  */
 void xhci_initEventRing(xhci_t *xhci) {
     xhci->event_ring = kzalloc(sizeof(xhci_event_ring_t));
-    xhci->event_ring->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t) + sizeof(xhci_event_ring_entry_t));
+    xhci->event_ring->trb_list = (xhci_trb_t*)dma_map(XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t) + sizeof(xhci_event_ring_entry_t));
     xhci->event_ring->ent = (xhci_event_ring_entry_t*)((uintptr_t)xhci->event_ring->trb_list + (XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t)));
     memset(xhci->event_ring->trb_list, 0, XHCI_EVENT_RING_TRB_COUNT * sizeof(xhci_trb_t) + sizeof(xhci_event_ring_entry_t));
     xhci->event_ring->cycle = 1;
     
     // Configure first entry in the list
-    uintptr_t trb_list_phys = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->event_ring->trb_list);
+    uintptr_t trb_list_phys = arch_mmu_physical(NULL, (uintptr_t)xhci->event_ring->trb_list);
     xhci->event_ring->ent->rsba = trb_list_phys;
     xhci->event_ring->ent->rsz = XHCI_EVENT_RING_TRB_COUNT;
     xhci->event_ring->ent->rsvd0 = 0;
@@ -193,7 +193,7 @@ void xhci_initEventRing(xhci_t *xhci) {
     // Setup registers
     xhci->run->irs[0].erstsz = 1;
     xhci->run->irs[0].erdp = trb_list_phys | (1 << 3);
-    xhci->run->irs[0].erstba = mem_getPhysicalAddress(NULL, (uintptr_t)xhci->event_ring->ent);
+    xhci->run->irs[0].erstba = arch_mmu_physical(NULL, (uintptr_t)xhci->event_ring->ent);
 
     xhci->event_ring->trb_list_phys = trb_list_phys;
     LOG(DEBUG, "Event ring enabled (TRB list: %016llX)\n", trb_list_phys);
@@ -367,8 +367,8 @@ int xhci_initInterrupt(xhci_t *xhci) {
  */
 void xhci_initScratchpad(xhci_t *xhci) {
     uint32_t scratchpads = (xhci->cap->max_scratchpad_buffers_hi << 5) | (xhci->cap->max_scratchpad_buffers_lo);
-    xhci->scratchpad = mem_allocateDMA(scratchpads * sizeof(uint64_t));
-    uintptr_t phys = mem_getPhysicalAddress(NULL, xhci->scratchpad);
+    xhci->scratchpad = dma_map(scratchpads * sizeof(uint64_t));
+    uintptr_t phys = arch_mmu_physical(NULL, xhci->scratchpad);
 
     // Fill scratchpad buffers
     for (size_t i = 0; i < scratchpads; i++) {
@@ -376,7 +376,7 @@ void xhci_initScratchpad(xhci_t *xhci) {
         ((uint64_t*)xhci->scratchpad)[i] = pg;
     }
 
-    *(uint64_t*)(xhci->dcbaa) = mem_getPhysicalAddress(NULL, xhci->scratchpad);
+    *(uint64_t*)(xhci->dcbaa) = arch_mmu_physical(NULL, xhci->scratchpad);
 }
 
 /**
@@ -538,7 +538,7 @@ int xhci_initController(pci_device_t *device) {
     LOG(DEBUG, "xHCI MMIO is located at %016llX - %016llX\n", bar->address, bar->address + bar->size);
 
     // Map BAR region
-    xhci->mmio_addr = mem_mapMMIO(bar->address, bar->size);
+    xhci->mmio_addr = mmio_map(bar->address, bar->size);
     xhci->cap = (xhci_cap_regs_t*)xhci->mmio_addr;
     xhci->op = (xhci_op_regs_t*)(xhci->mmio_addr + xhci->cap->caplength);
     xhci->run = (xhci_runtime_regs_t*)(xhci->mmio_addr + xhci->cap->rtsoff);
@@ -547,7 +547,7 @@ int xhci_initController(pci_device_t *device) {
     // Reset xHCI controller
     if (xhci_takeOwnership(xhci)) {
         LOG(ERR, "xHCI ownership handoff failed\n");
-        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        mmio_unmap(xhci->mmio_addr, bar->size);
         kfree(xhci);
         kfree(bar);
         return 1;
@@ -556,7 +556,7 @@ int xhci_initController(pci_device_t *device) {
     // Reset xHCI controller
     if (xhci_resetController(xhci)) {
         LOG(ERR, "xHCI controller reset failed\n");
-        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        mmio_unmap(xhci->mmio_addr, bar->size);
         kfree(xhci);
         kfree(bar);
         return 1;
@@ -572,16 +572,16 @@ int xhci_initController(pci_device_t *device) {
     // Process xECP
     if (xhci_processExtendedCapabilities(xhci)) {
         LOG(ERR, "xHCI ECP parse error failed\n");
-        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        mmio_unmap(xhci->mmio_addr, bar->size);
         kfree(xhci);
         kfree(bar);
         return 1;
     }
 
     // Now, allocate the DCBAA
-    xhci->dcbaa = mem_allocateDMA(xhci->cap->max_slots * 8);
+    xhci->dcbaa = dma_map(xhci->cap->max_slots * 8);
     memset((void*)xhci->dcbaa, 0, xhci->cap->max_slots * 8);
-    xhci->op->dcbaap = mem_getPhysicalAddress(NULL, xhci->dcbaa);
+    xhci->op->dcbaap = arch_mmu_physical(NULL, xhci->dcbaa);
     LOG(DEBUG, "DCBAA @ %p\n", xhci->op->dcbaap);
 
     // Init command ring
@@ -591,7 +591,7 @@ int xhci_initController(pci_device_t *device) {
     if (xhci_initInterrupt(xhci)) {
         // TODO: Free all memory
         LOG(ERR, "xHCI interrupter init failed\n");
-        mem_unmapMMIO(xhci->mmio_addr, bar->size);
+        mmio_unmap(xhci->mmio_addr, bar->size);
         kfree(xhci);
         kfree(bar);
         return 1;

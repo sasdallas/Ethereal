@@ -13,7 +13,7 @@
 
 #include <kernel/task/process.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -70,7 +70,7 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
 
     if (!(flags & THREAD_FLAG_KERNEL) ) {
         // Allocate user mode stack 
-        thr->stack = (MEM_USERMODE_STACK_REGION + MEM_USERMODE_STACK_SIZE);
+        thr->stack = (MMU_USERMODE_STACK_REGION + MMU_USERMODE_STACK_SIZE);
         if (!(flags & THREAD_FLAG_CHILD)) {
             vmm_map((void*)(thr->stack - THREAD_STACK_SIZE), THREAD_STACK_SIZE, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
             memset((void*)(thr->stack - PAGE_SIZE), 0, PAGE_SIZE);

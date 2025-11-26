@@ -21,7 +21,7 @@
 #include <kernel/arch/x86_64/hal.h>
 #endif
 
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/video.h>

@@ -15,7 +15,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/fs/kernelfs.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
 #include <assert.h>
@@ -407,7 +407,7 @@ static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t m
     }
 
     // TODO: FIND A WAY TO CLEAN THIS UP (?)
-    uintptr_t r = mem_mapMMIO(bar->address, bar->size);
+    uintptr_t r = mmio_map(bar->address, bar->size);
 
     pci_msix_entry_t *entry = (pci_msix_entry_t*)&(((pci_msix_entry_t*)(r + offset))[PCI_DEVICE(bus, slot, func)->msix_index]);
     entry->msg_addr_low = addr & 0xFFFFFFFF;

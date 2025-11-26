@@ -24,7 +24,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/debug.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <string.h>
 
 /* Log method */
@@ -181,24 +181,24 @@ int ac97_stop(struct sound_card *card) {
  * @param ac The AC/97 card
  */
 void ac97_createBDL(ac97_t *ac) {
-    ac->bdl = (ac97_buffer_entry_t*)mem_allocateDMA(sizeof(ac97_buffer_entry_t) * AC97_BDL_ENTRY_COUNT);
+    ac->bdl = (ac97_buffer_entry_t*)dma_map(sizeof(ac97_buffer_entry_t) * AC97_BDL_ENTRY_COUNT);
     memset(ac->bdl, 0, PAGE_SIZE);
 
     for (int i = 0; i < AC97_BDL_ENTRY_COUNT; i++) {
-        ac->bdl_buffers[i] = (uint32_t*)mem_allocateDMA(AC97_BDL_SIZE+0x1000);
+        ac->bdl_buffers[i] = (uint32_t*)dma_map(AC97_BDL_SIZE+0x1000);
         memset(ac->bdl_buffers[i], 0x00, AC97_BDL_SIZE);
 
-        ac->bdl[i].buffer = (uint32_t)mem_getPhysicalAddress(NULL, (uintptr_t)ac->bdl_buffers[i]);
+        ac->bdl[i].buffer = (uint32_t)arch_mmu_physical(NULL, (uintptr_t)ac->bdl_buffers[i]);
         ac->bdl[i].samples = AC97_BDL_SAMPLES;
         ac->bdl[i].control = AC97_BDL_CTRL_IOC;
     }
 
     // Configure BDBAR and LVI
     ac->idx = 2;
-    AC97_WRITE_BM32(AC97_PO_BDBAR, mem_getPhysicalAddress(NULL, (uintptr_t)ac->bdl));
+    AC97_WRITE_BM32(AC97_PO_BDBAR, arch_mmu_physical(NULL, (uintptr_t)ac->bdl));
     AC97_WRITE_BM8(AC97_PO_LVI, ac->idx);
 
-    LOG(INFO, "BDL list created and allocated to %p (starting idx %d)\n", mem_getPhysicalAddress(NULL, (uintptr_t)ac->bdl), ac->idx);
+    LOG(INFO, "BDL list created and allocated to %p (starting idx %d)\n", arch_mmu_physical(NULL, (uintptr_t)ac->bdl), ac->idx);
 }
 
 /**
@@ -230,8 +230,8 @@ int ac97_init(pci_device_t *dev) {
     ac->io_type = (nammbar->type == PCI_BAR_IO_SPACE);
 
     if (ac->io_type == 0) {
-        ac->io_base = mem_mapMMIO(ac->io_base, nambbar->size);
-        ac->bm_io_base = mem_mapMMIO(ac->bm_io_base, nammbar->size);
+        ac->io_base = mmio_map(ac->io_base, nambbar->size);
+        ac->bm_io_base = mmio_map(ac->bm_io_base, nammbar->size);
     }
 
     LOG(DEBUG, "NAMB Base: %08x NAMM Base: %08x (%s)\n", ac->io_base, ac->bm_io_base, ac->io_type ? "I/O" : "MMIO");
@@ -243,8 +243,8 @@ int ac97_init(pci_device_t *dev) {
         LOG(ERR, "AC97 has no IRQ or failed to register it . Cannot continue\n");
 
         if (ac->io_type == 0) {
-            mem_unmapMMIO(ac->io_base, nambbar->size);
-            mem_unmapMMIO(ac->bm_io_base, nammbar->size);
+            mmio_unmap(ac->io_base, nambbar->size);
+            mmio_unmap(ac->bm_io_base, nammbar->size);
         }
 
         kfree(nambbar);

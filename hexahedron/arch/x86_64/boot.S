@@ -150,11 +150,11 @@ __stack_bottom:
 .global __stack_top
 __stack_top:
 
+.extern __mmu_initial_page_region
+
 /* ==== BOOTSTRAP ==== */
 .section .multiboot.text, "a"
 .code32
-
-.extern mem_kernelPML
 
 .global _start
 .type _start, @function
@@ -184,7 +184,7 @@ _start:
 .paging_init:
     // We need to now setup our paging structures.
     // This should've already been zeroed out by the loader as part of the ELF file.
-    movl $(mem_kernelPML - KERNEL_LOAD_ADDRESS), %edi
+    movl $(__mmu_initial_page_region - KERNEL_LOAD_ADDRESS), %edi
 
     // Set entry #0 of PML4 to point to PDPT[0] with present, writable, and user
     mov $0x1007, %eax
@@ -198,7 +198,7 @@ _start:
     add %edi, %eax
     add $0xF00, %edi
     mov %eax, (%edi)
-    mov $(mem_kernelPML - KERNEL_LOAD_ADDRESS), %edi
+    mov $(__mmu_initial_page_region - KERNEL_LOAD_ADDRESS), %edi
     pop %edi
 
     // Set entry #0 of PDPT to point to PD[0] with present, writable, and user.
@@ -223,7 +223,7 @@ _start:
 
 .paging_enable:
     // Set CR3 to point to our PML4
-    movl $(mem_kernelPML - KERNEL_LOAD_ADDRESS), %edi
+    movl $(__mmu_initial_page_region - KERNEL_LOAD_ADDRESS), %edi
     movl %edi, %cr3
 
     // Enable PAE, it is required for long mode.

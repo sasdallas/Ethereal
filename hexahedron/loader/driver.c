@@ -26,7 +26,7 @@
 #include <kernel/loader/driver.h>
 #include <kernel/loader/elf_loader.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
@@ -140,7 +140,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     if (fs_read(driver_file, 0, driver_file->length, (uint8_t*)driver_load_address) != (ssize_t)driver_file->length) {
         // Uh oh, read error.
         driver_handleLoadError(priority, "Read error", file);
-        mem_unmapDriver(driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, driver_file->length);
         return -EIO;
     }
 

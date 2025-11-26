@@ -24,7 +24,7 @@
 mmu_page_t __mmu_kernel_pml[512] __attribute__((aligned(PAGE_SIZE))) = {0};
 static mmu_page_t __mmu_hhdm_pdpt[512] __attribute__((aligned(PAGE_SIZE))) = {0};
 static mmu_page_t __mmu_hhdm_pd[128][512] __attribute__((aligned(PAGE_SIZE))) = { 0 };
-
+mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE))) = { 0 };
 
 #define TO_HHDM(x) ((uintptr_t)(x) | MMU_HHDM_REGION)
 #define FROM_HHDM(x) ((uintptr_t)(x) & ~MMU_HHDM_REGION)
@@ -215,7 +215,7 @@ void arch_mmu_finish(pmm_region_t *region) {
             for (unsigned k = 0; k < 512; k++) {
                 pt[k].bits.present = 1;
                 pt[k].bits.rw = 1;
-                pt[k].bits.address = ((PAGE_SIZE*512) * j + PAGE_SIZE * k) >> MEM_PAGE_SHIFT;
+                pt[k].bits.address = ((PAGE_SIZE*512) * j + PAGE_SIZE * k) >> MMU_SHIFT;
             }
         }
     }

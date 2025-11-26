@@ -16,7 +16,7 @@
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <string.h>
 
@@ -162,7 +162,7 @@ int ahci_init(int argc, char **argv) {
 
     // Map it into MMIO
     LOG(INFO, "HBA memory space location: %p\n", bar->address);
-    ahci_hba_mem_t *hbamem = (ahci_hba_mem_t*)mem_mapMMIO(bar->address, bar->size);
+    ahci_hba_mem_t *hbamem = (ahci_hba_mem_t*)mmio_map(bar->address, bar->size);
     hbamem->ghc &= ~HBA_GHC_IE; // Disable interrupts
 
     // Construct the main AHCI controller structure

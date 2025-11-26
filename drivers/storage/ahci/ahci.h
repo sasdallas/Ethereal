@@ -653,7 +653,7 @@ typedef struct ahci {
 
 /* Virtual to physical, but quicker */
 #define AHCI_SET_ADDRESS(var, address) 	{	\
-											uintptr_t phys = mem_getPhysicalAddress(NULL, (uintptr_t)address);		\
+											uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)address);		\
 											var = AHCI_LOW(phys);		\
 											(var##u) = AHCI_HIGH(phys);	\
 										}

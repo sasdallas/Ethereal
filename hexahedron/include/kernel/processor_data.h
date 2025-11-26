@@ -22,7 +22,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/arch/arch.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/task/process.h>
 #include <kernel/mm/vmm.h>
 

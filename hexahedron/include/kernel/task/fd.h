@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 
 /**** DEFINITIONS ****/

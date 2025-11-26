@@ -15,7 +15,7 @@
  */
 
 #include <kernel/drivers/x86/local_apic.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/panic.h>

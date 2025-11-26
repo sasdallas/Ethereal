@@ -17,7 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/arch/arch.h>
-#include <kernel/mem/mem.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>

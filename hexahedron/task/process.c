@@ -15,8 +15,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/loader/elf_loader.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -166,7 +165,6 @@ void process_yield(uint8_t reschedule) {
     current_cpu->current_process = next_thread->parent;
 
     // Setup page directory
-    // TODO: Test this. Is it possible mem_getCurrentDirectory != mem_getKernelDirectory?
     vmm_switch(current_cpu->current_thread->ctx);
 
     // On your mark... (load kstack)

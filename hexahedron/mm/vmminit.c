@@ -14,7 +14,6 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/processor_data.h>
-#include <kernel/mem/mem.h>
 #include <string.h>
 
 /* Log method */

@@ -14,7 +14,7 @@
 
 #include "ahci.h"
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -63,28 +63,28 @@ ssize_t ahci_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
     dprintf_module(DEBUG, "DRIVER:AHCI", "Calculated LBA: %d (offset: %d) size_rounded: %d\n", lba, buffer_offset, size_rounded);
 
     // If our rounded size is below PAGE_SIZE, we can use the DMA buffer
-    uint8_t *dmabuffer = (uint8_t*)((size_rounded <= PAGE_SIZE) ? port->dma_buffer : mem_allocateDMA(size_rounded));
+    uint8_t *dmabuffer = (uint8_t*)((size_rounded <= PAGE_SIZE) ? port->dma_buffer : dma_map(size_rounded));
 
     // Now start reading
     if (port->type == AHCI_DEVICE_SATAPI) {
         // Read in the buffer (portOperate will fwd to portOperateATAPI)
         if (ahci_portOperate(port, AHCI_READ, lba, size_rounded / port->atapi_block_size, dmabuffer) != AHCI_SUCCESS) {
             // Error
-            if ((uintptr_t)dmabuffer != port->dma_buffer) mem_freeDMA((uintptr_t)dmabuffer, size_rounded);
+            if ((uintptr_t)dmabuffer != port->dma_buffer) dma_unmap((uintptr_t)dmabuffer, size_rounded);
             return 0; 
         }
     } else {
         // Read in the buffer
         if (ahci_portOperate(port, AHCI_READ, lba, size_rounded / 512, dmabuffer) != AHCI_SUCCESS) {
             // Error
-            if ((uintptr_t)dmabuffer != port->dma_buffer) mem_freeDMA((uintptr_t)dmabuffer, size_rounded);
+            if ((uintptr_t)dmabuffer != port->dma_buffer) dma_unmap((uintptr_t)dmabuffer, size_rounded);
             return 0; 
         }
     }
 
     // Copy the buffer with offset
     memcpy(buffer, dmabuffer + buffer_offset, size);
-    if ((uintptr_t)dmabuffer != port->dma_buffer) mem_freeDMA((uintptr_t)dmabuffer, size_rounded);
+    if ((uintptr_t)dmabuffer != port->dma_buffer) dma_unmap((uintptr_t)dmabuffer, size_rounded);
     return size;
 }
 
@@ -119,18 +119,18 @@ ssize_t ahci_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) 
     size_t size_rounded = ((size + 512) - ((size + 512) % 512));
 
     // Allocate a write buffer
-    uint8_t *write_buffer = (uint8_t*)((size_rounded > PAGE_SIZE) ? mem_allocateDMA(size_rounded) : port->dma_buffer);
+    uint8_t *write_buffer = (uint8_t*)((size_rounded > PAGE_SIZE) ? dma_map(size_rounded) : port->dma_buffer);
     memset(write_buffer, 0, size_rounded);
 
     // !!!: We have to read in a sector at the end of offset + size rounded to prevent the driver from overwriting existing bytes
     // !!!: There seems to be a better way to do this, instead of allocating more memory
     if (ahci_portOperate(port, AHCI_READ, lba, 1, write_buffer) != AHCI_SUCCESS) {
-        if (write_buffer != (uint8_t*)port->dma_buffer) mem_freeDMA((uintptr_t)write_buffer, size_rounded);
+        if (write_buffer != (uint8_t*)port->dma_buffer) dma_unmap((uintptr_t)write_buffer, size_rounded);
         return 0;
     }
     
     if (ahci_portOperate(port, AHCI_READ, ((lba + size_rounded) / 512)-1, 1, write_buffer + (size_rounded-512)) != AHCI_SUCCESS) {
-        if (write_buffer != (uint8_t*)port->dma_buffer) mem_freeDMA((uintptr_t)write_buffer, size_rounded);
+        if (write_buffer != (uint8_t*)port->dma_buffer) dma_unmap((uintptr_t)write_buffer, size_rounded);
         return 0;
     }
 
@@ -139,12 +139,12 @@ ssize_t ahci_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) 
 
     // Write
     if (ahci_portOperate(port, AHCI_WRITE, lba, size_rounded / 512, write_buffer) != AHCI_SUCCESS) {
-        if (write_buffer != (uint8_t*)port->dma_buffer) mem_freeDMA((uintptr_t)write_buffer, size_rounded);
+        if (write_buffer != (uint8_t*)port->dma_buffer) dma_unmap((uintptr_t)write_buffer, size_rounded);
         return 0;
     }
 
     // Done
-    if (write_buffer != (uint8_t*)port->dma_buffer) mem_freeDMA((uintptr_t)write_buffer, size_rounded);    
+    if (write_buffer != (uint8_t*)port->dma_buffer) dma_unmap((uintptr_t)write_buffer, size_rounded);    
     return size;
 }
 

@@ -184,7 +184,7 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
  */
 int process_munmap(void *addr, size_t len) {
     if (addr >= (void*)MMU_USERSPACE_END) return -EFAULT;
-    LOG(DEBUG, "TRACE: process_munmap %p %d\n", addr, len);
+    LOG(INFO, "TRACE: process_munmap %p %d\n", addr, len);
     vmm_unmap(addr, len);
     return 0;
 }

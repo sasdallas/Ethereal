@@ -16,7 +16,7 @@
 #include <kernel/drivers/usb/hid/hid.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
 #include <string.h>

@@ -40,6 +40,9 @@
 #define MMU_FLAG_WT                     0x40    // Write through
 #define MMU_FLAG_UC                     0x80    // Not cacheable
 
+#define MMU_USERMODE_STACK_REGION   (uintptr_t)0x0000060000000000 
+#define MMU_USERMODE_STACK_SIZE     (uintptr_t)0x0000010000000000 
+
 /**** TYPES ****/
 
 typedef uint64_t mmu_flags_t;
