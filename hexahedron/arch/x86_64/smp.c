@@ -357,6 +357,5 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
 
     // spinlock_release(&tlb_shootdown_lock);
 
-    LOG(INFO, "TLB\n");
     lapic_sendIPI(0, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE | LAPIC_ICR_DESTINATION_EXCLUDE_SELF);
 }

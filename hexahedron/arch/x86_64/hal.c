@@ -81,8 +81,7 @@ static void hal_init_stage1() {
     // Say hi!
     arch_say_hello(1);
 
-    // Initialize SSE (some libc/libk functions use SSE so this is needed)
-    // TODO: If we don't use any SSE in the kernel, shouldn't we not use it in libk?
+    // Initialize SSE
     arch_enable_sse();
 
     // Initialize clock driver
@@ -93,8 +92,6 @@ static void hal_init_stage1() {
 
     // Initialize interrupts
     hal_initializeInterrupts();
-    dprintf(INFO, "Interrupts enabled.\n");
-
     dprintf(INFO, "HAL stage 1 initialization completed\n");
 }
 
@@ -193,17 +190,6 @@ static void hal_init_stage2() {
     } else {
         dprintf(INFO, "Argument \"--no_video\" found, disabling video.\n");
     }
-
-    // At this point in time if the user wants to view debugging output not on the serial console, they
-    // can. Look for kernel boot argument "--debug=console"
-    if (kargs_has("--debug")) {
-        if (!strcmp(kargs_get("--debug"), "console")) {
-            debug_setOutput(terminal_print);
-        } else if (!strcmp(kargs_get("--debug"), "none")) {
-            debug_setOutput(NULL);
-        }
-    }
-
 
     /* DEBUGGER INITIALIZATION */
 
