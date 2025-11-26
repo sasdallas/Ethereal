@@ -250,4 +250,10 @@ void dma_unmap(uintptr_t virt, size_t size);
  */
 void vmm_postSMP();
 
+/**
+ * @brief Internal function to demark pages
+ * Don't even think about calling this.
+ */
+void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages);
+
 #endif

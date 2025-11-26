@@ -451,8 +451,10 @@ void *sys_brk(void *addr) {
  * @brief Fork system call
  */
 pid_t sys_fork() {
-    return process_fork();
+    pid_t cpid = process_fork();
+    return cpid;
 }
+
 
 /**
  * @brief lseek system call
@@ -653,56 +655,60 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     int have_hit = 0;
 
-#if 0
+#if 1
 
-    // int iters = 10;
-    // while (iters) {
-        for (size_t i = 0; i < nfds; i++) {
-            // Check the file descriptor
-            fds[i].revents = 0;
-            if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-                fds[i].revents |= POLLNVAL;
-                continue;
-            }
+    poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, nfds ? nfds : 1);
 
-            // Does the file descriptor have available contents right now?
-            int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-            int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-            if (ready & events) {
-                // Oh, we already have a hit! :D
-                // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-                fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-                have_hit++;
-            } 
+    for (size_t i = 0; i < nfds; i++) {
+        // Check the file descriptor
+        fds[i].revents = 0;
+        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+            fds[i].revents |= POLLNVAL;
+            continue;
         }
 
-        if (have_hit) return have_hit;
-    //     iters--;
-    // }
+        // Does the file descriptor have available contents right now?
+        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+        if (ready & events) {
+            // Oh, we already have a hit! :D
+            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+            have_hit++;
+        } else if (!have_hit) {
+            poll_add(waiter, &FD(current_cpu->current_process, fds[i].fd)->node->event, events);
+        }
+    }
+
+    if (have_hit) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return have_hit;
+    }
 
     // We didn't get anything. Did they want us to wait?
-    if (timeout == 0) return 0;
+    if (timeout == 0) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return 0;
+    }
     
     // Yes, so prepare ourselves to wait
-    if (timeout > 0) {
-        timeout = timeout*1000;
-        sleep_time(timeout/1000000, timeout%1000000);
-    } else {
-        sleep_prepare();
+    int w = poll_wait(waiter, timeout);
+
+
+    if (w == -EINTR) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return -EINTR;
     }
 
-    // There is a timeout, so put ourselves in the queue for each fd
-    for (size_t i = 0; i < nfds; i++) {
-        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        if (FD_VALIDATE(current_cpu->current_process, fds[i].fd)) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node, events);
+    if (w == -ETIMEDOUT) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return 0;
     }
-
-    // Enter sleep state
-    int wakeup = sleep_enter();
-
-    if (wakeup == WAKEUP_SIGNAL) return -EINTR;
-    if (wakeup == WAKEUP_TIME) return 0;
 
     for (size_t i = 0; i < nfds; i++) {
         // Does the file descriptor have available contents right now?
@@ -717,11 +723,12 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         } 
     }
 
+    poll_exit(waiter);
+    poll_destroyWaiter(waiter);
     return have_hit;   // At least one thread woke us up
 
-    /* Legacy poll that doesn't sleep. For debugging. */
 #else
-
+    /* Legacy poll that doesn't sleep. For debugging. */
     struct timeval tv_start;
     gettimeofday(&tv_start, NULL);
 
@@ -995,7 +1002,6 @@ long sys_mmap(sys_mmap_context_t *context) {
 
 long sys_munmap(void *addr, size_t len) {
     LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
-    return 0;
     return process_munmap(addr, len);
 }
 

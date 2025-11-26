@@ -49,12 +49,6 @@ volatile uint64_t task_switches = 0;
 list_t *reap_queue = NULL;
 spinlock_t reap_queue_lock = { 0 };
 
-/* Reaper thread */
-process_t *reaper_proc = NULL;
-
-/* Reaper function */
-void process_reaper(void *ctx);
-
 /* Helper macro to check if a process is in use */
 /* !!!: Can fail */
 #define PROCESS_IN_USE(proc)    ({ int in_use = 0; for (int i = 0; i < processor_count; i++) { if (processor_data[i].current_process == proc) { in_use = 1; break; } }; in_use; })
@@ -85,11 +79,6 @@ void process_init() {
 
     // Initialize futexes
     futex_init();
-
-    // Initialize reap queue and reaper process
-    reap_queue = list_create("process reap queue");
-    // reaper_proc = process_createKernel("reaper", 0, PRIORITY_MED, process_reaper, NULL);
-    // scheduler_insertThread(reaper_proc->main_thread);
 
     LOG(INFO, "Process system initialized\n");
 }
@@ -122,13 +111,6 @@ void __attribute__((noreturn)) process_switchNextThread() {
 
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
-    
-    // Go!
-    // #ifdef __ARCH_I386__
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, next_thread->parent->name, current_cpu->current_thread->context.eip, current_cpu->current_thread->context.esp, current_cpu->current_thread->context.ebp);
-    // #else
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, current_cpu->current_thread->parent->name, current_cpu->current_thread->context.rip, current_cpu->current_thread->context.rsp, current_cpu->current_thread->context.rbp);
-    // #endif
 
     task_switches += 1;
     arch_load_context(&current_cpu->current_thread->context); // Didn't bother switching context
@@ -457,53 +439,6 @@ void process_destroy(process_t *proc) {
     kfree(proc->wd_path);
     kfree(proc->name);
     kfree(proc);
-    LOG(DEBUG, "On finish: PMM block usage is %d\n", pmm_getUsedBlocks());
-}
-
-/**
- * @brief The grim reaper
- * 
- * This is the kernel thread which runs in the background when processes exit. It frees their resources
- * immediately and then blocks until new processes are available.
- */
-void process_reaper(void *ctx) {
-    for (;;) {
-        sleep_untilNever(current_cpu->current_thread);
-        if (sleep_enter() == WAKEUP_SIGNAL) {
-            LOG(WARN, "You can't kill the grim reaper.\n");
-            continue;
-        }
-
-        // Anything available?
-        if (!reap_queue->length) continue;
-
-        // Content is available, let's free it
-        spinlock_acquire(&reap_queue_lock);
-
-        for (size_t i = 0; i < reap_queue->length; i++) {
-            node_t *procnode = list_popleft(reap_queue);
-            if (!procnode) break;
-
-            process_t *proc = (process_t*)procnode->value;
-
-            if (proc && (proc->flags & PROCESS_STOPPED)) {
-                // Stopped process, ready for the taking.
-                
-                // Although, we first need to make sure that no CPUs currently own this process
-                if (PROCESS_IN_USE(proc)) {
-                    // dang.
-                    list_append_node(reap_queue, procnode); // We're only executing reap_queue->length times, so this won't matter
-                    continue;                    
-                }
-
-                // Yoink!
-                kfree(procnode);
-                process_destroy(proc);
-            }
-        }
-
-        spinlock_release(&reap_queue_lock);
-    }
 }
 
 /**
@@ -584,7 +519,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
     // Destroy previous threads
-    if (current_cpu->current_process->main_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
+    if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
     if (current_cpu->current_process->thread_list) {
         foreach(thread_node, current_cpu->current_process->thread_list) {
             thread_t *thr = (thread_t*)thread_node->value;
@@ -592,14 +527,10 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
         }
     }
 
+    // !!!: LEAK OF PREVIOUS THREAD
+
     // Switch away from old directory
     vmm_switch(vmm_kernel_context);
-
-    // Destroy the current thread
-    if (current_cpu->current_thread) {
-        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        // thread_destroy(current_cpu->current_thread);
-    }
 
     // VMM context
     vmm_context_t *oldctx = current_cpu->current_process->ctx;
@@ -770,11 +701,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     // Switch away from old directory
     vmm_switch(vmm_kernel_context);
 
-    // Destroy the current thread
-    if (current_cpu->current_thread) {
-        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        // thread_destroy(current_cpu->current_thread);
-    }
+    // !!!: LEAK OF PREVIOUS THREAD
 
     // VMM context
     vmm_context_t *oldctx = current_cpu->current_process->ctx;
@@ -919,7 +846,6 @@ void process_exit(process_t *process, int status_code) {
     // TODO: Ugly
     current_cpu->current_process->exit_status = status_code;
 
-
     // Deparent the children
     if (process->node && process->node->children) {
         foreach (cnode, process->node->children) {
@@ -931,7 +857,7 @@ void process_exit(process_t *process, int status_code) {
 
     // Instead of freeing all the memory now, we add ourselves to the reap queue
     // The reap queue is either destroyed by:
-    //      1. The reaper kernel thread
+    //      1. The reaper kernel thread (removed)
     //      2. The parent process waiting for this process to exit (POSIX - should only happen during waitpid)
     
     // If our parent is waiting, wake them up
@@ -950,15 +876,6 @@ void process_exit(process_t *process, int status_code) {
 
     } 
 
-    // // Put ourselves in the wait queue
-    // spinlock_acquire(&reap_queue_lock);
-    // LOG(WARN, "Assuming this process is orphaned\n");
-    // list_append(reap_queue, (void*)process);
-
-    // // Wakeup the reaper thread
-    // sleep_wakeup(reaper_proc->main_thread);
-    // spinlock_release(&reap_queue_lock);
-
     // To the next process we go
     if (process == current_cpu->current_process) {
         __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
@@ -972,15 +889,11 @@ void process_exit(process_t *process, int status_code) {
  * @returns Depends on what you are. Only call this from system call context.
  */
 pid_t process_fork() {
-    // LOG(DEBUG, "On fork: PMM block usage is %d\n", pmm_getUsedBlocks());
-
     // First we create our child pprocess
     process_t *parent = current_cpu->current_process;   
     process_t *child = process_create(parent, parent->name, parent->flags, parent->priority);
-
-    // Create a new child process thread
     child->main_thread = thread_create(child, child->ctx, (uintptr_t)NULL, THREAD_FLAG_CHILD);
-    
+
     // Configure context of child thread
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
     SP(child->main_thread->context) = child->main_thread->kstack;
@@ -1078,7 +991,8 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 }
 
                 // Take us out and return
-                // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
+                // list_delete(current_cpu->current_process->waitpid_queue, n);
+                // kfree(n);
                 spinlock_release(&reap_queue_lock);
                 return ret_pid;
             }

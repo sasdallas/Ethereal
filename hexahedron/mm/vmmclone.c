@@ -26,6 +26,8 @@
 vmm_context_t *vmm_clone(vmm_context_t *ctx) {
     vmm_context_t *new_ctx = vmm_createContext();
     
+    assert(current_cpu->current_context == ctx);
+
     mutex_acquire(ctx->space->mut);
 
     vmm_memory_range_t *range = ctx->space->range;

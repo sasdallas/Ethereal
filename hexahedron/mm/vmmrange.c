@@ -211,20 +211,12 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
     __builtin_unreachable();
 }
 
-
 /**
- * @brief Destroy a VMM memory range
- * @param space The space to destroy the range in
- * @param range The range to destroy
+ * @brief Internal function to demark pages
  */
-void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
-    if (range->next) range->next->prev = range->prev;
-    if (range->prev) range->prev->next = range->next;
-    if (range == space->range) space->range = range->next;
-
-    // First, destroy the range if it was allocated
+void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
     // !!!: Will need to update later, a lot of type support will be needed
-    for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
+    for (uintptr_t i = range->start + offset; i < range->start + (npages * PAGE_SIZE); i += PAGE_SIZE) {
         mmu_flags_t fl = arch_mmu_read_flags(NULL, i);
 
         if (range->vmm_flags & VM_FLAG_FILE) {
@@ -238,6 +230,21 @@ void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
 
         arch_mmu_unmap(NULL, i);
     }
+}
+
+
+/**
+ * @brief Destroy a VMM memory range
+ * @param space The space to destroy the range in
+ * @param range The range to destroy
+ */
+void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
+    if (range->next) range->next->prev = range->prev;
+    if (range->prev) range->prev->next = range->next;
+    if (range == space->range) space->range = range->next;
+
+    // First, destroy the range if it was allocated
+    vmm_freePages(range, 0, (range->end - range->start) / PAGE_SIZE);
 
     // // Now get the range page
     // vmm_range_page_t *p = (vmm_range_page_t *)PAGE_ALIGN_DOWN((uintptr_t)range);

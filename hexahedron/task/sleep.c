@@ -332,9 +332,13 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
  * @brief Change your mind and unprepare this thread for sleep
  * @param thread The thread to unprepare from sleep
  * @returns 0 on success
+ * @warning Usage of this is not recommended.
  */
 int sleep_exit(thread_t *thr) {
-    STUB();
+    // !!!: Most likely very dangerous...
+    __sync_and_and_fetch(&thr->status, ~(THREAD_STATUS_SLEEPING));
+    spinlock_release(&thr->sleep.lock);
+    return 0;
 }
 
 /**

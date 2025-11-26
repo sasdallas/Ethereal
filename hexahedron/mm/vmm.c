@@ -166,11 +166,13 @@ _finish:
  */
 void vmm_switch(vmm_context_t *ctx) {
     assert(ctx);
+    if (current_cpu->current_thread) current_cpu->current_thread->ctx = ctx;
     if (ctx == current_cpu->current_context) return; // No switching actually needed
+    
     current_cpu->current_context = ctx;
     arch_mmu_load(ctx->dir);
 }
-
+ 
 /**
  * @brief Unmap/free VMM memory
  * @param addr The address to unmap
@@ -190,13 +192,13 @@ void vmm_unmap(void *addr, size_t size) {
     // Find the range
     vmm_memory_range_t *r = vmm_getRange(sp, (uintptr_t)addr, size);
     
-    // I don't care enough to support these
+    // Partial?
     if (!((uintptr_t)addr == r->start && ((uintptr_t)addr + size) == r->end)) {
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "vmm", "*** Partial unmap attempted of %p - %p in region %p - %p by function %p. Not supported.\n", addr, addr+size, r->start, r->end, __builtin_return_address(0));
+        assert(0);
+    } else {
+        // Destroy the range
+        vmm_destroyRange(sp, r);
     }
-
-    // Destroy the range
-    vmm_destroyRange(sp, r);
 
     mutex_release(sp->mut);
 }
