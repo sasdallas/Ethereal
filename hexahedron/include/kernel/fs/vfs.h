@@ -22,6 +22,7 @@
 #include <structs/tree.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/misc/mutex.h>
+#include <kernel/fs/poll.h>
 #include <stdbool.h>
 #include <stdatomic.h>
 
@@ -114,6 +115,9 @@ typedef struct fs_node {
     munmap_t munmap;            // Munmap function
     ready_t ready;              // Ready function
     truncate_t truncate;        // Truncate function
+
+    // Poll
+    poll_event_t event;         // Poll event
 
     // Other
     list_t *mmap_contexts;      // mmap() context list

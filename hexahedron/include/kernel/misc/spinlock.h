@@ -28,6 +28,9 @@ typedef struct spinlock {
     int state;
 } spinlock_t;
 
+#define SPINLOCK_INITIALIZER { .name = NULL, .cpu = -1, .lock = 0 }
+#define SPINLOCK_INIT(s) ({ (s)->name = NULL; (s)->cpu = -1; atomic_flag_clear(&((s)->lock)); })
+
 /**** FUNCTIONS ****/
 
 /**

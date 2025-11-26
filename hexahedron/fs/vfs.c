@@ -233,65 +233,7 @@ int fs_ready(fs_node_t *node, int event_type) {
  * @returns 0 on success
  */
 int fs_alert(fs_node_t *node, int events) {
-    if (!events) return 0;
-    if (!node) return -EINVAL;
-    if (!node->waiting_nodes) return 0;
-    
-    spinlock_acquire(&node->waiter_lock);
-
-    // LOG(INFO, "fs_alert %s pending %d\n", node->name, node->waiting_nodes->length);
-
-    node_t *n = node->waiting_nodes->head;
-    while (n) {
-        vfs_waiter_t *w = (vfs_waiter_t*)n->value;
-        vfs_waiter_thread_t *wt = w->thr;   
-
-        mutex_acquire(wt->mutex);
-
-        // !!!
-        // LOG(DEBUG, "Node %p %s: Waiting for events %x and have %x has_woken_up %ld refcount %ld thread %p\n", node, node->name, w->events, events, wt->has_woken_up, wt->refcount, wt->thread);
-        if (w->events & events && !wt->has_woken_up) {
-            // We have events available
-            if (wt->thread->waiter != wt) {
-                // Likely a timeout expired
-            } else {
-                sleep_wakeup(w->thr->thread);
-            }
-
-            wt->thread->waiter = NULL;
-            atomic_store_explicit(&(w->thr->has_woken_up), 1, memory_order_release);
-        }
-
-        if (atomic_load_explicit(&w->thr->has_woken_up, memory_order_acquire)) {
-            atomic_fetch_sub_explicit(&w->thr->refcount, 1, memory_order_acq_rel);
-
-            // Remove this waiter from the list
-            node_t *new = n->next;
-            list_delete(node->waiting_nodes, n);
-            n = new;        
-            kfree(w);
-
-            // Any remaining references on this node?
-            if (atomic_load_explicit(&w->thr->refcount, memory_order_acquire) == 0) {
-                // No references remaining!
-                // !!!: If a waiter never alerts, it will never destroy.
-                mutex_destroy(wt->mutex);
-                kfree(wt);
-            } else {
-                mutex_release(wt->mutex);
-            }
-
-            continue;
-        }
-
-        // Exit non-critical
-        mutex_release(wt->mutex);
-
-        n = n->next;
-    }
-
-    spinlock_release(&node->waiter_lock);
-
+    poll_signal(&node->event, events);
     return 0;
 }
 
@@ -304,33 +246,7 @@ int fs_alert(fs_node_t *node, int events) {
  * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
 int fs_wait(fs_node_t *node, int events) {
-    if (!node) return -EINVAL;
-
-    spinlock_acquire(&node->waiter_lock);
-    if (!node->waiting_nodes) node->waiting_nodes = list_create("waiting nodes");
-
-    if (!current_cpu->current_thread->waiter) {
-        // Create a new thread waiter
-        vfs_waiter_thread_t *w = kzalloc(sizeof(vfs_waiter_thread_t));
-        w->thread = current_cpu->current_thread;
-        w->mutex = mutex_create("waiter mutex");
-        atomic_init(&w->refcount, 0);
-        atomic_init(&w->has_woken_up, 0);
-        current_cpu->current_thread->waiter = w;
-    }
-    
-    mutex_acquire(current_cpu->current_thread->waiter->mutex);
-
-    vfs_waiter_t *w = kzalloc(sizeof(vfs_waiter_t));
-    w->events = events;
-    w->thr = current_cpu->current_thread->waiter;
-    list_append(node->waiting_nodes, w);
-
-    atomic_fetch_add_explicit(&w->thr->refcount, 1, memory_order_relaxed);
-
-    mutex_release(current_cpu->current_thread->waiter->mutex);
-
-    spinlock_release(&node->waiter_lock);
+    STUB();
     return 0;
 }
 
