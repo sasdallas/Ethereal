@@ -180,34 +180,6 @@ void kernel_statistics() {
     LOG(INFO, "Kernel allocator has %d bytes in use\n", alloc_used());
 }
 
-sleep_queue_t q = {
-    .head = NULL,
-    .lock = { 0 },
-};
-void kthread1(void *ctx) {
-    while (1) {
-        int s = (rand() % 4) + 1;
-        LOG(INFO, "kthread1 entering the queue\n");
-        sleep_inQueue(&q);
-        sleep_enter();
-    }
-}
-
-void kthread3(void *ctx) {
-    while (1) {
-        LOG(INFO, "kthread3 entering the queue\n");
-        sleep_inQueue(&q);
-        sleep_enter();
-    }
-}
-
-void kthread2(void *ctx) {
-    while (1) {
-
-        LOG(INFO, "kthread2 waking up the queue\n");
-        sleep_wakeupQueue(&q, 0);
-    }
-}
 
 /**
  * @brief Kernel main function
@@ -301,15 +273,9 @@ void kmain() {
     }
 
 
-    // At this point in time if the user wants to view debugging output not on the serial console, they
-    // can. Look for kernel boot argument "--debug=console"
-    if (kargs_has("--debug")) {
-        if (!strcmp(kargs_get("--debug"), "console")) {
-            debug_setOutput(terminal_print);
-        } else if (!strcmp(kargs_get("--debug"), "none")) {
-            debug_setOutput(NULL);
-        }
-    }
+    // Check debug arguments
+extern void debug_check();
+    debug_check();
 
     // Load symbols
     char *symmap_path = ini_get(ini, "boot", "symmap");
@@ -347,18 +313,6 @@ void kmain() {
 
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
-
-    // // spawn
-    // process_t *kt1 = process_createKernel("kthread1", 0, PRIORITY_MED, kthread1, NULL);
-    // process_t *kt2 = process_createKernel("kthread2", 0, PRIORITY_MED, kthread2, NULL);
-    // process_t *kt3 = process_createKernel("kthread3", 0, PRIORITY_MED, kthread3, NULL);
-
-    // scheduler_insertThread(kt1->main_thread);
-    // scheduler_insertThread(kt2->main_thread);
-    // scheduler_insertThread(kt3->main_thread);
-
-    // process_switchNextThread();
-
 
     // Spawn init task for this CPU
     current_cpu->current_process = process_spawnInit();

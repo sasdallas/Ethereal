@@ -55,8 +55,9 @@ typedef enum {
 
 /**** FUNCTIONS ****/
 
-size_t xvasprintf(int (*callback)(void*, char), void * userData, const char * fmt, va_list args);
+struct fs_node;
 
+size_t xvasprintf(int (*callback)(void*, char), void * userData, const char * fmt, va_list args);
 
 #ifdef __INTELLISENSE__
 /**
@@ -115,7 +116,7 @@ int debug_print(void *user, char ch);
  * @param size The size of how much to write
  * @param buffer The buffer
  */
-ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
+ssize_t debug_write(struct fs_node *node, off_t offset, size_t size, uint8_t *buffer);
 
 /**
  * @brief Read function for debug console node
@@ -124,7 +125,7 @@ ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer)
  * @param size The size of how much to read
  * @param buffer The buffer
  */
-ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
+ssize_t debug_read(struct fs_node *node, off_t offset, size_t size, uint8_t *buffer);
 
 /**
  * @brief Mount the debug node onto the VFS

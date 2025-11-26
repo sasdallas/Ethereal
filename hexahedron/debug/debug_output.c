@@ -20,6 +20,7 @@
 #include <kernel/gfx/term.h>
 #include <kernel/mem/mem.h>
 #include <kernel/misc/args.h>
+#include <kernel/panic.h>
 #include <errno.h>
 #include <time.h>
 #include <stdarg.h>
@@ -44,8 +45,14 @@ char *debug_buffer = NULL;
 size_t debug_buffer_size = 0;
 size_t debug_buffer_index = 0; 
 
+/* Ignore non-critical debug output */
+int debug_ignore = 0;
+
 /* Push character into debug buffer */
 #define DEBUG_PUSH(ch) ({ debug_buffer[debug_buffer_index++] = (ch); if (debug_buffer_index >= debug_buffer_size) { debug_buffer = krealloc(debug_buffer, debug_buffer_size + PAGE_SIZE); debug_buffer_size += PAGE_SIZE; }; debug_buffer[debug_buffer_index] = 0; })
+
+
+extern int kernel_in_panic_state;
 
 /**
  * @brief Write to buffer
@@ -63,7 +70,6 @@ static int debug_write_buffer(size_t length, char *buffer) {
  * @brief Function to print debug string
  */
 int debug_print(void *user, char ch) {
-extern int kernel_in_panic_state;
     if (kernel_in_panic_state && debug_putchar_method != terminal_print) {
         terminal_print(NULL, ch);
     }
@@ -187,6 +193,8 @@ _write_format: ;
  */
 int dprintf_internal(char *module, DEBUG_LOG_TYPE status, char *format, ...) {
     if (!debug_getOutput()) return 0;
+    if (debug_ignore && !kernel_in_panic_state) return 0;
+
     va_list ap;
     va_start(ap, format);
     int returnValue = dprintf_va(module, status, format, ap);
@@ -213,7 +221,7 @@ log_putchar_method_t debug_getOutput() {
  * @brief Mount the debug node onto the VFS
  */
 void debug_mountNode() {
-    /* Allocate the debug buffer */
+    // /* Allocate the debug buffer */
     // if (!kargs_has("--no-store-debug")) {
     //     debug_buffer = kmalloc(PAGE_SIZE);
     //     debug_buffer_size = PAGE_SIZE;
@@ -223,4 +231,19 @@ void debug_mountNode() {
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
 
     dprintf(INFO, "Debug buffer initialized - all content is being stored in memory.\n");
+}
+
+/**
+ * @brief Internal. Checks kernel arguments
+ * 
+ * @todo better...
+ */
+void debug_check() {
+    if (kargs_has("--debug")) {
+        if (!strcmp(kargs_get("--debug"), "none")) {
+            debug_ignore = 1;
+        } else if (!strcmp(kargs_get("--debug"), "console")) {
+            debug_setOutput(terminal_print);
+        }
+    }
 }

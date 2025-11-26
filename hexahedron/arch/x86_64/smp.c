@@ -246,7 +246,6 @@ int smp_init(smp_info_t *info) {
     // The AP expects its code to be bootstrapped to a page-aligned address (SIPI expects a starting page number)
     // The remapped page for SMP is stored in the variable SMP_AP_BOOTSTRAP_PAGE
     // Assuming that page has some content in it, copy and store it.
-    // !!!: This is a bit hacky as we're playing with fire here. What if PMM_BLOCK_SIZE != PAGE_SIZE?
     uintptr_t temp_frame = pmm_allocatePage(ZONE_DEFAULT);
     uintptr_t temp_frame_remap = arch_mmu_remap_physical(temp_frame, PAGE_SIZE, REMAP_TEMPORARY);
 
