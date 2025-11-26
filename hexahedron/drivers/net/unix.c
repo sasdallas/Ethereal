@@ -292,8 +292,6 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     r->state = UNIX_CONN_WAITING;
     r->thr = current_cpu->current_thread;
 
-    // Prepare this thread to sleep
-    // sleep_untilTime(current_cpu->current_thread, 1, 0);
     LOG(DEBUG, "UNIX connection...\n");
 
     // Insert us into queue
@@ -324,7 +322,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
             break;
         }
 
-        sleep_untilTime(current_cpu->current_thread, 1, 0);
+        sleep_time(1, 0);
     }
 
     LOG(INFO, "Connection succeeded with %s\n", usock->peer->un_path);
