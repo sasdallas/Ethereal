@@ -179,9 +179,6 @@ void arch_panic_finalize() {
 
 
 extern uintptr_t __kernel_end_phys;
-static uintptr_t first_free_page = ((uintptr_t)&__kernel_end_phys);         // This is ONLY used until memory management is initialized.
-                                                                            // mm will take over this
-static uintptr_t memory_size = 0x0;                                         // Same as above
 
 /**
  * @brief Zeroes and allocates bytes for a structure at the end of the kernel
@@ -191,7 +188,7 @@ static uintptr_t memory_size = 0x0;                                         // S
 uintptr_t arch_allocate_structure(size_t bytes) {
     dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
     
-    if (bytes > PAGE_SIZE) return (uintptr_t)vmm_map(NULL, MEM_ALIGN_PAGE(bytes), VM_FLAG_ALLOC, MMU_FLAG_KERNEL | MMU_FLAG_RW | MMU_FLAG_PRESENT);
+    if (bytes > PAGE_SIZE) return (uintptr_t)vmm_map(NULL, PAGE_ALIGN_UP(bytes), VM_FLAG_ALLOC, MMU_FLAG_KERNEL | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     return (uintptr_t)kmalloc(bytes);
 }
 
@@ -252,21 +249,6 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
 
     // Syscall handler
     arch_initialize_syscall_handler();
-
-    // Align kernel address
-    first_free_page += PAGE_SIZE;
-    first_free_page &= ~0xFFF;
-
-    // Parse Multiboot information
-    if (multiboot_magic == MULTIBOOT_MAGIC) {
-        dprintf(INFO, "Found a Multiboot1 structure\n");
-        arch_parse_multiboot1_early(bootinfo, &memory_size, &first_free_page);
-    } else if (multiboot_magic == MULTIBOOT2_MAGIC) {
-        dprintf(INFO, "Found a Multiboot2 structure\n");
-        arch_parse_multiboot2_early(bootinfo, &memory_size, &first_free_page);
-    } else {
-        kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** Unknown multiboot structure when checking kernel.\n");
-    }
 
     // Now, we can initialize memory systems.
 static pmm_region_t pmm_descs[64]; // !!!: probably a hack

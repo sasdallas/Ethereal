@@ -82,7 +82,7 @@ struct multiboot_tag *multiboot2_find_tag(void *header, uint32_t type) {
  * @returns A generic parameters structure
  */
 generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
-    multiboot2_t *mb2 = (multiboot2_t*)bootinfo;
+    multiboot2_t *mb2 = (multiboot2_t*)MBRELOC(bootinfo);
 
     // First, get some bytes for a generic_parameters structure
     generic_parameters_t *parameters = (generic_parameters_t*)arch_allocate_structure(sizeof(generic_parameters_t));
@@ -217,8 +217,8 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
         }
         
         tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
-    
     }
+
 
     if (!mmap_found) {
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** The kernel requires a memory map to startup properly. A memory map was not found in the Multiboot structure.\n");
@@ -636,8 +636,17 @@ void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, pmm_region_t *regions) {
         uintptr_t tag_ptr = (uintptr_t)tag + ((tag->size + 7) & ~7);
         if (tag_ptr > kend) kend = tag_ptr;
 
+
+        uintptr_t tag_pos  = (uintptr_t)tag;
+        uintptr_t tag_end  = tag_pos + ((tag->size + 7) & ~7);
+
+        if (tag_pos < kstart) kstart = PAGE_ALIGN_DOWN(tag_pos);
+        if (tag_end > kend) kend = PAGE_ALIGN_UP(tag_end);
+
         tag = (struct multiboot_tag*)((uintptr_t)tag + ((tag->size + 7) & ~7));
     }
+
+    if ((uintptr_t)bootinfo < kstart) kstart = (uintptr_t)bootinfo;
 
     kend = PAGE_ALIGN_UP(kend);
     assert(i != 0 && "Multiboot memory map tag had no entries or was corrupted");

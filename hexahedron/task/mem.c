@@ -70,7 +70,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     } 
 
     // Destructively align address
-    addr = (void*)(MEM_ALIGN_PAGE_DESTRUCTIVE((uintptr_t)addr));
+    addr = (void*)(PAGE_ALIGN_DOWN((uintptr_t)addr));
     if (len & 0xFFF) len = PAGE_ALIGN_UP(len);
 
     // Get space

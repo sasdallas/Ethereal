@@ -81,7 +81,7 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     if (off < 0) return -EINVAL;
     if ((off % PAGE_SIZE) != 0) return -EINVAL;
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);
     if ((size_t)off >= obj->size) return -EINVAL;
     if (off + (off_t)size > (off_t)obj->size) {
         size = obj->size - (size_t)off;
@@ -108,7 +108,7 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
  */
 static int sharedfs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     // Align size to page size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);  
 
     // // Start mapping
     // for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
@@ -133,7 +133,7 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
     // TODO: Should we validate size?
 
     // Round size to the nearest page if needed
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);
 
     shared_object_t *obj = kzalloc(sizeof(shared_object_t));
     obj->key = shared_last_key++;

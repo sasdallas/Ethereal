@@ -120,7 +120,7 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
         uint32_t extracted_size = read_le32(&gz[mod->mod_end - mod->mod_start - 4]);
         LOG(INFO, "Extracted file size in memory: %d\n", extracted_size);
 
-        void *mem = kzalloc(MEM_ALIGN_PAGE(extracted_size));
+        void *mem = kzalloc(PAGE_ALIGN_UP(extracted_size));
 
         LOG(INFO, "Decompressing ramdisk...\n");
         printf("Please wait, decompressing ramdisk...\n");
@@ -134,7 +134,7 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
         LOG(INFO, "Decompression finished\n");
         
 
-        initrd_ram = ramdev_mount((uintptr_t)mem, MEM_ALIGN_PAGE(extracted_size));
+        initrd_ram = ramdev_mount((uintptr_t)mem, PAGE_ALIGN_UP(extracted_size));
     } else {
         LOG(INFO, "Ramdisk is not packed, magic is %x %x\n", gz[0], gz[1]);
     }
