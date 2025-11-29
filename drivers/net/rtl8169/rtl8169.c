@@ -166,7 +166,7 @@ void rtl8169_thread(void *context) {
     
     for (;;) {
         // Sleep until forever
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         int w = sleep_enter();
 
         if (w == WAKEUP_SIGNAL) {
@@ -291,7 +291,7 @@ ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
 
     // Is the descriptor busy?
     if (desc->command & RTL8169_DESC_CMD_OWN) {
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         nic->thr = current_cpu->current_thread;
         spinlock_release(&nic->lock);
         int w = sleep_enter();
