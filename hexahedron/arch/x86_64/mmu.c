@@ -500,3 +500,26 @@ void arch_mmu_destroy(mmu_dir_t *dir) {
 void arch_mmu_copy_kernel(mmu_dir_t *dir) {
     memcpy(&dir[256], &__mmu_kernel_pml[256], sizeof(mmu_page_t) * 256);
 }
+
+/**
+ * @brief Set flags
+ * @param dir The directory to set flags in
+ * @param i The virtual address
+ * @param flags The flags to set
+ * @returns 0 on success, 1 on failure
+ */
+int arch_mmu_setflags(mmu_dir_t *dir, uintptr_t i, mmu_flags_t flags) {
+    mmu_page_t *page = arch_mmu_get_page(dir, i, false);
+    if (!page) return 1;
+
+    page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
+    page->bits.rw = (flags & MMU_FLAG_RW) ? 1 : 0;
+    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
+    page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
+    page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
+    page->bits.size = (flags & MMU_FLAG_WC) ? 1 : 0;
+    page->bits.writethrough = (flags & MMU_FLAG_WT) ? 1 : 0;
+    page->bits.cache_disable = (flags & MMU_FLAG_UC) ? 1 : 0;
+
+    return 0;
+}

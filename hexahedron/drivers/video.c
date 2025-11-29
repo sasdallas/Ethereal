@@ -32,7 +32,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/task/process.h>
 #include <kernel/task/syscall.h>
@@ -47,9 +47,6 @@ static video_driver_t *current_driver = NULL;
 
 /* Video framebuffer. This will be passed to the driver */
 uint8_t *video_framebuffer = NULL;
-
-/* User fb (DEPRECATED) */
-uint8_t *user_fb = NULL;
 
 /* Video VFS node (TEMPORARY) */
 fs_node_t *video_node = NULL;

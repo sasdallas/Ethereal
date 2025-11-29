@@ -36,6 +36,11 @@
 #define VM_FLAG_FILE        0x4         // File mapping
 #define VM_FLAG_SHARED      0x8         // Shared memory mapping
 
+
+/* VM_OP_ */
+#define VM_OP_SET_FLAGS     1
+#define VM_OP_FREE          2
+
 /* Fault location */
 #define VMM_FAULT_FROM_KERNEL       0
 #define VMM_FAULT_FROM_USER         1
@@ -255,5 +260,15 @@ void vmm_postSMP();
  * Don't even think about calling this.
  */
 void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages);
+
+/**
+ * @brief Update the virtual memory mappings
+ * @param space The space to update in
+ * @param start The starting address to update
+ * @param size The size to update
+ * @param op_type VM_OP
+ * @param mmu_flags MMU flags
+ */
+int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_flags_t mmu_flags);
 
 #endif

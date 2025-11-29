@@ -142,4 +142,13 @@ void arch_mmu_destroy(mmu_dir_t *dir);
  */
 void arch_mmu_copy_kernel(mmu_dir_t *dir);
 
+/**
+ * @brief Set flags
+ * @param dir The directory to set flags in
+ * @param i The virtual address
+ * @param flags The flags to set
+ * @returns 0 on success, 1 on failure
+ */
+int arch_mmu_setflags(mmu_dir_t *dir, uintptr_t i, mmu_flags_t flags);
+ 
 #endif

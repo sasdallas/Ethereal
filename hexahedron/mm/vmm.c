@@ -91,6 +91,174 @@ vmm_context_t *vmm_createContext() {
 }
 
 /**
+ * @brief Internal
+ */
+int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+    assert((uintptr_t)_start % PAGE_SIZE == 0);
+    assert(size % PAGE_SIZE == 0);
+
+    uintptr_t start = (uintptr_t)_start;
+    uintptr_t end = start + size;
+
+    vmm_memory_range_t *r = space->range;
+    while (r && r->start < end) {
+        if (r->start >= start && r->end <= end) {
+            // Range is fully contained within this one
+            LOG(DEBUG, "Range fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+
+            if (op_type == VM_OP_SET_FLAGS) {
+                // Change the MMU flags for the region
+                for (uintptr_t i = r->start; i < r->end; i += PAGE_SIZE) {
+                    arch_mmu_setflags(NULL, i, mmu_flags);
+                }
+
+                r->mmu_flags = mmu_flags;
+            } else if (op_type == VM_OP_FREE) {
+                vmm_memory_range_t *nxt = r->next;
+                vmm_destroyRange(space, r);
+                r = nxt;
+                continue;
+            } else {
+                assert(0);
+            }
+        } else if (r->start < start &&  end < r->end) {
+            LOG(DEBUG, "Fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+
+            // This range fully contains the request
+            // This means we likely have to do a split
+            if (op_type == VM_OP_SET_FLAGS) {
+                if (r->mmu_flags == mmu_flags) goto _next_range;
+            }
+
+            vmm_memory_range_t *new_range = vmm_createRange(end, r->end, r->vmm_flags, r->mmu_flags);
+
+            if (op_type == VM_OP_FREE) {
+                // No need to create another range.
+                vmm_freePages(r, start - r->start, size / PAGE_SIZE);
+                if (r->next) r->next->prev = new_range;
+                new_range->next = r->next;
+                new_range->prev = r;
+                r->next = new_range;
+                r->end = start;
+                r = new_range;
+                goto _next_range;
+            }
+
+            vmm_memory_range_t *new_range2 = vmm_createRange(start, end, r->vmm_flags, r->mmu_flags);
+            
+
+            r->end = start;
+
+            // lot of reordering to do now.
+            // the range structure should look like:
+            // r -> new_range2 -> new_range
+
+            if (r->next) r->next->prev = new_range;
+            new_range->next = r->next;
+            r->next = new_range2;
+            new_range2->prev = r;
+            new_range2->next = new_range;
+            new_range->prev = new_range2;
+
+            // Now apply operation to new_range2
+            if (op_type == VM_OP_SET_FLAGS) {
+                for (uintptr_t i = new_range2->start; i < new_range2->end; i += PAGE_SIZE) {
+                    arch_mmu_setflags(NULL, i, mmu_flags);
+                }
+
+                new_range2->mmu_flags = mmu_flags;
+            } else {
+                assert(0);
+            }
+
+            r = new_range;
+        } else if (r->start < start && r->end > start && r->end <= end) {
+            // Range overlaps the beginning of requested region
+            LOG(DEBUG, "Beginning overlap case: %p - %p, request %p - %p op_type=%d\n", r->start, r->end, start, end,op_type);
+            if (op_type == VM_OP_SET_FLAGS && r->mmu_flags == mmu_flags) goto _next_range;
+
+
+            // Split the regions up
+            if (op_type == VM_OP_FREE) {
+                // Don't actually just update this existing range
+                vmm_freePages(r, start - r->start, (r->end - start) / PAGE_SIZE);
+                r->end = start;
+                goto _next_range;
+            }
+
+            vmm_memory_range_t *new_range = vmm_createRange(start, end, r->vmm_flags, r->mmu_flags);
+            if (r->next) r->next->prev = new_range;
+            new_range->next = r->next;
+            new_range->prev = r;
+            r->next = new_range;
+            r->end = start;
+
+            if (op_type == VM_OP_SET_FLAGS) {
+                new_range->mmu_flags = mmu_flags;
+
+                for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
+                    arch_mmu_setflags(NULL, i, mmu_flags);
+                }
+
+                r = new_range;
+            } else {
+                assert(0);
+            }
+        } else if (r->start >= start && r->start < end && r->end > end) {
+            // Range overlaps the end of requested region
+            LOG(DEBUG, "End overlap case: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+            
+            if (op_type == VM_OP_SET_FLAGS && r->mmu_flags == mmu_flags) goto _next_range;
+
+            if (op_type == VM_OP_FREE) {
+                // Don't actually split
+                vmm_freePages(r, 0, (end - r->start) / PAGE_SIZE);
+                r->start = end;
+                goto _next_range;
+            }
+
+            vmm_memory_range_t *new_range = vmm_createRange(r->start, end, r->vmm_flags, r->mmu_flags);
+            if (r->prev ) r->prev->next = new_range;
+            new_range->prev = r->prev;
+            new_range->next = r;
+            r->prev = new_range;
+            r->start = end;
+
+            if (op_type == VM_OP_SET_FLAGS) {
+                r->mmu_flags = mmu_flags;
+
+                for (uintptr_t i = r->start; i < r->end; i += PAGE_SIZE) {
+                    arch_mmu_setflags(NULL, i, mmu_flags);
+                }
+            } else {
+                assert(0);
+            }
+        }
+
+    _next_range:
+        r = r->next;    
+        continue;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Update the virtual memory mappings
+ * @param space The space to update in
+ * @param start The starting address to update
+ * @param size The size to update
+ * @param op_type VM_OP
+ * @param mmu_flags MMU flags
+ */
+int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+    mutex_acquire(space->mut);
+    int err = __vmm_update(space, start, size, op_type, mmu_flags);
+    mutex_release(space->mut);
+    return err;
+}
+
+/**
  * @brief Map VMM memory
  * @param addr The address to use
  * @param size The size to map in
@@ -189,16 +357,8 @@ void vmm_unmap(void *addr, size_t size) {
     // Mutex
     mutex_acquire(sp->mut);
 
-    // Find the range
-    vmm_memory_range_t *r = vmm_getRange(sp, (uintptr_t)addr, size);
-    
-    // Partial?
-    if (!((uintptr_t)addr == r->start && ((uintptr_t)addr + size) == r->end)) {
-        assert(0);
-    } else {
-        // Destroy the range
-        vmm_destroyRange(sp, r);
-    }
+    __vmm_update(sp, addr, size, VM_OP_SET_FLAGS, 0);
+    __vmm_update(sp, addr, size, VM_OP_FREE, 0);
 
     mutex_release(sp->mut);
 }
