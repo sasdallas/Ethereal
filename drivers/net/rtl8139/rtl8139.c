@@ -118,7 +118,7 @@ void rtl8139_thread(void *context) {
     
     for (;;) {
         // Put ourselves to sleep
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         sleep_enter();
 
         // We've been woken up!

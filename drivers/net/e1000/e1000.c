@@ -304,8 +304,6 @@ static void e1000_receiverThread(void *data) {
     int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
 
     for (;;) {
-        // sleep_untilNever(current_cpu->current_thread);
-        // sleep_enter();
         arch_pause();
 
         if (head == nic->rx_current) {

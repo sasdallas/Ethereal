@@ -37,7 +37,7 @@ void timer_kthread(void *ctx) {
     for (;;) {
         if (!timer_queue->length) {
             LOG(DEBUG, "No timers are available\n");
-            sleep_untilNever(current_cpu->current_thread);
+            sleep_prepare();
             sleep_enter();
         }
 
@@ -110,10 +110,10 @@ void timer_kthread(void *ctx) {
         spinlock_release(&timer_lock);
 
         if (sleep_seconds == -1) {
-            sleep_untilNever(current_cpu->current_thread); // Anything in the sleep queue wakes us up.
+            sleep_prepare(); // Anything in the sleep queue wakes us up.
         } else {
             LOG(DEBUG, "Sleeping %d seconds %d useconds\n", sleep_seconds, sleep_subseconds);
-            sleep_untilTime(current_cpu->current_thread, sleep_seconds, sleep_subseconds); // TODO: Maybe don't hardcode?
+            sleep_time(sleep_seconds, sleep_subseconds); // TODO: Maybe don't hardcode?
         }
 
         sleep_enter();

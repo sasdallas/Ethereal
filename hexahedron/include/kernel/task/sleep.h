@@ -62,32 +62,12 @@ typedef struct sleep_queue {
 void sleep_init();
 
 /**
- * @brief Put a thread to sleep, no condition and no way to wakeup without @c sleep_wakeup
- * @param thread The thread to sleep
- * @returns 0 on success
- * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
- */
-int sleep_untilNever(struct thread *thread);
-
-/**
  * @brief Put the current thread to sleep
  * 
  * Another thread will wake you up with @c sleep_wakeup
  * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  */
 void sleep_prepare();
-
-/**
- * @brief Put a thread to sleep until a specific amount of time in the future has passed
- * @param thread The thread to put to sleep
- * @param seconds Seconds to wait in the future
- * @param subseconds Subseconds to wait in the future
- * @returns 0 on success
- * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
- */
-int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long subseconds);
 
 /**
  * @brief Check if you are currently ready to sleep

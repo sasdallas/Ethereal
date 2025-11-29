@@ -87,20 +87,7 @@ void sleep_callback(uint64_t ticks) {
  * @brief Initialize the sleeper system
  */
 void sleep_init() {
-    // clock_registerUpdateCallback(sleep_callback);
-}
-
-
-/**
- * @brief Put a thread to sleep, no condition and no way to wakeup without @c sleep_wakeup
- * @param thread The thread to sleep
- * @returns 0 on success
- * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
- */
-int sleep_untilNever(struct thread *thread) {
-    LOG(DEBUG, "FUCK OFF (untilNever)\n");
-    STUB();
+    
 }
 
 /**
@@ -133,19 +120,6 @@ void sleep_time(unsigned long seconds, unsigned long subseconds) {
     // !!!: As a bit of backstory, I'm about halfway done with the VM rewrite. I have already rewritten the entire sleep system. I do NOT care enough to make this look good right now.
     current_cpu->current_thread->sleep.seconds = seconds;
     current_cpu->current_thread->sleep.subseconds = subseconds;
-}
-
-/**
- * @brief Put a thread to sleep until a specific amount of time in the future has passed
- * @param thread The thread to put to sleep
- * @param seconds Seconds to wait in the future
- * @param subseconds Subseconds to wait in the future
- * @returns 0 on success
- * 
- * @note If you're putting the current thread to sleep, call @c sleep_enter right after
- */
-int sleep_untilTime(struct thread *thread, unsigned long seconds, unsigned long subseconds) {
-    STUB();
 }
 
 /**
