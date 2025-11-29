@@ -549,14 +549,14 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Move their arguments into our array
     char **new_argv = kzalloc((argc+1) * sizeof(char*));
     for (int a = 0; a < argc; a++) {
-        new_argv[a] = strdup(argv[a]); // TODO: Leaking memory!!!
+        new_argv[a] = strdup(argv[a]);
     }
 
     // Reallocate envp if specified
     char **new_envp = kzalloc((envc+1) * sizeof(char*));
     if (envp) {
         for (int e = 0; e < envc; e++) {
-            new_envp[e] = strdup(envp[e]); // TODO: Leaking memory!!!
+            new_envp[e] = strdup(envp[e]);
         }
     } 
 
@@ -564,7 +564,6 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     new_argv[argc] = NULL;
     new_envp[envc] = NULL;
 
-    // process_execute(f, argc, new_argv, new_envp);
     return binfmt_exec((char*)pathname, f, argc, new_argv, new_envp);
 }
 
@@ -792,12 +791,6 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     size_t ret = 0;
 
-    // Depending on our timeval, prepare the thread for sleeping
-    if (ctx->timeout) {
-        sleep_untilTime(current_cpu->current_thread, ctx->timeout->tv_sec, ctx->timeout->tv_nsec / 1000); // TODO: tv_nsec
-    } else {
-        sleep_untilNever(current_cpu->current_thread);
-    }
 
     // First check if anything is reaady
     for (int fd = 0; fd < ctx->nfds; fd++) {
@@ -834,10 +827,12 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     // Did we get anything?
     if (ret) {
-        sleep_exit(current_cpu->current_thread);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return ret;
     }
+
+    // make a waiter object
+    poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
 
     // Nope, looks like we have to go on an adventure.
 
@@ -847,25 +842,32 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
         if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
         if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
-        
+
         if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
 
-        // Now wait in the node
-        fs_wait(FD(current_cpu->current_process, fd)->node, wanted_evs);
+        // // Now wait in the node
+        // fs_wait(FD(current_cpu->current_process, fd)->node, wanted_evs);
+        poll_add(w, &FD(current_cpu->current_process, fd)->node->event, wanted_evs);
     }
 
     // Enter sleep
-    int w = sleep_enter();
-    if (w == WAKEUP_SIGNAL) {
+    int r = poll_wait(w, ctx->timeout->tv_sec * 1000 + ctx->timeout->tv_nsec / 1000);
+    if (r == -EINTR) {
+        poll_exit(w);
+        poll_destroyWaiter(w);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return -EINTR; // TODO: SA_RESTART
     }
 
-    if (w == WAKEUP_TIME) {
+    if (r == -ETIMEDOUT) {
+        poll_exit(w);
+        poll_destroyWaiter(w);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return 0;
     }
 
+    poll_exit(w);
+    poll_destroyWaiter(w);
 
 
     // Another thread must have woken us up

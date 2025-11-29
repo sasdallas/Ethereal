@@ -286,7 +286,6 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     }
 
     // Make directory
-    process->vas = NULL;
     if (process->flags & PROCESS_KERNEL) {
         // Reuse kernel directory
         process->ctx = vmm_kernel_context;
@@ -536,9 +535,6 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     vmm_switch(current_cpu->current_process->ctx);
     if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
 
-    // Create a new VAS
-    current_cpu->current_process->vas = NULL; 
-
     // Create a new main thread with a blank entrypoint
     current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
 
@@ -707,9 +703,6 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     vmm_switch(current_cpu->current_process->ctx);
     vmm_destroyContext(oldctx);
 
-    // Create a new VAS
-    current_cpu->current_process->vas = NULL; 
-
     // Create a new main thread with a blank entrypoint
     current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
 
@@ -797,6 +790,19 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
 
     
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
+
+    // Now free the remainders
+    for (int i = 0; i < envc; i++) {
+        kfree(envp[i]);
+    }
+
+    kfree(envp);
+
+    for (int i = 0; i < argc; i++) {
+        kfree(argv[i]);
+    }
+
+    kfree(argv);
 
     // Enter
     LOG(DEBUG, "Launching new ELF process\n");

@@ -108,7 +108,6 @@ typedef struct process {
     // MEMORY REGIONS
     uintptr_t heap;                     // Heap of the process. Positioned after the ELF binary
     uintptr_t heap_base;                // Base location of the heap
-    vas_t *vas;                         // Process virtual address space
     list_t *mmap;                       // mmap() mappings
 
     // SIGNALS
