@@ -676,7 +676,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
             have_hit++;
         } else if (!have_hit) {
-            LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
+            // LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
             fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
         }
     }
