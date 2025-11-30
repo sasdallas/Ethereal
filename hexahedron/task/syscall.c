@@ -847,7 +847,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
 
         // Now wait in the node
-        fs_wait(w, &FD(current_cpu->current_process, fd)->node, wanted_evs);
+        fs_wait(w, FD(current_cpu->current_process, fd)->node, wanted_evs);
     }
 
     // Enter sleep

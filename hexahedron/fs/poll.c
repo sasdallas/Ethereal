@@ -50,7 +50,6 @@ poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
  * @param events The events being waited on
  */
 int poll_add(poll_waiter_t *waiter, poll_event_t *event, poll_events_t events) {
-    LOG(DEBUG, "poll_add %p event %p\n", waiter, event);
     spinlock_acquire(&event->lock);
     
     // run check syncronously
@@ -97,7 +96,6 @@ int poll_add(poll_waiter_t *waiter, poll_event_t *event, poll_events_t events) {
  * @returns Error code (EINTR or ETIMEDOUT)
  */
 int poll_wait(poll_waiter_t *waiter, int timeout) {
-    LOG(DEBUG, "TRACE: poll_wait %p\n", waiter);
     spinlock_acquire(&waiter->result_lock);
 
     if (waiter->result) {
@@ -137,7 +135,6 @@ int poll_wait(poll_waiter_t *waiter, int timeout) {
  * @param events The events to signal
  */
 void poll_signal(poll_event_t *event, poll_events_t events) {
-    LOG(DEBUG, "poll_signal %p\n", event);
     spinlock_acquire(&event->lock);
 
     poll_waiter_node_t *wn = event->h;
@@ -183,9 +180,9 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
             wn->waiter->result = r;
             spinlock_release(&wn->waiter->result_lock);
 
-        // #ifdef POLL_DEBUG 
+        #ifdef POLL_DEBUG 
             LOG(DEBUG, "Triggering wakeup on waiter %p\n", wn->waiter);
-        // #endif
+        #endif
             sleep_wakeup(wn->waiter->thr);
 
             
