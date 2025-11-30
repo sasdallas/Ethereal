@@ -58,9 +58,13 @@ typedef struct poll_result {
     poll_events_t revents;
 } poll_result_t;
 
+
+typedef poll_events_t (*poll_events_checker_t)(struct poll_event *ev);
 typedef struct poll_event {
     spinlock_t lock;
     poll_waiter_node_t *h;
+    poll_events_checker_t checker;
+    void *dev;
 } poll_event_t;
 
 /**** MACROS ****/
