@@ -78,6 +78,7 @@ int fs_close(fs_node_t *node) {
 
     // Anyone still using this node?
     if (node->refcount <= 0) {
+        assert((node->flags & VFS_MOUNTPOINT) == 0);
         // Nope. It's free memory.
         if (node->close) {
             int r = node->close(node);
@@ -185,7 +186,7 @@ ssize_t fs_readlink(fs_node_t *node, char *buf, size_t size) {
 int fs_create(fs_node_t *node, char *name, mode_t mode, fs_node_t **node_out) {
     if (!node) return -EINVAL;
 
-    if (node->flags == VFS_DIRECTORY && node->create) {
+    if (node->flags & VFS_DIRECTORY && node->create) {
         return node->create(node, name, mode, node_out);
     }
 
@@ -227,27 +228,38 @@ int fs_ready(fs_node_t *node, int event_type) {
 }
 
 /**
+ * @brief Poll internal event checker
+ */
+static poll_events_t __vfs_events_checker(poll_event_t *event) {
+    fs_node_t *n = (fs_node_t*)event->dev;
+    return fs_ready(n, 0xFFFFFFFF);
+}
+
+/**
  * @brief Alert any processes in the queue that new events are ready
  * @param node The node to alert on
  * @param events The events to alert on
  * @returns 0 on success
  */
 int fs_alert(fs_node_t *node, int events) {
+    node->event.dev = node;
+    node->event.checker = __vfs_events_checker;
     poll_signal(&node->event, events);
     return 0;
 }
 
 /**
  * @brief Wait for a node to have events ready for a process
+ * @param waiter Poll waiter
  * @param node The node to wait for events on
  * @param events The events that are being waited for
  * @returns 0 on success
- * 
- * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
-int fs_wait(fs_node_t *node, int events) {
-    STUB();
-    return 0;
+int fs_wait(poll_waiter_t *waiter, fs_node_t *node, int events) {
+    // TODO: silly hack
+    node->event.dev = node;
+    node->event.checker = __vfs_events_checker;
+    return poll_add(waiter, &node->event, events);
 }
 
 /**
@@ -507,7 +519,7 @@ int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
     // LOG(DEBUG, "Creating file %s (file: %s)\n", path, last_slash);
 
     // Make sure this is a directory
-    if (parent->flags != VFS_DIRECTORY) {
+    if ((parent->flags & VFS_DIRECTORY) == 0) {
         kfree(path_full);
         fs_close(parent);
         return -ENOTDIR;
@@ -834,6 +846,8 @@ tree_node_t *vfs_mount(fs_node_t *node, char *path) {
     kfree(strtok_path);
 
 _cleanup:
+
+    node->refcount++; // prevent destruction of this VFS node
     spinlock_release(vfs_lock);
     return parent_node;
 }
@@ -967,10 +981,8 @@ static fs_node_t *vfs_getMountpoint(const char *path, char **remainder) {
     kfree(path_clone);
 
     // Clone the node and return it
-    fs_node_t *rnode = kmalloc(sizeof(fs_node_t));
-    memcpy(rnode, vnode->node, sizeof(fs_node_t));
-    rnode->refcount = 1;
-    return rnode;
+    fs_node_t *n = fs_copy(vnode->node);
+    return n;
 }
 
 
@@ -1065,7 +1077,7 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
                 if (!sym_node) break;
                 sym_node = kopen_relative(sym_node, pch, flags, depth+1);
 
-                if (sym_node && sym_node->flags == VFS_FILE) {
+                if (sym_node && sym_node->flags & VFS_FILE) {
                     // TODO: What if the user has a REALLY weird filesystem?
                     break;
                 }
@@ -1126,8 +1138,7 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
         if (!node) break;
         node = kopen_relative(node, pch, flags, 0);
 
-        if (node && node->flags == VFS_FILE) {
-            // TODO: What if the user has a REALLY weird filesystem?
+        if (node && node->flags & VFS_FILE) {
             break;
         }
         

@@ -324,14 +324,14 @@ int sys_close(int fd) {
 static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
     // Convert VFS flags to st_dev
     statbuf->st_dev = 0;
-    if (f->flags == VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
-    if (f->flags == VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
-    if (f->flags == VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
-    if (f->flags == VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
-    if (f->flags == VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
-    if (f->flags == VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
-    if (f->flags == VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
-    if (f->flags == VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
+    if (f->flags & VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
+    if (f->flags & VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
+    if (f->flags & VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
+    if (f->flags & VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
+    if (f->flags & VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
+    if (f->flags & VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
+    if (f->flags & VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
+    if (f->flags & VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
 
     // st_mode is just st_dev with extra steps
     statbuf->st_mode = statbuf->st_dev;
@@ -525,7 +525,7 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Try to get the file
     fs_node_t *f = kopen_user(pathname, O_RDONLY);
     if (!f) return -ENOENT;
-    if (f->flags != VFS_FILE && f->flags != VFS_SYMLINK) { fs_close(f); return -EISDIR; }
+    if ((f->flags & (VFS_FILE | VFS_SYMLINK)) == 0) { fs_close(f); return -EISDIR; }
 
     // Collect any arguments that we need
     int argc = 0;
@@ -603,7 +603,7 @@ long sys_chdir(const char *path) {
 
     fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
     if (tmpnode) {
-        if (tmpnode->flags != VFS_DIRECTORY) {
+        if ((tmpnode->flags & VFS_DIRECTORY) == 0) {
             kfree(nn);
             fs_close(tmpnode);
             return -ENOTDIR;
@@ -676,7 +676,8 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
             have_hit++;
         } else if (!have_hit) {
-            poll_add(waiter, &FD(current_cpu->current_process, fds[i].fd)->node->event, events);
+            LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
+            fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
         }
     }
 
@@ -845,9 +846,8 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
         if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
 
-        // // Now wait in the node
-        // fs_wait(FD(current_cpu->current_process, fd)->node, wanted_evs);
-        poll_add(w, &FD(current_cpu->current_process, fd)->node->event, wanted_evs);
+        // Now wait in the node
+        fs_wait(w, &FD(current_cpu->current_process, fd)->node, wanted_evs);
     }
 
     // Enter sleep

@@ -173,7 +173,7 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
  */
 key_t sharedfs_key(fs_node_t *node) {
     // Vaildate node is a shared object node
-    if (node->flags != VFS_BLOCKDEVICE || node->impl != SHARED_IMPL) return -EINVAL;
+    if ((node->flags & VFS_BLOCKDEVICE) == 0 || node->impl != SHARED_IMPL) return -EINVAL;
 
     shared_object_t *obj = (shared_object_t*)node->dev;
     return obj->key;

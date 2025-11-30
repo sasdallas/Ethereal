@@ -156,20 +156,6 @@ typedef struct vfs_tree_node {
     fs_node_t *node;
 } vfs_tree_node_t;
 
-// Waiter structure for any thread
-typedef struct vfs_waiter_thread {
-    struct thread *thread;      // Thread pending structure
-    mutex_t *mutex;             // Mutex for the thread
-    volatile int refcount;      // References remaining on this object
-    volatile int has_woken_up;  // Has woken up
-} vfs_waiter_thread_t;
-
-// Waiter structure for any nodes waiting
-typedef struct vfs_waiter {
-    vfs_waiter_thread_t *thr;   // Thread
-    int events;                 // Events we want to capture
-} vfs_waiter_t;
-
 /**** FUNCTIONS ****/
 
 extern uint64_t now();
@@ -294,13 +280,12 @@ int fs_alert(fs_node_t *node, int events);
 
 /**
  * @brief Wait for a node to have events ready for a process
+ * @param waiter Poll waiter
  * @param node The node to wait for events on
  * @param events The events that are being waited for
  * @returns 0 on success
- * 
- * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
-int fs_wait(fs_node_t *node, int events);
+int fs_wait(poll_waiter_t *waiter, fs_node_t *node, int events);
 
 /**
  * @brief Destroy a filesystem node immediately

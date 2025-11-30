@@ -161,7 +161,7 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
     
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
@@ -186,7 +186,7 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
     
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
@@ -225,7 +225,7 @@ int socket_ioctl(fs_node_t *node, unsigned long request, void *argp) {
  * @param buffer Buffer
  */
 ssize_t socket_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (node->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
     sock_t *sock = (sock_t*)node->dev;
     if (!sock->recvmsg) return -EINVAL;
 
@@ -370,7 +370,7 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -397,7 +397,7 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -425,7 +425,7 @@ int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -450,7 +450,7 @@ int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -474,7 +474,7 @@ int socket_listen(int socket, int backlog) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -497,7 +497,7 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -523,7 +523,7 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -550,7 +550,7 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
 
     // Is it actually a socket?
     fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if (socknode->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
 
@@ -593,7 +593,7 @@ int socket_close(fs_node_t *node) {
  * @param events The events we are looking for
  */
 int socket_ready(fs_node_t *node, int events) {
-    if (node->flags != VFS_SOCKET) return 0;
+    if ((node->flags & VFS_SOCKET) == 0) return 0;
 
     sock_t *sock = (sock_t*)node->dev;
 
@@ -614,7 +614,7 @@ int socket_ready(fs_node_t *node, int events) {
  * @param buffer The buffer to write
  */
 ssize_t socket_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    if (node->flags != VFS_SOCKET) return -ENOTSOCK;
+    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     struct iovec iov = {
         .iov_base = buffer,
