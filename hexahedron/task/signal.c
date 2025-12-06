@@ -210,7 +210,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     // !!!: This probably needs to be refactored?
     extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace) {
-        proc->userspace = vmm_map((void*)0x1000, PAGE_SIZE, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_RW);
+        proc->userspace = vmm_map((void*)0x1000, PAGE_SIZE, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }

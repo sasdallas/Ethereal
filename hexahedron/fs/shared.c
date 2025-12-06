@@ -92,7 +92,7 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         uintptr_t block_idx = start_idx + (i / PAGE_SIZE);
         if (!obj->blocks[block_idx]) obj->blocks[block_idx] = pmm_allocatePage(ZONE_DEFAULT);
-        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
+        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], MMU_FLAG_WRITE | MMU_FLAG_USER | MMU_FLAG_PRESENT);
     }
 
     return 0;

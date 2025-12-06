@@ -56,7 +56,7 @@ int grubvid_map(video_driver_t *driver, size_t size, off_t off, void *addr) {
 
     // Start mapping
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        arch_mmu_map(NULL,(uintptr_t)addr + i, (uintptr_t)driver->videoBufferPhys + i + off, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER | MMU_FLAG_WC);
+        arch_mmu_map(NULL,(uintptr_t)addr + i, (uintptr_t)driver->videoBufferPhys + i + off, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER | MMU_FLAG_WC);
     }
 
     return 0;
@@ -110,12 +110,12 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
 
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
     size_t fbsize = (driver->screenHeight * driver->screenPitch);
-    uintptr_t region = (uintptr_t)vmm_map(NULL, fbsize, VM_FLAG_DEFAULT, MMU_FLAG_WC | MMU_FLAG_RW | MMU_FLAG_PRESENT);
+    uintptr_t region = (uintptr_t)vmm_map(NULL, fbsize, VM_FLAG_DEFAULT, MMU_FLAG_WC | MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     for (uintptr_t phys = parameters->framebuffer->framebuffer_addr, virt = region;
             phys < parameters->framebuffer->framebuffer_addr + fbsize;
             phys += PAGE_SIZE, virt += PAGE_SIZE) 
     {
-        arch_mmu_map(NULL, virt, phys, MMU_FLAG_WC | MMU_FLAG_RW | MMU_FLAG_PRESENT);
+        arch_mmu_map(NULL, virt, phys, MMU_FLAG_WC | MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     }
 
     driver->videoBuffer = (uint8_t*)region;

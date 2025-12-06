@@ -302,7 +302,7 @@ int elf_loadRelocatable(Elf64_Ehdr *ehdr, int flags) {
 
         if ((section->sh_flags & SHF_ALLOC) && section->sh_size && section->sh_type == SHT_NOBITS) {
             // Allocate the section memory
-            void *addr = vmm_map(NULL, section->sh_size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
+            void *addr = vmm_map(NULL, section->sh_size, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
             
             // Clear the memory
             memset(addr, 0, section->sh_size);
@@ -369,7 +369,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
                 LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
                 
-                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -383,7 +383,7 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
             case PT_TLS:
                 // Basically the same as a PT_LOAD, but don't zero?
                 LOG(DEBUG, "PHDR #%d PT_TLS: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
-                // assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+                // assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
     
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -782,7 +782,7 @@ int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info) {
 
         switch (phdr->p_type) {
             case PT_LOAD:
-                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 

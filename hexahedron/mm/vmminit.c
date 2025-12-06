@@ -71,11 +71,11 @@ void vmm_init(pmm_region_t *region) {
 #endif
 
     // Map the kernel in
-    assert(vmm_map(&__kernel_start, kernel_map_size, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
+    assert(vmm_map(&__kernel_start, kernel_map_size, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_WRITE));
 
     // Map HHDM in
 #ifdef MMU_HHDM_REGION
-    assert(vmm_map((void*)MMU_HHDM_REGION, MMU_HHDM_SIZE, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL));
+    assert(vmm_map((void*)MMU_HHDM_REGION, MMU_HHDM_SIZE, VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_WRITE));
 #endif
     
     LOG(DEBUG, "Mapped all necessary regions successfully.\n");

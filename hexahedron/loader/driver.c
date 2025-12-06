@@ -133,7 +133,7 @@ static void driver_handleLoadError(int priority, char *error, char *file) {
  */
 int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv) {
     // First we have to map the driver into memory. The mem subsystem provides functions for this.
-    uintptr_t driver_load_address = (uintptr_t)vmm_map(NULL, driver_file->length, VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL);
+    uintptr_t driver_load_address = (uintptr_t)vmm_map(NULL, driver_file->length, VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
     memset((void*)driver_load_address, 0, driver_file->length);
 
     // Now we can read the file into this address

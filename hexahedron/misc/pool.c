@@ -60,7 +60,7 @@ pool_t *pool_create(char *name, uintptr_t chunk_size, uintptr_t size, uintptr_t 
     } else {
         // Allocate the pool ourselves
         if (flags & POOL_DMA) assert(0 && "POOL_DMA not implemented");
-        else pool->starting_addr = (uintptr_t)vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT); // !!!: Oh boy
+        else pool->starting_addr = (uintptr_t)vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT); // !!!: Oh boy
     }
 
     return pool;

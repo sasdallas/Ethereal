@@ -27,11 +27,8 @@
 #define REMAP_TEMPORARY 0x1
 
 /* MMU flags */
-#define MMU_FLAG_NONPRESENT             0x0     // Not present in memory
 #define MMU_FLAG_PRESENT                0x1     // Present in memory
-#define MMU_FLAG_RO                     0x0     // Read-only memory
-#define MMU_FLAG_RW                     0x2     // Read-write memory
-#define MMU_FLAG_KERNEL                 0x0     // Kernel only memory
+#define MMU_FLAG_WRITE                  0x2     // Writable memory
 #define MMU_FLAG_USER                   0x4     // Userspace memory
 #define MMU_FLAG_NOEXEC                 0x8     // Non-executable memory
 #define MMU_FLAG_GLOBAL                 0x10    // Global memory

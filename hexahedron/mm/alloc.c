@@ -151,7 +151,7 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
         // Problem: this allocation is bigger than we can actually handle.
         // Solution: VMM, this one's for you
         LOG(DEBUG, "(%p) Big allocation: %d bytes\n", __builtin_return_address(0), size);
-        void *m = vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
+        void *m = vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
         if (!m) return NULL;
 
         alloc_header_t *h = (alloc_header_t*)m;
@@ -209,7 +209,7 @@ __attribute__((malloc)) void *krealloc(void *ptr, size_t size) {
     //     #endif
     //     h->alloc_size = size - sizeof(alloc_header_t);
     // } else {
-    //     new = vmm_map(NULL, size, VM_FLAG_ALLOC | VM_FLAG_DEFAULT, MMU_FLAG_PRESENT | MMU_FLAG_RW);
+    //     new = vmm_map(NULL, size, VM_FLAG_ALLOC | VM_FLAG_DEFAULT, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
     //     if (!new) return NULL;
 
 

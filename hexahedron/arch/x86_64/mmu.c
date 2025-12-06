@@ -342,7 +342,7 @@ void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t fl
     // Configure the bits in the entry
     mmu_page_t *page = arch_mmu_get_page(dir, virt, true);
     page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
-    page->bits.rw = (flags & MMU_FLAG_RW) ? 1 : 0;
+    page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
     page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
     page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
     page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
@@ -400,14 +400,14 @@ void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end) {
  */
 mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr) {
     mmu_page_t *pg = arch_mmu_get_page(dir, addr, false);
-    if (!pg) return MMU_FLAG_NONPRESENT;
+    if (!pg) return 0;
 
     uint32_t flags = 0x0;
 
 #define MMU_FLAG_CASE(bit, flag1, flag2) flags |= (pg->bits.bit) ? flag1 : flag2
-    MMU_FLAG_CASE(present, MMU_FLAG_PRESENT, MMU_FLAG_NONPRESENT);
-    MMU_FLAG_CASE(rw, MMU_FLAG_RW, MMU_FLAG_RO);
-    MMU_FLAG_CASE(usermode, MMU_FLAG_USER, MMU_FLAG_KERNEL);
+    MMU_FLAG_CASE(present, MMU_FLAG_PRESENT, 0);
+    MMU_FLAG_CASE(rw, MMU_FLAG_WRITE, 0);
+    MMU_FLAG_CASE(usermode, MMU_FLAG_USER, 0);
     MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, 0);
     MMU_FLAG_CASE(global, MMU_FLAG_GLOBAL, 0);
 #undef MMU_FLAG_CASE
@@ -513,7 +513,7 @@ int arch_mmu_setflags(mmu_dir_t *dir, uintptr_t i, mmu_flags_t flags) {
     if (!page) return 1;
 
     page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
-    page->bits.rw = (flags & MMU_FLAG_RW) ? 1 : 0;
+    page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
     page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
     page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
     page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;

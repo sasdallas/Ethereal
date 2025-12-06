@@ -189,7 +189,7 @@ void smp_startAP(uint8_t lapic_id) {
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
 
     // Allocate a stack for the AP
-    _ap_stack_base = (uintptr_t)vmm_map(NULL, PAGE_SIZE * 2, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL);
+    _ap_stack_base = (uintptr_t)vmm_map(NULL, PAGE_SIZE * 2, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
 
     memset((void*)(_ap_stack_base), 0, PAGE_SIZE);
 
@@ -218,8 +218,8 @@ int smp_init(smp_info_t *info) {
     smp_data = info;
 
     // Map local APIC
-    lapic_remapped = (uintptr_t)vmm_map(NULL, PAGE_SIZE, 0, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL | MMU_FLAG_UC);
-    arch_mmu_map(NULL, lapic_remapped, (uintptr_t)smp_data->lapic_address, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_KERNEL | MMU_FLAG_UC);
+    lapic_remapped = (uintptr_t)vmm_map(NULL, PAGE_SIZE, 0, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_UC);
+    arch_mmu_map(NULL, lapic_remapped, (uintptr_t)smp_data->lapic_address, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_UC);
 
 
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
@@ -250,7 +250,7 @@ int smp_init(smp_info_t *info) {
     uintptr_t temp_frame_remap = arch_mmu_remap_physical(temp_frame, PAGE_SIZE, REMAP_TEMPORARY);
 
     // Map in the bootstrap page
-    arch_mmu_map(NULL, SMP_AP_BOOTSTRAP_PAGE, SMP_AP_BOOTSTRAP_PAGE, MMU_FLAG_RW | MMU_FLAG_KERNEL | MMU_FLAG_PRESENT);
+    arch_mmu_map(NULL, SMP_AP_BOOTSTRAP_PAGE, SMP_AP_BOOTSTRAP_PAGE, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
 
     // Copy the prior contents
     memcpy((void*)temp_frame_remap, (void*)SMP_AP_BOOTSTRAP_PAGE, PAGE_SIZE);

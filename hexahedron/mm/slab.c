@@ -98,7 +98,7 @@ static magazine_t *depot_pop(magazine_depot_t *depot) {
  */
 static slab_t *slab_new(slab_cache_t *cache) {
     // TODO: improval required?
-    slab_t *new_slab = vmm_map(NULL, cache->slab_size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_KERNEL | MMU_FLAG_PRESENT);
+    slab_t *new_slab = vmm_map(NULL, cache->slab_size, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     if (!new_slab) return NULL;
 
     memset(new_slab, 0, sizeof(slab_t));
@@ -437,7 +437,7 @@ void slab_destroyCache(slab_cache_t *cache) {
  * @brief Initialize slab allocator
  */
 void slab_init() {
-    slab_cache = vmm_map(NULL, sizeof(slab_cache_t), VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_KERNEL);
+    slab_cache = vmm_map(NULL, sizeof(slab_cache_t), VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
     assert(slab_cache);
     slab_initCache(slab_cache, "slab cache", sizeof(slab_cache_t), 1, NULL, NULL);
 

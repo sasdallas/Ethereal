@@ -46,7 +46,7 @@ int vmm_fault(vmm_fault_information_t *info) {
 
     // Determine the action they were trying to accomplish
     int actions = 0;
-    if (r->mmu_flags & MMU_FLAG_RW) actions |= VMM_FAULT_WRITE;
+    if (r->mmu_flags & MMU_FLAG_WRITE) actions |= VMM_FAULT_WRITE;
     if (!(r->mmu_flags & MMU_FLAG_NOEXEC)) actions |= VMM_FAULT_EXECUTE;
 
     if (info->exception_type & ~(actions)) {

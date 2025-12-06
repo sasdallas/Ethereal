@@ -438,7 +438,7 @@ void *sys_brk(void *addr) {
 
 
     // Else, "handle"
-    vmm_map((void*)current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+    vmm_map((void*)current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
     
     current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
                                                             // (page fault handler will map this on a critical failure)
