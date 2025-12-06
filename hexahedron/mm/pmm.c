@@ -462,7 +462,7 @@ void pmm_release(uintptr_t page) {
     }
 
     if (!s) {
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to retain %p but no section contains this block.", page);
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to release %p but no section contains this block.", page);
     }
 
     int off = (page - s->start) / PAGE_SIZE;
@@ -479,6 +479,26 @@ void pmm_release(uintptr_t page) {
     }
 
     mutex_release(s->mutex);
+}
+
+/**
+ * @brief Get page
+ */
+pmm_page_t *pmm_page(uintptr_t page) {
+    // Figure out the zone
+    // TODO: this will actually be hard
+    int zone = ZONE_DEFAULT;
+    pmm_section_t *s = zones[zone];
+    
+    while (s && !(s->start + s->size > page && page >= s->start)) {
+        s = s->next;
+    }
+
+    if (!s) {
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to get %p but no section contains this block.", page);
+    }
+
+    return &s->pages[((page-s->start) / PAGE_SIZE)];
 }
 
 /**

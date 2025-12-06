@@ -343,7 +343,7 @@ void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t fl
     mmu_page_t *page = arch_mmu_get_page(dir, virt, true);
     page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
     page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
-    page->bits.usermode = (flags & `USER) ? 1 : 0;
+    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
     page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
     page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
     page->bits.size = (flags & MMU_FLAG_WC) ? 1 : 0;
