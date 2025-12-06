@@ -31,8 +31,6 @@
 #include <kernel/task/syscall.h>
 #include <kernel/task/futex.h>
 
-#include <kernel/mem/vas.h>
-
 #include <kernel/processor_data.h>
 #include <kernel/fs/vfs.h>
 #include <structs/tree.h>
