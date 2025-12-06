@@ -15,7 +15,7 @@
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/arp.h>
 #include <kernel/drivers/net/socket.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
 #include <string.h>

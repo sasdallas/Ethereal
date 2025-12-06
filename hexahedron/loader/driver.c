@@ -25,7 +25,7 @@
 
 #include <kernel/loader/driver.h>
 #include <kernel/loader/elf_loader.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>

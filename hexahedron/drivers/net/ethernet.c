@@ -20,7 +20,7 @@
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/drivers/net/socket.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>

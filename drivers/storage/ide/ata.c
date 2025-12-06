@@ -19,7 +19,7 @@
 
 #include "ata.h"
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/fs/drivefs.h>
 #include <string.h>

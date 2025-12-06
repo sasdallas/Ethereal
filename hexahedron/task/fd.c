@@ -13,7 +13,7 @@
 
 #include <kernel/task/process.h>
 #include <kernel/task/fd.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <string.h>
 #include <kernel/debug.h>
 #include <errno.h>

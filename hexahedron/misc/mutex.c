@@ -12,7 +12,7 @@
  */
 
 #include <kernel/misc/mutex.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/task/process.h>
 #include <string.h>
 

@@ -16,7 +16,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/gfx/term.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/misc/args.h>

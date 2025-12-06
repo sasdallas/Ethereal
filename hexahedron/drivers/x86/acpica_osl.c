@@ -26,7 +26,7 @@
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/semaphore.h>

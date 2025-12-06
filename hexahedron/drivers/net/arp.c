@@ -18,7 +18,7 @@
 #include <kernel/task/process.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/kernelfs.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>

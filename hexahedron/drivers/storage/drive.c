@@ -14,7 +14,7 @@
 #include <kernel/drivers/storage/drive.h>
 #include <kernel/drivers/storage/mbr.h>
 #include <kernel/fs/drivefs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <errno.h>
 #include <string.h>

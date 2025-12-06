@@ -12,7 +12,7 @@
  */
 
 #include <kernel/task/process.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
 #include <sys/mman.h>

@@ -13,7 +13,7 @@
 
 #include <kernel/loader/driver.h>
 #include <kernel/fs/kernelfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <stdio.h>
 #include <string.h>

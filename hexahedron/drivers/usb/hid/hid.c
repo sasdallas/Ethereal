@@ -19,7 +19,7 @@
 #include <kernel/drivers/usb/hid/keyboard.h>
 #include <kernel/drivers/usb/hid/mouse.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 #include <kernel/misc/util.h>

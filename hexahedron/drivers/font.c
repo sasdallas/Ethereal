@@ -17,7 +17,7 @@
 #include <kernel/drivers/font.h>
 #include <kernel/debug.h>
 #include <kernel/misc/backup-font.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/gfx/term.h>
 #include <kernel/fs/vfs.h>
 #include <string.h>

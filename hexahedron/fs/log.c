@@ -21,7 +21,7 @@
 #include <kernel/gfx/term.h>
 #include <kernel/processor_data.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <sys/ioctl_ethereal.h>
 #include <kernel/debug.h>
 #include <stdio.h>

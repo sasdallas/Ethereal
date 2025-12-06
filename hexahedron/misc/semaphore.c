@@ -13,7 +13,7 @@
 
 #include <kernel/misc/semaphore.h>
 #include <kernel/panic.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 
 /**
  * @brief Initialize and create a semaphore

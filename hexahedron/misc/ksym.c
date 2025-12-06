@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <kernel/debug.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <structs/hashmap.h>
 
 /* Symbol hashmap */

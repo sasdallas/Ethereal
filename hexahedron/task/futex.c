@@ -18,7 +18,7 @@
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/processor_data.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>

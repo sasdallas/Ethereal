@@ -12,7 +12,7 @@
  */
 
 #include <stdlib.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 
 void *malloc(size_t size) {
     return kmalloc(size);

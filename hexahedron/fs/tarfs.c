@@ -15,7 +15,7 @@
 
 #include <kernel/fs/tarfs.h>
 #include <kernel/fs/vfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 #include <stdlib.h>

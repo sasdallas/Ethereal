@@ -13,7 +13,7 @@
 
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/usb/api.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 
 /* Log method */

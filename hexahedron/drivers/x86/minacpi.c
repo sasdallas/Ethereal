@@ -13,7 +13,7 @@
 
 #include <kernel/drivers/x86/minacpi.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/misc/args.h>
 #include <kernel/panic.h>
 #include <kernel/debug.h>

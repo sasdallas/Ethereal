@@ -15,7 +15,7 @@
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/usb/hid/hid.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
 #include <kernel/fs/kernelfs.h>

@@ -16,7 +16,7 @@
 #include <kernel/loader/elf_loader.h>
 #include <kernel/loader/elf.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/misc/ksym.h>
 #include <kernel/debug.h>
 #include <kernel/processor_data.h>

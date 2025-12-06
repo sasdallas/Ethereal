@@ -14,7 +14,7 @@
 #include <kernel/drivers/net/unix.h>
 #include <kernel/drivers/net/socket.h>
 #include <sys/un.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/vfs.h>
 #include <string.h>
 #include <assert.h>

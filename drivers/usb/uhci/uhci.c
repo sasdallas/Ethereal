@@ -22,7 +22,7 @@
 #include <kernel/drivers/usb/dev.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>

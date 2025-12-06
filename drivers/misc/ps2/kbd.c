@@ -17,7 +17,7 @@
 #include <kernel/loader/driver.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/fs/vfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/gfx/term.h>
 #include <stdio.h>

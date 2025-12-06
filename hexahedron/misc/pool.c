@@ -25,7 +25,7 @@
 #include <kernel/panic.h>
 #include <kernel/debug.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 
 /**
  * @brief Create a new pool

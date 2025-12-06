@@ -12,7 +12,7 @@
  */
 
 #include <kernel/drivers/storage/drive.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 

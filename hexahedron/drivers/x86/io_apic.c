@@ -22,7 +22,7 @@
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 

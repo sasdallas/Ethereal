@@ -13,7 +13,7 @@
  */
 
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>

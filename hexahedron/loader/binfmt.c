@@ -21,7 +21,7 @@
 #include <kernel/debug.h>
 #include <kernel/task/process.h>
 #include <string.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <errno.h>
 
 static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, char **envp);

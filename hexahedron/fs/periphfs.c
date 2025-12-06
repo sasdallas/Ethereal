@@ -21,7 +21,7 @@
 
 #include <kernel/arch/arch.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/pipe.h>
 #include <kernel/debug.h>

@@ -14,7 +14,7 @@
 #include "ext2.h"
 #include <kernel/loader/driver.h>
 #include <kernel/fs/vfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <errno.h>
 #include <sys/stat.h>

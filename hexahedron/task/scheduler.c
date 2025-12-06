@@ -16,7 +16,7 @@
 #include <kernel/task/scheduler.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>

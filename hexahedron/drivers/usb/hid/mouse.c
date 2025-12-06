@@ -15,7 +15,7 @@
 #include <kernel/drivers/usb/hid/mouse.h>
 #include <kernel/drivers/usb/hid/hid.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <string.h>

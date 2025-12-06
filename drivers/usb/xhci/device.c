@@ -12,7 +12,7 @@
  */
 
 #include "xhci.h"
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/misc/mutex.h>

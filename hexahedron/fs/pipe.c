@@ -17,7 +17,7 @@
 
 #include <kernel/fs/pipe.h>
 #include <kernel/task/fd.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 #include <errno.h>

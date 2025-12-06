@@ -13,7 +13,7 @@
 
 
 #include <kernel/fs/null.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <string.h>
 
 /**

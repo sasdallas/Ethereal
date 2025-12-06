@@ -19,7 +19,7 @@
 #include <kernel/fs/pipe.h>
 #include <kernel/fs/pty.h>
 #include <kernel/misc/args.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/gfx/gfx.h>

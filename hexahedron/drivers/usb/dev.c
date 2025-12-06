@@ -17,7 +17,7 @@
 #include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/usb/dev.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/fs/kernelfs.h>
 #include <string.h>

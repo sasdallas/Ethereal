@@ -23,7 +23,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <structs/list.h>
 #include <kernel/debug.h>

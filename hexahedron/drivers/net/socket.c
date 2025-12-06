@@ -15,7 +15,7 @@
 
 #include <kernel/drivers/net/socket.h>
 #include <kernel/task/syscall.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <string.h>
 #include <structs/hashmap.h>

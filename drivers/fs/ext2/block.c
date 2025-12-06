@@ -13,7 +13,7 @@
 
 #include "ext2.h"
 #include <kernel/debug.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 
 /**
  * @brief Read a block from an EXT2 filesystem

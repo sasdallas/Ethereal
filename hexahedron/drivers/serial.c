@@ -13,7 +13,7 @@
 
 #include <kernel/config.h>
 #include <kernel/drivers/serial.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 
 #include <stdarg.h>

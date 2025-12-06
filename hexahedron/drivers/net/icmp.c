@@ -16,7 +16,7 @@
 #include <kernel/drivers/net/socket.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <arpa/inet.h>
 #include <errno.h>

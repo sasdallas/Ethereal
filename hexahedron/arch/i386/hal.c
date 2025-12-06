@@ -30,7 +30,7 @@
 #include <kernel/debug.h>
 #include <kernel/config.h>
 #include <kernel/debugger.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
 #include <kernel/arch/arch.h>
