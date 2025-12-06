@@ -274,7 +274,11 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
 
     // Recalculate FFB
     while (s->bmap[s->ffb] == 0xFF) s->ffb++;
+
+    // Setup page
     s->pages[blk].flags &= ~(PAGE_FLAG_FREE);
+    assert(s->pages[blk].refcount == 0);
+    s->pages[blk].refcount = 1;
 
     s->nfree--;
 
@@ -327,13 +331,13 @@ static uintptr_t __pmm_try_section(pmm_section_t *s, size_t npages) {
             int bit_start = (by == start_byte) ? (s->ffb % 8) : 0;
             for (int bit = bit_start; bit < 8; ++bit) {
                 size_t st = by * 8 + bit;
-                /* cannot fit npages starting at st */
+                
                 if (st + npages > total_pages) {
                     mutex_release(s->mutex);
                     return 0;
                 }
 
-                /* check contiguous run */
+                
                 bool ok = true;
                 for (size_t k = 0; k < npages; ++k) {
                     size_t idx = st + k;
@@ -345,7 +349,7 @@ static uintptr_t __pmm_try_section(pmm_section_t *s, size_t npages) {
 
                 if (!ok) continue;
 
-                /* mark bits and update page metadata */
+                
                 for (size_t k = 0; k < npages; ++k) {
                     size_t idx = st + k;
                     s->bmap[idx / 8] |= (1 << (idx % 8));
@@ -354,7 +358,7 @@ static uintptr_t __pmm_try_section(pmm_section_t *s, size_t npages) {
 
                 s->nfree -= npages;
 
-                /* advance ffb to next partially free byte */
+                
                 while ((size_t)s->ffb < bcount && s->bmap[s->ffb] == 0xFF) {
                     s->ffb++;
                 }
@@ -403,6 +407,25 @@ uintptr_t pmm_allocatePages(size_t npages, pmm_zone_t zone) {
  * @param page The page to free
  */
 void pmm_freePage(uintptr_t page) {
+    pmm_release(page);
+}
+
+/**
+ * @brief Free PMM pages
+ * @param page_base The page base
+ * @param npages Amount of pages
+ */
+void pmm_freePages(uintptr_t page_base, size_t npages) {
+    for (size_t i = 0; i < npages; i++) pmm_release(page_base + (i * 4096));
+}
+
+/**
+ * @brief Hold a page
+ * @param page The page to hold
+ * 
+ * Increments the page refcount to prevent it from being freed.
+ */
+void pmm_retain(uintptr_t page) {
     // Figure out the zone
     // TODO: this will actually be hard
     int zone = ZONE_DEFAULT;
@@ -413,35 +436,49 @@ void pmm_freePage(uintptr_t page) {
     }
 
     if (!s) {
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to free %p but no section contains this block.", page);
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to retain %p but no section contains this block.", page);
     }
 
+    int off = (page - s->start) / PAGE_SIZE;
     mutex_acquire(s->mutex);
-
-    int off = ((page - s->start) / PAGE_SIZE);
-    if (((s->pages[off].flags & PAGE_FLAG_FREE) == PAGE_FLAG_FREE)) {
-        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Freeing page %p but it was already freed or the page array was touched.", page);
-    }
-
-    // Clear bit
-    s->bmap[off / 8] &= ~(1 << (off % 8));
-    if ((unsigned)off / 8 < s->ffb) s->ffb = off / 8;
-
-    s->pages[off].flags |= PAGE_FLAG_FREE;
-
-    s->nfree++;
-
+    __atomic_add_fetch(&s->pages[off].refcount, 1, __ATOMIC_SEQ_CST);
     mutex_release(s->mutex);
-    __atomic_sub_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
 }
 
 /**
- * @brief Free PMM pages
- * @param page_base The page base
- * @param npages Amount of pages
+ * @brief Release a page
+ * @param page The page to release
+ * 
+ * Decrements the page refcount
  */
-void pmm_freePages(uintptr_t page_base, size_t npages) {
-    for (size_t i = 0; i < npages; i++) pmm_freePage(page_base + (i * 4096));
+void pmm_release(uintptr_t page) {
+    // Figure out the zone
+    // TODO: this will actually be hard
+    int zone = ZONE_DEFAULT;
+    pmm_section_t *s = zones[zone];
+    
+    while (s && !(s->start + s->size > page && page >= s->start)) {
+        s = s->next;
+    }
+
+    if (!s) {
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Tried to retain %p but no section contains this block.", page);
+    }
+
+    int off = (page - s->start) / PAGE_SIZE;
+    mutex_acquire(s->mutex);
+
+    uintptr_t ref = __atomic_sub_fetch(&s->pages[off].refcount, 1, __ATOMIC_SEQ_CST);
+    if (ref == 0) {
+        // empty page, remove its references
+        s->pages[off].flags |= PAGE_FLAG_FREE;
+        s->bmap[off / 8] &= ~(1 << (off % 8));
+        if ((unsigned)off / 8 < s->ffb) s->ffb = off / 8;
+        s->nfree++;    
+        __atomic_sub_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
+    }
+
+    mutex_release(s->mutex);
 }
 
 /**

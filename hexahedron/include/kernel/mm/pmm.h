@@ -50,7 +50,8 @@ typedef struct pmm_region {
 typedef int pmm_zone_t;
 
 typedef struct pmm_page {
-    int flags;              // Page flags  
+    uint8_t flags;              // Page flags  
+    uintptr_t refcount;         // Reference count for the page
 } pmm_page_t;
 
 typedef struct pmm_section {
@@ -96,6 +97,22 @@ void pmm_freePage(uintptr_t page);
  * @param npages Amount of pages
  */
 void pmm_freePages(uintptr_t page_base, size_t npages);
+
+/**
+ * @brief Hold a page
+ * @param page The page to hold
+ * 
+ * Increments the page refcount to prevent it from being freed.
+ */
+void pmm_retain(uintptr_t page);
+
+/**
+ * @brief Release a page
+ * @param page The page to release
+ * 
+ * Decrements the page refcount
+ */
+void pmm_release(uintptr_t page);
 
 /**
  * @brief Gets the total amount of blocks
