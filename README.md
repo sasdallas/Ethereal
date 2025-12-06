@@ -102,6 +102,8 @@ Certain external components are available in `external`, `libc`, and other parts
 
 A lot of Ethereal's design was inspired by [ToaruOS by klange](https://github.com/klange/ToaruOS) - thank you!
 
+Ethereal's virtual memory manager design was inspired by [Astral by @mathewnd](https://github.com/mathewnd/Astral)
+
 The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
 
 ## Licensing

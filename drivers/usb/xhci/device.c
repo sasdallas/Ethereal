@@ -13,11 +13,10 @@
 
 #include "xhci.h"
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/misc/mutex.h>
 #include <string.h>
-#include <kernel/mem/pmm.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:DEV ] " __VA_ARGS__);
@@ -27,9 +26,9 @@
  */
 xhci_transfer_ring_t *xhci_createTransferRing() {
     xhci_transfer_ring_t *tr = kzalloc(sizeof(xhci_transfer_ring_t));
-    tr->trb_list = (xhci_trb_t*)mem_allocateDMA(XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+    tr->trb_list = (xhci_trb_t*)dma_map(XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
     memset(tr->trb_list, 0, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
-    tr->trb_list_phys = mem_getPhysicalAddress(NULL, (uintptr_t)tr->trb_list);
+    tr->trb_list_phys = arch_mmu_physical(NULL, (uintptr_t)tr->trb_list);
     tr->cycle = 1;
     tr->dequeue = 0;
     tr->enqueue = 0;
@@ -130,7 +129,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     // Build the data TRB
     if (transfer->length) {
         xhci_data_stage_trb_t data_trb = {
-            .buffer = mem_getPhysicalAddress(NULL, (uintptr_t)transfer->data),
+            .buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->data),
             .transfer_length = transfer->length,
             .td_size = 0,
             .interrupter = 0,
@@ -374,7 +373,7 @@ int xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer
     memset(&trb, 0, sizeof(xhci_normal_trb_t));
 
     trb.type = XHCI_TRB_TYPE_NORMAL;
-    trb.buffer = mem_getPhysicalAddress(NULL, (uintptr_t)transfer->data);
+    trb.buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->data);
     trb.len = transfer->length;
     trb.ioc = 1;
     trb.isp = 1;
@@ -414,13 +413,13 @@ int xhci_shutdown(USBController_t *controller, USBDevice_t *device) {
 
     // Free memory of the device
     mutex_destroy(dev->mutex);
-    // mem_freeDMA((uintptr_t)dev->input_ctx, 4096);
-    // mem_freeDMA((uintptr_t)dev->output_ctx, 4096);
+    // dma_unmap((uintptr_t)dev->input_ctx, 4096);
+    // dma_unmap((uintptr_t)dev->output_ctx, 4096);
     
     for (int i = 0; i < 32; i++) {
         if (dev->endpoints[i].tr) {
             LOG(DEBUG, "Freeing EP%d\n", i);
-            // mem_freeDMA((uintptr_t)dev->endpoints[i].tr->trb_list, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
+            // dma_unmap((uintptr_t)dev->endpoints[i].tr->trb_list, XHCI_TRANSFER_RING_TRB_COUNT * sizeof(xhci_trb_t));
             // kfree(dev->endpoints[i].tr);
         }
     }
@@ -480,12 +479,12 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
 
     // Initialize input context
     // TODO: DO NOT WASTE TWO WHOLE PAGES
-    dev->input_ctx = (xhci_input_context_t*)mem_allocateDMA(4096); // TODO: We can determine target size from xHC
-    dev->input_ctx_phys = mem_getPhysicalAddress(NULL, (uintptr_t)dev->input_ctx);
+    dev->input_ctx = (xhci_input_context_t*)dma_map(4096); // TODO: We can determine target size from xHC
+    dev->input_ctx_phys = arch_mmu_physical(NULL, (uintptr_t)dev->input_ctx);
     memset((void*)dev->input_ctx, 0, 4096);
 
     // Initialize output context
-    uintptr_t output_ctx = mem_allocateDMA(4096);
+    uintptr_t output_ctx = dma_map(4096);
     memset((void*)output_ctx, 0, 4096);
     dev->output_ctx = output_ctx;
 
@@ -544,7 +543,7 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     ep_ctx->transfer_ring_dequeue_ptr = dev->endpoints[0].tr->trb_list_phys | 1;
 
     // Set DCBAA
-    ((uint64_t*)xhci->dcbaa)[dev->slot_id] = mem_getPhysicalAddress(NULL, dev->output_ctx);
+    ((uint64_t*)xhci->dcbaa)[dev->slot_id] = arch_mmu_physical(NULL, dev->output_ctx);
 
     // Addressing time
     xhci_address_device_trb_t address_device = {

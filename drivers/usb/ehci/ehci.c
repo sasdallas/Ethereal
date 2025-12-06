@@ -24,7 +24,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <structs/list.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -67,7 +67,7 @@ static ehci_qh_t *ehci_allocateQH(ehci_t *hc) {
     qh->td_list = list_create("td list");   // TODO: This shouldnt be here
     qh->token.active = 1;
 
-    LOG(DEBUG, "[QH:ALLOC] New QH created at %p/%p\n", qh, mem_getPhysicalAddress(NULL, (uintptr_t)qh));
+    LOG(DEBUG, "[QH:ALLOC] New QH created at %p/%p\n", qh, arch_mmu_physical(NULL, (uintptr_t)qh));
     return qh;
 }
 
@@ -86,7 +86,7 @@ static ehci_td_t *ehci_allocateTD(ehci_t *hc) {
 
     memset(td, 0, sizeof(ehci_td_t));
 
-    LOG(DEBUG, "[TD:ALLOC] New TD created at %p/%p\n", td, mem_getPhysicalAddress(NULL, (uintptr_t)td));
+    LOG(DEBUG, "[TD:ALLOC] New TD created at %p/%p\n", td, arch_mmu_physical(NULL, (uintptr_t)td));
     return td;
 }
 
@@ -443,7 +443,7 @@ void ehci_waitForQH(USBController_t *controller, ehci_qh_t *qh) {
         }
     }
 
-    LOG(DEBUG, "Waiting for QH %p/%p - td_next %08x\n", qh, mem_getPhysicalAddress(NULL, (uintptr_t)qh), qh->td_next.raw);
+    LOG(DEBUG, "Waiting for QH %p/%p - td_next %08x\n", qh, arch_mmu_physical(NULL, (uintptr_t)qh), qh->td_next.raw);
 
     if (transfer->status != USB_TRANSFER_IN_PROGRESS) {
         // Clear transfer from queue
@@ -477,7 +477,7 @@ int ehci_control(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *t
     uint32_t toggle = 0; // Toggle bit
 
     // Create the SETUP transfer descriptor
-    ehci_td_t *td_setup = ehci_createTD(hc, dev->speed, toggle, EHCI_PACKET_SETUP, 8, (void*)mem_getPhysicalAddress(NULL, (uintptr_t)transfer->req));
+    ehci_td_t *td_setup = ehci_createTD(hc, dev->speed, toggle, EHCI_PACKET_SETUP, 8, (void*)arch_mmu_physical(NULL, (uintptr_t)transfer->req));
     QH_LINK_TD(qh, td_setup);
 
     qh->td_next_alt.raw = 1;
@@ -499,7 +499,7 @@ int ehci_control(USBController_t *controller, USBDevice_t *dev, USBTransfer_t *t
         // Now create the TD
         toggle ^= 1;
         ehci_td_t *td = ehci_createTD(hc, dev->speed, toggle, (transfer->req->bmRequestType & USB_RT_D2H) ? EHCI_PACKET_IN : EHCI_PACKET_OUT,
-                                        transaction_size, (void*)mem_getPhysicalAddress(NULL, (uintptr_t)buffer));
+                                        transaction_size, (void*)arch_mmu_physical(NULL, (uintptr_t)buffer));
         if (!first) first = td;
         TD_LINK_TD(qh, last, td);
         buffer += transaction_size;
@@ -607,7 +607,7 @@ int ehci_init(pci_device_t *dev) {
     pci_writeConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, ehci_pci_command, 2);
 
     // Map into memory space
-    uintptr_t mmio_mapped = mem_mapMMIO(bar->address, bar->size);
+    uintptr_t mmio_mapped = mmio_map(bar->address, bar->size);
 
     // Construct a host controller structure
     ehci_t *hc = kmalloc(sizeof(ehci_t));
@@ -625,7 +625,7 @@ int ehci_init(pci_device_t *dev) {
     }
 
     // Allocate a frame list
-    hc->frame_list = (ehci_flp_t*)mem_allocateDMA(PAGE_SIZE);
+    hc->frame_list = (ehci_flp_t*)dma_map(PAGE_SIZE);
     memset(hc->frame_list, 0, PAGE_SIZE);
     LOG(DEBUG, "Frame list allocated to %p\n", hc->frame_list);
 
@@ -737,8 +737,8 @@ int ehci_init(pci_device_t *dev) {
     EHCI_OP_WRITE32(EHCI_REG_USBINTR, EHCI_USBINTR_ERR | EHCI_USBINTR_HSE | EHCI_USBINTR_USBINT);
 
     // Setu periodic list base (+ async because why not)
-    EHCI_OP_WRITE32(EHCI_REG_PERIODICLISTBASE, mem_getPhysicalAddress(NULL, (uintptr_t)hc->frame_list));
-    EHCI_OP_WRITE32(EHCI_REG_ASYNCLISTADDR, mem_getPhysicalAddress(NULL, (uintptr_t)hc->qh_async));
+    EHCI_OP_WRITE32(EHCI_REG_PERIODICLISTBASE, arch_mmu_physical(NULL, (uintptr_t)hc->frame_list));
+    EHCI_OP_WRITE32(EHCI_REG_ASYNCLISTADDR, arch_mmu_physical(NULL, (uintptr_t)hc->qh_async));
     EHCI_OP_WRITE32(EHCI_REG_FRINDEX, 0);
 
     // Write USBCMD to have an ITC of 8, enable periodic/async scheduling, and run

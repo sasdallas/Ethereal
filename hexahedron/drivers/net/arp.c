@@ -35,8 +35,8 @@ hashmap_t *arp_waiters = NULL;
 /* ARP list */
 list_t *arp_entries = NULL;
 
-/* ARP table lock */
-spinlock_t arp_lock = { 0 };
+/* ARP table mutex */
+MUTEX_DEFINE_LOCAL(arp_mutex);
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:ARP ", __VA_ARGS__)
@@ -71,9 +71,9 @@ int arp_readKernelFS(kernelfs_entry_t *kentry, void *data) {
 arp_table_entry_t *arp_get_entry(in_addr_t address) {
     if (!arp_map) return NULL;
 
-    spinlock_acquire(&arp_lock);
+    mutex_acquire(&arp_mutex);
     arp_table_entry_t *entry =  (arp_table_entry_t*)hashmap_get(arp_map, (void*)(uintptr_t)address);
-    spinlock_release(&arp_lock);
+    mutex_release(&arp_mutex);
 
     return entry;
 }
@@ -96,10 +96,10 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
     entry->hwtype = type;
     entry->nic = nic;
 
-    spinlock_acquire(&arp_lock);
+    mutex_acquire(&arp_mutex);
     hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)entry);
     list_append(arp_entries, (void*)entry);
-    spinlock_release(&arp_lock);
+    mutex_release(&arp_mutex);
 
     // Is someone waiting?
     if (hashmap_has(arp_waiters, (void*)(uintptr_t)address)) {
@@ -120,7 +120,7 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
 int arp_remove_entry(in_addr_t address) {
     if (!arp_map) return 1;
     
-    spinlock_acquire(&arp_lock);
+    mutex_acquire(&arp_mutex);
     arp_table_entry_t *entry = (arp_table_entry_t*)hashmap_get(arp_map, (void*)(uintptr_t)address);
     if (!entry) return 1;
 
@@ -128,7 +128,7 @@ int arp_remove_entry(in_addr_t address) {
     hashmap_remove(arp_map, (void*)(uintptr_t)address);
     kfree(entry);
 
-    spinlock_release(&arp_lock);
+    mutex_release(&arp_mutex);
     return 0;
 }
 
@@ -147,27 +147,23 @@ int arp_request(fs_node_t *node, in_addr_t address) {
  
     LOG_NIC(DEBUG, node, " ARP: Request to find address %s %08x\n", inet_ntoa((struct in_addr){ .s_addr = address }), address);
 
-    // Construct an ARP pakcet
-    arp_packet_t *packet = kmalloc(sizeof(arp_packet_t));
-    memset(packet, 0, sizeof(arp_packet_t));
+    // Construct an ARP packet
+    arp_packet_t packet = { 0 };
 
-    packet->hlen = 6;                   // MAC
-    packet->plen = sizeof(in_addr_t);   // IP
+    packet.hlen = 6;                    // MAC
+    packet.plen = sizeof(in_addr_t);    // IP
 
-    packet->oper = htons(ARP_OPERATION_REQUEST);
-    packet->ptype = htons(IPV4_PACKET_TYPE);    // TODO
-    packet->htype = htons(ARP_HTYPE_ETHERNET);  // TODO
+    packet.oper = htons(ARP_OPERATION_REQUEST);
+    packet.ptype = htons(IPV4_PACKET_TYPE);    // TODO
+    packet.htype = htons(ARP_HTYPE_ETHERNET);  // TODO
 
     // Setup TPA, SHA, and (maybe) SPA
-    packet->tpa = address;
-    memcpy(packet->sha, nic->mac, 6);
-    if (nic->ipv4_address) packet->spa = nic->ipv4_address;
+    packet.tpa = address;
+    memcpy(packet.sha, nic->mac, 6);
+    if (nic->ipv4_address) packet.spa = nic->ipv4_address;
 
     // Send the packet!
-    ethernet_send(node, (void*)packet, ARP_PACKET_TYPE, ETHERNET_BROADCAST_MAC, sizeof(arp_packet_t));
-
-    // Free packet
-    kfree(packet);
+    ethernet_send(node, &packet, ARP_PACKET_TYPE, ETHERNET_BROADCAST_MAC, sizeof(arp_packet_t));
 
     return 0;
 }
@@ -180,21 +176,22 @@ int arp_request(fs_node_t *node, in_addr_t address) {
  * @returns 0 on success. Timeout, by default, is 20s
  */
 int arp_search(fs_node_t *nic, in_addr_t address) {
-    // Block
-    hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)current_cpu->current_thread);
-    sleep_untilTime(current_cpu->current_thread, 1, 0);
-
     // Request
     if (arp_request(nic, address)) return 1;
+    if (arp_get_entry(address)) return 0;
 
-    if (arp_get_entry(address)) {
-        // We got the entry before we needed to sleep, exit.
-        sleep_exit(current_cpu->current_thread);
-        return 0;
-    }
+    mutex_acquire(&arp_mutex);
+    hashmap_set(arp_map, (void*)(uintptr_t)address, current_cpu->current_thread);
+
+    sleep_time(1, 0);
+    mutex_release(&arp_mutex);
 
     int w = sleep_enter();
     if (w == WAKEUP_ANOTHER_THREAD) return 0;
+
+    mutex_acquire(&arp_mutex);
+    hashmap_remove(arp_map, (void*)(uintptr_t)address);
+    mutex_release(&arp_mutex);
 
     // Failed :(
     return 1;
@@ -207,27 +204,25 @@ int arp_search(fs_node_t *nic, in_addr_t address) {
  */
 static void arp_reply(arp_packet_t *packet, fs_node_t *nic_node) {
     // Allocate a response packet
-    arp_packet_t *resp = kmalloc(sizeof(arp_packet_t));
-    memset(resp, 0, sizeof(arp_packet_t));
+    arp_packet_t resp = { 0 };
 
-    resp->hlen = 6;                   // MAC
-    resp->plen = sizeof(in_addr_t);   // IP
+    resp.hlen = 6;                   // MAC
+    resp.plen = sizeof(in_addr_t);   // IP
 
-    resp->oper = htons(ARP_OPERATION_REPLY);
-    resp->ptype = htons(IPV4_PACKET_TYPE);    // TODO
-    resp->htype = htons(ARP_HTYPE_ETHERNET);  // TODO
+    resp.oper = htons(ARP_OPERATION_REPLY);
+    resp.ptype = htons(IPV4_PACKET_TYPE);    // TODO
+    resp.htype = htons(ARP_HTYPE_ETHERNET);  // TODO
 
     // SHA and THA
-    memcpy(resp->sha, NIC(nic_node)->mac, 6);
-    memcpy(resp->tha, packet->sha, 6);
+    memcpy(resp.sha, NIC(nic_node)->mac, 6);
+    memcpy(resp.tha, packet->sha, 6);
     
     // SPA and TPA
-    resp->spa = NIC(nic_node)->ipv4_address;
-    resp->tpa = packet->spa;
+    resp.spa = NIC(nic_node)->ipv4_address;
+    resp.tpa = packet->spa;
 
     // Send the packet
-    ethernet_send(nic_node, (void*)resp, ARP_PACKET_TYPE, packet->sha, sizeof(arp_packet_t));
-    kfree(resp);
+    ethernet_send(nic_node, &resp, ARP_PACKET_TYPE, packet->sha, sizeof(arp_packet_t));
 }
 
 /**

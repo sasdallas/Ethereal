@@ -32,7 +32,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/task/process.h>
 #include <kernel/task/syscall.h>
@@ -48,9 +48,6 @@ static video_driver_t *current_driver = NULL;
 /* Video framebuffer. This will be passed to the driver */
 uint8_t *video_framebuffer = NULL;
 
-/* User fb (DEPRECATED) */
-uint8_t *user_fb = NULL;
-
 /* Video VFS node (TEMPORARY) */
 fs_node_t *video_node = NULL;
 
@@ -65,17 +62,17 @@ int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
     switch (request) {
         case IO_VIDEO_GET_INFO:
             // TODO: check range, possible bad behavior
-            if (mem_validate((void*)argp, PTR_USER | PTR_STRICT)) {
-                video_info_t info = {
-                    .screen_width = current_driver->screenWidth,
-                    .screen_height = current_driver->screenHeight,
-                    .screen_bpp = current_driver->screenBPP,
-                    .screen_pitch = current_driver->screenPitch
-                };
+            SYSCALL_VALIDATE_PTR(argp);
+            video_info_t info = {
+                .screen_width = current_driver->screenWidth,
+                .screen_height = current_driver->screenHeight,
+                .screen_bpp = current_driver->screenBPP,
+                .screen_pitch = current_driver->screenPitch
+            };
 
-                memcpy(argp, (void*)&info, sizeof(video_info_t));
-                return 0;
-            }
+            memcpy(argp, (void*)&info, sizeof(video_info_t));
+            return 0;
+            
 
             return -EINVAL;
 
@@ -115,10 +112,7 @@ int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
     len = (len > bufsz) ? bufsz : len;
 
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + len; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            pg->bits.present = 0;
-        }
+        arch_mmu_unmap(NULL, i);
     }
 
     // Enable kernel video writes

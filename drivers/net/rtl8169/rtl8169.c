@@ -16,7 +16,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/loader/driver.h>
 #include <kernel/debug.h>
 #include <kernel/drivers/clock.h>
@@ -81,8 +81,8 @@ int rtl8169_readMAC(rtl8169_t *nic, uint8_t *mac) {
  */
 int rtl8169_initializeRx(rtl8169_t *nic) {
     // Create regions
-    nic->rx_buffers = mem_allocateDMA(RTL8169_RX_DESC_COUNT * RTL8169_RX_BUFFER_SIZE);
-    nic->rx_descriptors = mem_allocateDMA(RTL8169_RX_DESC_COUNT * sizeof(rtl8169_desc_t));
+    nic->rx_buffers = dma_map(RTL8169_RX_DESC_COUNT * RTL8169_RX_BUFFER_SIZE);
+    nic->rx_descriptors = dma_map(RTL8169_RX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     LOG(DEBUG, "Rx buffers allocated to %p, descriptors allocated to %p\n", nic->rx_buffers, nic->rx_descriptors);
 
@@ -94,7 +94,7 @@ int rtl8169_initializeRx(rtl8169_t *nic) {
         if (i == RTL8169_RX_DESC_COUNT-1) desc->command |= RTL8169_DESC_CMD_EOR;
 
         // Get buffer
-        uintptr_t buffer = mem_getPhysicalAddress(NULL, nic->rx_buffers + (i * RTL8169_RX_BUFFER_SIZE));
+        uintptr_t buffer = arch_mmu_physical(NULL, nic->rx_buffers + (i * RTL8169_RX_BUFFER_SIZE));
 
         // Setup remaining parameters
         desc->vlan = 0x00000000;
@@ -103,7 +103,7 @@ int rtl8169_initializeRx(rtl8169_t *nic) {
     }
 
     // Configure Rx descriptor addresses
-    uintptr_t desc_phys = mem_getPhysicalAddress(NULL, nic->rx_descriptors);
+    uintptr_t desc_phys = arch_mmu_physical(NULL, nic->rx_descriptors);
     RTL8169_WRITE32(RTL8169_REG_RDSAR, desc_phys & 0xFFFFFFFF);
     RTL8169_WRITE32(RTL8169_REG_RDSAR + 4, desc_phys >> 32);
 
@@ -124,8 +124,8 @@ int rtl8169_initializeRx(rtl8169_t *nic) {
  */
 int rtl8169_initializeTx(rtl8169_t *nic) {    
     // Create regions
-    nic->tx_buffers = mem_allocateDMA(RTL8169_TX_DESC_COUNT * RTL8169_TX_BUFFER_SIZE);
-    nic->tx_descriptors = mem_allocateDMA(RTL8169_TX_DESC_COUNT * sizeof(rtl8169_desc_t));
+    nic->tx_buffers = dma_map(RTL8169_TX_DESC_COUNT * RTL8169_TX_BUFFER_SIZE);
+    nic->tx_descriptors = dma_map(RTL8169_TX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     LOG(DEBUG, "Tx buffers allocated to %p, descriptors allocated to %p\n", nic->tx_buffers, nic->tx_descriptors);
 
@@ -134,7 +134,7 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
         rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->tx_descriptors + (i * sizeof(rtl8169_desc_t)));
 
         // Get buffer
-        uintptr_t buffer = mem_getPhysicalAddress(NULL, nic->tx_buffers + (i * RTL8169_TX_BUFFER_SIZE));
+        uintptr_t buffer = arch_mmu_physical(NULL, nic->tx_buffers + (i * RTL8169_TX_BUFFER_SIZE));
 
         // Setup parameters
         desc->command = (i == RTL8169_TX_DESC_COUNT-1) ? RTL8169_DESC_CMD_EOR : 0;
@@ -144,7 +144,7 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
     }
 
     // Configure Tx descriptor addresses
-    uintptr_t desc_phys = mem_getPhysicalAddress(NULL, nic->tx_descriptors);
+    uintptr_t desc_phys = arch_mmu_physical(NULL, nic->tx_descriptors);
     RTL8169_WRITE32(RTL8169_REG_TNPDS, desc_phys & 0xFFFFFFFF);
     RTL8169_WRITE32(RTL8169_REG_TNPDS + 4, desc_phys >> 32);
 
@@ -166,7 +166,7 @@ void rtl8169_thread(void *context) {
     
     for (;;) {
         // Sleep until forever
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         int w = sleep_enter();
 
         if (w == WAKEUP_SIGNAL) {
@@ -291,7 +291,7 @@ ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
 
     // Is the descriptor busy?
     if (desc->command & RTL8169_DESC_CMD_OWN) {
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         nic->thr = current_cpu->current_thread;
         spinlock_release(&nic->lock);
         int w = sleep_enter();

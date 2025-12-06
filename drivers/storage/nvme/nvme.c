@@ -14,7 +14,7 @@
 #include "nvme.h"
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/hal.h>
@@ -79,8 +79,8 @@ int nvme_createAdminQueue(nvme_t *nvme) {
     // Program admin queue in
     nvme->regs->aqa.acqs = NVME_ADMIN_QUEUE_DEPTH-1;
     nvme->regs->aqa.asqs = NVME_ADMIN_QUEUE_DEPTH-1;
-    nvme->regs->asq.asqb = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->admin_queue->sq);
-    nvme->regs->acq.acqb = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->admin_queue->cq);
+    nvme->regs->asq.asqb = arch_mmu_physical(NULL, (uintptr_t)nvme->admin_queue->sq);
+    nvme->regs->acq.acqb = arch_mmu_physical(NULL, (uintptr_t)nvme->admin_queue->cq);
 
     return 0;
 }
@@ -131,7 +131,7 @@ int nvme_createIOQueue(nvme_t *nvme) {
     nvme_sq_entry_t entry = { .opc = NVME_OPC_CREATE_CQ };
 
     nvme_create_cq_command_t cq = {
-        .dptr.prp1 = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->io_queue->cq),
+        .dptr.prp1 = arch_mmu_physical(NULL, (uintptr_t)nvme->io_queue->cq),
         .qsize = NVME_IO_QUEUE_DEPTH - 1,
         .qid = 1,
         .iv = 1,
@@ -148,7 +148,7 @@ int nvme_createIOQueue(nvme_t *nvme) {
 
     entry.opc = NVME_OPC_CREATE_SQ;
     nvme_create_sq_command_t sq = {
-        .dptr.prp1 = mem_getPhysicalAddress(NULL, (uintptr_t)nvme->io_queue->sq),
+        .dptr.prp1 = arch_mmu_physical(NULL, (uintptr_t)nvme->io_queue->sq),
         .qsize = NVME_IO_QUEUE_DEPTH - 1,
         .qid = 1,
         .cqid = 1,
@@ -180,14 +180,14 @@ int nvme_identify(nvme_t *nvme) {
     LOG(DEBUG, "Sending IDENTIFY request to NVMe drive\n");
 
     // Allocate a DMA page to hold the identification data
-    uintptr_t id_page = mem_allocateDMA(PAGE_SIZE);
+    uintptr_t id_page = dma_map(PAGE_SIZE);
     memset((void*)id_page, 0, PAGE_SIZE);
 
     nvme_sq_entry_t entry = { .opc = NVME_OPC_IDENTIFY };
     nvme_identify_command_t *cmd = (nvme_identify_command_t*)&entry.command;
 
     // Setup identify cmd
-    cmd->dptr.prp1 = mem_getPhysicalAddress(NULL, id_page);
+    cmd->dptr.prp1 = arch_mmu_physical(NULL, id_page);
     cmd->cns = NVME_CNS_IDENTIFY_CONTROLLER;
     
     // Submit
@@ -200,7 +200,7 @@ int nvme_identify(nvme_t *nvme) {
     // Now let's wait for a completion event
     if (TIMEOUT((nvme->admin_queue->completions->length), 1000)) {
         LOG(ERR, "NVME_CMD_IDENTIFY timed out\n");
-        mem_freeDMA(id_page, PAGE_SIZE);
+        dma_unmap(id_page, PAGE_SIZE);
         return 1;
     }
 
@@ -212,7 +212,7 @@ int nvme_identify(nvme_t *nvme) {
     if (comp->status != NVME_STATUS_SUCCESS) {
         LOG(ERR, "NVME_CMD_IDENTIFY failed with status: %d\n", comp->status);
         kfree(comp);
-        mem_freeDMA(id_page, PAGE_SIZE);
+        dma_unmap(id_page, PAGE_SIZE);
         return 1;
     }
 
@@ -243,7 +243,7 @@ ssize_t nvme_read(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer) {
         nvme_read_command_t *cmd = (nvme_read_command_t*)&ent.command;
 
         cmd->nsid = ns->nsid;
-        cmd->dptr.prp1 = mem_getPhysicalAddress(NULL, ns->dma_region);
+        cmd->dptr.prp1 = arch_mmu_physical(NULL, ns->dma_region);
         cmd->slba = lba + sector_offset;
         cmd->nlb = count - 1;
         
@@ -271,7 +271,7 @@ int nvme_namespaceInit(nvme_t *nvme, uint32_t nsid, nvme_namespace_identify_t *n
 
     ns->controller = nvme;
     ns->nsid = nsid;
-    ns->dma_region = mem_allocateDMA(PAGE_SIZE);
+    ns->dma_region = dma_map(PAGE_SIZE);
 
     drive_t *d = drive_create(DRIVE_TYPE_NVME);
     
@@ -307,11 +307,11 @@ int nvme_namespaceInit(nvme_t *nvme, uint32_t nsid, nvme_namespace_identify_t *n
  * @param nvme The NVMe drive to identify namespaces on
  */
 int nvme_identifyNamespaces(nvme_t *nvme) {
-    uintptr_t namespace_page = mem_allocateDMA(PAGE_SIZE);
+    uintptr_t namespace_page = dma_map(PAGE_SIZE);
 
     nvme_sq_entry_t e = { .opc = NVME_OPC_IDENTIFY, };
     nvme_identify_command_t *ident = (nvme_identify_command_t*)&e.command;
-    ident->dptr.prp1 = mem_getPhysicalAddress(NULL, namespace_page);
+    ident->dptr.prp1 = arch_mmu_physical(NULL, namespace_page);
     ident->cns = 0x02;
 
     if (nvme_submitAndWait(nvme, nvme->admin_queue, &e)) {
@@ -328,7 +328,7 @@ int nvme_identifyNamespaces(nvme_t *nvme) {
 
         e.opc = NVME_OPC_IDENTIFY;
         nvme_identify_command_t *ident = (nvme_identify_command_t*)&e.command;
-        ident->dptr.prp1 = mem_getPhysicalAddress(NULL, namespace_page);
+        ident->dptr.prp1 = arch_mmu_physical(NULL, namespace_page);
         ident->cns = NVME_CNS_IDENTIFY_NAMESPACE;
         ident->nsid = nsids[i];
 
@@ -363,7 +363,7 @@ int nvme_identifyNamespaces(nvme_t *nvme) {
 int nvme_start(nvme_t *nvme) {
     // Configure controller parameters
     nvme->regs->cc.ams = 0;
-    nvme->regs->cc.mps = MEM_PAGE_SHIFT - 12;
+    nvme->regs->cc.mps = MMU_SHIFT - 12;
     nvme->regs->cc.css = 0;
 
     // Enable controller and wait until ready
@@ -392,7 +392,7 @@ int nvme_init(pci_device_t *dev) {
     }
 
     // Let's map the BAR in
-    uintptr_t mmio_base = mem_mapMMIO(bar->address, bar->size);
+    uintptr_t mmio_base = mmio_map(bar->address, bar->size);
 
     // Create the NVMe structure
     nvme_t *nvme = kzalloc(sizeof(nvme_t));
@@ -460,7 +460,7 @@ int nvme_init(pci_device_t *dev) {
     return 0;
 
 _nvme_cleanup:
-    mem_unmapMMIO((uintptr_t)nvme->regs, bar->size);
+    mmio_unmap((uintptr_t)nvme->regs, bar->size);
     kfree(nvme);
     return 1;
 }

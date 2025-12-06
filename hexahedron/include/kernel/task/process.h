@@ -108,11 +108,10 @@ typedef struct process {
     // MEMORY REGIONS
     uintptr_t heap;                     // Heap of the process. Positioned after the ELF binary
     uintptr_t heap_base;                // Base location of the heap
-    vas_t *vas;                         // Process virtual address space
     list_t *mmap;                       // mmap() mappings
 
     // SIGNALS
-    vas_allocation_t *userspace;        // Userspace allocation (only for sigtramp right now)
+    void *userspace;                    // Userspace allocation (only for sigtramp right now)
 
     // ELF
     process_image_t image;              // Image data for the process
@@ -125,7 +124,7 @@ typedef struct process {
 
     // OTHER
     uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)
-    page_t *dir;                        // Page directory
+    vmm_context_t *ctx;                 // VMM context
     arch_context_t sigctx;              // Signal handler context
     pid_t tid_next;                     // Next TID to use
 } process_t;

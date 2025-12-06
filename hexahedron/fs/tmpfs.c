@@ -17,8 +17,7 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <string.h>
 
 /* Size rounding */
@@ -172,7 +171,7 @@ uintptr_t tmpfs_getNewBlock(tmpfs_file_t *file, size_t blknum) {
 
     
     for (uintptr_t i = file->blk_count; i <= blknum; i++) {
-        file->blocks[i] = pmm_allocateBlock();
+        file->blocks[i] = pmm_allocatePage(ZONE_DEFAULT);
         file->blk_count++;
     }
 
@@ -212,25 +211,26 @@ ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
     // If the start block is the same, handle
     if (start_block == end_block) {
         // Get a block, read it, you know the drill
-        uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, start_block), TMPFS_BLOCK_SIZE);
+        uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, start_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
         memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), size);
-        mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+        arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
     } else {
         // Else, enter this freaky math loop.
         uintptr_t blocks_read = 0;
         for (uintptr_t i = start_block; i < end_block; i++) {
-            uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, i), TMPFS_BLOCK_SIZE);
+            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, i), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
             if (!blocks_read) memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
             else memcpy(buffer + (blocks_read*TMPFS_BLOCK_SIZE) - (off % TMPFS_BLOCK_SIZE), (const void*)(blk), TMPFS_BLOCK_SIZE);
-            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
 
             blocks_read++;
         }
 
         // Handle any overhang
         if (overhang) {
-            uintptr_t blk = mem_remapPhys(tmpfs_getBlock(entry->file, end_block), TMPFS_BLOCK_SIZE);
+            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, end_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
             memcpy(buffer + TMPFS_BLOCK_SIZE * blocks_read - (off % TMPFS_BLOCK_SIZE), (const void*)blk, size);
+            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
         }
     }
 
@@ -257,15 +257,15 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
 
     // If we have the same start and end block, then just write to it
     if (start_block == end_block) {
-        uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, start_block), TMPFS_BLOCK_SIZE);
+        uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, start_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
         memcpy((void*)(blk + ((uintptr_t)off % TMPFS_BLOCK_SIZE)), buffer, size);
-        mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+        arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
     } else {
         // Write normally
         uintptr_t blocks_written = 0;
         for (uintptr_t i = start_block; i < end_block; i++) {
             // Get a new block to write to
-            uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, i), TMPFS_BLOCK_SIZE);
+            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, i), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
 
             // Depending on blocks_written, we might need to copy at an offst
             if (!blocks_written) memcpy((void*)(blk + (off % TMPFS_BLOCK_SIZE)), buffer, TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
@@ -273,14 +273,14 @@ ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
             blocks_written++;
 
             // Unmap block
-            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
         }
 
         // Handle overhang
         if (overhang) {
-            uintptr_t blk = mem_remapPhys(tmpfs_getNewBlock(entry->file, end_block), TMPFS_BLOCK_SIZE);
+            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, end_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
             memcpy((void*)blk, buffer + TMPFS_BLOCK_SIZE * blocks_written - (off % TMPFS_BLOCK_SIZE), overhang);
-            mem_unmapPhys(blk, TMPFS_BLOCK_SIZE);
+            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
         }
     }
 

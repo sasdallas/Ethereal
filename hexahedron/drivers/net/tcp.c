@@ -614,22 +614,18 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
             // Off with the packet
             int handled = 0;
-            sleep_untilTime(current_cpu->current_thread, 1, 0);
-            fs_wait(sock->node, VFS_EVENT_READ);
+            poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+            poll_add(w, &sock->node->event, VFS_EVENT_READ);
             for (int attempts = 0; attempts < 3; attempts++) {
-                // Wait for an ACK
-                if (!current_cpu->current_thread->sleep) sleep_untilTime(current_cpu->current_thread, 1, 0);
                 tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &pkt, iov.iov_base + sent_bytes, remain);
             
                 if (!sock->recv_queue->length) {
-                    int wakeup = sleep_enter();
-                    if (wakeup == WAKEUP_SIGNAL) return -EINTR;
-                    if (wakeup == WAKEUP_TIME) {
+                    int r = poll_wait(w, 1000);
+                    if (r == -EINTR) { poll_exit(w); poll_destroyWaiter(w); return -EINTR; }
+                    if (r == -ETIMEDOUT) {
                         LOG(DEBUG, "Time passed, retrying\n");
-                        continue; // !!!: Exit from wait queue
+                        continue;
                     }
-                } else {
-                    sleep_exit(current_cpu->current_thread);
                 }
 
                 sock_recv_packet_t *spkt = socket_get(sock);
@@ -639,6 +635,8 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
                 if (TCP_HAS_FLAG(resp_pkt, RST)) {
                     // RST!
                     LOG(ERR, "RST packet received - reset handle\n");
+                    poll_exit(w); 
+                    poll_destroyWaiter(w);
                     return -ECONNRESET;
                 }  
 
@@ -647,6 +645,9 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
                 handled = 1;
                 break;
             }
+
+            poll_exit(w); 
+            poll_destroyWaiter(w);
 
             if (!handled) return -ETIMEDOUT; // !!!: Better error code?
         }
@@ -755,25 +756,31 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
     TCP_CHANGE_STATE(TCP_STATE_SYN_SENT);
 
     // Wait for a response
+    poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+    poll_add(w, &sock->node->event, VFS_EVENT_READ);
+
     for (int attempt = 0; attempt < 3; attempt++) {
         // Put the current thread to sleep and let it 
         // (this is basically just a more complicated poll)
         LOG(DEBUG, "Attempt %d of connection\n", attempt);
-        sleep_untilTime(current_cpu->current_thread, 1, 0);
-        fs_wait(sock->node, VFS_EVENT_READ);
         
-        // Sleep!
-        int wakeup = sleep_enter();
-        if (wakeup == WAKEUP_SIGNAL) {
+        int r = poll_wait(w, 1000);
+        
+        if (r == -EINTR) {
             kfree(ip_packet);
+            poll_exit(w);
+            poll_destroyWaiter(w);
             return -EINTR;
         }
-        
-        if (wakeup == WAKEUP_TIME) {
-            // Retry
+
+        if (r == -ETIMEDOUT) {
             ipv4_sendPacket(nic->parent_node, ip_packet);
             continue;
         }
+
+        // From here on all paths return
+        poll_exit(w);
+        poll_destroyWaiter(w);
 
         // One thread woke us up! But were we connected?
         if (tcpsock->state == TCP_STATE_DEFAULT) {
@@ -807,6 +814,8 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
     }
 
     // Connection failed, we timed out
+    poll_exit(w); 
+    poll_destroyWaiter(w);
     kfree(ip_packet); 
     return -ETIMEDOUT;
 }

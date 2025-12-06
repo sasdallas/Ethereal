@@ -20,12 +20,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-// Memory includes
-#include <kernel/mem/mem.h>
-#include <kernel/arch/i386/mem.h>
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/regions.h>
-
 // General kernel includes
 #include <kernel/debug.h>
 #include <kernel/panic.h>

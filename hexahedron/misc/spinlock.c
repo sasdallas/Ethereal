@@ -17,6 +17,7 @@
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
 #include <stdatomic.h>
+#include <assert.h>
 
 /**
  * @brief Create a new spinlock
@@ -25,7 +26,7 @@
  */
 spinlock_t *spinlock_create(char *name) {
     spinlock_t *ret = kmalloc(sizeof(spinlock_t));
-    ret->cpu = 0;
+    ret->cpu = -1;
     ret->name = name;
     
     // Because atomics and its consequences have been a disaster for the human race,

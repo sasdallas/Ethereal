@@ -151,7 +151,7 @@ ssize_t tarfs_readlink(struct fs_node *node, char *buf, size_t size) {
  * @brief tarfs read method
  */
 ssize_t tarfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (node->flags != VFS_FILE) return 0;
+    if ((node->flags & VFS_FILE) == 0) return 0;
     if ((size_t)offset > node->length) return 0;
     if (offset + size > node->length) {
         size = node->length - offset;
@@ -165,7 +165,7 @@ ssize_t tarfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) 
  * @brief tarfs write method
  */
 ssize_t tarfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (node->flags != VFS_FILE) return 0;
+    if ((node->flags & VFS_FILE) == 0) return 0;
     if ((size_t)offset > node->length) return 0;
     if (offset + size > node->length) {
         size = node->length - offset;

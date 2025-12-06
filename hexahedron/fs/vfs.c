@@ -78,6 +78,7 @@ int fs_close(fs_node_t *node) {
 
     // Anyone still using this node?
     if (node->refcount <= 0) {
+        assert((node->flags & VFS_MOUNTPOINT) == 0);
         // Nope. It's free memory.
         if (node->close) {
             int r = node->close(node);
@@ -185,7 +186,7 @@ ssize_t fs_readlink(fs_node_t *node, char *buf, size_t size) {
 int fs_create(fs_node_t *node, char *name, mode_t mode, fs_node_t **node_out) {
     if (!node) return -EINVAL;
 
-    if (node->flags == VFS_DIRECTORY && node->create) {
+    if (node->flags & VFS_DIRECTORY && node->create) {
         return node->create(node, name, mode, node_out);
     }
 
@@ -227,111 +228,38 @@ int fs_ready(fs_node_t *node, int event_type) {
 }
 
 /**
+ * @brief Poll internal event checker
+ */
+static poll_events_t __vfs_events_checker(poll_event_t *event) {
+    fs_node_t *n = (fs_node_t*)event->dev;
+    return fs_ready(n, 0xFFFFFFFF);
+}
+
+/**
  * @brief Alert any processes in the queue that new events are ready
  * @param node The node to alert on
  * @param events The events to alert on
  * @returns 0 on success
  */
 int fs_alert(fs_node_t *node, int events) {
-    if (!events) return 0;
-    if (!node) return -EINVAL;
-    if (!node->waiting_nodes) return 0;
-    
-    spinlock_acquire(&node->waiter_lock);
-
-    // LOG(INFO, "fs_alert %s pending %d\n", node->name, node->waiting_nodes->length);
-
-    node_t *n = node->waiting_nodes->head;
-    while (n) {
-        vfs_waiter_t *w = (vfs_waiter_t*)n->value;
-        vfs_waiter_thread_t *wt = w->thr;   
-
-        mutex_acquire(wt->mutex);
-
-        // !!!
-        // LOG(DEBUG, "Node %p %s: Waiting for events %x and have %x has_woken_up %ld refcount %ld thread %p\n", node, node->name, w->events, events, wt->has_woken_up, wt->refcount, wt->thread);
-        if (w->events & events && !wt->has_woken_up) {
-            // We have events available
-            if (wt->thread->waiter != wt) {
-                // Likely a timeout expired
-            } else {
-                sleep_wakeup(w->thr->thread);
-            }
-
-            wt->thread->waiter = NULL;
-            atomic_store_explicit(&(w->thr->has_woken_up), 1, memory_order_release);
-        }
-
-        if (atomic_load_explicit(&w->thr->has_woken_up, memory_order_acquire)) {
-            atomic_fetch_sub_explicit(&w->thr->refcount, 1, memory_order_acq_rel);
-
-            // Remove this waiter from the list
-            node_t *new = n->next;
-            list_delete(node->waiting_nodes, n);
-            n = new;        
-            kfree(w);
-
-            // Any remaining references on this node?
-            if (atomic_load_explicit(&w->thr->refcount, memory_order_acquire) == 0) {
-                // No references remaining!
-                // !!!: If a waiter never alerts, it will never destroy.
-                mutex_destroy(wt->mutex);
-                kfree(wt);
-            } else {
-                mutex_release(wt->mutex);
-            }
-
-            continue;
-        }
-
-        // Exit non-critical
-        mutex_release(wt->mutex);
-
-        n = n->next;
-    }
-
-    spinlock_release(&node->waiter_lock);
-
+    node->event.dev = node;
+    node->event.checker = __vfs_events_checker;
+    poll_signal(&node->event, events);
     return 0;
 }
 
 /**
  * @brief Wait for a node to have events ready for a process
+ * @param waiter Poll waiter
  * @param node The node to wait for events on
  * @param events The events that are being waited for
  * @returns 0 on success
- * 
- * @note Does not actually put you to sleep. Instead puts you in the queue. for sleeping
  */
-int fs_wait(fs_node_t *node, int events) {
-    if (!node) return -EINVAL;
-
-    spinlock_acquire(&node->waiter_lock);
-    if (!node->waiting_nodes) node->waiting_nodes = list_create("waiting nodes");
-
-    if (!current_cpu->current_thread->waiter) {
-        // Create a new thread waiter
-        vfs_waiter_thread_t *w = kzalloc(sizeof(vfs_waiter_thread_t));
-        w->thread = current_cpu->current_thread;
-        w->mutex = mutex_create("waiter mutex");
-        atomic_init(&w->refcount, 0);
-        atomic_init(&w->has_woken_up, 0);
-        current_cpu->current_thread->waiter = w;
-    }
-    
-    mutex_acquire(current_cpu->current_thread->waiter->mutex);
-
-    vfs_waiter_t *w = kzalloc(sizeof(vfs_waiter_t));
-    w->events = events;
-    w->thr = current_cpu->current_thread->waiter;
-    list_append(node->waiting_nodes, w);
-
-    atomic_fetch_add_explicit(&w->thr->refcount, 1, memory_order_relaxed);
-
-    mutex_release(current_cpu->current_thread->waiter->mutex);
-
-    spinlock_release(&node->waiter_lock);
-    return 0;
+int fs_wait(poll_waiter_t *waiter, fs_node_t *node, int events) {
+    // TODO: silly hack
+    node->event.dev = node;
+    node->event.checker = __vfs_events_checker;
+    return poll_add(waiter, &node->event, events);
 }
 
 /**
@@ -359,19 +287,6 @@ int fs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // File is loaded, we're done here.    
 _return:
-    if (!r) {
-        // Create mmap context
-        if (!node->mmap_contexts) node->mmap_contexts = list_create("fs mmap contexts");
-    
-        vfs_mmap_context_t *ctx = kmalloc(sizeof(vfs_mmap_context_t));
-        ctx->proc = current_cpu->current_process;
-        ctx->addr = addr;
-        ctx->size = size;
-        ctx->off = off;
-
-        list_append(node->mmap_contexts, (void*)ctx);
-    }
-
     return r;
 }
 
@@ -392,12 +307,10 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
 
     // Else, write the content in chunks (carefully avoiding potentially unallocated chunks)
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            if (!pg->bits.present) continue;
-            
+        mmu_flags_t fl = arch_mmu_read_flags(NULL, i);
+        if (fl & MMU_FLAG_PRESENT) {
             // Has the page been touched?
-            if (PAGE_IS_DIRTY(pg)) {
+            if (1) {
                 // Yes, write it to the file
                 // Depending on whether this iteration is the last write as much
                 uintptr_t sz = ((i - (uintptr_t)(addr + size)));
@@ -419,22 +332,6 @@ int fs_msync(fs_node_t *node, void *addr, size_t size, off_t off) {
  */
 int fs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     if (!node) return -EINVAL;
-
-    // Find the mmap context matching this node
-    node_t *ctx = NULL;
-    foreach(mmap_ctx_node, node->mmap_contexts) {
-        vfs_mmap_context_t *mmap_ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
-        if (mmap_ctx && mmap_ctx->addr == addr && mmap_ctx->size == size && mmap_ctx->off == off) {
-            ctx = mmap_ctx_node;
-            break;
-        }
-    }
-
-    if (!ctx) {
-        LOG(WARN, "Corrupt node? Could not find a valid mmap context for node \"%s\" in fs_munmap.\n", node->name);
-    } else {
-        list_delete(node->mmap_contexts, ctx);
-    }
 
     // Check if the node wants to use its custom munmap
     if (node->munmap) {
@@ -469,33 +366,6 @@ int fs_truncate(fs_node_t *node, size_t length) {
  */
 void fs_destroy(fs_node_t *node) {
     if (!node) return;
-
-    if (node->mmap_contexts) {
-        foreach(mmap_ctx_node, node->mmap_contexts) {
-            vfs_mmap_context_t *ctx = (vfs_mmap_context_t*)mmap_ctx_node->value;
-
-            // Is this part of a process?
-            if (ctx->proc) {    
-                foreach(map_node, ctx->proc->mmap) {
-                    process_mapping_t *map = (process_mapping_t*)(map_node->value);
-                    if (RANGE_IN_RANGE((uintptr_t)ctx->addr, (uintptr_t)ctx->addr+ctx->size, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
-                        // TODO: "Close enough" system? 
-                        if (process_removeMapping(ctx->proc, map)) {
-                            LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
-                        }
-                    }
-                }
-            } else {
-                if (fs_munmap(node, ctx->addr, ctx->size, ctx->off)) {
-                    LOG(ERR, "Failed to remove mapping of file from %p - %p (off: %d)\n", ctx->addr, ctx->addr + ctx->size, ctx->off);
-                }
-            }
-
-            kfree(ctx);
-        }
-
-        list_destroy(node->mmap_contexts, false);
-    }
 
     if (node->waiting_nodes) {
         list_destroy(node->waiting_nodes, true);
@@ -649,7 +519,7 @@ int vfs_creat(fs_node_t **node, char *path, mode_t mode) {
     // LOG(DEBUG, "Creating file %s (file: %s)\n", path, last_slash);
 
     // Make sure this is a directory
-    if (parent->flags != VFS_DIRECTORY) {
+    if ((parent->flags & VFS_DIRECTORY) == 0) {
         kfree(path_full);
         fs_close(parent);
         return -ENOTDIR;
@@ -976,6 +846,8 @@ tree_node_t *vfs_mount(fs_node_t *node, char *path) {
     kfree(strtok_path);
 
 _cleanup:
+
+    node->refcount++; // prevent destruction of this VFS node
     spinlock_release(vfs_lock);
     return parent_node;
 }
@@ -1109,10 +981,8 @@ static fs_node_t *vfs_getMountpoint(const char *path, char **remainder) {
     kfree(path_clone);
 
     // Clone the node and return it
-    fs_node_t *rnode = kmalloc(sizeof(fs_node_t));
-    memcpy(rnode, vnode->node, sizeof(fs_node_t));
-    rnode->refcount = 1;
-    return rnode;
+    fs_node_t *n = fs_copy(vnode->node);
+    return n;
 }
 
 
@@ -1207,7 +1077,7 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
                 if (!sym_node) break;
                 sym_node = kopen_relative(sym_node, pch, flags, depth+1);
 
-                if (sym_node && sym_node->flags == VFS_FILE) {
+                if (sym_node && sym_node->flags & VFS_FILE) {
                     // TODO: What if the user has a REALLY weird filesystem?
                     break;
                 }
@@ -1268,8 +1138,7 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
         if (!node) break;
         node = kopen_relative(node, pch, flags, 0);
 
-        if (node && node->flags == VFS_FILE) {
-            // TODO: What if the user has a REALLY weird filesystem?
+        if (node && node->flags & VFS_FILE) {
             break;
         }
         

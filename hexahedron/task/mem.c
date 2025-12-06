@@ -18,6 +18,7 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <string.h>
+#include <kernel/panic.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:MEM", __VA_ARGS__)
@@ -30,7 +31,7 @@
  * @todo This isn't a "fully compliant" mmap() for multiple reasons
  */
 void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off_t off) {
-    if (!current_cpu->current_process || !current_cpu->current_process->vas) {
+    if (!current_cpu->current_process) {
         return (void*)-EINVAL;
     }
 
@@ -47,13 +48,12 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         LOG(WARN, "MAP_SHARED may unstable (more testing required)\n");
     }
 
-    // Get VAS
-    vas_t *vas = current_cpu->current_process->vas;
-
     // If protection flags were provided - we don't care.
     if (!(prot & PROT_WRITE)) {
         LOG(WARN, "Protection flags are not implemented\n");
     }
+
+    int anon = (filedes == -1 || flags & MAP_ANONYMOUS);
 
     // Make a new mapping structure
     process_mapping_t *map = kmalloc(sizeof(process_mapping_t));
@@ -70,46 +70,40 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     } 
 
     // Destructively align address
-    addr = (void*)(MEM_ALIGN_PAGE_DESTRUCTIVE((uintptr_t)addr));
+    addr = (void*)(PAGE_ALIGN_DOWN((uintptr_t)addr));
+    if (len & 0xFFF) len = PAGE_ALIGN_UP(len);
+
+    // Get space
+    vmm_space_t *sp = vmm_getSpaceForAddress(addr);
 
     // Do they need a fixed allocation?
     if (flags & MAP_FIXED) {
-        if (!IN_RANGE((uintptr_t)addr, PROCESS_MMAP_MINIMUM, (vas->base + vas->size))) {
+        if (!IN_RANGE((uintptr_t)addr, PROCESS_MMAP_MINIMUM, sp->end)) {
             // Out of range, die.
             return (void*)-EINVAL;
         }
         
-        // See if the VAS already has an allocation
+        // See if there's already an allocation
         // TODO: MAP_FIXED_NOREPLACE (?)
-        if (vas_get(vas, (uintptr_t)addr)) {
+        if (vmm_getRange(sp, (uintptr_t)addr, len)) {
             // TODO: Clobber this allocation
             LOG(ERR, "mmap allocation for %p - %p failed - region already present in process VAS\n", addr, addr + len);
             kfree(map);
             return (void*)-EINVAL;
         }
 
-        // Reserve memory in the VAS
-        vas_allocation_t *alloc = vas_reserve(vas, (uintptr_t)addr, len, (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP);
-        if (alloc) {
-            alloc->type = (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP;
-
-            // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
+        // Use the
+        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+        if (b) {
+            map->addr = b;
             if (filedes == -1 || flags & MAP_ANONYMOUS) {
-                LOG(DEBUG, "MAP_FIXED mapping at %p\n", alloc->base);
+                LOG(DEBUG, "MAP_FIXED mapping at %p\n", b);
                 list_append(current_cpu->current_process->mmap, (void*)map);
-                return (void*)alloc->base; // All done
+                memset(b, 0, len);
+                return b;
             }
 
-            // No - call fs_mmap()
-            int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, (void*)alloc->base, len, off);
-            if (mmap_result < 0) {
-                vas_free(vas, vas_get(vas, alloc->base), 0);
-                kfree(map);
-                return (void*)(uintptr_t)mmap_result;
-            }
-
-            list_append(current_cpu->current_process->mmap, (void*)map);
-            return (void*)alloc->base;
+            STUB();
         }
 
         LOG(ERR, "Error while reserving a region. Failing mmap of %d bytes with ENOMEM\n", len);
@@ -125,7 +119,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // Now let's get an allocation in the directory.
-    vas_allocation_t *alloc = vas_allocate(vas, len);
+    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_PRESENT | MMU_FLAG_RW | MMU_FLAG_USER);
     if (!alloc) {
         // No memory?
         LOG(ERR, "Error while allocating a region. Failing mmap of %d bytes with ENOMEM\n", len);
@@ -134,27 +128,26 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         return (void*)-ENOMEM;
     }
 
-    // TODO: Protect allocation
-    alloc->type = (flags & MAP_SHARED) ? VAS_ALLOC_MMAP_SHARE : VAS_ALLOC_MMAP;
-    map->addr = (void*)alloc->base;
+    map->addr = alloc;
 
     // Did the user request a MAP_ANONYMOUS and/or specify a file descriptor of -1? If so we're done
     if (filedes == -1 || flags & MAP_ANONYMOUS) {
         list_append(current_cpu->current_process->mmap, (void*)map);
-        return (void*)alloc->base; // All done
+        memset(alloc, 0, len);
+        return alloc; // All done
     }
 
     // No - call fs_mmap()
-    int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, (void*)alloc->base, len, off);
+    int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, alloc, len, off);
     if (mmap_result < 0) {
-        vas_free(vas, vas_get(vas, alloc->base), 0);
+        
         kfree(map);
         return (void*)(uintptr_t)mmap_result;
     }
 
     // Success!
     list_append(current_cpu->current_process->mmap, (void*)map);
-    return (void*)alloc->base;
+    return alloc;
 }
 
 /**
@@ -166,16 +159,15 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
     if (!map) return 0;
 
     // If there was a file descriptor, close it
-    int munmapped = 0;
     if (!(map->flags & MAP_ANONYMOUS) && map->filedes != -1) {
         // Sometimes a proc will close a file descriptor before it exited
         if (FD_VALIDATE(proc, map->filedes)) {
-            munmapped = !fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
+            fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
         }
     }
 
     // Free the memory in the VAS
-    vas_free(proc->vas, vas_get(proc->vas, (uintptr_t)map->addr), munmapped);
+    vmm_unmap(map->addr, map->size);
 
     // Cleanup
     if (proc->mmap) {
@@ -191,25 +183,13 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
  * @returns Negative error code
  */
 int process_munmap(void *addr, size_t len) {
-    if (!current_cpu->current_process->mmap) return -EINVAL;
-
-    // Find a corresponding mapping
-    int mappings = 0;
-    foreach(map_node, current_cpu->current_process->mmap) {
-        process_mapping_t *map = (process_mapping_t*)(map_node->value);
-        if (RANGE_IN_RANGE((uintptr_t)addr, (uintptr_t)addr+len, (uintptr_t)map->addr, (uintptr_t)map->addr + map->size)) {
-            // TODO: "Close enough" system? 
-
-            if ((uintptr_t)map->addr != (uintptr_t)addr || map->size != len) {
-                LOG(ERR, "Partial munmap (%p - %p) of mapping %p - %p\n", addr, (uintptr_t)addr + len, map->addr, (uintptr_t)map->addr + map->size);
-                return -ENOSYS;
-            }
-
-            int r = process_removeMapping(current_cpu->current_process, map);
-            mappings++;
-        }
-    }
-
-    if (!mappings) return -EINVAL;
+    if (addr >= (void*)MMU_USERSPACE_END) return -EFAULT;
+    vmm_unmap(addr, len);
     return 0;
+}
+
+/**
+ * @brief Destroy mapping list
+ */
+void process_destroyMappings(struct process *proc) {
 }

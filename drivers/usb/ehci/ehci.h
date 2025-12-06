@@ -352,8 +352,8 @@ typedef struct ehci {
 #define TD_LINK_TERM(td) { td->link.terminate = 1; td->alt_link.terminate = 1; }
 
 // Convert address to link pointer (bitshifting for the union)
-#define LINK(addr) ((uint32_t)(mem_getPhysicalAddress(NULL, (uintptr_t)addr) >> 5))
-#define LINK2(addr) ((uint32_t)(mem_getPhysicalAddress(NULL, (uintptr_t)addr) >> 4))
+#define LINK(addr) ((uint32_t)(arch_mmu_physical(NULL, (uintptr_t)addr) >> 5))
+#define LINK2(addr) ((uint32_t)(arch_mmu_physical(NULL, (uintptr_t)addr) >> 4))
 
 // Link together two queue heads
 #define QH_LINK_QH(prev, next)     {prev->qhlp.select = EHCI_FLP_TYPE_QH; \

@@ -25,7 +25,7 @@
 // Kernel includes
 #include <kernel/debug.h>
 #include <kernel/panic.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
@@ -89,22 +89,19 @@ ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER *ExistingTable, ACPI_P
 
 void *AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS PhysicalAddress, ACPI_SIZE Length) {
     // LOG(DEBUG, "AcpiOsMapMemory %p 0x%x\n", (uintptr_t)PhysicalAddress, Length);
-    return (void*)mem_remapPhys(PhysicalAddress, Length);
+    return (void*)arch_mmu_remap_physical(PhysicalAddress, Length, REMAP_TEMPORARY);
 
 }
 
 /* Unmap memory */
 void AcpiOsUnmapMemory(void *where, ACPI_SIZE Length) {
     // LOG(DEBUG, "AcpiOsUnmapMemory 0x%x 0x%x\n", where, Length);
-
-    // !!!: I have genuinely no idea why, but when unmapping memory ACPICA freaks out and tries to allocate a ton of chunks, which the pool system catches and panics.
-    // mem_unmapPhys((uintptr_t)where, Length);
-
+    arch_mmu_unmap_physical((uintptr_t)where, Length);
 }
 
 /* Get a physical address */
 ACPI_STATUS AcpiOsGetPhysicalAddress(void *LogicalAddress, ACPI_PHYSICAL_ADDRESS *PhysicalAddress) {
-    *PhysicalAddress = (ACPI_PHYSICAL_ADDRESS)mem_getPhysicalAddress(NULL, (uintptr_t)LogicalAddress);
+    *PhysicalAddress = (ACPI_PHYSICAL_ADDRESS)arch_mmu_physical(NULL, (uintptr_t)LogicalAddress);
     return AE_OK;
 }
 
@@ -332,7 +329,7 @@ void AcpiOsVprintf(const char *Format, va_list Args) {
 ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS Address, UINT64 *Value, UINT32 Width) {
     LOG(DEBUG, "AcpiOsReadMemory 0x%llX 0x%x\n", Address, Width);
 
-    void *ptr = (void*)mem_remapPhys((uintptr_t)Address, 0x1000); // !!!: HORRIBLY INEFFICIENT!!!!!!!!!
+    void *ptr = (void*)arch_mmu_remap_physical((uintptr_t)Address, 0x1000, REMAP_TEMPORARY); // !!!: HORRIBLY INEFFICIENT!!!!!!!!!
 
     switch (Width) {
         case 8:
@@ -351,12 +348,12 @@ ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS Address, UINT64 *Value, UINT3
             kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "ACPICA", "*** AcpiOsReadMemory received bad width argument 0x%x\n", Width);
     }
 
-    mem_unmapPhys((uintptr_t)ptr, 0x1000);
+    arch_mmu_unmap_physical((uintptr_t)ptr, 0x1000);
     return AE_OK;
 }
 
 ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS Address, UINT64 Value, UINT32 Width) {
-    void *ptr = (void*)mem_remapPhys((uintptr_t)Address, 0x1000); // !!!: HORRIBLY INEFFICIENT!!!!!!!!!
+    void *ptr = (void*)arch_mmu_remap_physical((uintptr_t)Address, 0x1000, REMAP_TEMPORARY); // !!!: HORRIBLY INEFFICIENT!!!!!!!!!
 
     switch (Width) {
         case 8:
@@ -375,7 +372,7 @@ ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS Address, UINT64 Value, UINT3
             kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "ACPICA", "*** AcpiOsReadMemory received bad width argument 0x%x\n", Width);
     }
 
-    mem_unmapPhys((uintptr_t)ptr, 0x1000);
+    arch_mmu_unmap_physical((uintptr_t)ptr, 0x1000);
     return AE_OK;
 }
 

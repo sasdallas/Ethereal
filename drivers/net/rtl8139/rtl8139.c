@@ -14,8 +14,7 @@
 
 #include "rtl8139.h"
 #include <kernel/drivers/pci.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/loader/driver.h>
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
@@ -119,7 +118,7 @@ void rtl8139_thread(void *context) {
     
     for (;;) {
         // Put ourselves to sleep
-        sleep_untilNever(current_cpu->current_thread);
+        sleep_prepare();
         sleep_enter();
 
         // We've been woken up!
@@ -159,7 +158,7 @@ int rtl8139_handler(void *context) {
         if (status & RTL8139_ISR_TOK) {
             // Transmit ok
             // Free the memory
-            mem_freeDMA(nic->tx_buffer, nic->tx_buffer_size);
+            dma_unmap(nic->tx_buffer, nic->tx_buffer_size);
 
             // Release the lock
             spinlock_release(&nic->lock);
@@ -194,16 +193,16 @@ ssize_t rtl8139_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
     spinlock_acquire(&nic->lock);
 
     // Prepare a block of memory
-    nic->tx_buffer = mem_allocateDMA(size);
+    nic->tx_buffer = dma_map(size);
     nic->tx_buffer_size = size;
     memcpy((void*)nic->tx_buffer, buffer, size);
 
     // Send it
-    uintptr_t phys = mem_getPhysicalAddress(NULL, nic->tx_buffer);
+    uintptr_t phys = arch_mmu_physical(NULL, nic->tx_buffer);
     if (phys > 0xFFFFFFFF) {
         LOG(ERR, "The RTL8139 requires that you have a 32-bit memory address\n");
         LOG(ERR, "This is a kernel bug. Report please!\n");
-        mem_freeDMA(nic->tx_buffer, size);
+        dma_unmap(nic->tx_buffer, size);
         spinlock_release(&nic->lock);
         return 0;
     }
@@ -287,11 +286,11 @@ int rtl8139_init(pci_device_t *device) {
     LOG(INFO, "RTL8139 reset successfully\n");
 
     // Allocate a receive buffer
-    nic->rx_buffer = mem_allocateDMA(8192 + 16);
+    nic->rx_buffer = dma_map(8192 + 16);
     memset((void*)nic->rx_buffer, 0, 8192 + 16);
 
     // Send it
-    uintptr_t phys = mem_getPhysicalAddress(NULL, nic->rx_buffer);
+    uintptr_t phys = arch_mmu_physical(NULL, nic->rx_buffer);
     if (phys > 0xFFFFFFFF) {
         LOG(ERR, "The RTL8139 requires that you have a 32-bit memory address\n");
         LOG(ERR, "This is a kernel bug. Report please!\n");
@@ -325,7 +324,7 @@ int rtl8139_init(pci_device_t *device) {
     return 0;
 
 _cleanup:
-    if (nic && nic->rx_buffer) mem_freeDMA(nic->rx_buffer, 8192 + 16);
+    if (nic && nic->rx_buffer) dma_unmap(nic->rx_buffer, 8192 + 16);
     if (nic) kfree(nic);
     return 0;
 }

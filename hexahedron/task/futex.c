@@ -20,6 +20,8 @@
 #include <structs/hashmap.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/processor_data.h>
+#include <kernel/misc/util.h>
+#include <kernel/panic.h>
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
@@ -48,7 +50,7 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
     // First let's get ourselves ready to sleep
     mutex_acquire(futex_mutex);
 
-    uintptr_t ptr_phys = mem_getPhysicalAddress(NULL, (uintptr_t)pointer);
+    uintptr_t ptr_phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
 
     futex_t *f = NULL;
     if (hashmap_has(futex_map, (void*)ptr_phys)) {
@@ -65,15 +67,13 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
     while (1) {
         if (time) {
             // !!!: TIME OUT WILL NOT WORK IF SOME THREAD KEEPS WAKING US UP
-            sleep_untilTime(current_cpu->current_thread, time->tv_sec, time->tv_nsec / 1000);
+            sleep_time(time->tv_sec, time->tv_nsec / 1000);
         } else {
-            sleep_untilNever(current_cpu->current_thread);
+            sleep_prepare();
         }
-
-        current_cpu->current_thread->sleep->context = __futex_avoid_tripping_sanity_check();
         
-        list_append(&f->queue->queue, (void*)current_cpu->current_thread);
-
+        sleep_addQueue(f->queue);
+        
         mutex_release(futex_mutex);
         
         int w = sleep_enter();
@@ -89,7 +89,7 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
         }
 
         // Drop us if needed
-        if (!f->queue->queue.length) {
+        if (!f->queue->head) {
             hashmap_remove(futex_map, (void*)ptr_phys);
             kfree(f->queue);
             kfree(f);
@@ -108,7 +108,7 @@ int futex_wait(int *pointer, int val, const struct timespec *time) {
 int futex_wakeup(int *pointer) {
     mutex_acquire(futex_mutex);
 
-    uintptr_t ptr_phys = mem_getPhysicalAddress(NULL, (uintptr_t)pointer);
+    uintptr_t ptr_phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
 
     if (!hashmap_has(futex_map, (void*)ptr_phys)) {
         mutex_release(futex_mutex);

@@ -14,7 +14,7 @@
 #include "ahci.h"
 #include <kernel/drivers/clock.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/drivefs.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -55,7 +55,7 @@ static int ahci_portDisable(ahci_port_t *port) {
     port->port->cmd &= ~(HBA_PORT_PXCMD_ST);
 
     // Wait for CR to clear
-    int timeout = TIMEOUT(!(port->port->cmd & HBA_PORT_PXCMD_CR), 500000);
+    int timeout = AHCI_TIMEOUT(!(port->port->cmd & HBA_PORT_PXCMD_CR), 500000);
     if (timeout) {
         // DMA engine didn't stop correcty
         LOG_PORT(ERR, port, "Stopping DMA engine timed out.\n");
@@ -85,7 +85,7 @@ static int ahci_portEnable(ahci_port_t *port) {
     }
 
     // Wait until CR is clear
-    int cr_clear = TIMEOUT(!(port->port->cmd & HBA_PORT_PXCMD_CR), 100000);
+    int cr_clear = AHCI_TIMEOUT(!(port->port->cmd & HBA_PORT_PXCMD_CR), 100000);
     if (cr_clear) {
         LOG_PORT(ERR, port, "Failed to stop DMA engine\n");
         return AHCI_ERROR;
@@ -233,7 +233,7 @@ static int ahci_portFillPRDT(ahci_port_t *port, ahci_cmd_header_t *header, uintp
         AHCI_SET_ADDRESS(table->prdt_entry[entry].dba, buffer);
         
         // temp check
-        if (mem_getPhysicalAddress(NULL, (uintptr_t)buffer) & 1)  {
+        if (arch_mmu_physical(NULL, (uintptr_t)buffer) & 1)  {
             LOG_PORT(WARN, port, "Data not aligned properly: %p\n", buffer);
         }
 
@@ -287,7 +287,7 @@ static int ahci_portWaitTransfer(ahci_port_t *port, int timeout, int header) {
     }
 
     LOG_PORT(ERR, port, "Transfer failure - timeout while waiting\n");
-    return AHCI_TIMEOUT;   
+    return AHCI_TIMEDOUT;   
 }
 
 /**
@@ -323,7 +323,7 @@ static int ahci_readIdentificationSpace(ahci_port_t *port, ata_ident_t *ident) {
     
 
     // Wait for device to not be busy
-    int timeout = TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
+    int timeout = AHCI_TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
     if (timeout) {
         LOG_PORT(ERR, port, "Timeout waiting for existing command to process (BSY/DRQ set)\n");
         return AHCI_ERROR;
@@ -390,7 +390,7 @@ int ahci_readCapacity(ahci_port_t *port, uint32_t *lba, uint32_t *block_size) {
     memcpy((void*)port->cmd_table->acmd, read_capacity_packet, 12);
 
     // Wait for device to not be busy
-    int timeout = TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
+    int timeout = AHCI_TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
     if (timeout) {
         LOG_PORT(ERR, port, "Timeout waiting for existing command to process (BSY/DRQ set)\n");
         return AHCI_ERROR;
@@ -442,10 +442,10 @@ ahci_port_t *ahci_portInitialize(ahci_t *ahci, int port_number) {
     memory_amount += (sizeof(ahci_prdt_entry_t) * AHCI_PRDT_COUNT);
 
     // Allocate DMA buffer (this will be used for small reads and writes)
-    port->dma_buffer = mem_allocateDMA(PAGE_SIZE);
+    port->dma_buffer = dma_map(PAGE_SIZE);
     
     // Now get that memory from the kernel heap
-    uintptr_t port_buffer = mem_allocateDMA(memory_amount);
+    uintptr_t port_buffer = dma_map(memory_amount);
     memset((void*)port_buffer, 0, memory_amount);
 
     // Start by allocating the command list
@@ -466,7 +466,7 @@ ahci_port_t *ahci_portInitialize(ahci_t *ahci, int port_number) {
 
     // Debug
     LOG_PORT(DEBUG, port, "CMDLIST = %p FIS = %p CMDTABLE = %p\n", port->cmd_list, port->fis, port->cmd_table);
-    LOG_PORT(DEBUG, port, "CMDLISTPHYS = %p FISPHYS = %p CMDTABLEPHYS = %p\n", mem_getPhysicalAddress(NULL, (uintptr_t)port->cmd_list), mem_getPhysicalAddress(NULL, (uintptr_t)port->fis), mem_getPhysicalAddress(NULL, (uintptr_t)port->cmd_table));
+    LOG_PORT(DEBUG, port, "CMDLISTPHYS = %p FISPHYS = %p CMDTABLEPHYS = %p\n", arch_mmu_physical(NULL, (uintptr_t)port->cmd_list), arch_mmu_physical(NULL, (uintptr_t)port->fis), arch_mmu_physical(NULL, (uintptr_t)port->cmd_table));
 
 
     // Now point AHCI registers to our structures
@@ -525,7 +525,7 @@ int ahci_portFinishInitialization(ahci_port_t *port) {
     }
 
     // Wait for BSY and DRQ to clear.
-    int timeout = TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
+    int timeout = AHCI_TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
     if (timeout) {
         // AHCI specification says that if this fails to try a COMRESET
         LOG_PORT(INFO, port, "Timeout detected, performing COMRESET\n");
@@ -547,7 +547,7 @@ int ahci_portFinishInitialization(ahci_port_t *port) {
     }
 
     // Wait for DET to be 3 (HBA_PORT_SSTS_DET_PRESENT)
-    timeout = TIMEOUT((port->port->ssts & HBA_PORT_SSTS_DET_PRESENT), 5000);
+    timeout = AHCI_TIMEOUT((port->port->ssts & HBA_PORT_SSTS_DET_PRESENT), 5000);
     if (timeout) {
         LOG_PORT(INFO, port, "No device present on port\n");
         port->type = AHCI_DEVICE_NONE;
@@ -764,7 +764,7 @@ int ahci_portOperate(ahci_port_t *port, int operation, uint64_t lba, size_t sect
 
     // Wait for port to not be busy
     // Wait for device to not be busy
-    int timeout = TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
+    int timeout = AHCI_TIMEOUT(!(port->port->tfd & (ATA_SR_BSY | ATA_SR_DRQ)), 1000000);
     if (timeout) {
         LOG_PORT(ERR, port, "Timeout waiting for existing command to process (BSY/DRQ set)\n");
         return AHCI_ERROR;

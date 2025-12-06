@@ -22,6 +22,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 #include <ctype.h>
+#include <assert.h>
 
 /**** MACROS ****/
 
@@ -77,13 +78,22 @@
 #define IS_ALIGNED(val, align) (((val) & ((align)-1))==0)
 
 /* Critical */
-#define __NON_INTERRUPTABLE_BEGIN() { int __state = hal_getInterruptState(); hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
-#define __NON_INTERRUPTABLE_END() hal_setInterruptState(__state); }
+#define __NON_INTERRUPTABLE_BEGIN()  int __state = hal_getInterruptState(); hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+#define __NON_INTERRUPTABLE_END() hal_setInterruptState(__state); 
+
+#define __PREEMPT_DISABLE() int __status = current_cpu->current_thread->status; __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_FLAG_NO_PREEMPT)
+#define __PREEMPT_ENABLE() current_cpu->current_thread->status = __status;
 
 /* refcount */
 typedef atomic_int refcount_t;
 #define refcount_inc(ref) ({ atomic_fetch_add(ref, 1); })
 #define refcount_dec(ref) ({ atomic_fetch_sub(ref, 1); })
 #define refcount_init(ref, val) ({ atomic_store(ref, val); })
+
+/* stub */
+#define STUB() kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "stub", "%s:%d: \"%s\" is a stub", __FILE__, __LINE__, __func__); __builtin_unreachable();
+
+/* caller */
+#define CALLER __builtin_return_address(0)
 
 #endif

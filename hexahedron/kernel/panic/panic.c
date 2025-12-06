@@ -146,7 +146,6 @@ void kernel_panic(uint32_t bugcode, char *module) {
     printf(COLOR_CODE_RED   "*** %s\n", kernel_panic_messages[bugcode]);
 
     // Finish the panic
-    if (debugger_isConnected()) BREAKPOINT();
     arch_panic_finalize();
 }
 

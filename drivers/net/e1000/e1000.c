@@ -21,7 +21,7 @@
 #include <kernel/task/process.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <string.h>
@@ -163,14 +163,14 @@ int e1000_readMAC(e1000_t *nic, uint8_t *mac) {
  */
 void e1000_txinit(e1000_t *nic) {
     // First, allocate our Tx descriptors
-    nic->tx_descs = (volatile e1000_tx_desc_t*)mem_allocateDMA(sizeof(e1000_tx_desc_t) * E1000_NUM_TX_DESC);
+    nic->tx_descs = (volatile e1000_tx_desc_t*)dma_map(sizeof(e1000_tx_desc_t) * E1000_NUM_TX_DESC);
     memset((void*)nic->tx_descs, 0, sizeof(e1000_tx_desc_t) * E1000_NUM_TX_DESC);
 
     // Now we actually need to allocate our Tx descriptors (i.e. setting up their bits, addresses, etc)
     for (int i = 0; i < E1000_NUM_TX_DESC; i++) {
         // Map in an address
-        nic->tx_virt[i] = mem_allocateDMA(PAGE_SIZE); // TODO: Are we sure about this?
-        nic->tx_descs[i].addr = mem_getPhysicalAddress(NULL, nic->tx_virt[i]);
+        nic->tx_virt[i] = dma_map(PAGE_SIZE); // TODO: Are we sure about this?
+        nic->tx_descs[i].addr = arch_mmu_physical(NULL, nic->tx_virt[i]);
         memset((void*)nic->tx_virt[i], 0, PAGE_SIZE);
 
         // Mark as EOP
@@ -179,7 +179,7 @@ void e1000_txinit(e1000_t *nic) {
     } 
 
     // Write these addresses into the NIC
-    uintptr_t phys_tx = mem_getPhysicalAddress(NULL, (uintptr_t)nic->tx_descs);
+    uintptr_t phys_tx = arch_mmu_physical(NULL, (uintptr_t)nic->tx_descs);
     E1000_SENDCMD(E1000_REG_TXDESCHI, (uint32_t)((uint64_t)phys_tx >> 32));
     E1000_SENDCMD(E1000_REG_TXDESCLO, (uint32_t)((uint64_t)phys_tx & 0xFFFFFFFF));
 
@@ -208,20 +208,20 @@ void e1000_txinit(e1000_t *nic) {
  */
 void e1000_rxinit(e1000_t *nic) {
     // First, allocate our Rx descriptors
-    nic->rx_descs = (volatile e1000_rx_desc_t*)mem_allocateDMA(sizeof(e1000_rx_desc_t) * E1000_NUM_RX_DESC);
+    nic->rx_descs = (volatile e1000_rx_desc_t*)dma_map(sizeof(e1000_rx_desc_t) * E1000_NUM_RX_DESC);
     memset((void*)nic->rx_descs, 0, sizeof(e1000_rx_desc_t) * E1000_NUM_RX_DESC);
 
     // Now we actually need to allocate our Rx descriptors (i.e. setting up their bits, addresses, etc)
     for (int i = 0; i < E1000_NUM_RX_DESC; i++) {
         // Map in an address
-        nic->rx_virt[i] = mem_allocateDMA(PAGE_SIZE); // TODO: Are we sure about this?
-        nic->rx_descs[i].addr = mem_getPhysicalAddress(NULL, nic->rx_virt[i]);
+        nic->rx_virt[i] = dma_map(PAGE_SIZE); // TODO: Are we sure about this?
+        nic->rx_descs[i].addr = arch_mmu_physical(NULL, nic->rx_virt[i]);
         memset((void*)nic->rx_virt[i], 0, PAGE_SIZE);
         nic->rx_descs[i].status = 0;
     } 
 
     // Write these addresses into the NIC
-    uintptr_t phys_rx = mem_getPhysicalAddress(NULL, (uintptr_t)nic->rx_descs);
+    uintptr_t phys_rx = arch_mmu_physical(NULL, (uintptr_t)nic->rx_descs);
     E1000_SENDCMD(E1000_REG_RXDESCHI, (uint32_t)((uint64_t)phys_rx >> 32));
     E1000_SENDCMD(E1000_REG_RXDESCLO, (uint32_t)((uint64_t)phys_rx & 0xFFFFFFFF));
 
@@ -304,8 +304,6 @@ static void e1000_receiverThread(void *data) {
     int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
 
     for (;;) {
-        // sleep_untilNever(current_cpu->current_thread);
-        // sleep_enter();
         arch_pause();
 
         if (head == nic->rx_current) {
@@ -462,7 +460,7 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     // Map the MMIO space in
     // Convert if needed
     LOG(DEBUG, "MMIO map: size 0x%016llX addr 0x%016llX bar type %d\n", bar->size, bar->address, bar->type);
-    nic->mmio = mem_mapMMIO(bar->address, bar->size);
+    nic->mmio = mmio_map(bar->address, bar->size);
     kfree(bar);
 
     // Register our IRQ handler
@@ -523,8 +521,8 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     e1000_txinit(nic);
 
     LOG(DEBUG, "TX/RX descriptors initialized successfully\n");
-    LOG(DEBUG, "\tRX descriptors: %p/%p\n", nic->rx_descs, mem_getPhysicalAddress(NULL, (uintptr_t)nic->rx_descs));
-    LOG(DEBUG, "\tTX descriptors: %p/%p\n", nic->tx_descs, mem_getPhysicalAddress(NULL, (uintptr_t)nic->tx_descs));
+    LOG(DEBUG, "\tRX descriptors: %p/%p\n", nic->rx_descs, arch_mmu_physical(NULL, (uintptr_t)nic->rx_descs));
+    LOG(DEBUG, "\tTX descriptors: %p/%p\n", nic->tx_descs, arch_mmu_physical(NULL, (uintptr_t)nic->tx_descs));
 
     // RDTR/ITR
     E1000_SENDCMD(E1000_REG_RDTR, 0);
@@ -557,7 +555,7 @@ _cleanup:
     }
 
     // Unmap MMIO
-    mem_unmapMMIO(nic->mmio, bar->size);
+    mmio_unmap(nic->mmio, bar->size);
     spinlock_destroy(nic->lock);
     kfree(nic);
 }

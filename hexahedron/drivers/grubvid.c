@@ -16,10 +16,7 @@
 
 #include <kernel/drivers/grubvid.h>
 #include <kernel/drivers/video.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/vas.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/processor_data.h>
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>
@@ -40,13 +37,7 @@ void grubvid_updateScreen(struct _video_driver *driver, uint8_t *buffer) {
  * @brief Unload function
  */
 int grubvid_unload(video_driver_t *driver) {
-    // Unmap
-    for (uintptr_t i = (uintptr_t)driver->videoBuffer; i < (uintptr_t)driver->videoBuffer + (driver->screenHeight * driver->screenPitch);
-        i += PAGE_SIZE) 
-    {
-        mem_allocatePage(mem_getPage(NULL, i, MEM_DEFAULT), MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
-    }
-
+    vmm_unmap(driver->videoBuffer, (size_t)(driver->screenHeight * driver->screenPitch));
     return 0;
 }
 
@@ -65,7 +56,7 @@ int grubvid_map(video_driver_t *driver, size_t size, off_t off, void *addr) {
 
     // Start mapping
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        mem_mapAddress(NULL, (uintptr_t)driver->videoBufferPhys + i + off, (uintptr_t)addr + i, MEM_PAGE_WRITE_COMBINE);
+        arch_mmu_map(NULL,(uintptr_t)addr + i, (uintptr_t)driver->videoBufferPhys + i + off, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER | MMU_FLAG_WC);
     }
 
     return 0;
@@ -84,10 +75,7 @@ int grubvid_unmap(struct _video_driver *driver, size_t size, off_t off, void *ad
     if (off + size > bufsz) size = bufsz-off;
 
     for (uintptr_t i = (uintptr_t)addr; i < (uintptr_t)addr + size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, i, MEM_DEFAULT);
-        if (pg) {
-            pg->bits.present = 0;
-        }
+        arch_mmu_unmap(NULL, i);
     }
 
     return 0;
@@ -122,12 +110,12 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
 
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
     size_t fbsize = (driver->screenHeight * driver->screenPitch);
-    uintptr_t region = mem_allocate(0, fbsize, MEM_ALLOC_HEAP, MEM_PAGE_NOALLOC | MEM_PAGE_KERNEL | MEM_PAGE_WRITE_COMBINE);
+    uintptr_t region = (uintptr_t)vmm_map(NULL, fbsize, VM_FLAG_DEFAULT, MMU_FLAG_WC | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     for (uintptr_t phys = parameters->framebuffer->framebuffer_addr, virt = region;
             phys < parameters->framebuffer->framebuffer_addr + fbsize;
             phys += PAGE_SIZE, virt += PAGE_SIZE) 
     {
-        mem_mapAddress(NULL, phys, virt, MEM_PAGE_KERNEL | (wc ? MEM_PAGE_WRITE_COMBINE : 0)); // !!!: usermode access?
+        arch_mmu_map(NULL, virt, phys, MMU_FLAG_WC | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     }
 
     driver->videoBuffer = (uint8_t*)region;

@@ -66,7 +66,7 @@ void scheduler_initCPU() {
 int scheduler_insertThread(thread_t *thread) {
     assert(current_cpu->sched.state == SCHEDULER_STATE_ACTIVE);
     spinlock_acquire(current_cpu->sched.lock);
-    list_append(current_cpu->sched.queue, thread);
+    list_append_node(current_cpu->sched.queue, &thread->sched_node);
     spinlock_release(current_cpu->sched.lock);
 
     return 0;
@@ -115,6 +115,8 @@ thread_t *scheduler_get() {
         return current_cpu->idle_process->main_thread;
     }
 
+extern void sleep_callback(uint64_t t);
+    sleep_callback(0);
 
     spinlock_acquire(current_cpu->sched.lock);
     
@@ -122,7 +124,13 @@ thread_t *scheduler_get() {
     thread_t *t = current_cpu->idle_process->main_thread;
     if (n) {
         t = n->value;
+        /* We have a local thread, release our lock and continue */
+        spinlock_release(current_cpu->sched.lock);
     } else {
+        /* Nothing on our queue — release our lock before attempting to steal
+           to avoid holding two locks at once and potential deadlocks. */
+        spinlock_release(current_cpu->sched.lock);
+
         int cpu_to_steal_from = scheduler_findMostLoadedCPU();
         if (cpu_to_steal_from != -1) {
             spinlock_acquire(processor_data[cpu_to_steal_from].sched.lock);
@@ -134,14 +142,18 @@ thread_t *scheduler_get() {
         }
     }
 
-    spinlock_release(current_cpu->sched.lock);
-    if (n) kfree(n);
+    /* Ensure we always have a valid thread pointer (fallback to idle). */
+    if (!t) {
+        t = current_cpu->idle_process->main_thread;
+    }
 
     if (t->status & THREAD_STATUS_STOPPING) {
+        LOG(DEBUG, "Killing thread %p since it says its stopping\n", t);
         thread_destroy(t);
         return scheduler_get();
     }
 
     assert(!(t->status & THREAD_STATUS_STOPPED));
+    assert(t);
     return t;
 }

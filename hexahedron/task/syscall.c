@@ -156,17 +156,14 @@ static size_t __hostnamelen = 0;
  * @returns Only if resolved.
  */
 void syscall_pointerValidateFailed(void *ptr) {
-    // Check to see if this pointer is within process heap boundary
-    if ((uintptr_t)ptr >= current_cpu->current_process->heap_base && (uintptr_t)ptr < current_cpu->current_process->heap) {
-        // Yep, it's valid. Map a page
-        mem_allocatePage(mem_getPage(NULL, (uintptr_t)ptr, MEM_CREATE), MEM_DEFAULT);
-        return;
-    }
+    vmm_fault_information_t i = {
+        .address = (uintptr_t)ptr,
+        .exception_type = VMM_FAULT_NONPRESENT | VMM_FAULT_READ,
+        .from = VMM_FAULT_FROM_USER
+    };
 
-    // Can we resolve via VAS?
-    if (vas_fault(current_cpu->current_process->vas, (uintptr_t)(ptr) & ~0xFFF, PAGE_SIZE*2)) {
-        return;
-    }
+    int r = vmm_fault(&i);
+    if (r == VMM_FAULT_RESOLVED) return;
 
     kernel_panic_prepare(KERNEL_BAD_ARGUMENT_ERROR);
 
@@ -190,8 +187,6 @@ void syscall_finish() {
  * @returns Nothing, but updates @c syscall->return_value
  */
 void syscall_handle(syscall_t *syscall) {
-    // LOG(INFO, "Received system call %d\n", syscall->syscall_number);
-
     // Enter
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
@@ -206,7 +201,6 @@ void syscall_handle(syscall_t *syscall) {
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
-
 
     return;
 }
@@ -269,8 +263,7 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 
     char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)pathname);
     fd->path = p;
-
-    LOG(DEBUG, "Finish! %d\n", fd->fd_number);
+    
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
         fd->offset = node->length;
@@ -280,9 +273,7 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 }
 
 int sys_open(const char *pathname, int flags, mode_t mode) {
-    // Validate pointer
     SYSCALL_VALIDATE_PTR(pathname);
-    LOG(DEBUG, "sys_open %s flags %d mode %d\n", pathname, flags, mode);
     return __sys_open_internal((char*)pathname, flags, mode);
 }
 
@@ -294,8 +285,6 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
     }
 
     fd_t *proc_fd = FD(current_cpu->current_process, fd);
-
-    // LOG(DEBUG, "sys_read fd %d buffer %p count %d offset %d\n", fd, buffer, count, proc_fd->offset);
     ssize_t i = fs_read(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
     proc_fd->offset += i;
 
@@ -313,7 +302,6 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     ssize_t i = fs_write(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
     proc_fd->offset += i;
 
-    // LOG(DEBUG, "sys_write fd %d buffer %p count %d\n", fd, buffer, count);
     if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     return i;
 }
@@ -324,10 +312,6 @@ int sys_close(int fd) {
         return -EBADF;
     }
 
-    // // !!! HACK: If you don't want to free this, too bad...
-    // if (FD(current_cpu->current_process, fd)->dev) kfree(FD(current_cpu->current_process, fd)->dev);
-
-    // LOG(DEBUG, "sys_close fd %d\n", fd);
     fd_remove(current_cpu->current_process, fd);
     return 0;
 }
@@ -340,14 +324,14 @@ int sys_close(int fd) {
 static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
     // Convert VFS flags to st_dev
     statbuf->st_dev = 0;
-    if (f->flags == VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
-    if (f->flags == VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
-    if (f->flags == VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
-    if (f->flags == VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
-    if (f->flags == VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
-    if (f->flags == VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
-    if (f->flags == VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
-    if (f->flags == VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
+    if (f->flags & VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
+    if (f->flags & VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
+    if (f->flags & VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
+    if (f->flags & VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
+    if (f->flags & VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
+    if (f->flags & VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
+    if (f->flags & VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
+    if (f->flags & VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
 
     // st_mode is just st_dev with extra steps
     statbuf->st_mode = statbuf->st_dev;
@@ -445,7 +429,7 @@ void *sys_brk(void *addr) {
     if ((uintptr_t)addr < current_cpu->current_process->heap) {
         // TODO: Free area in VAS!!!
         size_t free_size = current_cpu->current_process->heap - (uintptr_t)addr;
-        mem_free((uintptr_t)addr, free_size, MEM_DEFAULT);
+        vmm_unmap(addr, free_size);
         current_cpu->current_process->heap = (uintptr_t)addr;
         return addr;
     } else if ((uintptr_t)addr == current_cpu->current_process->heap) {
@@ -454,7 +438,7 @@ void *sys_brk(void *addr) {
 
 
     // Else, "handle"
-    vas_reserve(current_cpu->current_process->vas, current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VAS_ALLOC_PROG_BRK);
+    vmm_map((void*)current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_RW | MMU_FLAG_PRESENT | MMU_FLAG_USER);
     
     current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
                                                             // (page fault handler will map this on a critical failure)
@@ -467,8 +451,10 @@ void *sys_brk(void *addr) {
  * @brief Fork system call
  */
 pid_t sys_fork() {
-    return process_fork();
+    pid_t cpid = process_fork();
+    return cpid;
 }
+
 
 /**
  * @brief lseek system call
@@ -520,7 +506,7 @@ long sys_settimeofday(struct timeval *tv, void *tz) {
  * @brief usleep system call
  */
 long sys_usleep(useconds_t usec) {
-    sleep_untilTime(current_cpu->current_thread, (usec / 1000000), (usec % 1000000));
+    sleep_time((usec / 1000000), (usec % 1000000));
     if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
 
     return 0;
@@ -539,7 +525,7 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Try to get the file
     fs_node_t *f = kopen_user(pathname, O_RDONLY);
     if (!f) return -ENOENT;
-    if (f->flags != VFS_FILE && f->flags != VFS_SYMLINK) { fs_close(f); return -EISDIR; }
+    if ((f->flags & (VFS_FILE | VFS_SYMLINK)) == 0) { fs_close(f); return -EISDIR; }
 
     // Collect any arguments that we need
     int argc = 0;
@@ -563,14 +549,14 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Move their arguments into our array
     char **new_argv = kzalloc((argc+1) * sizeof(char*));
     for (int a = 0; a < argc; a++) {
-        new_argv[a] = strdup(argv[a]); // TODO: Leaking memory!!!
+        new_argv[a] = strdup(argv[a]);
     }
 
     // Reallocate envp if specified
     char **new_envp = kzalloc((envc+1) * sizeof(char*));
     if (envp) {
         for (int e = 0; e < envc; e++) {
-            new_envp[e] = strdup(envp[e]); // TODO: Leaking memory!!!
+            new_envp[e] = strdup(envp[e]);
         }
     } 
 
@@ -578,7 +564,6 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     new_argv[argc] = NULL;
     new_envp[envc] = NULL;
 
-    // process_execute(f, argc, new_argv, new_envp);
     return binfmt_exec((char*)pathname, f, argc, new_argv, new_envp);
 }
 
@@ -618,7 +603,7 @@ long sys_chdir(const char *path) {
 
     fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
     if (tmpnode) {
-        if (tmpnode->flags != VFS_DIRECTORY) {
+        if ((tmpnode->flags & VFS_DIRECTORY) == 0) {
             kfree(nn);
             fs_close(tmpnode);
             return -ENOTDIR;
@@ -669,53 +654,61 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     int have_hit = 0;
 
-    // int iters = 10;
-    // while (iters) {
-        for (size_t i = 0; i < nfds; i++) {
-            // Check the file descriptor
-            fds[i].revents = 0;
-            if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-                fds[i].revents |= POLLNVAL;
-                continue;
-            }
+#if 1
 
-            // Does the file descriptor have available contents right now?
-            int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-            int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+    poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, nfds ? nfds : 1);
 
-            if (ready & events) {
-                // Oh, we already have a hit! :D
-                // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-                fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-                have_hit++;
-            } 
+    for (size_t i = 0; i < nfds; i++) {
+        // Check the file descriptor
+        fds[i].revents = 0;
+        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+            fds[i].revents |= POLLNVAL;
+            continue;
         }
 
-        if (have_hit) return have_hit;
-    //     iters--;
-    // }
+        // Does the file descriptor have available contents right now?
+        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+        if (ready & events) {
+            // Oh, we already have a hit! :D
+            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+            have_hit++;
+        } else if (!have_hit) {
+            // LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
+            fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
+        }
+    }
+
+    if (have_hit) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return have_hit;
+    }
 
     // We didn't get anything. Did they want us to wait?
-    if (timeout == 0) return 0;
+    if (timeout == 0) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return 0;
+    }
     
     // Yes, so prepare ourselves to wait
-    if (timeout > 0) {
-        sleep_untilTime(current_cpu->current_thread, 0, timeout*1000);
-    } else {
-        sleep_untilNever(current_cpu->current_thread);
+    int w = poll_wait(waiter, timeout);
+
+
+    if (w == -EINTR) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return -EINTR;
     }
 
-    // There is a timeout, so put ourselves in the queue for each fd
-    for (size_t i = 0; i < nfds; i++) {
-        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        if (FD_VALIDATE(current_cpu->current_process, fds[i].fd)) fs_wait(FD(current_cpu->current_process, fds[i].fd)->node, events);
+    if (w == -ETIMEDOUT) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return 0;
     }
-
-    // Enter sleep state
-    int wakeup = sleep_enter();
-
-    if (wakeup == WAKEUP_SIGNAL) return -EINTR;
-    if (wakeup == WAKEUP_TIME) return 0;
 
     for (size_t i = 0; i < nfds; i++) {
         // Does the file descriptor have available contents right now?
@@ -730,11 +723,12 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         } 
     }
 
+    poll_exit(waiter);
+    poll_destroyWaiter(waiter);
     return have_hit;   // At least one thread woke us up
 
+#else
     /* Legacy poll that doesn't sleep. For debugging. */
-#if 0
-
     struct timeval tv_start;
     gettimeofday(&tv_start, NULL);
 
@@ -798,12 +792,6 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     size_t ret = 0;
 
-    // Depending on our timeval, prepare the thread for sleeping
-    if (ctx->timeout) {
-        sleep_untilTime(current_cpu->current_thread, ctx->timeout->tv_sec, ctx->timeout->tv_nsec / 1000); // TODO: tv_nsec
-    } else {
-        sleep_untilNever(current_cpu->current_thread);
-    }
 
     // First check if anything is reaady
     for (int fd = 0; fd < ctx->nfds; fd++) {
@@ -840,10 +828,12 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     // Did we get anything?
     if (ret) {
-        sleep_exit(current_cpu->current_thread);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return ret;
     }
+
+    // make a waiter object
+    poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
 
     // Nope, looks like we have to go on an adventure.
 
@@ -853,25 +843,31 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
         if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
         if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
-        
+
         if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
 
         // Now wait in the node
-        fs_wait(FD(current_cpu->current_process, fd)->node, wanted_evs);
+        fs_wait(w, FD(current_cpu->current_process, fd)->node, wanted_evs);
     }
 
     // Enter sleep
-    int w = sleep_enter();
-    if (w == WAKEUP_SIGNAL) {
+    int r = poll_wait(w, ctx->timeout->tv_sec * 1000 + ctx->timeout->tv_nsec / 1000);
+    if (r == -EINTR) {
+        poll_exit(w);
+        poll_destroyWaiter(w);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return -EINTR; // TODO: SA_RESTART
     }
 
-    if (w == WAKEUP_TIME) {
+    if (r == -ETIMEDOUT) {
+        poll_exit(w);
+        poll_destroyWaiter(w);
         (current_cpu->current_thread->blocked_signals) = old_set;
         return 0;
     }
 
+    poll_exit(w);
+    poll_destroyWaiter(w);
 
 
     // Another thread must have woken us up
@@ -975,7 +971,7 @@ long sys_uname(struct utsname *buf) {
 
     // Copy!
     snprintf(buf->sysname, 128, "Hexahedron");
-    snprintf(buf->nodename, 128, "N/A"); // lol, should be hostname
+    snprintf(buf->nodename, 128, __hostname);
     snprintf(buf->release, 128, "%d.%d.%d-%s", 
                     __kernel_version_major, 
                     __kernel_version_minor, 
@@ -1000,12 +996,14 @@ pid_t sys_getpid() {
 
 long sys_mmap(sys_mmap_context_t *context) {
     SYSCALL_VALIDATE_PTR(context);
-    // LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
+    LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
     long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+    
     return r;
 }
 
 long sys_munmap(void *addr, size_t len) {
+    LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
     return process_munmap(addr, len);
 }
 

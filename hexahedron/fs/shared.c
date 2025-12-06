@@ -13,9 +13,7 @@
 
 #include <kernel/fs/shared.h>
 #include <kernel/fs/kernelfs.h> 
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
 #include <string.h>
@@ -60,7 +58,7 @@ static int sharedfs_close(fs_node_t *node) {
     if (obj->refcount <= 0) {
         // We hit the bottom of our refcounts, free the object
         for (uintptr_t i = 0; i < obj->size / PAGE_SIZE; i++) {
-            if (obj->blocks[i]) pmm_freeBlock(obj->blocks[i]);
+            if (obj->blocks[i]) pmm_freePage(obj->blocks[i]);
         }
 
         LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
@@ -81,15 +79,20 @@ static int sharedfs_close(fs_node_t *node) {
 static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     shared_object_t *obj = (shared_object_t*)node->dev;
 
-    // Align size to page size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
-    if (size > obj->size) size = obj->size;
+    if (off < 0) return -EINVAL;
+    if ((off % PAGE_SIZE) != 0) return -EINVAL;
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);
+    if ((size_t)off >= obj->size) return -EINVAL;
+    if (off + (off_t)size > (off_t)obj->size) {
+        size = obj->size - (size_t)off;
+        if (size == 0) return 0;
+    }
 
-    // Start mapping
+    uintptr_t start_idx = (uintptr_t)off / PAGE_SIZE;
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        if (!obj->blocks[i / PAGE_SIZE]) obj->blocks[i / PAGE_SIZE] = pmm_allocateBlock();
-        mem_mapAddress(NULL, obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i, MEM_DEFAULT);
-        // LOG(DEBUG, "Mapped PMM block %p -> %p\n", obj->blocks[i / PAGE_SIZE], (uintptr_t)addr + i);
+        uintptr_t block_idx = start_idx + (i / PAGE_SIZE);
+        if (!obj->blocks[block_idx]) obj->blocks[block_idx] = pmm_allocatePage(ZONE_DEFAULT);
+        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], MMU_FLAG_RW | MMU_FLAG_USER | MMU_FLAG_PRESENT);
     }
 
     return 0;
@@ -105,13 +108,16 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
  */
 static int sharedfs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     // Align size to page size
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);  
-    
-    // Start mapping
-    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-        page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
-        if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
-    }
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);  
+
+    // // Start mapping
+    // for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
+    //     page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
+    //     if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
+    // }
+
+    LOG(DEBUG, "Unmapping shared filesystem\n");
+    vmm_unmap(addr, size);
 
     return 0;
 }
@@ -127,7 +133,7 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
     // TODO: Should we validate size?
 
     // Round size to the nearest page if needed
-    if (size % PAGE_SIZE != 0) size = MEM_ALIGN_PAGE(size);
+    if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);
 
     shared_object_t *obj = kzalloc(sizeof(shared_object_t));
     obj->key = shared_last_key++;
@@ -167,7 +173,7 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
  */
 key_t sharedfs_key(fs_node_t *node) {
     // Vaildate node is a shared object node
-    if (node->flags != VFS_BLOCKDEVICE || node->impl != SHARED_IMPL) return -EINVAL;
+    if ((node->flags & VFS_BLOCKDEVICE) == 0 || node->impl != SHARED_IMPL) return -EINVAL;
 
     shared_object_t *obj = (shared_object_t*)node->dev;
     return obj->key;

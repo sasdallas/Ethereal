@@ -21,10 +21,6 @@
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/misc/args.h>
-
-#include <kernel/mem/pmm.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/gfx/term.h>
 
@@ -196,7 +192,7 @@ int smp_init(smp_info_t *info) {
     smp_data = info;
 
     // Local APIC region is finite size - at least I hope.
-    lapic_remapped = mem_mapMMIO((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
+    lapic_remapped = mmio_map((uintptr_t)smp_data->lapic_address, PAGE_SIZE);
 
     // Initialize the local APIC
     int lapic = lapic_initialize(lapic_remapped);

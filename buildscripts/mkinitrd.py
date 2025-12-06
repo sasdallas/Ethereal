@@ -31,5 +31,5 @@ def ramdisk_filter(tarinfo):
 
     return tarinfo
 
-with tarfile.open(file, "w:gz", format=tarfile.USTAR_FORMAT) as ramdisk:
+with tarfile.open(file, "w:gz", format=tarfile.USTAR_FORMAT, compresslevel=6) as ramdisk:
     ramdisk.add(dir, arcname="/", filter=ramdisk_filter)

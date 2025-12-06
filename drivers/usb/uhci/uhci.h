@@ -246,7 +246,7 @@ typedef struct uhci {
 #define TD_LINK_TERM(td) (td->link.terminate = 1)
 
 // Convert address to link pointer (bitshifting for the union)
-#define LINK(addr) ((uint32_t)(mem_getPhysicalAddress(NULL, (uintptr_t)addr) >> 4))
+#define LINK(addr) ((uint32_t)(arch_mmu_physical(NULL, (uintptr_t)addr) >> 4))
 
 // Link together a queue head and a transfer descriptor (QE_LINK)
 #define QH_LINK_TD(target_qh, td)  {target_qh->qe_link.qh = 0; \

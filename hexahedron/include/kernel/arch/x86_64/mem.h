@@ -47,7 +47,10 @@ typedef union page {
 
 /**** DEFINITIONS ****/
 
+#ifndef PAGE_SIZE
 #define PAGE_SIZE       0x1000      // 4 KiB
+#endif
+
 #define PAGE_SIZE_LARGE 0x200000    // 2 MiB
 
 // Page shifting

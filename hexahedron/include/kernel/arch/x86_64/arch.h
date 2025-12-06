@@ -32,6 +32,8 @@ typedef struct _stack_frame {
     uintptr_t ip;
 } stack_frame_t;
 
+struct pmm_region;
+
 /**** FUNCTIONS ****/
 
 /**
@@ -100,5 +102,12 @@ void arch_initialize_syscall_handler();
  * @brief Initialize SSE/FPU
  */
 void arch_enable_sse();
+
+/**
+ * @brief Convert the Multiboot2 memory map to an array
+ * @param bootinfo The boot information
+ * @param array The array of PMM memory descriptors
+ */
+void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, struct pmm_region *regions);
 
 #endif

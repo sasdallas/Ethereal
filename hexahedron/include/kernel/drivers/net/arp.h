@@ -60,6 +60,7 @@ typedef struct arp_table_entry {
     int         hwtype;     // Hardware type
     uint8_t     hwmac[6];   // MAC address
     fs_node_t   *nic;       // NIC
+    node_t      node;       // Table entry node
 } arp_table_entry_t;
 
 /**** FUNCTIONS ****/

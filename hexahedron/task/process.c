@@ -15,14 +15,12 @@
 #include <kernel/arch/arch.h>
 #include <kernel/loader/elf_loader.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
-#include <kernel/mem/pmm.h>
 #include <kernel/loader/elf.h>
 #include <kernel/misc/util.h>
 
@@ -49,12 +47,6 @@ volatile uint64_t task_switches = 0;
 /* Reap queue */
 list_t *reap_queue = NULL;
 spinlock_t reap_queue_lock = { 0 };
-
-/* Reaper thread */
-process_t *reaper_proc = NULL;
-
-/* Reaper function */
-void process_reaper(void *ctx);
 
 /* Helper macro to check if a process is in use */
 /* !!!: Can fail */
@@ -87,11 +79,6 @@ void process_init() {
     // Initialize futexes
     futex_init();
 
-    // Initialize reap queue and reaper process
-    reap_queue = list_create("process reap queue");
-    reaper_proc = process_createKernel("reaper", 0, PRIORITY_MED, process_reaper, NULL);
-    scheduler_insertThread(reaper_proc->main_thread);
-
     LOG(INFO, "Process system initialized\n");
 }
 
@@ -116,23 +103,16 @@ void __attribute__((noreturn)) process_switchNextThread() {
     current_cpu->current_process = next_thread->parent;
 
     // Setup page directory
-    mem_switchDirectory(current_cpu->current_thread->dir);
+    vmm_switch(current_cpu->current_process->ctx);
 
     // On your mark...
     arch_prepare_switch(current_cpu->current_thread);
 
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
-    
-    // Go!
-    // #ifdef __ARCH_I386__
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, next_thread->parent->name, current_cpu->current_thread->context.eip, current_cpu->current_thread->context.esp, current_cpu->current_thread->context.ebp);
-    // #else
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, current_cpu->current_thread->parent->name, current_cpu->current_thread->context.rip, current_cpu->current_thread->context.rsp, current_cpu->current_thread->context.rbp);
-    // #endif
 
     task_switches += 1;
-    arch_load_context(&current_cpu->current_thread->context, 0); // Didn't bother switching context
+    arch_load_context(&current_cpu->current_thread->context); // Didn't bother switching context
     __builtin_unreachable();
 }
 
@@ -185,8 +165,7 @@ void process_yield(uint8_t reschedule) {
     current_cpu->current_process = next_thread->parent;
 
     // Setup page directory
-    // TODO: Test this. Is it possible mem_getCurrentDirectory != mem_getKernelDirectory?
-    if (next_thread->dir || mem_getCurrentDirectory() != mem_getKernelDirectory()) mem_switchDirectory(current_cpu->current_thread->dir);
+    vmm_switch(current_cpu->current_thread->ctx);
 
     // On your mark... (load kstack)
     arch_prepare_switch(current_cpu->current_thread);
@@ -194,26 +173,14 @@ void process_yield(uint8_t reschedule) {
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
     
-    // Go!
-    // #ifdef __ARCH_I386__
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, next_thread->parent->name, current_cpu->current_thread->context.eip, current_cpu->current_thread->context.esp, current_cpu->current_thread->context.ebp);
-    // #else
-    // dprintf(DEBUG, "Thread %p (%s), dump context: IP %p SP %p BP %p\n", current_cpu->current_thread, current_cpu->current_thread->parent->name, current_cpu->current_thread->context.rip, current_cpu->current_thread->context.rsp, current_cpu->current_thread->context.rbp);
-    // #endif
-
-    // Reschedule thread now. This should leave a VERY slim time window for another CPU to pick up the thread
-    // NOTE: You're supposed to not reschedule after putting a thread to sleep but just in case they're trying to disallow it.
-    int need_resched = 0;
+    // Acquire the lock - arch_yield will release the lock
+    spinlock_acquire(current_cpu->sched.lock);
     if (prev && reschedule && !(prev->status & THREAD_STATUS_SLEEPING)) {
-        // Acquire BUT DON'T RELEASE the lock (arch_load_context will release the lock after switching stacks).
-        // TODO: Move this into scheduler
-        spinlock_acquire(current_cpu->sched.lock);
-        list_append(current_cpu->sched.queue, prev);
-        need_resched = 1;
+        list_append_node(current_cpu->sched.queue, &prev->sched_node);
     }
 
     task_switches += 1;
-    arch_load_context(&current_cpu->current_thread->context, need_resched);
+    arch_yield(prev, current_cpu->current_thread);
     __builtin_unreachable();
 }
 
@@ -318,28 +285,17 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->node = tree_insert_child(process_tree, parent->node, (void*)process);
     }
 
-    // Create process' kernel stack
-    // process->kstack = mem_allocate(0, PROCESS_KSTACK_SIZE, MEM_ALLOC_HEAP, MEM_PAGE_KERNEL) + PROCESS_KSTACK_SIZE;
-    // memset((void*)process->kstack - PROCESS_KSTACK_SIZE, 0, PROCESS_KSTACK_SIZE*2);
-    // dprintf(DEBUG, "Process '%s' has had its kstack %p allocated in page directory %p\n", name, process->kstack, current_cpu->current_dir);
-    
     // Make directory
     if (process->flags & PROCESS_KERNEL) {
         // Reuse kernel directory
-        // TODO: Can we verify that a VAS will never be used?
-        process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
-        process->dir = NULL;
+        process->ctx = vmm_kernel_context;
     } else if (parent) {
         // Clone parent directory
-        process->vas = vas_clone(parent->vas);
-        process->dir = process->vas->dir;
+        process->ctx = vmm_clone(parent->ctx);
     } else {
         // Clone kernel
-        process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START + PROCESS_MMAP_MINIMUM, MEM_USERSPACE_REGION_END - PROCESS_MMAP_MINIMUM, VAS_USERMODE | VAS_COW | VAS_FAKE | VAS_NOT_GLOBAL);
-        process->dir = mem_clone(NULL);
+        process->ctx = vmm_createContext();
     }
-
-    process->vas->dir = process->dir;
 
     // Create file descriptor table
     if (parent && 0) {
@@ -389,7 +345,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
  */
 process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data){
     process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL, priority);
-    proc->main_thread = thread_create(proc, proc->dir, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
+    proc->main_thread = thread_create(proc, proc->ctx, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
 
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, data);
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, entrypoint);
@@ -445,33 +401,19 @@ process_t *process_spawnIdleTask() {
 void process_destroy(process_t *proc) {
     if (!proc || !(proc->flags & PROCESS_STOPPED)) return;
 
-    LOG(DEBUG, "Destroying process \"%s\" (%p)...\n", proc->name, proc);
+    LOG(DEBUG, "Destroying process \"%s\" (%p, by request of %p)...\n", proc->name, proc, __builtin_return_address(0));
 
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
 
-    if (proc->mmap) {
-        process_mapping_t *prev = NULL; // to ensure that we can just keep iterating through the list
+    // Destroy mmap mappings
+    process_destroyMappings(proc);
 
-        foreach(mmap_node, proc->mmap) {
-            if (prev) {
-                LOG(DEBUG, "Dropping mapping %p: %p - %p\n", prev, prev->addr, prev->size);
-                process_removeMapping(proc, prev);
-                prev = NULL;
-            }
+    // Destroy table of fds
+    fd_destroyTable(proc);
 
-            if (mmap_node && mmap_node->value) {
-                process_mapping_t *map = (process_mapping_t*)mmap_node->value;
-                prev = map;
-            }
-        }
-
-        if (prev) process_removeMapping(proc, prev);
-        list_destroy(proc->mmap, false);
-    }
-
-    // Drop main thread in process (?)
-    // thread_destroy(proc->main_thread);
+    // Destroy the remainder of the context
+    if (!(proc->flags & PROCESS_KERNEL)) vmm_destroyContext(proc->ctx);
 
     if (proc->ptrace.tracees) {
         foreach(tracee, proc->ptrace.tracees) {
@@ -483,9 +425,8 @@ void process_destroy(process_t *proc) {
     }
 
     // Destroy everything we can
-    if (proc->waitpid_queue) list_destroy(proc->waitpid_queue, false);
-    fd_destroyTable(proc);
-    if (proc->vas) vas_destroy(proc->vas);
+    if (proc->waitpid_queue) kfree(proc->waitpid_queue); // waitpid_queue is a special list of just thread->sched_nodes
+    
     
     if (proc->thread_list) list_destroy(proc->thread_list, false);
     if (proc->node) {
@@ -495,52 +436,6 @@ void process_destroy(process_t *proc) {
     kfree(proc->wd_path);
     kfree(proc->name);
     kfree(proc);
-}
-
-/**
- * @brief The grim reaper
- * 
- * This is the kernel thread which runs in the background when processes exit. It frees their resources
- * immediately and then blocks until new processes are available.
- */
-void process_reaper(void *ctx) {
-    for (;;) {
-        sleep_untilNever(current_cpu->current_thread);
-        if (sleep_enter() == WAKEUP_SIGNAL) {
-            LOG(WARN, "You can't kill the grim reaper.\n");
-            continue;
-        }
-
-        // Anything available?
-        if (!reap_queue->length) continue;
-
-        // Content is available, let's free it
-        spinlock_acquire(&reap_queue_lock);
-
-        for (size_t i = 0; i < reap_queue->length; i++) {
-            node_t *procnode = list_popleft(reap_queue);
-            if (!procnode) break;
-
-            process_t *proc = (process_t*)procnode->value;
-
-            if (proc && (proc->flags & PROCESS_STOPPED)) {
-                // Stopped process, ready for the taking.
-                
-                // Although, we first need to make sure that no CPUs currently own this process
-                if (PROCESS_IN_USE(proc)) {
-                    // dang.
-                    list_append_node(reap_queue, procnode); // We're only executing reap_queue->length times, so this won't matter
-                    continue;                    
-                }
-
-                // Yoink!
-                kfree(procnode);
-                process_destroy(proc);
-            }
-        }
-
-        spinlock_release(&reap_queue_lock);
-    }
 }
 
 /**
@@ -621,7 +516,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
     // Destroy previous threads
-    if (current_cpu->current_process->main_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
+    if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
     if (current_cpu->current_process->thread_list) {
         foreach(thread_node, current_cpu->current_process->thread_list) {
             thread_t *thr = (thread_t*)thread_node->value;
@@ -629,30 +524,19 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
         }
     }
 
+    // !!!: LEAK OF PREVIOUS THREAD
+
     // Switch away from old directory
-    mem_switchDirectory(NULL);
+    vmm_switch(vmm_kernel_context);
 
-    // Destroy the current thread
-    if (current_cpu->current_thread) {
-        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        // thread_destroy(current_cpu->current_thread);
-    }
-
-    // Clone new directory and destroy the old one
-    LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
-    page_t *last_dir = current_cpu->current_process->dir;
-    current_cpu->current_process->dir = mem_clone(NULL);
-    vas_destroy(current_cpu->current_process->vas);
-
-    // Create a new VAS
-    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
-    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
-
-    // Switch to directory
-    mem_switchDirectory(current_cpu->current_process->dir);
+    // VMM context
+    vmm_context_t *oldctx = current_cpu->current_process->ctx;
+    current_cpu->current_process->ctx = vmm_createContext();
+    vmm_switch(current_cpu->current_process->ctx);
+    if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
 
     // Create a new main thread with a blank entrypoint
-    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->dir, 0x0, THREAD_FLAG_DEFAULT);
+    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
 
     // Load file into memory
     // TODO: This runs check twice (redundant)
@@ -685,11 +569,6 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
 
     // We own this process
     current_cpu->current_thread = current_cpu->current_process->main_thread;
-
-    // Some programs won't play well with an allocation at NULL, but certain things need it. VAS system also gets confused, so this is technically a hack.
-    // if (!vas_get(current_cpu->current_process->vas, 0x0)) {
-    //     vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
-    // }
 
     // Done with ELF
     kfree((void*)elf_binary);
@@ -814,29 +693,18 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     }
 
     // Switch away from old directory
-    mem_switchDirectory(NULL);
+    vmm_switch(vmm_kernel_context);
 
-    // Destroy the current thread
-    if (current_cpu->current_thread) {
-        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        // thread_destroy(current_cpu->current_thread);
-    }
+    // !!!: LEAK OF PREVIOUS THREAD
 
-    // Clone new directory and destroy the old oneone
-    LOG(DEBUG, "Process \"%s\" (PID: %d) - destroy VAS %p\n", current_cpu->current_process->name, current_cpu->current_process->pid, current_cpu->current_process->dir);
-    page_t *last_dir = current_cpu->current_process->dir;
-    current_cpu->current_process->dir = mem_clone(NULL);
-    vas_destroy(current_cpu->current_process->vas);
-
-    // Create a new VAS
-    current_cpu->current_process->vas = vas_create("process vas", MEM_USERSPACE_REGION_START, MEM_USERSPACE_REGION_END, VAS_FAKE | VAS_NOT_GLOBAL | VAS_USERMODE | VAS_COW);
-    current_cpu->current_process->vas->dir = current_cpu->current_process->dir;
-
-    // Switch to directory
-    mem_switchDirectory(current_cpu->current_process->dir);
+    // VMM context
+    vmm_context_t *oldctx = current_cpu->current_process->ctx;
+    current_cpu->current_process->ctx = vmm_createContext();
+    vmm_switch(current_cpu->current_process->ctx);
+    vmm_destroyContext(oldctx);
 
     // Create a new main thread with a blank entrypoint
-    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->dir, 0x0, THREAD_FLAG_DEFAULT);
+    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
 
     // Load file into memory
     // TODO: This runs check twice (redundant)
@@ -862,11 +730,6 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
 
     // We own this process
     current_cpu->current_thread = current_cpu->current_process->main_thread;
-
-    // Some programs won't play well with an allocation at NULL, but certain things need it. VAS system also gets confused, so this is technically a hack.
-    if (!vas_get(current_cpu->current_process->vas, 0x0)) {
-        vas_reserve(current_cpu->current_process->vas, 0x0, PAGE_SIZE, VAS_ALLOC_EXECUTABLE);
-    }
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
@@ -928,6 +791,19 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
 
+    // Now free the remainders
+    for (int i = 0; i < envc; i++) {
+        kfree(envp[i]);
+    }
+
+    kfree(envp);
+
+    for (int i = 0; i < argc; i++) {
+        kfree(argv[i]);
+    }
+
+    kfree(argv);
+
     // Enter
     LOG(DEBUG, "Launching new ELF process\n");
     arch_prepare_switch(current_cpu->current_thread);
@@ -974,7 +850,6 @@ void process_exit(process_t *process, int status_code) {
     // TODO: Ugly
     current_cpu->current_process->exit_status = status_code;
 
-
     // Deparent the children
     if (process->node && process->node->children) {
         foreach (cnode, process->node->children) {
@@ -986,7 +861,7 @@ void process_exit(process_t *process, int status_code) {
 
     // Instead of freeing all the memory now, we add ourselves to the reap queue
     // The reap queue is either destroyed by:
-    //      1. The reaper kernel thread
+    //      1. The reaper kernel thread (removed)
     //      2. The parent process waiting for this process to exit (POSIX - should only happen during waitpid)
     
     // If our parent is waiting, wake them up
@@ -1005,15 +880,6 @@ void process_exit(process_t *process, int status_code) {
 
     } 
 
-    // // Put ourselves in the wait queue
-    // spinlock_acquire(&reap_queue_lock);
-    // LOG(WARN, "Assuming this process is orphaned\n");
-    // list_append(reap_queue, (void*)process);
-
-    // // Wakeup the reaper thread
-    // sleep_wakeup(reaper_proc->main_thread);
-    // spinlock_release(&reap_queue_lock);
-
     // To the next process we go
     if (process == current_cpu->current_process) {
         __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
@@ -1027,13 +893,11 @@ void process_exit(process_t *process, int status_code) {
  * @returns Depends on what you are. Only call this from system call context.
  */
 pid_t process_fork() {
-    // First we create our child process
+    // First we create our child pprocess
     process_t *parent = current_cpu->current_process;   
     process_t *child = process_create(parent, parent->name, parent->flags, parent->priority);
+    child->main_thread = thread_create(child, child->ctx, (uintptr_t)NULL, THREAD_FLAG_CHILD);
 
-    // Create a new child process thread
-    child->main_thread = thread_create(child, child->dir, (uintptr_t)NULL, THREAD_FLAG_CHILD);
-    
     // Configure context of child thread
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
     SP(child->main_thread->context) = child->main_thread->kstack;
@@ -1075,10 +939,13 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
     // Put ourselves in our wait queue
     if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
 
+    node_t *n = kmalloc(sizeof(node_t));
+    n->value = current_cpu->current_thread;
+    n->prev = n->next = NULL;
+
     for (;;) {
-        node_t *n = list_find(current_cpu->current_process->waitpid_queue, current_cpu->current_thread);
-        if (n) list_delete(current_cpu->current_process->waitpid_queue, n);
-            
+        // list_delete(current_cpu->current_process->waitpid_queue, n);           
+
         // We need this to stop interferance from other threads also trying to waitpid
         spinlock_acquire(&reap_queue_lock);
 
@@ -1128,9 +995,9 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 }
 
                 // Take us out and return
-                // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
+                // list_delete(current_cpu->current_process->waitpid_queue, n);
+                // kfree(n);
                 spinlock_release(&reap_queue_lock);
-
                 return ret_pid;
             }
 
@@ -1156,15 +1023,13 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         // There were children available but they didn't seem important
         if (options & WNOHANG) {
             // Return immediately, we didn't get anything.
-            // list_delete(current_cpu->current_process->waitpid_queue, list_find(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread));
-            
             spinlock_release(&reap_queue_lock);
             return 0;
         } else {
             // Sleep until we get woken up
+            list_append_node(current_cpu->current_process->waitpid_queue, n);
+            sleep_prepare();    
             spinlock_release(&reap_queue_lock);
-            sleep_untilNever(current_cpu->current_thread);    
-            list_append(current_cpu->current_process->waitpid_queue, (void*)current_cpu->current_thread);
             if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
         }
     }
@@ -1182,7 +1047,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
  */
 pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
     if (!current_cpu->current_process->thread_list) current_cpu->current_process->thread_list = list_create("process thread list");
-    thread_t *thr = thread_create(current_cpu->current_process, current_cpu->current_process->dir, (uintptr_t)entry, THREAD_FLAG_CHILD);
+    thread_t *thr = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, (uintptr_t)entry, THREAD_FLAG_CHILD);
     thr->stack = stack; // Fix stack
     list_append(current_cpu->current_process->thread_list, thr);
 

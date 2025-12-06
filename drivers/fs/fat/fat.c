@@ -419,7 +419,7 @@ fs_node_t *fat_finddir(fs_node_t *node, char *path) {
 
     // TODO: Set atime, ctime, mtime
 
-    if (rnode->flags == VFS_DIRECTORY) {
+    if (rnode->flags & VFS_DIRECTORY) {
         rnode->readdir = fat_readdir;
         rnode->finddir = fat_finddir;
     } else {

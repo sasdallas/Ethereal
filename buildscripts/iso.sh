@@ -17,9 +17,10 @@ cd $PROJECT_ROOT
 mkdir -pv $ISO_OUTPUT_DIRECTORY/iso/boot/grub/
 mkdir -pv $ISO_OUTPUT_DIRECTORY/iso/boot/grub/themes
 mkdir -pv $ISO_OUTPUT_DIRECTORY/iso/boot/grub/fonts/
+mkdir -pv $ISO_OUTPUT_DIRECTORY/iso/boot/grub/themes/ethereal/
 cp $SYSROOT/$BOOT_DIRECTORY/hexahedron-kernel.elf $ISO_OUTPUT_DIRECTORY/iso/boot/
 cp $SYSROOT/$BOOT_DIRECTORY/initrd.tar.img $ISO_OUTPUT_DIRECTORY/iso/boot/
-cp -r conf/theme $ISO_OUTPUT_DIRECTORY/iso/boot/grub/themes/ethereal/
+cp -r conf/theme/* $ISO_OUTPUT_DIRECTORY/iso/boot/grub/themes/ethereal/
 cp conf/grub.cfg $ISO_OUTPUT_DIRECTORY/iso/boot/grub/
 cp -r conf/extra-boot-files/* $ISO_OUTPUT_DIRECTORY/iso/boot/ || true
 

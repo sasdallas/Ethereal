@@ -100,9 +100,9 @@ int signal_sendThread(struct thread *thr, int signal) {
 
     // TODO: Interrupt system calls
 
-    // Syncronously execute sleep callback, because why not
-    extern void sleep_callback(uint64_t ticks);
-    sleep_callback(0);
+    if (thr->status & THREAD_STATUS_SLEEPING) {
+        sleep_wakeupReason(thr, WAKEUP_SIGNAL);
+    }
 
     // Wake them up if they aren't us
     if (thr != current_cpu->current_thread && (thr->parent->flags & PROCESS_SUSPENDED)) {
@@ -210,15 +210,13 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     // !!!: This probably needs to be refactored?
     extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace) {
-        proc->userspace = vas_allocate(proc->vas, PAGE_SIZE);
+        proc->userspace = vmm_map((void*)0x1000, PAGE_SIZE, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_RW);
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
 
-        proc->userspace->type = VAS_ALLOC_SIGNAL_TRAMP;
-
         // Copy in the userspace section
-        memcpy((void*)proc->userspace->base, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
+        memcpy(proc->userspace, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
     }
 
     // Push onto the stack the variables
@@ -237,7 +235,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // Set IP to point to the rebased signal handler
     uintptr_t signal_trampoline_offset = (uintptr_t)arch_signal_trampoline - (uintptr_t)&__userspace_start;
-    REGS_IP(regs) = proc->userspace->base + signal_trampoline_offset;
+    REGS_IP(regs) = (uintptr_t)proc->userspace + signal_trampoline_offset;
     
     LOG(DEBUG, "Redirected IP to 0x%x\n", REGS_IP(regs));
     return 1;

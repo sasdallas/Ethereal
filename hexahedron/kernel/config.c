@@ -27,12 +27,12 @@ const char *__kernel_build_date = __DATE__;
 const char *__kernel_build_time = __TIME__;
 
 // Versioning information
-const int __kernel_version_major = 1;
-const int __kernel_version_minor = 8;
+const int __kernel_version_major = 2;
+const int __kernel_version_minor = 0;
 const int __kernel_version_lower = 0;
 
 // Codename
-const char *__kernel_version_codename = "Neutron";
+const char *__kernel_version_codename = "Neutron2";
 
 // ASCII art (looks weird because fmting)
 const char *__kernel_ascii_art_formatted = "\

@@ -37,9 +37,8 @@
 #include <kernel/processor_data.h>
 
 // Memory
-#include <kernel/mem/mem.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/pmm.h>
+#include <kernel/mm/vmm.h>
+#include <kernel/mm/pmm.h>
 
 // Misc
 #include <kernel/misc/spinlock.h>
@@ -74,7 +73,7 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        printf("%i system processors - %u KB of RAM\n", smp_getCPUCount(), pmm_getMaximumBlocks() * PMM_BLOCK_SIZE / 1024);
+        printf("%i system processors\n", smp_getCPUCount());
         printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo
@@ -144,7 +143,7 @@ extern uintptr_t __kernel_start, __kernel_end;
         stk = stk->nextframe;
 
         // Validate
-        if (!mem_validate((void*)stk, PTR_USER)) {
+        if (!(arch_mmu_read_flags(NULL, (uintptr_t)stk) & MMU_FLAG_PRESENT)) {
             dprintf(NOHEADER,   COLOR_CODE_RED      "Backtrace stopped at bad stack frame %p\n", stk);
             break;
         }
@@ -180,9 +179,6 @@ void arch_panic_finalize() {
 
 
 extern uintptr_t __kernel_end_phys;
-static uintptr_t first_free_page = ((uintptr_t)&__kernel_end_phys);         // This is ONLY used until memory management is initialized.
-                                                                            // mm will take over this
-static uintptr_t memory_size = 0x0;                                         // Same as above
 
 /**
  * @brief Zeroes and allocates bytes for a structure at the end of the kernel
@@ -192,7 +188,7 @@ static uintptr_t memory_size = 0x0;                                         // S
 uintptr_t arch_allocate_structure(size_t bytes) {
     dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
     
-    if (bytes > PAGE_SIZE) return mem_sbrk(MEM_ALIGN_PAGE(bytes));
+    if (bytes > PAGE_SIZE) return (uintptr_t)vmm_map(NULL, PAGE_ALIGN_UP(bytes), VM_FLAG_ALLOC, MMU_FLAG_KERNEL | MMU_FLAG_RW | MMU_FLAG_PRESENT);
     return (uintptr_t)kmalloc(bytes);
 }
 
@@ -205,7 +201,7 @@ uintptr_t arch_allocate_structure(size_t bytes) {
 uintptr_t arch_relocate_structure(uintptr_t structure_ptr, size_t size) {
     if (!size) return 0x0;
     uintptr_t location = arch_allocate_structure(size);
-    memcpy((void*)location, (void*)mem_remapPhys(structure_ptr, size), size);
+    memcpy((void*)location, (void*)arch_mmu_remap_physical(structure_ptr, size, REMAP_PERMANENT), size);
     return location;
 }
 
@@ -254,23 +250,19 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
     // Syscall handler
     arch_initialize_syscall_handler();
 
-    // Align kernel address
-    first_free_page += PAGE_SIZE;
-    first_free_page &= ~0xFFF;
+    // Now, we can initialize memory systems.
+static pmm_region_t pmm_descs[64]; // !!!: probably a hack
 
-    // Parse Multiboot information
     if (multiboot_magic == MULTIBOOT_MAGIC) {
-        dprintf(INFO, "Found a Multiboot1 structure\n");
-        arch_parse_multiboot1_early(bootinfo, &memory_size, &first_free_page);
+        assert(0 && "MB1 not supported for this");
     } else if (multiboot_magic == MULTIBOOT2_MAGIC) {
-        dprintf(INFO, "Found a Multiboot2 structure\n");
-        arch_parse_multiboot2_early(bootinfo, &memory_size, &first_free_page);
+        arch_parse_multiboot2_mmap(bootinfo, pmm_descs);
     } else {
         kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "arch", "*** Unknown multiboot structure when checking kernel.\n");
     }
 
-    // Now, we can initialize memory systems.
-    mem_init(memory_size, first_free_page);
+    // Initialize the VMM
+    vmm_init(pmm_descs);
 
     // Now we can ACTUALLY parse Multiboot information
     if (multiboot_magic == MULTIBOOT_MAGIC) {

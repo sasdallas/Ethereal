@@ -23,7 +23,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/mem/alloc.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/debug.h>
@@ -52,7 +52,7 @@ static uhci_qh_t *uhci_createQH(uhci_t *hc) {
     memset(qh, 0, sizeof(uhci_qh_t));
     qh->td_list = list_create("td list");   // !!!: This probably shouldn't be here
 
-    // LOG(DEBUG, "[QH] New QH created at %p/%p\n", qh, mem_getPhysicalAddress(NULL, (uintptr_t)qh));
+    // LOG(DEBUG, "[QH] New QH created at %p/%p\n", qh, arch_mmu_physical(NULL, (uintptr_t)qh));
 
     return qh;
 }
@@ -107,9 +107,9 @@ uhci_td_t *uhci_createTD(uhci_t *hc, int speed, uint32_t toggle, uint32_t devadd
     td->token.d = toggle;
 
     // Setup buffer
-    td->buffer = (uint32_t)(uintptr_t)mem_getPhysicalAddress(NULL, (uintptr_t)data);
+    td->buffer = (uint32_t)(uintptr_t)arch_mmu_physical(NULL, (uintptr_t)data);
 
-    // LOG(DEBUG, "[TD] New TD created at %p/%p - type 0x%x ls %i devaddr 0x%x toggle 0x%x endp 0x%x\n", td, mem_getPhysicalAddress(NULL, (uintptr_t)td), td->token.pid, td->cs.ls, td->token.device_addr, td->token.d, td->token.endpt);
+    // LOG(DEBUG, "[TD] New TD created at %p/%p - type 0x%x ls %i devaddr 0x%x toggle 0x%x endp 0x%x\n", td, arch_mmu_physical(NULL, (uintptr_t)td), td->token.pid, td->cs.ls, td->token.device_addr, td->token.d, td->token.endpt);
     // LOG(DEBUG, "[TD] Pool system has %d bytes remaining\n", hc->td_pool->allocated - hc->td_pool->used);
 
     // Done
@@ -292,8 +292,7 @@ void uhci_waitForQH(USBController_t *controller, uhci_qh_t *qh) {
         // Finished!
         transfer->status = USB_TRANSFER_SUCCESS;
     } else {
-        // TODO: There has to be a better way to do this (specifically in Hexahedron terms), as mem_remapPhys sucks in i386.
-        uhci_td_t *td_remapped = (uhci_td_t*)mem_remapPhys((uintptr_t)(qh->qe_link.qelp << 4), sizeof(uhci_td_t));
+        uhci_td_t *td_remapped = (uhci_td_t*)arch_mmu_remap_physical((uintptr_t)(qh->qe_link.qelp << 4), sizeof(uhci_td_t), REMAP_TEMPORARY);
         
         if (!(td_remapped->cs.active)) {
             // The TD was marked as not active?
@@ -307,7 +306,7 @@ void uhci_waitForQH(USBController_t *controller, uhci_qh_t *qh) {
             // TODO: Add more errors to print out
         }
 
-        mem_unmapPhys((uintptr_t)td_remapped, sizeof(uhci_td_t));
+        arch_mmu_unmap_physical((uintptr_t)td_remapped, sizeof(uhci_td_t));
     }
 } 
 
@@ -454,7 +453,7 @@ int uhci_initController(pci_device_t *dev) {
 
     // Allocate a frame list (4KB alignment)
     // !!!: We don't need a DMA region but we need a region that is below 0xFFFFFFFF
-    hc->frame_list = (uhci_flp_t*)mem_allocateDMA(4096);
+    hc->frame_list = (uhci_flp_t*)dma_map(4096);
     memset(hc->frame_list, 0, 4096);
 
     LOG(DEBUG, "Frame list allocated to %p\n", hc->frame_list);
@@ -491,7 +490,7 @@ int uhci_initController(pci_device_t *dev) {
     outportw(hc->io_addr + UHCI_REG_FRNUM, 0);              // Assign framelist 
 
     // Frame list is expected as a physical address
-    uintptr_t frame_list_physical = mem_getPhysicalAddress(NULL, (uintptr_t)hc->frame_list);
+    uintptr_t frame_list_physical = arch_mmu_physical(NULL, (uintptr_t)hc->frame_list);
     outportl(hc->io_addr + UHCI_REG_FLBASEADD, (uint32_t)frame_list_physical & ~0xFFF);
     outportw(hc->io_addr + UHCI_REG_SOFMOD, 0x40);          // Use a default of 64, which gives a SOF cycle time of 12000
     outportw(hc->io_addr + UHCI_REG_USBSTS, 0x00);          // Reset status

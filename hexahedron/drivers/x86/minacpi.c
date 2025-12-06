@@ -12,7 +12,7 @@
  */
 
 #include <kernel/drivers/x86/minacpi.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/misc/args.h>
 #include <kernel/panic.h>
@@ -88,7 +88,7 @@ int minacpi_parseRSDP() {
         // TODO: XSDP validation
 
         // Set the table
-        xsdt = (acpi_xsdt_t*)mem_remapPhys(xsdp->xsdt_address, PAGE_SIZE);
+        xsdt = (acpi_xsdt_t*)arch_mmu_remap_physical(xsdp->xsdt_address, PAGE_SIZE, REMAP_PERMANENT);
 #endif
     } else {
         // ACPI 1.0 - assume RSDP
@@ -101,7 +101,7 @@ int minacpi_parseRSDP() {
         }
 
         // Set the table
-        rsdt = (acpi_rsdt_t*)mem_remapPhys(rsdp->rsdt_address, PAGE_SIZE);
+        rsdt = (acpi_rsdt_t*)arch_mmu_remap_physical(rsdp->rsdt_address, PAGE_SIZE, REMAP_PERMANENT);
     }
 
     return 0;
@@ -120,7 +120,7 @@ smp_info_t *minacpi_parseMADT() {
         int entries = (rsdt->header.length - sizeof(rsdt->header)) / 8;
 
         for (int i = 0; i < entries; i++) {
-            acpi_table_header_t *header = (acpi_table_header_t*)mem_remapPhys(rsdt->tables[i], PAGE_SIZE);
+            acpi_table_header_t *header = (acpi_table_header_t*)arch_mmu_remap_physical(rsdt->tables[i], PAGE_SIZE, REMAP_TEMPORARY);
             if (!strncmp(header->signature, "APIC", 4)) {
                 // Found the MADT  
                 LOG(DEBUG, "MADT found successfully at %p\n", rsdt->tables[i]);
@@ -129,7 +129,7 @@ smp_info_t *minacpi_parseMADT() {
             }
         
             // Not the MADT, we don't care.
-            mem_unmapPhys((uintptr_t)header, PAGE_SIZE);
+            arch_mmu_unmap_physical((uintptr_t)header, PAGE_SIZE);
         }
     } else if (xsdt) {
         // Use XSDT, ACPI version 2.0+
@@ -141,7 +141,7 @@ smp_info_t *minacpi_parseMADT() {
         uint64_t *e = (uint64_t*)((uintptr_t)xsdt + 36);
 
         for (int i = 0; i < entries; i++) {
-            acpi_table_header_t *header = (acpi_table_header_t*)mem_remapPhys(e[i], PAGE_SIZE);
+            acpi_table_header_t *header = (acpi_table_header_t*)arch_mmu_remap_physical(e[i], PAGE_SIZE, REMAP_TEMPORARY);
             if (!strncmp(header->signature, "APIC", 4)) {
                 // Found the MADT
                 LOG(DEBUG, "MADT found successfully at %p\n", xsdt->tables[i]);
@@ -149,7 +149,7 @@ smp_info_t *minacpi_parseMADT() {
                 break;
             }
 
-            mem_unmapPhys((uintptr_t)header, PAGE_SIZE);
+            arch_mmu_unmap_physical((uintptr_t)header, PAGE_SIZE);
         }
     } else {
         // what
@@ -254,15 +254,15 @@ smp_info_t *minacpi_parseMADT() {
 
     // Now that we're finished, unmap and NULL rsdt/xsdt
     if (rsdt) {
-        mem_unmapPhys((uintptr_t)rsdt, PAGE_SIZE);
+        arch_mmu_unmap_physical((uintptr_t)rsdt, PAGE_SIZE);
         rsdt = NULL;
     } else {
-        mem_unmapPhys((uintptr_t)xsdt, PAGE_SIZE);
+        arch_mmu_unmap_physical((uintptr_t)xsdt, PAGE_SIZE);
         xsdt = NULL;
     }
     
     // Unmap MADT
-    mem_unmapPhys((uintptr_t)madt, PAGE_SIZE);
+    arch_mmu_unmap_physical((uintptr_t)madt, PAGE_SIZE);
 
     return info;
 }
@@ -279,12 +279,12 @@ int minacpi_initialize() {
     rsdp_ptr = hal_getRSDP(); // Multiboot2 might provide this
 
     if (rsdp_ptr) {
-        rsdp_ptr = mem_remapPhys(rsdp_ptr, PAGE_SIZE); 
+        rsdp_ptr = arch_mmu_remap_physical(rsdp_ptr, PAGE_SIZE, REMAP_PERMANENT); 
         goto _found_rsdp;
     }
     
     // Now we need to search the main BIOS area. We can map this into memory
-    uintptr_t main_bios_area = mem_remapPhys(0xE0000, 0x20000);
+    uintptr_t main_bios_area = arch_mmu_remap_physical(0xE0000, 0x20000, REMAP_TEMPORARY);
 
     // Start searching
     uintptr_t i = main_bios_area;
@@ -302,7 +302,7 @@ int minacpi_initialize() {
 
 
     // Unmap memory
-    mem_unmapPhys(main_bios_area, 0x20000);
+    arch_mmu_unmap_physical(main_bios_area, 0x20000);
     
     // Did we find the signature?
     if (!rsdp_ptr) {

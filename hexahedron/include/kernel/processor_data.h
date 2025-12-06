@@ -22,32 +22,30 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/arch/arch.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/task/process.h>
+#include <kernel/mm/vmm.h>
 
 /**** TYPES ****/
 
 // Temporary prototypes because this and process file are an include mess
 struct process;
 struct thread;
+struct vmm_context;
 
 typedef struct _processor {
-    int cpu_id;                         // CPU ID
-    page_t *current_dir;                // Current page directory
-    struct thread *current_thread;      // Current thread of the process
+    int cpu_id;                             // CPU ID
+    struct vmm_context *current_context;    // Current page directory
+    struct thread *current_thread;          // Current thread of the process
 
-    struct process *current_process;    // Current process of the CPU
-                                        // TODO: Find a way to better organize tasking systems so this isn't needed, as thread should contain a pointer to this.
-                                        // TODO: Mainly this is used because init shouldn't HAVE a thread, so process_execute can just use this
-
-    struct process *idle_process;       // Idle process of the CPU
-                                        // TODO: Maybe use thread instead of storing pointer to process structure
+    struct process *current_process;        // Current process of the CPU
+    struct process *idle_process;           // Idle process of the CPU
 
 #if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
 
 #ifdef __ARCH_X86_64__
-    uintptr_t kstack;                   // (0x40) Kernel-mode stack loaded in TSS
-    uintptr_t ustack;                   // (0x48) Usermode stack, saved in SYSCALL entrypoint    
+    uintptr_t kstack;                       // (0x40) Kernel-mode stack loaded in TSS
+    uintptr_t ustack;                       // (0x48) Usermode stack, saved in SYSCALL entrypoint    
 #endif
 
     int lapic_id;
@@ -59,8 +57,8 @@ typedef struct _processor {
     int cpu_family;
 #endif
     
-    scheduler_cpu_t sched;              // Scheduler data
-    uint64_t idle_time;                 // Time the processor has spent idling
+    scheduler_cpu_t sched;                  // Scheduler data
+    uint64_t idle_time;                     // Time the processor has spent idling
 } processor_t;
 
 /* External variables defined by architecture */

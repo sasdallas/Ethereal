@@ -24,7 +24,7 @@
 #include <kernel/misc/pool.h>
 #include <kernel/panic.h>
 #include <kernel/debug.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 
 /**
@@ -59,8 +59,8 @@ pool_t *pool_create(char *name, uintptr_t chunk_size, uintptr_t size, uintptr_t 
         pool->starting_addr = addr;
     } else {
         // Allocate the pool ourselves
-        if (flags & POOL_DMA) pool->starting_addr = mem_allocateDMA((size & 0xFFF) ? MEM_ALIGN_PAGE(size) : size);
-        else pool->starting_addr = mem_sbrk((size & 0xFFF) ? MEM_ALIGN_PAGE(size) : size); // !!!: Oh boy
+        if (flags & POOL_DMA) assert(0 && "POOL_DMA not implemented");
+        else pool->starting_addr = (uintptr_t)vmm_map(NULL, size, VM_FLAG_ALLOC, MMU_FLAG_RW | MMU_FLAG_PRESENT); // !!!: Oh boy
     }
 
     return pool;

@@ -17,7 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <stddef.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/misc/spinlock.h>
 
 /**** DEFINITIONS ****/
@@ -85,7 +85,6 @@ typedef struct vas {
     uintptr_t base;         // Base address of the VAS
     size_t size;            // Size of the VAS
     int flags;              // VAS flags
-    page_t *dir;            // The page directory assigned to the VAS
     spinlock_t *lock;       // VAS lock
     
     // NOTE: Not using list structures here despite the fact they're literally just this

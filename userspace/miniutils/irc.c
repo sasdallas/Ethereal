@@ -25,18 +25,24 @@
 #include <getopt.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <asm/ioctls.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <time.h>
 
 
 /* Socket file */
 static FILE *fsock = NULL;
+
+/* Current nick name */
+static char *irc_nick = NULL;
 
 /* Current IRC channel */
 static char *irc_channel = NULL;
 
 /* IRC ASCII colors */
 static int irc_colors[] = {
-    15, 0, 4, 2, 9, 1, 5, 3, 11,
-    10, 6, 14, 12, 13, 8, 7
+    15, 0, 4, 2, 9, 1, 5, 3, 11, 10, 6, 14, 12, 13, 8, 7
 };
 
 /* Is command */
@@ -50,6 +56,24 @@ static int irc_colors[] = {
 #define IRC_MOTD            372
 #define IRC_MOTD_START      375
 #define IRC_END_OF_MOTD     376
+
+struct termios og;
+/**
+ * @brief Show prompot at bottom of screen
+ */
+static void show_prompt(char *buf) {
+    struct winsize w;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) < 0) return;
+
+    printf("\033[%d;1H\033[K", w.ws_row);
+
+    if (irc_channel) {
+        printf("\033[34m%s\033[0m ", irc_channel);
+    }
+
+    printf("\033[1m%s\033[0m> %s", irc_nick ? irc_nick : "irc", buf ? buf : "");
+    fflush(stdout);
+}
 
 
 /**
@@ -88,6 +112,7 @@ static int user_color(char * user) {
 		case 3: return 6;
 		case 4: return 10;
 	}
+
 	return 0;
 }
 
@@ -96,11 +121,25 @@ static int user_color(char * user) {
  * @brief Print output but make it colored
  */
 void irc_write(char *fmt, ...) {
+    int irc_italic = 0;
+    int irc_bold = 0;
+
+    // reset position to start
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    printf("\033[%d;1H\033[K", w.ws_row);
+
     va_list ap;
     va_start(ap, fmt);
     char *temp = malloc(4096);
     vsnprintf(temp, 4096, fmt, ap);
     va_end(ap);
+
+
+    time_t t;
+    time(&t);
+    struct tm *tm = localtime(&t);
+    printf("%02d:%02d ", tm->tm_hour, tm->tm_min);
 
     char *p = temp;
     while (*p) {
@@ -128,14 +167,14 @@ void irc_write(char *fmt, ...) {
 			
             // Comma indicates bg
 			if (*p == ',') {
-				p++;
-				if (isdigit(*p)) {
-					bg = (*p - '0');
-					p++;
-				}
+				p++;			
+                bg = (*p - '0');
+                p++;
+				
+
 				if (isdigit(*p)) {
 					bg *= 10;
-					bg = (*p - '0');
+					bg += (*p - '0');
 					p++;
 				}
 			}
@@ -143,7 +182,7 @@ void irc_write(char *fmt, ...) {
             // Now convert this to a color pair
             if (fg != -1) fg = irc_colors[fg % 16];
             if (bg != -1) bg = irc_colors[bg % 16];
-
+            
             // Print them out
             printf("\033[");
 
@@ -155,21 +194,36 @@ void irc_write(char *fmt, ...) {
                 printf("3%d", fg);
             }
 
+            printf(";");
             if (bg == -1 || bg > 15) {
-                printf(";39");
+                printf("49");
             } else if (bg > 7) {
                 printf("10%d", bg-8);
             } else {
                 printf("4%d", bg);
             }
 
-            putchar('m');
+            printf("m");
             fflush(stdout);
+            continue;
+        }
+        
+        // bold on
+        if (*p == 0x02) {
+            irc_bold = !irc_bold;
+
+            if (irc_bold) printf("\033[1m");
+            else printf("\033[22m");
+            p++;
+            continue;
         }
 
-        // We don't support 0x02/0x16 for bold and italic
         if (*p == 0x16) {
-            fprintf(stdout, "\033[0m");
+            irc_italic = !irc_italic;
+            if (irc_italic) printf("\033[3m");
+            else printf("\022[23m");
+            p++;
+            continue;
         }
 
         putchar(*p);
@@ -190,7 +244,7 @@ void irc_parseCommand(char *cmd) {
             // /join command to join a channel
             char *c = CMDARG(cmd);
             if (!c) {
-                printf("EtherealIRC: Usage: /join <channel>\n");
+                irc_write("EtherealIRC: Usage: /join <channel>\n");
                 return;
             }
 
@@ -201,7 +255,7 @@ void irc_parseCommand(char *cmd) {
             irc_channel = strdup(c);
         } else if (ISCMD("quit")) {
             // /quit command to quit the client
-            printf("EtherealIRC: Closing connection with server.\n");
+            irc_write("EtherealIRC: Closing connection with server.\n");
             char *c = CMDARG(cmd);
 
             if (c) {
@@ -216,23 +270,34 @@ void irc_parseCommand(char *cmd) {
             fprintf(fsock, "MOTD\r\n");
             fflush(fsock);
         } else if (ISCMD("help")) {
-            printf("EtherealIRC: Help not available\n");
-            printf("EtherealIRC: (leave me alone)\n");
-        } else if (ISCMD("part")) {
-            
+            irc_write("EtherealIRC: Help not available\n");
+            irc_write("EtherealIRC: (leave me alone)\n");
+        } else if (ISCMD("nick")) {
+            char *c = CMDARG(cmd);
+            if (!c) {
+                irc_write("EtherealIRC: Usage /nick <nickname>\n");
+                return;
+            }  
+
+            fprintf(fsock, "NICK %s\r\n", c);
+            fflush(fsock);
+            free(irc_nick);
+            irc_nick = strdup(c);
         } else {
-            printf("EtherealIRC: Unrecognized command: \"%s\"\n", cmd);
+            irc_write("EtherealIRC: Unrecognized command: \"%s\"\n", cmd);
         }
     } else {
         // No, send it to the current channel
         if (!irc_channel) {
             // We aren't in a channel
-            printf("EtherealIRC: You aren't in an IRC channel - use /join to join a channel!\n");
+            irc_write("EtherealIRC: You aren't in an IRC channel - use /join to join a channel!\n");
             return;
         }
 
         fprintf(fsock, "PRIVMSG %s :%s\r\n", irc_channel, cmd);
         fflush(fsock);
+
+        irc_write("\00314<\003\002%s\002\00314>\003 %s\n", irc_nick, cmd);
     }
 }
 
@@ -328,10 +393,17 @@ void irc_parseResponse(char *response) {
         // Now that we've got that, let's process the message for any special identifiers
         if (!strcmp(cmd, "PRIVMSG")) {
             if (!msg) return;
-            if (alt_user) irc_write("\00314<\003%d%s\00314>\003 [%s] %s\n", user_color(host), host, alt_user, msg);
-            else irc_write("\00314<\003%d%s\00314>\003 %s\n", user_color(host), host, msg);
+            
+            if (strstr(msg, "\001ACTION ") == msg) {
+                msg += 8;
+                irc_write("\002* \003%d%s\003\002 %s\n", user_color(host), host, msg);
+            } else {
+                irc_write("\00314<\003%d%s\00314>\003 %s\n", user_color(host), host, msg);
+            }
         } else if (!strcmp(cmd, "JOIN")) {
             irc_write("\033[34m%s\033[0m has joined %s\n", host, chnl);
+        } else if (!strcmp(cmd, "PART")) {
+            irc_write("\033[31m%s\033[0m has left %s\n", host, chnl);
         } else {
             irc_write("%s %s %s %s\n", host, cmd, chnl, msg);
         }
@@ -340,9 +412,22 @@ void irc_parseResponse(char *response) {
     }
 }
 
+
+void cleanup() {
+    tcsetattr(STDIN_FILENO, TCSANOW, &og);
+}
+
 int main(int argc, char *argv[]) {
     char *nick = "EtherealUser";
-    
+
+    // Disable canonical mode
+    struct termios new;
+    tcgetattr(STDIN_FILENO, &new);
+    tcgetattr(STDIN_FILENO, &og);
+    atexit(cleanup);
+    new.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &new);
+
     // Parse any options given to us
     int c;
     while ((c = getopt(argc, argv, "n:hv")) != -1) {
@@ -403,12 +488,15 @@ int main(int argc, char *argv[]) {
     printf("Connected to IRC server successfully\n");
 
     // Open socket as file and inform server of our nickname
-    fsock = fdopen(sock, "rw");
+    fsock = fdopen(sock, "r+");
     fprintf(fsock, "NICK %s\r\nUSER %s * 0 :%s\r\n", nick, nick, nick);
     fflush(fsock);
 
+    irc_nick = strdup(nick);
+
     // Enter main loop
     char buf[512];
+    buf[0] = 0;
     size_t bufidx = 0;
     while (1) {
         struct pollfd fds[2];
@@ -418,13 +506,11 @@ int main(int argc, char *argv[]) {
         fds[1].fd = STDIN_FILENO;
         fds[1].events = POLLIN;
 
-        int p = poll(fds, 2, 0);
+        int p = poll(fds, 2, -1);
         if (p < 0) {
             perror("poll");
             return 1;
         }
-
-        if (!p) continue;
 
         // Check for events on socket
         if (p && fds[0].revents & POLLIN) {
@@ -432,12 +518,15 @@ int main(int argc, char *argv[]) {
             char data[4096];
             
             ssize_t r = 0;
-            if ((r = recv(sock, data, 4096, 0)) < 0) {
+            if ((r = recv(sock, data, 4095, 0)) < 0) {
                 perror("recv");
                 return 1;
             } 
+
             data[r] = 0;
             
+            printf("\033[2K\r");
+            fflush(stdout);
 
             char *save;
             char *pch = strtok_r(data, "\n", &save);
@@ -450,20 +539,40 @@ int main(int argc, char *argv[]) {
 
         // Anything from stdin?
         if (p && fds[1].revents & POLLIN) {
-            char c = getchar();
-            putchar(c);
+            int ch = getchar();
+            if (ch == EOF) {
+                clearerr(stdin);
+                continue;
+            }
+
+            if (ch == '\r') ch = '\n';
             fflush(stdout);
 
-            if (c == '\n') {
-                // We're done, flush buffer and goto command handler
-                buf[bufidx++] = 0;
-                bufidx = 0;
+            if (ch == '\n') {
+                if (bufidx >= sizeof(buf)) bufidx = sizeof(buf) - 1;
+                buf[bufidx] = '\0';
+                show_prompt("");
+                fflush(stdout);
                 irc_parseCommand(buf);
-            } else if (c == '\b' && bufidx) {
-                buf[bufidx--] = 0;
-            } else if (c) {
-                buf[bufidx++] = c;
+                bufidx = 0;
+                buf[0] = 0;
+
+            } else if (ch == 8 || ch == 127) {
+                if (bufidx > 0) {
+                    bufidx--;
+                    buf[bufidx] = '\0';
+                    fflush(stdout);
+                }
+            } else if (ch >= 32 && ch < 127) {
+                if (bufidx + 1 < sizeof(buf)) {
+                    buf[bufidx++] = (char)ch;
+                    buf[bufidx] = 0;
+                    fflush(stdout);
+                }
             }
         }
+
+
+        show_prompt(buf);
     }
 }

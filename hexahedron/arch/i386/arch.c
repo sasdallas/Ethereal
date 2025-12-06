@@ -26,9 +26,6 @@
 #include <kernel/multiboot.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
-#include <kernel/mem/mem.h>
-#include <kernel/mem/alloc.h>
-#include <kernel/mem/pmm.h>
 #include <kernel/generic_mboot.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/processor_data.h>

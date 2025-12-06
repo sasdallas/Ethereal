@@ -19,7 +19,7 @@
 #include <acpica/actypes.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
-#include <kernel/mem/mem.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/mem/alloc.h>
 #include <kernel/drivers/pci.h>
 #include <stdarg.h>

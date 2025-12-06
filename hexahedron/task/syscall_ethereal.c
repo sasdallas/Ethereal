@@ -59,6 +59,8 @@ long sys_exit_thread(void *retval) {
         foreach(thr_node, current_cpu->current_thread->joiners) {
             sleep_wakeup(((thread_t*)thr_node->value));
         }
+    
+        // all entries in the thread list are stack anyways
     }
 
     // Mark this thread as stopped
@@ -114,8 +116,9 @@ long sys_join_thread(pid_t tid, void **retval) {
 
     // Nope, we should add ourselves to the queue
     if (!target->joiners) target->joiners = list_create("thread joiners");
-    sleep_untilNever(current_cpu->current_thread);
-    list_append(target->joiners, current_cpu->current_thread);
+    node_t n = { .value = current_cpu->current_thread };
+    sleep_prepare(current_cpu->current_thread);
+    list_append_node(target->joiners, &n);
     spinlock_release(&target->joiner_lck);
 
     // Enter sleep

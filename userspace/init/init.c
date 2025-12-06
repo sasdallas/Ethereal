@@ -20,6 +20,8 @@
 #include <errno.h>
 #include <dirent.h>
 
+extern char **environ;
+
 int sort_fn(const void *a, const void *b) { return strcmp(((struct dirent*)a)->d_name, ((struct dirent*)b)->d_name); }
 
 void run_init_scripts() {
@@ -74,7 +76,9 @@ void run_init_scripts() {
     free(entries);
 }
 
-int main(int argc, char *argv[]) {
+// Why no-sse?
+// Because for some reason, GCC keeps trying to generate bad SSE at the single user mode case (it throws a #GP as the stack is unaligned)
+__attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
     // Are we *really* init?
     if (getpid() != 0) {
         printf("init can only be launched by Ethereal\n");
@@ -91,9 +95,10 @@ int main(int argc, char *argv[]) {
     open("/device/log", O_RDWR);
 
     // Setup environment variables
-    putenv("PATH=/usr/bin/:/device/initrd/usr/bin/:"); // TEMP
+    putenv("PATH=/usr/bin/"); // TEMP
     setbuf(stdout, NULL);
 
+    // Hi guys
     printf("\nWelcome to the \033[35mEthereal Operating System\033[0m!\n\n");
 
     run_init_scripts();
@@ -104,8 +109,14 @@ int main(int argc, char *argv[]) {
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    char *cmdline = malloc(size);
-    fread(cmdline, size, 1, f);
+    char *cmdline = NULL;
+    if (size) {
+        cmdline = malloc(size);
+        fread(cmdline, size, 1, f);
+    } else {
+        cmdline = malloc(1);
+        *cmdline = 0;
+    }
 
     pid_t cpid = fork();
 
@@ -119,15 +130,16 @@ int main(int argc, char *argv[]) {
         }
 
         if (strstr(cmdline, "--single-user")) {
+            
             // Launch single-user mode
-            char *nargv[3] = { "termemu", "-f", NULL };
+            char *nargv[] = { "termemu", "-f", NULL };
             execvpe("termemu", nargv, environ);
 
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
         }
 
-        char *nargv[3] = { "/device/initrd/usr/bin/celestial",  NULL };
-        execvpe("/device/initrd/usr/bin/celestial", nargv, environ);
+        char *nargv[2] = { "celestial",  NULL };
+        execvpe("celestial", nargv, environ);
     
         printf("ERROR: Failed to launch Celestial process: %s\n", strerror(errno));
         return 1;

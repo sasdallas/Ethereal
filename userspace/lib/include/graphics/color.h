@@ -30,6 +30,7 @@ typedef uint32_t gfx_color_t;
 #define GFX_RGB_B(color) (((color) & 0x000000FF))
 #define GFX_RGBA(r, g, b, a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
 #define GFX_RGB(r, g, b) GFX_RGBA(r, g, b, 255)
+#define GFX_EXTRACT_RGBA(color, out_r, out_g, out_b, out_a) ({ *(out_r) = GFX_RGB_R(color); *(out_g) = GFX_RGB_G(color); *(out_b) = GFX_RGB_B(color); *(out_a) = GFX_RGB_A(color); })
 
 /* https://learn.microsoft.com/en-us/windows/apps/develop/win2d/premultiplied-alpha */
 #define __gfx_premultiply_add_alpha_channel(color, channel, new_alpha_vector) (uint8_t)(((((uint16_t)(GFX_RGB_##channel (color)) * (new_alpha_vector) + 128) * 257) >> 16) & 0xFF)
