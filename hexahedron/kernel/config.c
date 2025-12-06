@@ -32,7 +32,7 @@ const int __kernel_version_minor = 0;
 const int __kernel_version_lower = 0;
 
 // Codename
-const char *__kernel_version_codename = "Neutron2";
+const char *__kernel_version_codename = "Deuterium";
 
 // ASCII art (looks weird because fmting)
 const char *__kernel_ascii_art_formatted = "\
