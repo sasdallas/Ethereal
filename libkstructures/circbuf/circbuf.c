@@ -12,7 +12,7 @@
  */
 
 #include <structs/circbuf.h>
-#include <kernel/mem/alloc.h>
+#include <kernel/mm/alloc.h>
 #include <string.h>
 #include <errno.h>
 #include <kernel/debug.h>
