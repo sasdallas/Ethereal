@@ -65,6 +65,10 @@ typedef struct pmm_section {
     pmm_page_t *pages;          // List of pages
 } pmm_section_t;
 
+/**** MACROS ****/
+
+#define PMM_REFCOUNT(pg) ({ pmm_page_t *page = pmm_page(pg); assert(page); page->refcount; })
+
 /**** FUNCTIONS ****/
 
 /**
@@ -113,6 +117,11 @@ void pmm_retain(uintptr_t page);
  * Decrements the page refcount
  */
 void pmm_release(uintptr_t page);
+
+/**
+ * @brief Get page
+ */
+pmm_page_t *pmm_page(uintptr_t page);
 
 /**
  * @brief Gets the total amount of blocks

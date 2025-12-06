@@ -343,7 +343,7 @@ void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t fl
     mmu_page_t *page = arch_mmu_get_page(dir, virt, true);
     page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
     page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
-    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
+    page->bits.usermode = (flags & `USER) ? 1 : 0;
     page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
     page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
     page->bits.size = (flags & MMU_FLAG_WC) ? 1 : 0;
@@ -389,7 +389,10 @@ void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end) {
         asm volatile ("invlpg (%0)" :: "r"(i) : "memory");
     }
 
-    smp_tlbShootdown(start, end-start);
+    // TLB shootdown other CPUs, only if conditions are met.
+    if (start >= MMU_KERNELSPACE_START || (end < MMU_USERSPACE_END && current_cpu->current_process && current_cpu->current_process->thread_list && current_cpu->current_process->thread_list->length)) {
+        smp_tlbShootdown(start, end-start);
+    }
 }
 
 /**

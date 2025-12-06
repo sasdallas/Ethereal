@@ -81,8 +81,8 @@
 #define __NON_INTERRUPTABLE_BEGIN()  int __state = hal_getInterruptState(); hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 #define __NON_INTERRUPTABLE_END() hal_setInterruptState(__state); 
 
-#define __PREEMPT_DISABLE() int __status = current_cpu->current_thread->status; __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_FLAG_NO_PREEMPT)
-#define __PREEMPT_ENABLE() current_cpu->current_thread->status = __status;
+#define __PREEMPT_DISABLE() int __flags=0; if (current_cpu->current_thread) { __flags = current_cpu->current_thread->flags; __sync_or_and_fetch(&current_cpu->current_thread->flags, THREAD_FLAG_NO_PREEMPT); }
+#define __PREEMPT_ENABLE() if (current_cpu->current_thread) current_cpu->current_thread->flags = __flags;
 
 /* refcount */
 typedef atomic_int refcount_t;
