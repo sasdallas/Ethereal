@@ -217,10 +217,10 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
 void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start + offset; i < range->start + (npages * PAGE_SIZE); i += PAGE_SIZE) {
-        // mmu_flags_t fl = arch_mmu_read_flags(NULL, i);
-
         if (range->vmm_flags & VM_FLAG_FILE) {
             // TODO
+        } else if (range->vmm_flags & VM_FLAG_DEVICE) {
+            // Device memory is never freed
         } else {
             if (range->vmm_flags & VM_FLAG_ALLOC) {
                 uintptr_t pg = arch_mmu_physical(NULL, i);

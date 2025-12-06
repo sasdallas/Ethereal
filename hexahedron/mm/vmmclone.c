@@ -38,19 +38,41 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
 
         // Copy the data
         for (uintptr_t i = nrange->start; i < nrange->end; i += PAGE_SIZE) {
-            
             if ((arch_mmu_read_flags(NULL, i) & MMU_FLAG_PRESENT) == 0) {
                 continue;
             }
 
-            uintptr_t new_pg = pmm_allocatePage(ZONE_DEFAULT);
-            
-            uintptr_t new_pg_virt = arch_mmu_remap_physical(new_pg, PAGE_SIZE, REMAP_TEMPORARY);
-            memcpy((void*)new_pg_virt, (void*)i, PAGE_SIZE);
-            arch_mmu_unmap_physical(new_pg_virt, PAGE_SIZE);
+            uintptr_t phys = arch_mmu_physical(NULL, i);
 
-            // TODO: CoW
-            arch_mmu_map(new_ctx->dir, i, new_pg, nrange->mmu_flags);
+            if (nrange->vmm_flags & VM_FLAG_DEVICE) {
+                // Device memory, such as the framebuffer, should never be freed or copied.
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
+                continue;
+            }
+
+#ifndef DISABLE_COW
+            // Retain the physical page
+            pmm_retain(phys);
+
+            if (nrange->vmm_flags & VM_FLAG_SHARED) {
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags); // shared memory
+            } else {
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+                arch_mmu_map(NULL, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+            }
+#else
+            if (nrange->vmm_flags & VM_FLAG_SHARED) {
+                pmm_retain(phys);
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
+            } else {
+                uintptr_t new = pmm_allocatePage(ZONE_DEFAULT);
+                uintptr_t m1 = arch_mmu_remap_physical(new, PAGE_SIZE, REMAP_TEMPORARY);
+                memcpy((void*)m1, i, PAGE_SIZE);
+                arch_mmu_unmap_physical(m1, PAGE_SIZE);
+                arch_mmu_map(new_ctx->dir, i, new, nrange->mmu_flags);
+            }
+#endif
+
         }
 
         range = range->next;

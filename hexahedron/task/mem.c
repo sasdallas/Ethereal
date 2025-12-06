@@ -53,7 +53,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         LOG(WARN, "Protection flags are not implemented\n");
     }
 
-    int anon = (filedes == -1 || flags & MAP_ANONYMOUS);
+    vmm_flags_t vmfl = ((filedes == -1 || flags & MAP_ANONYMOUS) ? 0 : VM_FLAG_FILE) | ((flags & MAP_SHARED) ? VM_FLAG_SHARED : 0);
 
     // Make a new mapping structure
     process_mapping_t *map = kmalloc(sizeof(process_mapping_t));
@@ -93,7 +93,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         }
 
         // Use the
-        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | vmfl, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
         if (b) {
             map->addr = b;
             if (filedes == -1 || flags & MAP_ANONYMOUS) {
@@ -119,7 +119,7 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // Now let's get an allocation in the directory.
-    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | (anon ? 0 : VM_FLAG_FILE), MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER);
+    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | vmfl, MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER);
     if (!alloc) {
         // No memory?
         LOG(ERR, "Error while allocating a region. Failing mmap of %d bytes with ENOMEM\n", len);

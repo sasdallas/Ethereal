@@ -95,6 +95,10 @@ int video_mmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
         int r = current_driver->map(current_driver, len, offset, addr);
         if (r != 0) return r;
 
+        // Enable device memory
+        vmm_memory_range_t *range = vmm_getRange(vmm_getSpaceForAddress(addr), (uintptr_t)addr, len);
+        range->vmm_flags |= VM_FLAG_DEVICE;
+
         // Disable kernel video writes
         video_ks = 1;
         return 0;

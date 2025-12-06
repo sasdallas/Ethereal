@@ -68,6 +68,32 @@ int vmm_fault(vmm_fault_information_t *info) {
             arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);
             memset((void*)info->address, 0, PAGE_SIZE);
         }
+    } else if (!(fl & MMU_FLAG_WRITE)) {
+        // Readable page but not writable
+        // Is the range shared?
+        uintptr_t phys = arch_mmu_physical(NULL, info->address);
+
+        if (r->vmm_flags & VM_FLAG_SHARED || r->vmm_flags & VM_FLAG_DEVICE || PMM_REFCOUNT(phys) == 1) {
+            // Remap the page as writable, the other proc got it
+            arch_mmu_map(NULL, info->address, phys, r->mmu_flags);
+        } else {
+            // Create a copy of the page and release the old one
+            uintptr_t new_phys = pmm_allocatePage(ZONE_DEFAULT);
+            
+            uintptr_t rm1 = arch_mmu_remap_physical(new_phys, PAGE_SIZE, REMAP_TEMPORARY); 
+            uintptr_t rm2 = arch_mmu_remap_physical(phys, PAGE_SIZE, REMAP_TEMPORARY);
+
+            memcpy((void*)rm1, (void*)rm2, PAGE_SIZE);
+            arch_mmu_unmap_physical(rm1, PAGE_SIZE);
+            arch_mmu_unmap_physical(rm2, PAGE_SIZE);
+            arch_mmu_map(NULL, info->address, new_phys, r->mmu_flags);
+            arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
+
+            if ((r->vmm_flags & VM_FLAG_FILE) == 0) {
+                pmm_release(phys); // !!!: check this
+            }
+        }
+
     } else {
         assert(0 && "unimplemented");
     }

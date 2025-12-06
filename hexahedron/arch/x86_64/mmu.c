@@ -376,7 +376,8 @@ uintptr_t arch_mmu_physical(mmu_dir_t *dir, uintptr_t addr) {
     uintptr_t off = addr & 0xFFF;
     mmu_page_t *page = arch_mmu_get_page(dir, addr, false);
     if (!page) return 0x0;
-    return (page->bits.address << MMU_SHIFT) + off;
+
+    return (((uint64_t)(page->bits.address) << MMU_SHIFT)) + off;
 }
 
 /**

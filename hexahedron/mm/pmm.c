@@ -277,7 +277,10 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
 
     // Setup page
     s->pages[blk].flags &= ~(PAGE_FLAG_FREE);
-    assert(s->pages[blk].refcount == 0);
+    if (s->pages[blk].refcount != 0) {
+        LOG(ERR, "Crash imminent - refcount for page %p: %d\n", s->start + (blk * 4096), s->pages[blk].refcount);
+        assert(0);
+    }
     s->pages[blk].refcount = 1;
 
     s->nfree--;
@@ -467,6 +470,10 @@ void pmm_release(uintptr_t page) {
 
     int off = (page - s->start) / PAGE_SIZE;
     mutex_acquire(s->mutex);
+
+    if (s->pages[off].refcount == 0) {
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** Double free on page %p.\n", page);
+    }
 
     uintptr_t ref = __atomic_sub_fetch(&s->pages[off].refcount, 1, __ATOMIC_SEQ_CST);
     if (ref == 0) {

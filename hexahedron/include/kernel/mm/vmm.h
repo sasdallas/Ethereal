@@ -35,7 +35,7 @@
 #define VM_FLAG_FIXED       0x2         // Address hint must be matched exactly
 #define VM_FLAG_FILE        0x4         // File mapping
 #define VM_FLAG_SHARED      0x8         // Shared memory mapping
-
+#define VM_FLAG_DEVICE      0x10        // The physical memory of this mapping refers to device memory and should not be held or freed
 
 /* VM_OP_ */
 #define VM_OP_SET_FLAGS     1
