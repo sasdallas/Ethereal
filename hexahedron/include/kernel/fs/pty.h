@@ -96,11 +96,6 @@ typedef struct pty {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the PTY system
- */
-void pty_init();
-
-/**
  * @brief Create a new PTY device
  * @param tios Optional presetup termios. Leave as NULL to use defaults
  * @param size TTY window size
@@ -108,5 +103,12 @@ void pty_init();
  * @returns PTY or NULL on failure
  */
 pty_t *pty_create(struct termios *tios, struct winsize *size, int index);
+
+/**
+ * @brief Process input character for a specific PTY, taking tios into account
+ * @param pty The PTY to process the character for
+ * @param c The character to process
+ */
+void pty_input(pty_t *pty, uint8_t ch);
 
 #endif

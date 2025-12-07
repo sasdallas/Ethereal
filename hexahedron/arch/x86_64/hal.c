@@ -43,6 +43,7 @@
 #include <kernel/drivers/x86/pit.h>
 #include <kernel/drivers/x86/acpica.h> // #ifdef ACPICA_ENABLED in this file
 #include <kernel/drivers/x86/minacpi.h>
+#include <kernel/drivers/x86/early_log.h>
 
 static uintptr_t hal_rsdp = 0x0;
 static int hal_acpica_in_use = 0;
@@ -75,8 +76,11 @@ static void hal_init_stage1() {
     // Initialize serial driver
     if (serial_initialize() == 0) {
         // Setup debug output
-        debug_setOutput(serial_print);
+        // debug_setOutput(serial_print);
     }    
+
+    // Fire up the early logging subsystem
+    earlylog_init();
 
     // Say hi!
     arch_say_hello(1);
@@ -191,26 +195,6 @@ static void hal_init_stage2() {
         dprintf(INFO, "Argument \"--no_video\" found, disabling video.\n");
     }
 
-    /* DEBUGGER INITIALIZATION */
-
-    // We need to reconfigure the serial ports and initialize the debugger.
-    serial_setPort(serial_createPortData(__debug_output_com_port, __debug_output_baud_rate), 1);
-
-    if (!__debugger_enabled) goto _no_debug;
-
-    serial_port_t *port = serial_initializePort(__debugger_com_port, __debugger_baud_rate);
-    if (!port) {
-        dprintf(WARN, "Failed to initialize COM%i for debugging\n", __debugger_com_port);
-        goto _no_debug;
-    }
-
-    serial_setPort(port, 0);
-    if (debugger_initialize(port) != 1) {
-        dprintf(WARN, "Debugger failed to initialize or connect.\n");
-    }
-
-_no_debug: ;
-
     /* ACPI INITIALIZATION */
 
     smp_info_t *smp = hal_initACPI();
@@ -230,9 +214,6 @@ _no_debug: ;
 
     /* PCI INITIALIZATION */
     pci_init();
-
-    /* USB INITIALIZATION */
-    usb_init();
 }
 
 

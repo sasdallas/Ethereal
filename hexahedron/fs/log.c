@@ -23,6 +23,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/mm/alloc.h>
 #include <sys/ioctl_ethereal.h>
+#include <kernel/init.h>
 #include <kernel/debug.h>
 #include <stdio.h>
 #include <string.h>
@@ -135,7 +136,7 @@ ssize_t logdev_write(fs_node_t *node, off_t off, size_t size, uint8_t *buf) {
 /**
  * @brief Mount log device
  */
-void log_mount() {
+static int log_mount() {
     fs_node_t *log_node = kzalloc(sizeof(fs_node_t));
     strncpy(log_node->name, "log", 256);
     log_node->flags = VFS_CHARDEVICE;
@@ -148,4 +149,7 @@ void log_mount() {
     log_node->mask = 0600;
 
     vfs_mount(log_node, "/device/log");
+    return 0;
 }
+
+FS_INIT_ROUTINE(log, INIT_FLAG_DEFAULT, log_mount);

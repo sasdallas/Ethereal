@@ -140,9 +140,4 @@ loaded_driver_t *driver_findByAddress(uintptr_t addr);
  */
 loaded_driver_t *driver_findByID(pid_t id);
 
-/**
- * @brief Mount the drivers /kernel node
- */
-void driverfs_init();
-
 #endif

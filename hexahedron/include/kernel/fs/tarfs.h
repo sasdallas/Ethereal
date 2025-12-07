@@ -50,12 +50,5 @@ typedef struct _ustar_header {
 #define USTAR_DIRECTORY     '5'
 #define USTAR_PIPE          '6' 
 
-/**** FUNCTIONS ****/
-
-/**
- * @brief Initialize the tarfs system
- */
-void tarfs_init();
-
 
 #endif

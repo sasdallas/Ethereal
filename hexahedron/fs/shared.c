@@ -16,6 +16,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
+#include <kernel/init.h>
 #include <string.h>
 #include <errno.h>
 
@@ -31,8 +32,9 @@ static hashmap_t *shared_hashmap = NULL;
 /**
  * @brief Initialize shared memory system
  */
-void shared_init() {
+int shared_init() {
     shared_hashmap = hashmap_create_int("shared memory object hashmap", 20);
+    return 0;
 }
 
 /**
@@ -211,3 +213,6 @@ int sharedfs_openFromKey(process_t *proc, key_t key) {
     fd_t *fd = fd_add(proc, node);
     return fd->fd_number;    
 }
+
+/* Init routines */
+FS_INIT_ROUTINE(sharedfs, INIT_FLAG_DEFAULT, shared_init);

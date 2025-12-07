@@ -18,6 +18,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
+#include <kernel/init.h>
 #include <assert.h>
 #include <string.h>
 #include <kernel/misc/args.h>
@@ -811,7 +812,10 @@ static int pci_fillKernelFS(struct kernelfs_entry *entry, void *data) {
 /**
  * @brief Mount PCI KernelFS node
  */
-void pci_mount() {
+static int pci_mount() {
     kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "pci", 1);
     kernelfs_createEntry(dir, "devices", pci_fillKernelFS, NULL);
+    return 0;
 }
+
+FS_INIT_ROUTINE(pci, INIT_FLAG_DEFAULT, pci_mount, kernelfs);

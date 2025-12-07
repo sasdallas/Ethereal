@@ -71,13 +71,6 @@ extern kernelfs_dir_t *usb_kernelfs;
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the USB system (no controller drivers)
- * 
- * Controller drivers are loaded from the initial ramdisk
- */
-void usb_init();
-
-/**
  * @brief Create a USB controller
  * 
  * @param hc The host controller
@@ -128,10 +121,5 @@ USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int sp
  * @warning Does not shut the device down, just frees it from memory. Call @c usb_deinitializeDevice first
  */
 void usb_destroyDevice(USBController_t *controller, USBDevice_t *dev);
-
-/**
- * @brief Mount USB KernelFS node 
- */
-void usb_mount();
 
 #endif

@@ -123,11 +123,6 @@ extern void arch_signal_trampoline();
 void arch_say_hello(int is_debug);
 
 /**
- * @brief Mount KernelFS nodes
- */
-void arch_mount_kernelfs();
-
-/**
  * @brief Set the usermode TLS base
  * @param tls The TLS base to set
  * 

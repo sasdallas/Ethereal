@@ -15,6 +15,7 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -194,8 +195,12 @@ struct dirent *driverfs_readdir(fs_node_t *node, unsigned long index) {
 /**
  * @brief Mount the drivers /kernel node
  */
-void driverfs_init() {
+int driverfs_init() {
     kernelfs_dir_t *drivers = kernelfs_createDirectory(NULL, "drivers", 0);
     drivers->node->readdir = driverfs_readdir;
     drivers->node->finddir = driverfs_finddir;
+    return 0;
 }
+
+
+FS_INIT_ROUTINE(driverfs, INIT_FLAG_DEFAULT, driverfs_init, kernelfs);

@@ -28,6 +28,7 @@
 #include <kernel/drivers/video.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <structs/list.h>
 #include <string.h>
 #include <errno.h>
@@ -122,23 +123,6 @@ int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
     // Enable kernel video writes
     video_ks = 0;
     return 0;
-}
-
-/**
- * @brief Mount video node
- */
-void video_mount() {
-    // Create /device/fb0
-    // TODO: scuffed
-    video_node = kmalloc(sizeof(fs_node_t));
-    memset(video_node, 0, sizeof(fs_node_t));
-    strcpy(video_node->name, "fb0");
-    video_node->ioctl = video_ioctl;
-    video_node->flags = VFS_BLOCKDEVICE;
-    video_node->mask = 0660;
-    video_node->mmap = video_mmap;
-    video_node->munmap = video_munmap;
-    vfs_mount(video_node, "/device/fb0");
 }
 
 /**
@@ -258,3 +242,24 @@ void video_updateScreen() {
 uint8_t *video_getFramebuffer() {
     return video_framebuffer;
 }
+
+/**
+ * @brief Mount video node
+ */
+static int video_mount() {
+    // Create /device/fb0
+    // TODO: scuffed
+    video_node = kmalloc(sizeof(fs_node_t));
+    memset(video_node, 0, sizeof(fs_node_t));
+    strcpy(video_node->name, "fb0");
+    video_node->ioctl = video_ioctl;
+    video_node->flags = VFS_BLOCKDEVICE;
+    video_node->mask = 0660;
+    video_node->mmap = video_mmap;
+    video_node->munmap = video_munmap;
+    vfs_mount(video_node, "/device/fb0");
+    return 0;
+}
+
+/* Init routines */
+FS_INIT_ROUTINE(video, INIT_FLAG_DEFAULT, video_mount);

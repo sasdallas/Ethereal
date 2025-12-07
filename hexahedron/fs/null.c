@@ -13,8 +13,10 @@
 
 
 #include <kernel/fs/null.h>
+#include <kernel/fs/vfs.h>
 #include <kernel/mm/alloc.h>
 #include <string.h>
+#include <kernel/init.h>
 
 /**
  * @brief Null read
@@ -48,10 +50,9 @@ ssize_t zerodev_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffe
 /**
  * @brief Initialize the null device and mounts it
  */
-void nulldev_init() {
+int null_init() {
     // Allocate nulldev
-    fs_node_t *nulldev = kmalloc(sizeof(fs_node_t));
-    memset(nulldev, 0, sizeof(fs_node_t));
+    fs_node_t *nulldev = fs_node();
 
     // Setup parameters
     strncpy(nulldev->name, "null", 256);
@@ -62,15 +63,15 @@ void nulldev_init() {
 
     // Mount the devices
     vfs_mount(nulldev, NULLDEV_MOUNT_PATH);
+    return 0;
 }
 
 /**
- * @brief Initialize the zero device and mounts it
+ * @brief Initialize the zero device and mount it
  */
-void zerodev_init() {
+int zero_init() {
     // Allocate zerodev
-    fs_node_t *zerodev = kmalloc(sizeof(fs_node_t));
-    memset(zerodev, 0, sizeof(fs_node_t));
+    fs_node_t *zerodev = fs_node();
 
     // Setup parameters
     strncpy(zerodev->name, "zero", 256);
@@ -81,4 +82,8 @@ void zerodev_init() {
 
     // Mount the devices
     vfs_mount(zerodev, ZERODEV_MOUNT_PATH);
+    return 0;
 }
+
+FS_INIT_ROUTINE(null, INIT_FLAG_DEFAULT, null_init);
+FS_INIT_ROUTINE(zero, INIT_FLAG_DEFAULT, zero_init);

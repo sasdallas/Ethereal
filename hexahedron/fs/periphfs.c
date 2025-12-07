@@ -26,6 +26,7 @@
 #include <kernel/fs/pipe.h>
 #include <kernel/debug.h>
 #include <structs/circbuf.h>
+#include <kernel/init.h>
 #include <string.h>
 
 /* Filesystem nodes */
@@ -135,7 +136,7 @@ static int stdin_ready(fs_node_t *node, int events) {
 /**
  * @brief Initialize the peripheral filesystem interface
  */
-void periphfs_init() {
+int periphfs_init() {
     // Create keyboard circular buffer
     key_buffer_t *kbdbuf = kzalloc(sizeof(key_buffer_t));
     key_buffer_t *stdbuf = kzalloc(sizeof(key_buffer_t));
@@ -167,6 +168,8 @@ void periphfs_init() {
     mouse_pipe = pipe_createPipe();
     mouse_pipe->read->waiting_nodes = list_create("vfs waiting nodes"); // !!!: SERIOUS HACK
     vfs_mount(mouse_pipe->read, "/device/mouse");
+
+    return 0;
 }
 
 /**
@@ -247,3 +250,5 @@ int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_
 
     return 0;
 }
+
+FS_INIT_ROUTINE(periphfs, INIT_FLAG_DEFAULT, periphfs_init);

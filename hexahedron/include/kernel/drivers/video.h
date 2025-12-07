@@ -146,11 +146,6 @@ typedef struct _video_driver {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Mount video node
- */
-void video_mount();
-
-/**
  * @brief Initialize and prepare the video system.
  * 
  * This doesn't actually initialize any drivers, just starts the system.

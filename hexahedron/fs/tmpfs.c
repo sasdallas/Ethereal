@@ -17,6 +17,7 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <kernel/mm/vmm.h>
 #include <string.h>
 
@@ -388,6 +389,9 @@ int tmpfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
 /**
  * @brief Initialize the temporary filesystem handler
  */
-void tmpfs_init() {
+int tmpfs_init() {
     vfs_registerFilesystem("tmpfs", tmpfs_mount);
+    return 0;
 }
+
+FS_INIT_ROUTINE(tmpfs, INIT_FLAG_DEFAULT, tmpfs_init);

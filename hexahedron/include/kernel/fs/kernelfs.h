@@ -79,11 +79,6 @@ typedef struct kernelfs_dir {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the kernel filesystem
- */
-void kernelfs_init();
-
-/**
  * @brief Write data method for the KernelFS
  * @param entry The KernelFS entry to write data to
  * @param fmt The format string to use 

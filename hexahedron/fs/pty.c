@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <asm/ioctls.h>
+#include <kernel/init.h>
 
 
 /* Last used index for PTY */
@@ -361,7 +362,7 @@ fs_node_t *pty_finddir(fs_node_t *node, char *name) {
 /**
  * @brief Initialize the PTY system
  */
-void pty_init() {
+int pty_init() {
     pty_dir = fs_node();
     strcpy(pty_dir->name, "pts");
     pty_dir->flags = VFS_DIRECTORY;
@@ -373,6 +374,7 @@ void pty_init() {
 
     vfs_mount(pty_dir, "/device/pts");
     pty_map = hashmap_create_int("pty map", 20);
+    return 0;
 }
 
 /**
@@ -665,3 +667,5 @@ pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
 
     return pty;
 }
+
+FS_INIT_ROUTINE(pty, INIT_FLAG_DEFAULT, pty_init);

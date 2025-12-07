@@ -11,9 +11,11 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <kernel/fs/random.h>
 #include <string.h>
 #include <stdlib.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/init.h>
+
 
 
 static ssize_t random_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
@@ -32,7 +34,7 @@ static ssize_t random_read(fs_node_t *node, off_t offset, size_t size, uint8_t *
 /**
  * @brief Mount random device
  */
-void random_mount() {
+int random_mount() {
     fs_node_t *n = fs_node();
     strcpy(n->name, "random");
     n->mask = 0666;
@@ -41,4 +43,6 @@ void random_mount() {
     n->read = random_read;
 
     vfs_mount(n, "/device/random");
+    return 0;
 }
+

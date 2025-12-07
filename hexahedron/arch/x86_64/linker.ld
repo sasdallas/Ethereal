@@ -61,6 +61,42 @@ SECTIONS
         __rodata_end = .;
 	}
 
+    .initcall ALIGN (4K) : AT (ADDR (.initcall) - 0xFFFFF00000000000)
+    {
+        /* INIT CALLS */
+
+        __initcall_start = .;
+        __initcall_kern_early_start = .;
+        *(.initcall.kern_early)
+        __initcall_kern_early_end = .;
+        
+        __initcall_fs_start = .;
+        *(.initcall.fs)
+        __initcall_fs_end = .;
+
+        __initcall_net_start = .;
+        *(.initcall.net)
+        __initcall_net_end = .;
+
+        __initcall_sched_start = .;
+        *(.initcall.sched)
+        __initcall_sched_end = .;
+
+        __initcall_rootfs_start = .;
+        *(.initcall.rootfs)
+        __initcall_rootfs_end = .;
+
+        __initcall_driver_start = .;
+        *(.initcall.driver)
+        __initcall_driver_end = .;
+
+        __initcall_kern_late_start = .;
+        *(.initcall.kern_late)
+        __initcall_kern_late_end = .;
+        
+        __initcall_end = .;
+    }
+
 	/* BSS */
 	.bss ALIGN (4K) : AT (ADDR (.bss) - 0xFFFFF00000000000)
 	{

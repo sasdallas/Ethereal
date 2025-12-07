@@ -14,11 +14,5 @@
 #ifndef KERNEL_FS_CONSOLE_H
 #define KERNEL_FS_CONSOLE_H
 
-/**** FUNCTIONS ****/
-
-/**
- * @brief Mount the console device
- */
-void console_mount();
 
 #endif

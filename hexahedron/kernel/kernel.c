@@ -22,6 +22,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
+#include <kernel/init.h>
 
 // Loaders
 #include <kernel/loader/driver.h>
@@ -40,8 +41,6 @@
 #include <kernel/fs/kernelfs.h>
 #include <kernel/fs/log.h>
 #include <kernel/fs/shared.h>
-#include <kernel/fs/console.h>
-#include <kernel/fs/random.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -180,74 +179,33 @@ void kernel_statistics() {
     LOG(INFO, "Kernel allocator has %d bytes in use\n", alloc_used());
 }
 
-
 /**
- * @brief Kernel main function
+ * @brief Load symbols
  */
-void kmain() {
-    LOG(INFO, "Reached kernel main, starting Hexahedron...\n");
-    generic_parameters_t *parameters = arch_get_generic_parameters();
+void kernel_loadSymbols(ini_t *ini) {
+    char *symmap_path = ini_get(ini, "boot", "symmap");
+    if (!symmap_path) {
+        LOG(WARN, "Boot config file (/boot/conf.ini) does not specify symbol map, assuming default path");
+        symmap_path = "/device/initrd/boot/hexahedron-kernel-symmap.map";
+    }
 
-    // Now, initialize the VFS.
-    vfs_init();
-
-    // Startup the builtin filesystem drivers    
-    kernelfs_init();
-    tarfs_init();
-    nulldev_init();
-    zerodev_init();
-    debug_mountNode();
-    periphfs_init();
-    pty_init();
-    tmpfs_init();
-    driverfs_init();
-    nic_init(); // This initializes the network kernelfs directory
-    socket_init();
-    video_mount();
-    shared_init();
-    pci_mount();
-    arch_mount_kernelfs();
-    console_mount();
-    log_mount();
-    random_mount();
-    usb_mount();
-
-    // TEMPORARY
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm", NULL);
-    vfs_dump();
-
-    // Networking
-    arp_init();
-    ipv4_init();
-    icmp_init();
-    udp_init();
-    tcp_init();
-    unix_init();
-
-    // Audio
-    mixer_init();
-
-    // Setup loopback interface
-    loopback_install();
-
-    kernel_statistics();
-
-    // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
-    // Do some sanity checks first.
-    if (!parameters->module_start) {
-        LOG(ERR, "No modules detected - cannot continue\n");
-        kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
+    fs_node_t *symfile = kopen(symmap_path, O_RDONLY);
+    if (!symfile) {
+        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing hexahedron-kernel-symmap.map\n");
         __builtin_unreachable();
     }
 
-    // Now we need to mount the initial ramdisk
-    kernel_mountRamdisk(parameters);
+    int symbols = ksym_load(symfile);
+    fs_close(symfile);
 
-    // Load the INI file
-    ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
-    if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
+    LOG(INFO, "Loaded %i symbols from symbol map\n", symbols);
+    printf("Loaded kernel symbol map from initial ramdisk successfully\n");
+}
 
+/**
+ * @brief Load font file
+ */
+void kernel_loadFont(ini_t *ini) {
     // Try to load new font file
     if (!kargs_has("--no-psf-font")) {
         char *font_file = ini_get(ini, "boot", "kernel_font");
@@ -271,30 +229,70 @@ void kmain() {
             }
         }
     }
+}
 
+
+/**
+ * @brief Kernel main function
+ */
+void kmain() {
+    LOG(INFO, "Reached kernel main, starting Hexahedron...\n");
+    generic_parameters_t *parameters = arch_get_generic_parameters();
+
+    // Run the early phase of init    
+    INIT_RUN_PHASE(PHASE_KERN_EARLY);
+
+    // Now, initialize the VFS.
+    vfs_init();
+
+    // Run the system phase
+    INIT_RUN_PHASE(PHASE_FS);
+
+    // TEMPORARY
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);
+    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm", NULL);
+    vfs_dump();
+
+    // Networking
+    socket_init();
+    arp_init();
+    ipv4_init();
+    icmp_init();
+    udp_init();
+    tcp_init();
+    unix_init();
+
+    // Audio
+    mixer_init();
+
+    // Setup loopback interface
+    loopback_install();
+
+    // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
+    // Do some sanity checks first.
+    if (!parameters->module_start) {
+        LOG(ERR, "No modules detected - cannot continue\n");
+        kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
+        __builtin_unreachable();
+    }
+
+    // Now we need to mount the initial ramdisk
+    kernel_mountRamdisk(parameters);
+
+    // Load the INI file
+    ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
+    if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
+
+    // Load the font
+    kernel_loadFont(ini);
 
     // Check debug arguments
 extern void debug_check();
     debug_check();
 
     // Load symbols
-    char *symmap_path = ini_get(ini, "boot", "symmap");
-    if (!symmap_path) {
-        LOG(WARN, "Boot config file (/boot/conf.ini) does not specify symbol map, assuming default path");
-        symmap_path = "/device/initrd/boot/hexahedron-kernel-symmap.map";
-    }
-
-    fs_node_t *symfile = kopen(symmap_path, O_RDONLY);
-    if (!symfile) {
-        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing hexahedron-kernel-symmap.map\n");
-        __builtin_unreachable();
-    }
-
-    int symbols = ksym_load(symfile);
-    fs_close(symfile);
-
-    LOG(INFO, "Loaded %i symbols from symbol map\n", symbols);
-    printf("Loaded kernel symbol map from initial ramdisk successfully\n");
+    kernel_loadSymbols(ini);
+    ini_destroy(ini);
 
     // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
     current_cpu->current_thread = NULL;

@@ -39,11 +39,6 @@ typedef struct shared_object {
 #ifdef __KERNEL__
 
 /**
- * @brief Initialize shared memory system
- */
-void shared_init();
-
-/**
  * @brief Create a new shared memory object
  * @param proc The process to make a shared memory object on
  * @param size The size of the shared memory object

@@ -29,6 +29,7 @@
 #include <kernel/drivers/clock.h>
 #include <structs/hashmap.h>
 #include <kernel/config.h>
+#include <kernel/init.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -667,7 +668,7 @@ int kernelfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
 /**
  * @brief Initialize the kernel filesystem
  */
-void kernelfs_init() {
+int kernelfs_init() {
     vfs_registerFilesystem("kernelfs", kernelfs_mount);
 
     // Create parental node
@@ -696,4 +697,8 @@ void kernelfs_init() {
 
     // Create uptime
     kernelfs_createEntry(NULL, "uptime", kernelfs_uptimeRead, NULL);
+    return 0;
 }
+    
+
+FS_INIT_ROUTINE(kernelfs, INIT_FLAG_DEFAULT, kernelfs_init);

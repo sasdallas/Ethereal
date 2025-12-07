@@ -386,11 +386,16 @@ int driver_loadConfiguration(fs_node_t *file) {
             }
         }
 
+
+        json_value_free(priority_obj);
+        json_value_free(filename_obj);
+
         // Free values
         fs_close(driver_file);
     }
 
-    // json_value_free(json_data);
+    // !!!: leaking json parser
+    kfree(drivers_array->u.array.values);
     kfree(data);
 
     LOG(INFO, "Successfully loaded %i drivers\n", drivers);

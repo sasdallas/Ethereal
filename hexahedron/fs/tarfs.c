@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <assert.h>
+#include <kernel/init.h>
 
 /* Macro to round to 512 (for size) */
 #define USTAR_SIZE(size) ((size % 512) ? (size + (512 - (size % 512))) : size)
@@ -514,6 +515,9 @@ int tarfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
 /**
  * @brief Initialize the tarfs system
  */
-void tarfs_init() {
+int tarfs_init() {
     vfs_registerFilesystem("tarfs", tarfs_mount);
+    return 0;
 }
+
+FS_INIT_ROUTINE(tarfs, INIT_FLAG_DEFAULT, tarfs_init);

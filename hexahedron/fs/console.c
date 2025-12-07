@@ -20,6 +20,7 @@
 #include <kernel/gfx/video.h>
 #include <kernel/gfx/term.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 
 /**
  * @brief Write method for console
@@ -39,11 +40,14 @@ extern int video_ks;
 /**
  * @brief Mount the console device
  */
-void console_mount() {
+static int console_mount() {
     fs_node_t *condev = fs_node();
     strncpy(condev->name, "console", 256);
     condev->flags = VFS_CHARDEVICE;
     condev->mask = 0777;
     condev->write = console_write;
     vfs_mount(condev, "/device/console");
+    return 0;
 }
+
+FS_INIT_ROUTINE(console, INIT_FLAG_DEFAULT, console_mount);

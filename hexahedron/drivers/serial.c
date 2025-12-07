@@ -14,7 +14,14 @@
 #include <kernel/config.h>
 #include <kernel/drivers/serial.h>
 #include <kernel/mm/alloc.h>
+#include <kernel/fs/pty.h>
 #include <kernel/debug.h>
+
+#ifdef __ARCH_X86_64__
+#include <kernel/drivers/x86/serial.h>
+#else
+#error "Please create a serial driver for your architecture"
+#endif
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -24,8 +31,10 @@
 int (*serial_write_character_early)(char ch) = NULL;
 
 /* Port data */
-static serial_port_t *ports[MAX_COM_PORTS];
+static serial_port_t *ports[MAX_COM_PORTS] = { 0 };
 static serial_port_t *main_port = NULL;
+
+static pty_t *serial_ptys[MAX_COM_PORTS] = { 0 };
 
 /**
  * @brief Set port
@@ -107,49 +116,35 @@ int serial_portPrintf(serial_port_t *port, char *format, ...) {
 }
 
 /**
- * @brief Serial reading method
- * @param buffer The string to output to
- * @param port The port to read from
- * @param size How many characters to read.
- * @param timeout How long to wait for each character in milliseconds. If zeroed, it will wait forever
- * @returns The amount of characters read
+ * @brief Serial input handler
  */
-int serial_readBuffer(char *buffer, serial_port_t *port, size_t size, size_t timeout) {
-    if (!buffer || !port) return 0;
-
-    size_t i = 0;
-    while (i < size) {
-        buffer[i] = port->read(port, timeout);
-        i++;
+void serial_handleInput(serial_port_t *port, char ch) {
+    if (serial_ptys[port->com_port-1]) {
+        pty_input(serial_ptys[port->com_port-1], ch);
     }
-    
-
-    return i;
 }
 
-
 /**
- * @brief Serial reading method - reads from a specific port
- * @param port The port to read from
- * @param size How many characters to read
- * @param timeout How long to wait for each character in milliseconds. If zeroed, it will wait forever
- * @returns A pointer to the allocated buffer
+ * @brief Serial write out
  */
-char *serial_readPort(serial_port_t *port, size_t size, size_t timeout) {
-    if (!port || !size) return NULL;
-    
-    char *buffer = kmalloc(size);
-    serial_readBuffer(buffer, port, size, timeout);
-    return buffer;
+static int serial_writeOut(pty_t *pty, char ch) {
+    serial_port_t *p = (serial_port_t*)pty->_impl;
+    p->write(p, ch);
+    return 1;
 }
 
-
 /**
- * @brief Serial reading method - reads from main_port
- * @param size How many characters to read.
- * @param timeout How long to wait for each character in milliseconds. If zeroed, it will wait forever
- * @returns The amount of characters read
+ * @brief Initialize serial port VFS hooks
  */
-char *serial_read(size_t size, size_t timeout) {
-    return serial_readPort(main_port, size, timeout);
+void serial_mount() {
+    for (int i = 0; i < MAX_COM_PORTS; i++) {
+        if (ports[i]) {
+            serial_ptys[i] = pty_create(NULL, NULL, i);
+            serial_ptys[i]->write_out = serial_writeOut;
+            serial_ptys[i]->_impl = ports[i];
+            char name[128] = { 0 };
+            snprintf(name, 128, "/device/ttyS%d", i);
+            vfs_mount(serial_ptys[i]->slave, name);
+        }
+    }
 }

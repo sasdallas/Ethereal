@@ -14,14 +14,4 @@
 #ifndef KERNEL_FS_LOG_H
 #define KERNEL_FS_LOG_H
 
-/**** INCLUDES ****/
-#include <stdint.h>
-
-/**** FUNCTIONS ****/
-
-/**
- * @brief Mount the log device
- */
-void log_mount();
-
 #endif

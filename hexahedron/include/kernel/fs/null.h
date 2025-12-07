@@ -14,26 +14,9 @@
 #ifndef KERNEL_FS_NULL_H
 #define KERNEL_FS_NULL_H
 
-
-/**** INCLUDES ****/
-#include <stdint.h>
-#include <kernel/fs/vfs.h>
-
 /**** DEFINITIONS ****/
 
 #define NULLDEV_MOUNT_PATH      "/device/null"
 #define ZERODEV_MOUNT_PATH      "/device/zero"
-
-/**** FUNCTIONS ****/
-
-/**
- * @brief Initialize the null device and mounts it
- */
-void nulldev_init();
-
-/**
- * @brief Initialize the zero device and mounts it
- */
-void zerodev_init();
 
 #endif

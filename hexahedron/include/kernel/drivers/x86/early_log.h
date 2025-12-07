@@ -1,6 +1,6 @@
 /**
- * @file hexahedron/include/kernel/fs/random.h
- * @brief /device/random
+ * @file hexahedron/include/kernel/drivers/x86/early_log.h
+ * @brief Early log device
  * 
  * 
  * @copyright
@@ -11,17 +11,18 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef KERNEL_FS_RANDOM_H
-#define KERNEL_FS_RANDOM_H
+#ifndef DRIVERS_X86_EARLY_LOG_H
+#define DRIVERS_X86_EARLY_LOG_H
 
 /**** INCLUDES ****/
-#include <kernel/fs/vfs.h>
+#include <kernel/debug.h>
+#include <kernel/arch/arch.h>
 
 /**** FUNCTIONS ****/
 
 /**
- * @brief Mount random device
+ * @brief Initialize the early log
  */
-void random_mount();
+void earlylog_init();
 
-#endif 
+#endif

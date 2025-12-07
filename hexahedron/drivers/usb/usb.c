@@ -19,6 +19,7 @@
 #include <kernel/debug.h>
 #include <structs/list.h>
 #include <kernel/fs/kernelfs.h>
+#include <kernel/init.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB", __VA_ARGS__)
@@ -37,7 +38,7 @@ static volatile uint32_t usb_last_controller_id = 0;
  * 
  * Controller drivers are loaded from the initial ramdisk
  */
-void usb_init() {
+int usb_init() {
     // Create the controller list
     usb_controller_list = list_create("usb controllers");
 
@@ -48,6 +49,7 @@ void usb_init() {
     hid_init();
 
     LOG(INFO, "USB system online\n");
+    return 0;
 }
 
 /**
@@ -80,6 +82,10 @@ void usb_registerController(USBController_t *controller) {
 /**
  * @brief Mount USB KernelFS node 
  */
-void usb_mount() {
+int usb_mount() {
     usb_kernelfs = kernelfs_createDirectory(NULL, "usb", 1);
+    return 0;
 }
+
+KERN_EARLY_INIT_ROUTINE(usb, INIT_FLAG_DEFAULT, usb_init);
+FS_INIT_ROUTINE(usb, INIT_FLAG_DEFAULT, usb_mount, kernelfs);

@@ -131,11 +131,6 @@ typedef struct mouse_buffer {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the peripheral filesystem interface
- */
-void periphfs_init();
-
-/**
  * @brief Write a new event to the keyboard interface
  * @param event_type The type of event to write
  * @param scancode The scancode relating to the event

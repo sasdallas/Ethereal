@@ -119,9 +119,5 @@ nic_t *nic_find(char *name);
  */
 nic_t *nic_route(in_addr_t addr);
 
-/**
- * @brief Initialize NIC system
- */
-void nic_init();
 
 #endif

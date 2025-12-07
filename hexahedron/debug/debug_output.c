@@ -14,13 +14,12 @@
 
 #include <kernel/debug.h>
 #include <kernel/drivers/clock.h>
-#include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/mm/alloc.h>
 #include <kernel/gfx/term.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/misc/args.h>
 #include <kernel/panic.h>
+#include <kernel/init.h>
 #include <errno.h>
 #include <time.h>
 #include <stdarg.h>
@@ -220,7 +219,7 @@ log_putchar_method_t debug_getOutput() {
 /**
  * @brief Mount the debug node onto the VFS
  */
-void debug_mountNode() {
+int debug_mount() {
     // /* Allocate the debug buffer */
     // if (!kargs_has("--no-store-debug")) {
     //     debug_buffer = kmalloc(PAGE_SIZE);
@@ -229,8 +228,7 @@ void debug_mountNode() {
     // }
 
     vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
-
-    dprintf(INFO, "Debug buffer initialized - all content is being stored in memory.\n");
+    return 0;
 }
 
 /**
@@ -247,3 +245,5 @@ void debug_check() {
         }
     }
 }
+
+FS_INIT_ROUTINE(debug, INIT_FLAG_DEFAULT, debug_mount);

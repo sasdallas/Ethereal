@@ -127,10 +127,5 @@ ssize_t debug_write(struct fs_node *node, off_t offset, size_t size, uint8_t *bu
  */
 ssize_t debug_read(struct fs_node *node, off_t offset, size_t size, uint8_t *buffer);
 
-/**
- * @brief Mount the debug node onto the VFS
- */
-void debug_mountNode();
-
 
 #endif

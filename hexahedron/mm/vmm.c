@@ -312,7 +312,6 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     // Otherwise, allocations will be auto-backed by VMM faults.
     if (vm_flags & VM_FLAG_ALLOC && sp == &__vmm_kernel_space) {
         // Back the pages now
-        LOG(DEBUG, "Backing %p - %p\n", range->start, range->end);
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
             uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
             arch_mmu_map(NULL, i, p, prot);

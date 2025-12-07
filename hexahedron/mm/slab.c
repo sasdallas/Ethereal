@@ -28,7 +28,7 @@ static slab_cache_t *magazine_cache = NULL;
 static slab_cache_t *magazine_list_cache = NULL; // Generated at slab_postSMPHook
 
 /* UNCOMMENT TO ENABLE SLAB DEBUGGING */
-#define SLAB_DEBUG 1
+// #define SLAB_DEBUG 1
 
 /* Magazine macros */
 #define MAGAZINE_POP(mag) mag->rounds[--mag->nrounds]

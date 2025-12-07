@@ -20,6 +20,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
+#include <kernel/init.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
@@ -267,7 +268,10 @@ nic_t *nic_route(in_addr_t addr) {
 /**
  * @brief Initialize NIC system
  */
-void nic_init() {
+int nic_init() {
     nic_list = list_create("nic list");
     kernelfs_net_dir = kernelfs_createDirectory(NULL, "net", 1);
+    return 0;
 }
+
+FS_INIT_ROUTINE(nic, INIT_FLAG_DEFAULT, nic_init, kernelfs);

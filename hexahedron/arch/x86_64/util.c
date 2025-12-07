@@ -20,6 +20,7 @@
 #include <kernel/processor_data.h>
 #include <kernel/debug.h>
 #include <ethereal/user.h>
+#include <kernel/init.h>
 #include <stdio.h>
 
 /* External parameters */
@@ -120,7 +121,7 @@ static int arch_cpu_kernelfs(struct kernelfs_entry *entry, void *data) {
 /**
  * @brief Mount KernelFS nodes
  */
-void arch_mount_kernelfs() {
+int arch_mount_kernelfs() {
 	kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "cpus", 1);
 	for (int i = 0; i < MAX_CPUS; i++) {
 		if (processor_data[i].cpu_id || !i) {
@@ -129,6 +130,7 @@ void arch_mount_kernelfs() {
 			kernelfs_createEntry(dir, name, arch_cpu_kernelfs, &processor_data[i]);
 		}
 	}
+	return 0;
 }
 
 /**
@@ -235,3 +237,6 @@ void arch_single_step(struct thread *thread, int state) {
 uint64_t arch_tick_count() {
 	return clock_readTSC();
 }
+
+/* Init routines */
+FS_INIT_ROUTINE(arch_kernelfs, INIT_FLAG_DEFAULT, arch_mount_kernelfs, kernelfs);

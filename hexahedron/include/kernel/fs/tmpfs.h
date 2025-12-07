@@ -65,11 +65,4 @@ typedef struct tmpfs_entry {
     tmpfs_file_t *file;     // File structure, only present on TMPFS_FILE
 } tmpfs_entry_t;
 
-/**** FUNCTIONS ****/
-
-/**
- * @brief Initialize the temporary filesystem handler
- */
-void tmpfs_init();
-
 #endif
