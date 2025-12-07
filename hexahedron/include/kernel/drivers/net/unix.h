@@ -94,11 +94,4 @@ typedef struct unix_sock {
 
 #define UNIX_SOCKET_BUFFER_SIZE         8192
 
-/**** FUNCTIONS ****/
-
-/**
- * @brief Initialize UNIX sockets
- */
-void unix_init();
-
 #endif

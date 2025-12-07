@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <kernel/init.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
 
@@ -573,7 +574,9 @@ sock_t *unix_socket(int type, int protocol) {
 /**
  * @brief Initialize UNIX sockets
  */
-void unix_init() {
-    socket_register(AF_UNIX, unix_socket);
+static int unix_init() {
     unix_path_map = hashmap_create("unix path map", 10);
+    return socket_register(AF_UNIX, unix_socket);
 }
+
+NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init, socket);

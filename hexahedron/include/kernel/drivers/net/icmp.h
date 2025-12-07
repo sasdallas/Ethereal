@@ -44,11 +44,6 @@ typedef struct icmp_packet {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize and register ICMP
- */
-void icmp_init();
-
-/**
  * @brief Send an ICMP packet
  * @param nic_node The NIC to send the ICMP packet to
  * @param dest_addr Target IP address

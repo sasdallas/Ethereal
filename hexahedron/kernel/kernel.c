@@ -46,14 +46,6 @@
 #include <kernel/drivers/video.h>
 #include <kernel/drivers/font.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/drivers/net/loopback.h>
-#include <kernel/drivers/net/arp.h>
-#include <kernel/drivers/net/ipv4.h>
-#include <kernel/drivers/net/icmp.h>
-#include <kernel/drivers/net/socket.h>
-#include <kernel/drivers/net/udp.h>
-#include <kernel/drivers/net/tcp.h>
-#include <kernel/drivers/net/unix.h>
 #include <kernel/drivers/sound/mixer.h>
 #include <kernel/drivers/usb/usb.h>
 
@@ -254,20 +246,11 @@ void kmain() {
     vfs_dump();
 
     // Networking
-    socket_init();
-    arp_init();
-    ipv4_init();
-    icmp_init();
-    udp_init();
-    tcp_init();
-    unix_init();
+    INIT_RUN_PHASE(PHASE_NET);
 
     // Audio
     mixer_init();
-
-    // Setup loopback interface
-    loopback_install();
-
+    
     // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
     // Do some sanity checks first.
     if (!parameters->module_start) {

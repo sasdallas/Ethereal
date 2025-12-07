@@ -15,6 +15,7 @@
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/arp.h>
 #include <kernel/drivers/net/socket.h>
+#include <kernel/init.h>
 #include <kernel/mm/alloc.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
@@ -35,14 +36,6 @@ extern sock_t *icmp_socket();
 extern sock_t *udp_socket();
 extern sock_t *tcp_socket();
 
-/**
- * @brief Initialize the IPv4 system
- */
-void ipv4_init() {
-    ipv4_handler_hashmap = hashmap_create_int("ipv4 handler map", 6);
-    ethernet_registerHandler(IPV4_PACKET_TYPE, ipv4_handle);
-    socket_register(AF_INET, ipv4_socket);
-}
 
 /**
  * @brief Register an IPv4 protocol handler
@@ -226,3 +219,15 @@ sock_t *ipv4_socket(int type, int protocol) {
             return NULL;
     };
 }
+
+/**
+ * @brief Initialize the IPv4 system
+ */
+static int ipv4_init() {
+    ipv4_handler_hashmap = hashmap_create_int("ipv4 handler map", 6);
+    ethernet_registerHandler(IPV4_PACKET_TYPE, ipv4_handle);
+    socket_register(AF_INET, ipv4_socket);
+    return 0;
+}
+
+NET_INIT_ROUTINE(ipv4, INIT_FLAG_DEFAULT, ipv4_init, socket);

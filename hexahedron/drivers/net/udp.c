@@ -19,6 +19,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
+#include <kernel/init.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
@@ -37,13 +38,6 @@ spinlock_t udp_port_lock = { 0 };
 /* Last port allocated */
 static in_port_t udp_port_last = 2332;
 
-/**
- * @brief Initialize the UDP system
- */
-void udp_init() {
-    udp_port_map = hashmap_create_int("udp port map", 20);
-    ipv4_register(IPV4_PROTOCOL_UDP, udp_handle);
-}
 
 /**
  * @brief Handle a UDP packet
@@ -259,3 +253,13 @@ sock_t *udp_socket() {
     sock->driver = (void*)udpsock;
     return sock;
 }
+
+/**
+ * @brief Initialize the UDP system
+ */
+static int udp_init() {
+    udp_port_map = hashmap_create_int("udp port map", 20);
+    return ipv4_register(IPV4_PROTOCOL_UDP, udp_handle);
+}
+
+NET_INIT_ROUTINE(udp, INIT_FLAG_DEFAULT, udp_init, ipv4);

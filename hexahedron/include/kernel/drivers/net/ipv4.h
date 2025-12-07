@@ -68,11 +68,6 @@ typedef int (*ipv4_handler_t)(fs_node_t *nic, void *frame, size_t size);
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the IPv4 system
- */
-void ipv4_init();
-
-/**
  * @brief Register an IPv4 protocol handler
  * @param protocol Protocol to handle
  * @param handler Handler

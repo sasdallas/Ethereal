@@ -111,11 +111,6 @@ typedef sock_t* (*socket_create_t)(int type, int protocol);
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the socket system
- */
-void socket_init();
-
-/**
  * @brief Register a new handler for a socket type
  * @param domain The domain of the handler to register
  * @param socket_create Socket creation function

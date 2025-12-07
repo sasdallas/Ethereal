@@ -19,6 +19,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
+#include <kernel/init.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -141,14 +142,6 @@ uint16_t tcp_checksum(tcp_checksum_header_t *p, tcp_packet_t *h, void *d, size_t
 	}
 
 	return ~(sum & 0xFFFF) & 0xFFFF;
-}
-
-/**
- * @brief Initialize the TCP system
- */
-void tcp_init() {
-    tcp_port_map = hashmap_create_int("tcp port map", 20);
-    ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
 }
 
 /**
@@ -908,3 +901,14 @@ sock_t *tcp_socket() {
     sock->driver = (void*)tcpsock;
     return sock;
 }
+
+
+/**
+ * @brief Initialize the TCP system
+ */
+static int tcp_init() {
+    tcp_port_map = hashmap_create_int("tcp port map", 20);
+    return ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
+}
+
+NET_INIT_ROUTINE(tcp, INIT_FLAG_DEFAULT, tcp_init, ipv4);

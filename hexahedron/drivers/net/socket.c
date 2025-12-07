@@ -17,6 +17,7 @@
 #include <kernel/task/syscall.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <string.h>
 #include <structs/hashmap.h>
 #include <errno.h>
@@ -105,15 +106,6 @@ static sock_t *socket_raw_create(int type, int protocol) {
     sock->recvmsg = socket_raw_recvmsg;
 
     return sock;
-}
-
-/**
- * @brief Initialize the socket system
- */
-void socket_init() {
-    socket_map = hashmap_create_int("socket map", 4);
-    socket_list = list_create("socket list");
-    LOG(INFO, "Sockets initialized\n");
 }
 
 /**
@@ -791,3 +783,15 @@ sock_t *socket_fromID(int id) {
     
     return NULL;
 }
+
+
+/**
+ * @brief Initialize the socket system
+ */
+static int socket_init() {
+    socket_map = hashmap_create_int("socket map", 4);
+    socket_list = list_create("socket list");
+    return 0;
+}
+
+NET_INIT_ROUTINE(socket, INIT_FLAG_DEFAULT, socket_init);

@@ -20,6 +20,7 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/fs/kernelfs.h>
+#include <kernel/init.h>
 #include <structs/hashmap.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
@@ -289,10 +290,13 @@ int arp_handle_packet(void *frame, fs_node_t *nic_node, size_t size) {
 /**
  * @brief Initialize the ARP system
  */
-void arp_init() {
+static int arp_init() {
     arp_map = hashmap_create_int("arp route map", 20);
     arp_waiters = hashmap_create_int("arp waiter map", 20);
     arp_entries = list_create("arp entries");
     ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle_packet);
     kernelfs_createEntry(kernelfs_net_dir, "arp", arp_readKernelFS, NULL);
+    return 0;
 }
+
+NET_INIT_ROUTINE(arp, INIT_FLAG_DEFAULT, arp_init);

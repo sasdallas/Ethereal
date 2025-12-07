@@ -35,11 +35,6 @@ typedef struct udp_sock {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the UDP system
- */
-void udp_init();
-
-/**
  * @brief Handle a UDP packet
  */
 int udp_handle(fs_node_t *nic, void *frame, size_t size);

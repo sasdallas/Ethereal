@@ -88,11 +88,6 @@ typedef struct tcp_sock {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the TCP system
- */
-void tcp_init();
-
-/**
  * @brief Handle a TCP packet
  */
 int tcp_handle(fs_node_t *nic, void *frame, size_t size);

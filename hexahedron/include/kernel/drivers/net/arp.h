@@ -66,11 +66,6 @@ typedef struct arp_table_entry {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the ARP system
- */
-void arp_init();
-
-/**
  * @brief Get an entry from the cache table
  * @param address The requested address
  * @returns A table entry or NULL

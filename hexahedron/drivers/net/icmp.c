@@ -18,6 +18,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
@@ -26,13 +27,6 @@
 
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s]   ICMP: ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
-
-/**
- * @brief Initialize and register ICMP
- */
-void icmp_init() {
-    ipv4_register(IPV4_PROTOCOL_ICMP, icmp_handle);
-}
 
 /**
  * @brief Perform an ICMP checksum
@@ -250,3 +244,12 @@ sock_t *icmp_socket() {
     sock->recvmsg = icmp_recvmsg;
     return sock;
 }
+
+/**
+ * @brief Initialize and register ICMP
+ */
+static int icmp_init() {
+    return ipv4_register(IPV4_PROTOCOL_ICMP, icmp_handle);
+}
+
+NET_INIT_ROUTINE(icmp, INIT_FLAG_DEFAULT, icmp_init, ipv4);

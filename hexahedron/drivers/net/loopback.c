@@ -11,8 +11,8 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#include <kernel/drivers/net/loopback.h>
 #include <kernel/drivers/net/ethernet.h>
+#include <kernel/init.h>
 #include <arpa/inet.h>
 
 /**
@@ -31,7 +31,7 @@ ssize_t loopback_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buff
 /**
  * @brief Install the loopback device
  */
-void loopback_install() {
+static int loopback_install() {
     uint8_t mac[6] = {00, 00, 00, 00, 00, 00};
     fs_node_t *nic_node = nic_create("loopback interface", mac, NIC_TYPE_ETHERNET, NULL);
 
@@ -40,5 +40,7 @@ void loopback_install() {
     NIC(nic_node)->mtu = 1500;
 
     nic_node->write = loopback_write;
-    nic_register(nic_node, "lo");
+    return nic_register(nic_node, "lo");
 }
+
+NET_INIT_ROUTINE(loopback, INIT_FLAG_DEFAULT, loopback_install);
