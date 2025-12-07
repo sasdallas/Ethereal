@@ -100,7 +100,19 @@ void prompt_loop() {
         while (1) {
             int ch = getchar();
             if (ch == '\n') { putchar('\n'); break; }
+            if (ch == '\b' || ch == 0x7f) {
+                if (buf != password) {
+                    buf--;
+                    *buf = 0;
+                    printf("\b \b");
+                    fflush(stdout);
+                }
+                continue;
+            } 
             *buf++ = ch;
+            if (buf >= password+512) {
+                break;
+            }
             putchar('*');
             fflush(stdout);
         }
