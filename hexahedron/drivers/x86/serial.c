@@ -14,6 +14,9 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
+#define _GNU_SOURCE
+#include <termios.h>
+
 #include <stdint.h>
 #include <errno.h>
 
@@ -35,6 +38,7 @@
 #include <kernel/debug.h>
 #include <kernel/task/process.h>
 #include <kernel/drivers/clock.h>
+
 
 // Main configured serial port (TODO: Move this to a structure)
 uint16_t serial_defaultPort = SERIAL_COM1_PORT;
@@ -239,34 +243,62 @@ serial_port_t *serial_initializePort(int com_port, uint16_t baudrate) {
     outportb(ser_port->io_address + SERIAL_MODEM_CONTROL,
                 SERIAL_MODEMCTRL_DTR | SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2);
 
-    // // Sleep for just an eency weency bit (Bochs)
-    // for (int i = 0; i < 10000; i++);
+    // Sleep for just an eency weency bit (Bochs)
+    for (int i = 0; i < 10000; i++);
 
-    // // Now try to test the serial port. Configure the chip in loopback mode
-    // outportb(ser_port->io_address + SERIAL_MODEM_CONTROL,
-    //             SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2 | SERIAL_MODEMCTRL_LOOPBACK);
+    // Now try to test the serial port. Configure the chip in loopback mode
+    outportb(ser_port->io_address + SERIAL_MODEM_CONTROL,
+                SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2 | SERIAL_MODEMCTRL_LOOPBACK);
 
-    // // Now send a byte and check if we get it back.
-    // outportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER, 0xAE);
-    // if (inportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER) != 0xAE) {
-    //     dprintf(WARN, "COM%i is faulty or nonexistent\n", com_port);
-    //     return NULL; // The chip must be faulty, or it doesn't exist
-    // } 
+    // Now send a byte and check if we get it back.
+    outportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER, 0xAE);
+    if (inportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER) != 0xAE) {
+        dprintf(WARN, "COM%i is faulty or nonexistent\n", com_port);
+        return NULL; // The chip must be faulty, or it doesn't exist
+    } 
 
-    // // Not faulty! Reset in normal mode, aka RTS/DTR/OUT2
-    // outportb(ser_port->io_address + SERIAL_MODEM_CONTROL,
-    //             SERIAL_MODEMCTRL_DTR | SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2);
+    // Not faulty! Reset in normal mode, aka RTS/DTR/OUT2
+    outportb(ser_port->io_address + SERIAL_MODEM_CONTROL,
+                SERIAL_MODEMCTRL_DTR | SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2);
 
     // Enable interrupts on the port (enable received data available interrupt)
     outportb(ser_port->io_address + SERIAL_INTENABLE, 0x01);
 
-
-
-    // Clear RBR
-    // inportb(ser_port->io_address + SERIAL_RECEIVE_BUFFER);
-
     dprintf(INFO, "Successfully initialized COM%i\n", com_port);
     return ser_port;
+}
+
+/**
+ * @brief Reinitialize port
+ * @param port The port
+ * @param tios The termios
+ */
+void serial_reinitializePort(serial_port_t *port, struct termios *tios) {
+    outportb(port->io_address + SERIAL_INTENABLE, 0x0);
+    dprintf(DEBUG, "Setting baud rate: %d\n", tios->c_cflag & CBAUD);
+    serial_setBaudRate(port, tios->c_cflag & CBAUD);
+
+    uint8_t lc = 0;
+
+    if (tios->c_cflag & CS6) {
+        lc |= 0x01;
+    } else if (tios->c_cflag & CS7) {
+        lc |= 0x02;
+    } else if (tios->c_cflag & CS8) {
+        lc |= 0x03;
+    }
+
+    outportb(port->io_address + SERIAL_LINE_CONTROL, lc);
+
+    // Enable FIFO & clear transmit and receive
+    outportb(port->io_address + SERIAL_FIFO_CONTROL, 0xC7);
+
+    // Enable DTR, RTS, and OUT2
+    outportb(port->io_address + SERIAL_MODEM_CONTROL,
+                SERIAL_MODEMCTRL_DTR | SERIAL_MODEMCTRL_RTS | SERIAL_MODEMCTRL_OUT2);
+    
+    // Enable interrupts on the port (enable received data available interrupt)
+    outportb(port->io_address + SERIAL_INTENABLE, 0x01);   
 }
 
 /**

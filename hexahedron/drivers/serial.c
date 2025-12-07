@@ -100,12 +100,16 @@ static int serial_writeOut(pty_t *pty, char ch) {
 /**
  * @brief Initialize serial port VFS hooks
  */
-static int serial_mount() {
+static int serial_init() {
     for (int i = 0; i < MAX_COM_PORTS; i++) {
-        if (ports[i]) {
+        serial_port_t *p = serial_initializePort(i+1, 9600); // !!!: stupid
+
+        if (p) {
+            serial_setPort(p);
             serial_ptys[i] = pty_create(NULL, NULL, i);
             serial_ptys[i]->write_out = serial_writeOut;
             serial_ptys[i]->_impl = ports[i];
+            serial_reinitializePort(p, &serial_ptys[i]->tios);
             char name[128] = { 0 };
             snprintf(name, 128, "/device/ttyS%d", i);
             vfs_mount(serial_ptys[i]->slave, name);
@@ -115,22 +119,20 @@ static int serial_mount() {
     return 0;
 }
 
-/**
- * @brief Initialize serial ports
- */
-int serial_init() {
-    serial_port_t *com1 = serial_initializePort(1, 9600);
-    if (com1) serial_setPort(com1);
-    serial_port_t *com2 = serial_initializePort(2, 9600);
-    if (com2) serial_setPort(com2);
-    serial_port_t *com3 = serial_initializePort(3, 9600);
-    if (com3) serial_setPort(com3);
-    serial_port_t *com4 = serial_initializePort(4, 9600);
-    if (com4) serial_setPort(com4);
+// /**
+//  * @brief Initialize serial ports
+//  */
+// int serial_init() {
+//     serial_port_t *com1 = serial_initializePort(1, 9600);
+//     if (com1) serial_setPort(com1);
+//     serial_port_t *com2 = serial_initializePort(2, 9600);
+//     if (com2) serial_setPort(com2);
+//     serial_port_t *com3 = serial_initializePort(3, 9600);
+//     if (com3) serial_setPort(com3);
+//     serial_port_t *com4 = serial_initializePort(4, 9600);
+//     if (com4) serial_setPort(com4);
 
-    return 0;
-}
+//     return 0;
+// }
 
-
-KERN_EARLY_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_init);
-FS_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_mount, pty);
+FS_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_init, pty);

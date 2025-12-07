@@ -18,6 +18,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/drivers/serial.h>
+#include <sys/termios.h>
 
 /**** DEFINITIONS ****/
 
@@ -96,5 +97,12 @@ serial_port_t *serial_initializePort(int com_port, uint16_t baudrate);
  * @returns Port structure or NULL
  */
 serial_port_t *serial_createPortData(int com_port, uint16_t baudrate);
+
+/**
+ * @brief Reinitialize port
+ * @param port The port
+ * @param tios The termios
+ */
+void serial_reinitializePort(serial_port_t *port, struct termios *tios);
 
 #endif
