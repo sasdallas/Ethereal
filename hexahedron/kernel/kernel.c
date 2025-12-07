@@ -223,7 +223,6 @@ void kernel_loadFont(ini_t *ini) {
     }
 }
 
-
 /**
  * @brief Kernel main function
  */
@@ -240,16 +239,17 @@ void kmain() {
     // Run the system phase
     INIT_RUN_PHASE(PHASE_FS);
 
-    // TEMPORARY
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/tmp", NULL);
-    vfs_mountFilesystemType("tmpfs", "tmpfs", "/comm", NULL);
-    vfs_dump();
-
     // Networking
     INIT_RUN_PHASE(PHASE_NET);
 
-    // Audio
-    mixer_init();
+    // Initialize scheduler and process system
+    current_cpu->current_thread = NULL;
+    current_cpu->current_process = NULL;
+    sleep_init();
+    process_init();
+
+    // Run scheduler
+    INIT_RUN_PHASE(PHASE_SCHED);
     
     // All architecture-specific stuff is done now. We need to get ready to initialize the whole system.
     // Do some sanity checks first.
@@ -269,19 +269,13 @@ void kmain() {
     // Load the font
     kernel_loadFont(ini);
 
-    // Check debug arguments
-extern void debug_check();
-    debug_check();
-
     // Load symbols
     kernel_loadSymbols(ini);
     ini_destroy(ini);
 
-    // Before we load drivers, initialize the process system. This will let drivers create their own kernel threads
-    current_cpu->current_thread = NULL;
-    current_cpu->current_process = NULL;
-    sleep_init();
-    process_init();
+    // TODO: PROPER MOUNTING OF THE ROOT FILESYSTEM.
+    // I'm not entirely sure how we could accomplish this.
+    INIT_RUN_PHASE(PHASE_ROOTFS);
 
     // Load drivers
     if (!kargs_has("--no-load-drivers")) {
@@ -292,15 +286,23 @@ extern void debug_check();
         printf(COLOR_CODE_YELLOW    "Refusing to load drivers because of kernel argument \"--no-load-drivers\" - careful!\n" COLOR_CODE_RESET);
     }
 
+    // Run drivers phase
+    INIT_RUN_PHASE(PHASE_DRIVER);
+
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
 
     // Spawn init task for this CPU
     current_cpu->current_process = process_spawnInit();
 
+    // Run kernel late
+    INIT_RUN_PHASE(PHASE_KERN_LATE);
+
     // Alright, we are done booting, print post-boot stats
     kernel_statistics();
 
+
+    // Run init
     // !!!: TEMPORARY
     const char *path = "/device/initrd/usr/bin/init";
 

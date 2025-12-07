@@ -43,6 +43,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
             }
 
             uintptr_t phys = arch_mmu_physical(NULL, i);
+            if (!phys) continue;
 
             if (nrange->vmm_flags & VM_FLAG_DEVICE) {
                 // Device memory, such as the framebuffer, should never be freed or copied.
@@ -56,7 +57,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
                 pmm_retain(phys);
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags); // shared memory
             } else {
-                arch_mmu_map(NULL, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+                arch_mmu_map(ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
                 pmm_retain(phys);
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
             }
@@ -78,6 +79,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
         range = range->next;
     }
 
+    arch_mmu_invalidate_range(MMU_USERSPACE_START, MMU_USERSPACE_END);
     mutex_release(ctx->space->mut);
 
     return new_ctx;

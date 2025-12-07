@@ -14,6 +14,7 @@
 #include <kernel/drivers/sound/mixer.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
 #include <string.h>
 
 /* Log method */
@@ -23,8 +24,9 @@
 /**
  * @brief Initialize the mixer system
  */
-void mixer_init() {
+static int mixer_init() {
     audio_mount();
+    return 0;
 }
 
 /**
@@ -115,3 +117,5 @@ sound_card_buffer_data_t *mixer_buffer(sound_card_t *card) {
     spinlock_release(&card->sound_data_lock);
     return NULL;
 }
+
+FS_INIT_ROUTINE(mixer, INIT_FLAG_DEFAULT, mixer_init);

@@ -236,7 +236,7 @@ int debug_mount() {
  * 
  * @todo better...
  */
-void debug_check() {
+static int debug_check() {
     if (kargs_has("--debug")) {
         if (!strcmp(kargs_get("--debug"), "none")) {
             debug_ignore = 1;
@@ -244,6 +244,9 @@ void debug_check() {
             debug_setOutput(terminal_print);
         }
     }
+
+    return 0;
 }
 
+KERN_EARLY_INIT_ROUTINE(debug_args, INIT_FLAG_DEFAULT, debug_check);
 FS_INIT_ROUTINE(debug, INIT_FLAG_DEFAULT, debug_mount);

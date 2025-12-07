@@ -100,8 +100,14 @@ static int last_cpu_number = 1;
  * @brief Invalidate pages
  */
 static void smp_invalidate(uintptr_t addr, size_t size) {
-    for (uintptr_t i = addr; i < addr + size; i += PAGE_SIZE) {
-        asm volatile ("invlpg (%0)" :: "r"(i) : "memory");
+    if (size > PAGE_SIZE*16) {
+        // reload cr3 instead, its faster
+        asm volatile ("movq %%cr3, %%rax\n"
+                      "movq %%rax, %%cr3" ::: "rax", "memory");
+    } else {
+        for (uintptr_t i = addr; i < addr + size; i += PAGE_SIZE) {
+            asm volatile ("invlpg (%0)" :: "r"(i) : "memory");
+        }
     }
 }
 

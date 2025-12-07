@@ -386,8 +386,14 @@ uintptr_t arch_mmu_physical(mmu_dir_t *dir, uintptr_t addr) {
  * @param end End of page range
  */
 void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end) {
-    for (uintptr_t i = start; i < end; i += PAGE_SIZE) {
-        asm volatile ("invlpg (%0)" :: "r"(i) : "memory");
+    if (end-start > PAGE_SIZE*16) {
+        // reload cr3 instead, its faster
+        asm volatile ("movq %%cr3, %%rax\n"
+                      "movq %%rax, %%cr3" ::: "rax", "memory");
+    } else {
+        for (uintptr_t i = start; i < end; i += PAGE_SIZE) {
+            asm volatile ("invlpg (%0)" :: "r"(i) : "memory");
+        }
     }
 
     // TLB shootdown other CPUs, only if conditions are met.

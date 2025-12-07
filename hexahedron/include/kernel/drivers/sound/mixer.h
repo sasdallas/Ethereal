@@ -51,11 +51,6 @@ typedef struct sound_card_stop_request {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the mixer
- */
-void mixer_init();
-
-/**
  * @brief Handle type of sound request
  * @param card The sound card the request was sent to
  * @param buffer The request buffer
