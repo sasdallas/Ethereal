@@ -49,10 +49,9 @@ typedef struct _serial_port {
 /**
  * @brief Set port
  * @param port The port to set. Depending on the value of COM port it will be added.
- * @param is_main_port Whether this port should be classified as the main port
  * @warning This will overwrite any driver/port already configured
  */
-void serial_setPort(serial_port_t *port, int is_main_port);
+void serial_setPort(serial_port_t *port);
 
 /**
  * @brief Returns the port configured
@@ -62,52 +61,14 @@ void serial_setPort(serial_port_t *port, int is_main_port);
 serial_port_t *serial_getPort(int port);
 
 /**
- * @brief Set the serial early write method
- */
-void serial_setEarlyWriteMethod(int (*write_method)(char ch));
-
-/**
- * @brief Put character method - puts characters to main_port or early write method.
- * @param user Can be put as a serial_port object to write to that, or can be NULL.
- */
-int serial_print(void *user, char ch);
-
-/**
- * @brief Serial printing method - writes to main_port
- */
-int serial_printf(char *format, ...);
-
-/**
  * @brief Serial printing method - writes to a specific port
  * @param port The port to write to
  */
-int serial_portPrintf(serial_port_t *port, char *format, ...);
+int serial_printf(serial_port_t *port, char *format, ...);
 
 /**
- * @brief Serial reading method
- * @param buffer The string to output to
- * @param port The port to read from
- * @param size How many characters to read.
- * @param timeout How long to wait for each character. If zeroed, it will wait forever
- * @returns The amount of characters read
+ * @brief Serial input handler
  */
-int serial_readBuffer(char *buffer, serial_port_t *port, size_t size, size_t timeout);
-
-/**
- * @brief Serial reading method - reads from a specific port
- * @param port The port to read from
- * @param size How many characters to read
- * @param timeout How long to wait for each character. If zeroed, it will wait forever
- * @returns A pointer to the allocated buffer
- */
-char *serial_readPort(serial_port_t *port, size_t size, size_t timeout);
-
-/**
- * @brief Serial reading method - reads from main_port
- * @param size How many characters to read.
- * @param timeout How long to wait for each character. If zeroed, it will wait forever
- * @returns The amount of characters read
- */
-char *serial_read(size_t size, size_t timeout);
+void serial_handleInput(serial_port_t *port, char ch);
 
 #endif

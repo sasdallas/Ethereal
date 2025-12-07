@@ -245,7 +245,6 @@ void kmain() {
     // Initialize scheduler and process system
     current_cpu->current_thread = NULL;
     current_cpu->current_process = NULL;
-    sleep_init();
     process_init();
 
     // Run scheduler

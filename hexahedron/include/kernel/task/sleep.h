@@ -57,11 +57,6 @@ typedef struct sleep_queue {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Initialize the sleeper system
- */
-void sleep_init();
-
-/**
  * @brief Put the current thread to sleep
  * 
  * Another thread will wake you up with @c sleep_wakeup

@@ -73,12 +73,6 @@ uint64_t hal_getRSDP() {
  * @brief Stage 1 startup - initializes logging, interrupts, clock, etc.
  */
 static void hal_init_stage1() {
-    // Initialize serial driver
-    if (serial_initialize() == 0) {
-        // Setup debug output
-        // debug_setOutput(serial_print);
-    }    
-
     // Fire up the early logging subsystem
     earlylog_init();
 

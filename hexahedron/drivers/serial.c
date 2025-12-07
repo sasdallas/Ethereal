@@ -23,6 +23,8 @@
 #error "Please create a serial driver for your architecture"
 #endif
 
+#include <kernel/init.h>
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -32,22 +34,17 @@ int (*serial_write_character_early)(char ch) = NULL;
 
 /* Port data */
 static serial_port_t *ports[MAX_COM_PORTS] = { 0 };
-static serial_port_t *main_port = NULL;
 
 static pty_t *serial_ptys[MAX_COM_PORTS] = { 0 };
 
 /**
  * @brief Set port
  * @param port The port to set. Depending on the value of COM port it will be added.
- * @param is_main_port Whether this port should be classified as the main port
  * @warning This will overwrite any driver/port already configured
  */
-void serial_setPort(serial_port_t *port, int is_main_port) {
+void serial_setPort(serial_port_t *port) {
     if (!port || port->com_port > MAX_COM_PORTS || port->com_port == 0) return;
-
     ports[port->com_port - 1] = port;
-
-    if (is_main_port) main_port = port;
 }
 
 /**
@@ -64,50 +61,17 @@ serial_port_t *serial_getPort(int port) {
  * @brief Put character method - puts characters to main_port or early write method.
  * @param user Can be put as a serial_port object to write to that, or can be NULL.
  */
-int serial_print(void *user, char ch) {
+static int serial_print(void *user, char ch) {
     // If user was specified and not NULL, then we are probably trying to print to a specific port
-    if (user) {
-        if (ch == '\n') ((serial_port_t*)user)->write((serial_port_t*)user, '\r');
-        return ((serial_port_t*)user)->write((serial_port_t*)user, ch);
-    }
-
-    // Else, do we have a main port?
-    if (!main_port) {
-        // No, use early write method.
-        if (ch == '\n') serial_write_character_early('\r');
-        return serial_write_character_early(ch);
-    } else {
-        // Yes, use that.
-        if (ch == '\n') main_port->write(main_port, '\r');
-        return main_port->write(main_port, ch);
-    }
-}
-
-/**
- * @brief Set the serial early write method
- */
-void serial_setEarlyWriteMethod(int (*write_method)(char ch)) {
-    if (write_method) {
-        serial_write_character_early = write_method;
-    }
-}
-
-/**
- * @brief Serial printing method - writes to main_port
- */
-int serial_printf(char *format, ...) {
-    va_list ap;
-    va_start(ap, format);
-    int out = xvasprintf(serial_print, NULL, format, ap);
-    va_end(ap);
-    return out;
+    if (ch == '\n') ((serial_port_t*)user)->write((serial_port_t*)user, '\r');
+    return ((serial_port_t*)user)->write((serial_port_t*)user, ch);
 }
 
 /**
  * @brief Serial printing method - writes to a specific port
  * @param port The port to write to
  */
-int serial_portPrintf(serial_port_t *port, char *format, ...) {
+int serial_printf(serial_port_t *port, char *format, ...) {
     va_list ap;
     va_start(ap, format);
     int out = xvasprintf(serial_print, (void*)port, format, ap);
@@ -136,7 +100,7 @@ static int serial_writeOut(pty_t *pty, char ch) {
 /**
  * @brief Initialize serial port VFS hooks
  */
-void serial_mount() {
+static int serial_mount() {
     for (int i = 0; i < MAX_COM_PORTS; i++) {
         if (ports[i]) {
             serial_ptys[i] = pty_create(NULL, NULL, i);
@@ -147,4 +111,26 @@ void serial_mount() {
             vfs_mount(serial_ptys[i]->slave, name);
         }
     }
+
+    return 0;
 }
+
+/**
+ * @brief Initialize serial ports
+ */
+int serial_init() {
+    serial_port_t *com1 = serial_initializePort(1, 9600);
+    if (com1) serial_setPort(com1);
+    serial_port_t *com2 = serial_initializePort(2, 9600);
+    if (com2) serial_setPort(com2);
+    serial_port_t *com3 = serial_initializePort(3, 9600);
+    if (com3) serial_setPort(com3);
+    serial_port_t *com4 = serial_initializePort(4, 9600);
+    if (com4) serial_setPort(com4);
+
+    return 0;
+}
+
+
+KERN_EARLY_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_init);
+FS_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_mount, pty);
