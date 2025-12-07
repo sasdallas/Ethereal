@@ -52,13 +52,13 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
 
 #ifndef DISABLE_COW
             // Retain the physical page
-            pmm_retain(phys);
-
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
+                pmm_retain(phys);
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags); // shared memory
             } else {
-                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
                 arch_mmu_map(NULL, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+                pmm_retain(phys);
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
             }
 #else
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
@@ -67,7 +67,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
             } else {
                 uintptr_t new = pmm_allocatePage(ZONE_DEFAULT);
                 uintptr_t m1 = arch_mmu_remap_physical(new, PAGE_SIZE, REMAP_TEMPORARY);
-                memcpy((void*)m1, i, PAGE_SIZE);
+                memcpy((void*)m1, (void*)i, PAGE_SIZE);
                 arch_mmu_unmap_physical(m1, PAGE_SIZE);
                 arch_mmu_map(new_ctx->dir, i, new, nrange->mmu_flags);
             }
