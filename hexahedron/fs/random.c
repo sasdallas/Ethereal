@@ -46,3 +46,4 @@ int random_mount() {
     return 0;
 }
 
+FS_INIT_ROUTINE(random, INIT_FLAG_DEFAULT, random_mount);
