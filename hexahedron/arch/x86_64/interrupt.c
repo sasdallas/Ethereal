@@ -229,6 +229,10 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         }
 
         // Now we're finished so return
+        if (current_cpu->current_process && current_cpu->current_thread) {
+            signal_handle(current_cpu->current_thread, regs);
+        }
+
         return;
     }
 

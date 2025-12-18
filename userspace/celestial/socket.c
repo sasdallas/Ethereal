@@ -154,45 +154,42 @@ void socket_handle(int sock) {
     // Receive a request from the socket
     char data[4096];
 
-    if (recv(sock, data, 4096, 0) < 0) {
+    ssize_t r = recv(sock, data, 4096, 0);
+    if (r < 0) {
         if (errno == EWOULDBLOCK) return;
-        
-        // Was the error ECONNRESET? We should catch that
-        if (errno == ECONNRESET) {
-            CELESTIAL_LOG("socket: Connection with socket %d was closed by remote peer.\n", sock);
-            
-            // Free all resources allocated by the socket
-            celestial_removeClient(sock);
-            close(sock);
-
-            // Find any windows used by the socket
-            // TODO: (really TODO) WM_SW_MAP should also have a list of windows..
-            foreach(winn, WM_WINDOW_LIST) {
-                wm_window_t *win = (wm_window_t*)winn->value;
-                if (win && win->sock == sock) {
-                    window_close(win);
-                }
-            }
-
-            foreach(winn, WM_WINDOW_LIST_BG) {
-                wm_window_t *win = (wm_window_t*)winn->value;
-                if (win && win->sock == sock) {
-                    window_close(win);
-                }
-            }
-
-            foreach(winn, WM_WINDOW_LIST_OVERLAY) {
-                wm_window_t *win = (wm_window_t*)winn->value;
-                if (win && win->sock == sock) {
-                    window_close(win);
-                }
-            }
-
-            return;
-        }
-
         CELESTIAL_PERROR("recv");
         celestial_fatal();
+    }
+
+    if (r == 0) {
+        // Yeah pack it up bro
+        // Free all resources allocated by the socket
+        celestial_removeClient(sock);
+        close(sock);
+
+        // Find any windows used by the socket
+        // TODO: (really TODO) WM_SW_MAP should also have a list of windows..
+        foreach(winn, WM_WINDOW_LIST) {
+            wm_window_t *win = (wm_window_t*)winn->value;
+            if (win && win->sock == sock) {
+                window_close(win);
+            }
+        }
+
+        foreach(winn, WM_WINDOW_LIST_BG) {
+            wm_window_t *win = (wm_window_t*)winn->value;
+            if (win && win->sock == sock) {
+                window_close(win);
+            }
+        }
+
+        foreach(winn, WM_WINDOW_LIST_OVERLAY) {
+            wm_window_t *win = (wm_window_t*)winn->value;
+            if (win && win->sock == sock) {
+                window_close(win);
+            }
+        }
+        return;
     }
 
     // Is this a valid request?
@@ -390,7 +387,8 @@ void socket_handle(int sock) {
         
         // Mark the window as requiring a flip
         wm_window_t *win = WID(req->wid);
-        
+        if (win->animation != WINDOW_ANIM_NONE) return; 
+
         // If this is our first flip request..
         if (win->state == WINDOW_STATE_OPENING) {
             window_beginAnimation(win, WINDOW_ANIM_OPENING);
@@ -404,7 +402,6 @@ void socket_handle(int sock) {
         if (req->y + req->height > win->height) req->height = win->height - req->y;
 
         gfx_rect_t upd_rect = { .x = req->x, .y = req->y, .width = req->width, .height = req->height };
-        window_update(win, upd_rect);
 
         // TODO: This will repeatedly draw (can be slow)
         upd_rect.x += win->x;

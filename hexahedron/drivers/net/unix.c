@@ -189,18 +189,20 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
                 r = NULL;
             }
         }
-
-        mutex_release(u->server.m);
     
         if (!r) {
             if (sock_nonblocking(sock)) {
+                mutex_release(u->server.m);
                 return -EWOULDBLOCK;
             } 
 
             // Wait in acceptor queue
             sleep_inQueue(u->server.accepters);
+            mutex_release(u->server.m);
             int w = sleep_enter();
             if (w == WAKEUP_SIGNAL) return -EINTR;
+        } else {
+            mutex_release(u->server.m);
         }
     }
 
@@ -349,7 +351,11 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     
     if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && usock->state != UNIX_SOCK_STATE_CONNECTED && !usock->peer) {
         // No peer
-        return -ECONNABORTED;
+        return -ECONNRESET;
+    }
+
+    if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+        return 0;
     }
 
     // TODO: DGRAM
@@ -476,10 +482,10 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         sleep_wakeupQueue(usock->peer->pkt.d->rx_wait_queue, 1);
         
         if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-            LOG(ERR, "Peer socket is closed\n");
+            LOG(ERR, "Peer socket is closed!\n");
             spinlock_release(&usock->peer->pkt.d->rx_lock);
             unix_decrementAndFree(usock->peer);
-            return -ECONNABORTED;
+            return -ECONNRESET;
         }
 
 

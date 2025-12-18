@@ -371,7 +371,7 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
         case SOL_SOCKET:
             return socket_default_setsockopt(sock, option_name, option_value, option_len);
         default:
-            return -ENOPROTOOPT;
+            return -ENOTSUP;
     }
 }
 

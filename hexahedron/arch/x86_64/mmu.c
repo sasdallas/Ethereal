@@ -55,6 +55,11 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
 
     dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
     
+    if (info.from == VMM_FAULT_FROM_USER) {
+        signal_send(current_cpu->current_process, SIGSEGV);
+        return 0;
+    }
+
     // Prepare
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
 
