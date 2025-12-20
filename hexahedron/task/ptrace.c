@@ -284,6 +284,66 @@ int ptrace_detach(pid_t pid) {
 }
 
 /**
+ * @brief Peek!
+ * @param pid The PID to peek for
+ * @param addr The virtual address to peek from
+ */
+long ptrace_peek(pid_t pid, void *addr) {
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
+
+    if ((uintptr_t)addr < tracee->ctx->space->start || (uintptr_t)addr > tracee->ctx->space->end) {
+        return -EFAULT;
+    }
+
+
+    mmu_flags_t fl = arch_mmu_read_flags(tracee->ctx->dir, (uintptr_t)addr);
+    if ((fl & MMU_FLAG_PRESENT) == 0 || (fl & MMU_FLAG_USER) == 0) return -EFAULT;
+
+    uintptr_t phys = arch_mmu_physical(tracee->ctx->dir, (uintptr_t)addr);
+    if (!phys) return 0x0;
+
+    uintptr_t p2 = arch_mmu_remap_physical(phys, 2, REMAP_TEMPORARY);
+
+    long val = *((long*)p2);
+
+    arch_mmu_unmap_physical(p2, 2);
+    return val;
+}
+
+/**
+ * @brief Poke!
+ * @param pid The PID to poke for
+ * @param addr The virtual address to poke
+ * @param data The word to copy in
+ */
+long ptrace_poke(pid_t pid, void *addr, void *data) {
+    SYSCALL_VALIDATE_PTR(data);
+    process_t *tracee = ptrace_getTracee(current_cpu->current_process, pid);
+    if (!tracee) return -ESRCH;
+    PTRACE_REQUIRE_STOPPED(tracee->main_thread);
+
+    if ((uintptr_t)addr < tracee->ctx->space->start || (uintptr_t)addr > tracee->ctx->space->end) {
+        return -EFAULT;
+    }
+
+
+    mmu_flags_t fl = arch_mmu_read_flags(tracee->ctx->dir, (uintptr_t)addr);
+    if ((fl & MMU_FLAG_PRESENT) == 0 || (fl & MMU_FLAG_USER) == 0) return -EFAULT;
+
+    uintptr_t phys = arch_mmu_physical(tracee->ctx->dir, (uintptr_t)addr);
+    if (!phys) return 0x0;
+
+    uintptr_t p2 = arch_mmu_remap_physical(phys, 2, REMAP_TEMPORARY);
+
+    *((long*)p2) = *(long*)data;
+
+    arch_mmu_unmap_physical(p2, 2);
+    return 0;
+}
+
+/**
  * @brief Handle a ptrace request by the current process
  * @param op The operation to perform
  * @param pid The target PID
@@ -308,6 +368,10 @@ long ptrace_handle(enum __ptrace_request op, pid_t pid, void *addr, void *data) 
             return ptrace_singlestep(pid, data);
         case PTRACE_DETACH:
             return ptrace_detach(pid);
+        case PTRACE_PEEKDATA:
+            return ptrace_peek(pid, addr);
+        case PTRACE_POKEDATA:
+            return ptrace_poke(pid, addr, data);
         default:
             LOG(WARN, "Unknown or unimplemented ptrace operation %d\n", op);
             return -ENOSYS;

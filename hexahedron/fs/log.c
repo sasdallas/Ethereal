@@ -15,7 +15,6 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <kernel/fs/log.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/gfx/term.h>

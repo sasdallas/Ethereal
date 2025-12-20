@@ -39,7 +39,6 @@
 #include <kernel/fs/pty.h>
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
-#include <kernel/fs/log.h>
 #include <kernel/fs/shared.h>
 
 // Drivers
