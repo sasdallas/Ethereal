@@ -128,12 +128,12 @@ static void input_key(widget_t *widget, gfx_context_t *ctx, keyboard_event_t *ev
     if (event->type == KEYBOARD_EVENT_RELEASE) return;
 
     widget_input_t *input = (widget_input_t*)widget->impl;
-
-    if (!input->focused) {
-        fprintf(stderr, "input not focused!\n");
+    if (!input->focused || !event->ascii) {
         return;
     }
 
+
+    // Backspace
     if (event->ascii == '\b' || event->ascii == 0x7F) {
         if (input->idx == 0) return;
 
@@ -143,6 +143,7 @@ static void input_key(widget_t *widget, gfx_context_t *ctx, keyboard_event_t *ev
         return;
     }
 
+    // Newline/enter event
     if (event->ascii == '\r' || event->ascii == '\n') {
         // Newline, ignore if no NL
         if (input->nl) {
@@ -152,7 +153,12 @@ static void input_key(widget_t *widget, gfx_context_t *ctx, keyboard_event_t *ev
         return;
     }
 
-    // input->buffer = realloc(input->buffer, input->idx+2);
+    if (input->idx >= 128) {
+        // Can't accept more
+        // TODO: Fix this garbage
+        return;
+    }
+
     input->buffer[input->idx] = event->ascii;
     input->idx++;
     input->buffer[input->idx] = 0;

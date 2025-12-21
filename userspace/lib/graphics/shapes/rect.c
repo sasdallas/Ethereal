@@ -144,68 +144,95 @@ void gfx_drawRectangleFilledGradient(struct gfx_context *ctx, gfx_rect_t *rect, 
  * @param color The color to draw it as
  */
 void gfx_drawRoundedRectangle(struct gfx_context *ctx, gfx_rect_t *rect, int radius, gfx_color_t color) {
-	if (!rect || !ctx) return;
+    if (!rect || !ctx) return;
 
-	int32_t x = rect->x;
+    int32_t x = rect->x;
     int32_t y = rect->y;
-    int32_t width = rect->width;
+    int32_t width  = rect->width;
     int32_t height = rect->height;
 
-	// Draw the center rectangle
-	for (uint16_t _y = 0; _y < height; _y++) {
-		for (uint16_t _x = 0; _x < width; _x++) {
-			// Check to make sure that we're not going into the arcs we need to do draw
-			if ((_x + x > x + width - radius - 1 || (_x + x) < x + radius)) {
-				if ((_y + y < y + radius || _y + y > y + height - radius - 1)) {
-					continue; // We are going to hit the arcs
-				}
-			} 
+    int32_t max_w = GFX_WIDTH(ctx);
+    int32_t max_h = GFX_HEIGHT(ctx);
 
-			GFX_PIXEL(ctx, _x + x, _y + y) = gfx_alphaBlend(color, GFX_PIXEL(ctx, _x + x, _y + y));
-		}
-	}
+    // Clip to the screen bounds
+    int32_t x0 = x < 0 ? 0 : x;
+    int32_t y0 = y < 0 ? 0 : y;
+    int32_t x1 = x + width  > max_w ? max_w : x + width;
+    int32_t y1 = y + height > max_h ? max_h : y + height;
 
-	// Now do some crazy math to draw each arc.
-	float nr = (double)radius + 1.0f;
-	for (int dy = 0; dy <= nr; dy++) {
-		for (int dx = 0; dx <= nr; dx++) {
-			if (nr * nr >= dx * dx + dy * dy) {
-				float dist = sqrtf(dx * dx + dy * dy);
-				float alpha = 1.0f;
-				if (dist > (double)(radius - 1)) {
-					alpha = 1.0f - (dist - (double)(radius - 1.0f));
-					if (alpha < 0.0f) alpha = 0.0f;
-				}
+    if (x0 >= x1 || y0 >= y1) return;
 
-				uint8_t a = (uint8_t)(alpha * 255.0f);
-				
-				// Get new colors from alpha
-				uint8_t new_r = GFX_RGB_R(color) * a / 255;
-				uint8_t new_g = GFX_RGB_G(color) * a / 255;
-				uint8_t new_b = GFX_RGB_B(color) * a / 255;
+	// Center rectangle
+    for (int32_t py = y0; py < y1; py++) {
+        for (int32_t px = x0; px < x1; px++) {
 
-				gfx_color_t c = GFX_RGBA(new_r, new_g, new_b, ((uint8_t)a));
+            int32_t lx = px - x;
+            int32_t ly = py - y;
 
-				// Get the coordinates
-				int16_t _x = x + radius - dx - 1;
-				int16_t _x2 = x + width - radius + dx;
-				int16_t _y = y + radius - dy - 1;
-				int16_t _y2 = y + height - radius + dy;
+            if ((lx < radius || lx >= width - radius) &&
+                (ly < radius || ly >= height - radius)) {
+                continue;
+            }
 
-				if (ctx->flags & CTX_NO_BACKBUFFER) {
-					GFX_PIXEL_REAL(ctx, _x, _y) 		= gfx_alphaBlend(c, GFX_PIXEL_REAL(ctx, _x, _y));
-					GFX_PIXEL_REAL(ctx, _x, _y2) 		= gfx_alphaBlend(c, GFX_PIXEL_REAL(ctx, _x, _y2));
-					GFX_PIXEL_REAL(ctx, _x2, _y) 		= gfx_alphaBlend(c, GFX_PIXEL_REAL(ctx, _x2, _y));
-					GFX_PIXEL_REAL(ctx, _x2, _y2) 		= gfx_alphaBlend(c, GFX_PIXEL_REAL(ctx, _x2, _y2));
-				} else {
-					GFX_PIXEL(ctx, _x, _y) 			= gfx_alphaBlend(c, GFX_PIXEL(ctx, _x, _y));
-					GFX_PIXEL(ctx, _x, _y2) 		= gfx_alphaBlend(c, GFX_PIXEL(ctx, _x, _y2));
-					GFX_PIXEL(ctx, _x2, _y) 		= gfx_alphaBlend(c, GFX_PIXEL(ctx, _x2, _y));
-					GFX_PIXEL(ctx, _x2, _y2) 		= gfx_alphaBlend(c, GFX_PIXEL(ctx, _x2, _y2));
-				}
-			}
-		}
-	}
+            GFX_PIXEL(ctx, px, py) =
+                gfx_alphaBlend(color, GFX_PIXEL(ctx, px, py));
+        }
+    }
+
+	// Corners
+    float nr = (float)radius + 1.0f;
+
+    for (int dy = 0; dy <= nr; dy++) {
+        for (int dx = 0; dx <= nr; dx++) {
+
+            if (nr * nr < dx * dx + dy * dy) continue;
+
+            float dist = sqrtf(dx * dx + dy * dy);
+            float alpha = 1.0f;
+
+            if (dist > (float)(radius - 1)) {
+                alpha = 1.0f - (dist - (float)(radius - 1));
+                if (alpha < 0.0f) alpha = 0.0f;
+            }
+
+            uint8_t a = (uint8_t)(alpha * 255.0f);
+
+            gfx_color_t c = GFX_RGBA(
+                GFX_RGB_R(color) * a / 255,
+                GFX_RGB_G(color) * a / 255,
+                GFX_RGB_B(color) * a / 255,
+                a
+            );
+
+            int16_t px[4] = {
+                x + radius - dx - 1,
+                x + width  - radius + dx,
+                x + radius - dx - 1,
+                x + width  - radius + dx
+            };
+
+            int16_t py[4] = {
+                y + radius - dy - 1,
+                y + radius - dy - 1,
+                y + height - radius + dy,
+                y + height - radius + dy
+            };
+
+            for (int i = 0; i < 4; i++) {
+                if (px[i] < 0 || px[i] >= max_w ||
+                    py[i] < 0 || py[i] >= max_h)
+                    continue;
+
+                if (ctx->flags & CTX_NO_BACKBUFFER) {
+                    GFX_PIXEL_REAL(ctx, px[i], py[i]) =
+                        gfx_alphaBlend(c, GFX_PIXEL_REAL(ctx, px[i], py[i]));
+                } else {
+                    GFX_PIXEL(ctx, px[i], py[i]) =
+                        gfx_alphaBlend(c, GFX_PIXEL(ctx, px[i], py[i]));
+                }
+            }
+        }
+    }
 }
 
 /**

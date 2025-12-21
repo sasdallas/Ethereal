@@ -16,6 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <graphics/matrix.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -95,6 +96,15 @@ int gfx_renderSpriteAlpha(struct gfx_context *ctx, sprite_t *sprite, int x, int 
  * @param y Y coordinate of the sprite
  */
 int gfx_renderSpriteRegion(struct gfx_context *ctx, sprite_t *sprite, gfx_rect_t *rect, int x, int y);
+
+/**
+ * @brief Draw a sprite using a transformation matrix
+ * @param ctx The context to draw to
+ * @param sprite The sprite to draw
+ * @param matrix The matrix to use to draw the sprite
+ * @param alpha The alpha vector with which to use the sprite drawing
+ */
+void gfx_renderSpriteTransform(struct gfx_context *ctx, sprite_t *sprite, gfx_mat2x3_t *matrix, uint8_t alpha);
 
 /**
  * @brief Destroy sprite
