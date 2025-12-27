@@ -272,7 +272,8 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
 
     // Get server
     sock_t *serv = hashmap_get(unix_path_map, p);
-    if (!serv) return -ENOENT; // ???
+    kfree(p);
+    if (!serv) { return -ENOENT; } // ???
     unix_sock_t *userv = USOCK(serv);
 
     if (!(serv->type == sock->type)) {
