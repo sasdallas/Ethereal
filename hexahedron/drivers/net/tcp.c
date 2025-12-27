@@ -503,23 +503,57 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         return -ENOTSUP;
     }
 
+
     // !!!: Incompliant. This should NOT BE LIKE IT IS RIGHT NOW.
     ssize_t total_received = 0;
-    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
+    for (unsigned i = 0; i < 1; i++) {
+        if (tcpsock->buf_size) {
+            // Remaining content is available, let's fill it
+            if (tcpsock->buf_size <= msg->msg_iov[i].iov_len) {
+                memcpy(msg->msg_iov[i].iov_base, tcpsock->buf, tcpsock->buf_size);
+                total_received += tcpsock->buf_size;
+                tcpsock->buf_size = 0;
+                kfree(tcpsock->buf);
+                tcpsock->buf = NULL;
+                continue;
+            } else {
+                // Not enough...
+                memcpy(msg->msg_iov[i].iov_base, tcpsock->buf, msg->msg_iov[i].iov_len);
+                total_received += msg->msg_iov[i].iov_len;
+
+                // Store the remaining data back in the buffer
+                size_t remaining = tcpsock->buf_size - msg->msg_iov[i].iov_len;
+                void *new_buf =  kmalloc(remaining);
+                memcpy(new_buf, tcpsock->buf + msg->msg_iov[i].iov_len, remaining);
+    
+                kfree(tcpsock->buf);
+                tcpsock->buf = new_buf;
+                tcpsock->buf_size = remaining;
+                continue;
+            }
+        }
+
         // Read ACK packet
+        sock_recv_packet_t *pkt  = NULL;
         sock_recv_packet_t *ack_pkt = socket_get(sock);
         if (!ack_pkt) return -EINTR;
         
         tcp_packet_t *ack_tcp_pkt = (tcp_packet_t*)ack_pkt->data;
+        assert(TCP_HAS_FLAG(ack_tcp_pkt, ACK));
         if (TCP_HAS_FLAG(ack_tcp_pkt, FIN)) {
             kfree(ack_pkt);
             return -ECONNRESET;
         }
-        kfree(ack_pkt);
 
         // Read normal packet
-        sock_recv_packet_t *pkt = socket_get(sock);
-        if (!pkt) return -EINTR;
+        if (!TCP_HAS_FLAG(ack_tcp_pkt, PSH)) {
+            kfree(ack_pkt);
+            pkt = socket_get(sock);
+            if (!pkt) return -EINTR;
+        } else {
+            pkt = ack_pkt;
+        }
+
 
         // Get the data
         tcp_packet_t *tcp_pkt = (tcp_packet_t*)pkt->data;
@@ -532,13 +566,17 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         size_t actual_size = pkt->size - sizeof(tcp_packet_t);
         
-        // TODO: This isn't valid. We need to split the data across the iovecs,
-        // TODO: not put one packet in one iovec.
         if (actual_size > msg->msg_iov[i].iov_len) {
-            // TODO: Set MSG_TRUNC and store this data to be reread
-            LOG(WARN, "Truncating packet from %d -> %d\n", actual_size, msg->msg_iov[i].iov_len);
             memcpy(msg->msg_iov[i].iov_base, tcp_pkt->payload, msg->msg_iov[i].iov_len);
             total_received += msg->msg_iov[i].iov_len;
+            msg->msg_flags |= MSG_TRUNC;
+            
+            // Store the remaining packet data
+            assert(tcpsock->buf_size == 0);
+            tcpsock->buf = kmalloc(actual_size - msg->msg_iov[i].iov_len);
+            memcpy(tcpsock->buf, tcp_pkt->payload + msg->msg_iov[i].iov_len, actual_size - msg->msg_iov[i].iov_len);
+            tcpsock->buf_size = actual_size - msg->msg_iov[i].iov_len;
+
             kfree(pkt);
             continue;
         }
@@ -548,7 +586,7 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         total_received += actual_size;
         kfree(pkt);
     }
-
+    
     return total_received;
 }
 
@@ -820,6 +858,8 @@ int tcp_close(sock_t *sock) {
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
     if (tcpsock->state != TCP_STATE_ESTABLISHED) return 0; // Socket is already closing
     if (!sock->connected_addr || sock->connected_addr_len < sizeof(struct sockaddr_in)) goto _cleanup_socket;
+
+    LOG(DEBUG, "TCP connection is closing!\n");
 
     // We need to do a TCP socket close mechanism
     // Send a FIN packet

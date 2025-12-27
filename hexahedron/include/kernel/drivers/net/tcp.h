@@ -79,6 +79,9 @@ typedef struct tcp_sock {
     uint32_t seq;                       // Sequence number
     uint32_t ack;                       // Acknowledge number
 
+    uint8_t *buf;                       // The buffer of impending doom
+    size_t buf_size;
+
     // Pending connections
     spinlock_t pending_lock;            // Pending connections lock
     list_t *pending_connections;        // Pending connections
