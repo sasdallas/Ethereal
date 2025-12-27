@@ -353,7 +353,7 @@ int gfx_getStringSize(gfx_font_t *font, char *string, gfx_string_size_t *s) {
 
         FT_UInt glyph_index = FT_Get_Char_Index(font->face, codepoint);
 
-        if (FT_Load_Glyph(font->face, glyph_index, FT_LOAD_NO_BITMAP)) {
+        if (FT_Load_Glyph(font->face, glyph_index, FT_LOAD_NO_BITMAP | FT_LOAD_FORCE_AUTOHINT)) {
             continue; // Error
         }
 
