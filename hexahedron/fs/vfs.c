@@ -660,8 +660,8 @@ _canonicalize: ;
             node_t *node = list_pop(list);
             if (node) {
                 path_size -= strlen((const char *)node->value);
-                kfree(node);
                 kfree(node->value);
+                kfree(node);
             }
         } else if (!strcmp(pch, ".")) {
             // Don't add it to the list, it's just a "."
@@ -1009,16 +1009,14 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
     }
 
     fs_node_t *node = fs_finddir(current_node, path);
-    
-    if (node) {
-        fs_open(node, 0);
-    }
+    if (node) fs_open(node, flags);
 
     if (node && node->flags & VFS_SYMLINK) {
         // IMPORTANT: Max symlink depth
         if (depth > 4) {
             LOG(ERR, "Reached maximum symlink depth\n");
             fs_close(node);
+            fs_close(current_node);
             return NULL;
         }
 
@@ -1031,6 +1029,7 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
             if (r <= 0) {
                 LOG(WARN, "fs_readlink failed with error code %d\n", r);
                 fs_close(node);
+                fs_close(current_node);
                 return NULL;
             }
 
@@ -1050,6 +1049,7 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
 
                 sym_node = fs_finddir(current_node, symlink_buf);
                 if (!sym_node) {
+                    fs_close(current_node);
                     return NULL;
                 }
 
@@ -1060,11 +1060,13 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
                 path_offset = (char*)symlink_buf;
                 sym_node = vfs_getMountpoint(symlink_buf, &path_offset);
                 if (!sym_node) {
+                    fs_close(current_node);
                     return NULL;
                 }
             }
 
             if (!path_offset || !(*path_offset)) {
+                fs_close(current_node);
                 return sym_node;
             }
 
@@ -1078,7 +1080,6 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
                 sym_node = kopen_relative(sym_node, pch, flags, depth+1);
 
                 if (sym_node && sym_node->flags & VFS_FILE) {
-                    // TODO: What if the user has a REALLY weird filesystem?
                     break;
                 }
                 
@@ -1087,10 +1088,12 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
 
             if (sym_node == NULL) {
                 // Not found
+                fs_close(current_node);
                 return NULL;
             }
 
-            fs_open(sym_node, 0);
+            fs_open(sym_node, flags);
+            fs_close(current_node);
             return sym_node;
         }
     }
@@ -1126,6 +1129,7 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
     
     if (!(*path_offset)) {
         // Usually this means the user got what they want, the mountpoint, so I guess just open that and call it a da.
+        fs_open(node, flags);
         goto _finish_node;
     }
 
@@ -1153,7 +1157,6 @@ fs_node_t *kopen(const char *path, unsigned int flags) {
 
 _finish_node: ;
     // Open the node
-    fs_open(node, flags);
     kfree(p);
 
     return node;

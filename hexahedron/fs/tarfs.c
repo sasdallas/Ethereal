@@ -70,8 +70,7 @@ static fs_node_t *tarfs_ustarToNode(ustar_header_t *header, uint64_t inode, fs_n
     if (!header) return NULL;
 
     // Allocate a new node
-    fs_node_t *node = (fs_node_t*)kmalloc(sizeof(fs_node_t));
-    memset(node, 0x0, sizeof(fs_node_t));
+    fs_node_t *node = fs_node();
 
     // Copy name
     // !!!: symlinks need linkname

@@ -394,7 +394,6 @@ int driver_loadConfiguration(fs_node_t *file) {
         fs_close(driver_file);
     }
 
-    // !!!: leaking json parser
     kfree(drivers_array->u.array.values);
     kfree(data);
 
