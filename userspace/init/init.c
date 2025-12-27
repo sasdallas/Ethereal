@@ -130,12 +130,17 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
         }
 
         if (strstr(cmdline, "--single-user")) {
-            
             // Launch single-user mode
             char *nargv[] = { "termemu", "-f", NULL };
             execvpe("termemu", nargv, environ);
 
             printf("ERROR: Failed to launch terminal process: %s\n", strerror(errno));
+        }
+
+        if (strstr(cmdline, "--headless")) {
+            char *nargv[] = { "getty", "/device/ttyS1", NULL };
+            execvpe("getty", nargv, environ);
+            printf("ERROR: Failed to launch getty process: %s\n", strerror(errno));
         }
 
         char *nargv[2] = { "celestial",  NULL };
