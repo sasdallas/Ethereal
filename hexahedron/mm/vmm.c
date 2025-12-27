@@ -280,9 +280,6 @@ int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_fl
  * @returns The address mapped or NULL on failure.
  */
 void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, ...) {
-    if (size > 4096) {
-        LOG(DEBUG, "$$$$$$$$$$$$$$$$$$$$$ Big mapping of size %d requested by proc %s addr hint %p flags %x ret %p\n", size, current_cpu->current_process ? current_cpu->current_process->name : "(n/a)", addr, vm_flags, __builtin_return_address(0));
-    }
     // Locate the free range
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
     if (size & 0xFFF) size = PAGE_ALIGN_UP(size); // !!!: hope I dont forget about this 
