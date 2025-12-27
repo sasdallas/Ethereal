@@ -482,8 +482,6 @@ inline mmu_dir_t *arch_mmu_dir() {
  * @param dir The directory to destroy
  */
 void arch_mmu_destroy(mmu_dir_t *dir) {
-    return; // !!!: will be fixed next revision, memory leak btw
-    
     // We should free any associated PMM blocks below kernelspace
     for (int i = 0; i < 256; i++) {
         mmu_page_t *pmle = &((mmu_page_t*)dir)[i];
@@ -493,12 +491,17 @@ void arch_mmu_destroy(mmu_dir_t *dir) {
         for (int j = 0; j < 512; j++) {
             mmu_page_t *pdpte = &pdpt[j];
             if (pdpte->bits.address == 0 || pdpte->bits.present == 0) continue;
-            dprintf(DEBUG, "freeing pdpte: %p\n", pdpte->bits.address << 12);
+            mmu_page_t *pd = (mmu_page_t*)TO_HHDM(pdpte->bits.address << 12);
+
+            for (int k = 0; k < 512; k++) {
+                mmu_page_t *pde = &pd[k];
+                if (pde->bits.address == 0 || pde->bits.present == 0) continue;
+                pmm_freePage(pde->bits.address << 12);
+                pde->data = 0;
+            }
             pmm_freePage(pdpte->bits.address << 12);
             pdpte->data = 0;
         }
-
-        dprintf(DEBUG, "freeing pmle: %p\n", pmle->bits.address << 12);
 
         pmm_freePage(pmle->bits.address << 12);
         pmle->data = 0;
