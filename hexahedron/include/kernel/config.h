@@ -2,8 +2,6 @@
  * @file hexahedron/include/kernel/config.h
  * @brief Kernel configuration header
  * 
- * @note THIS FILE DOES NOT CONTAIN CONFIGURATION DATA. SEE CONFIG.C
- * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
@@ -15,6 +13,13 @@
 #ifndef KERNEL_CONFIG_H
 #define KERNEL_CONFIG_H
 
+/**** OPTIONAL CONFIGURATION SETTINGS ****/
+// There's probably a better interface for these, btw.
+
+/* Enable the kernel memory leak scanner */
+// #define KERNEL_ENABLE_MEMORY_LEAK_SCANNER 1
+
+/**** EXPOSED ****/
 
 /* This just exposes things exposed in config.c, which is remade every build. */
 extern const char *__kernel_version_format;

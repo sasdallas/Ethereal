@@ -283,7 +283,7 @@ void alloc_init() {
     LOG(INFO, "Allocator initializing with %d caches\n", ALLOC_CACHES);
 
     for (unsigned i = 0; i < ALLOC_CACHES; i++) {
-        alloc_caches[i] = slab_createCache("kmalloc cache", __alloc_cache_sizes[i], 0, __kmalloc_initializer, __kmalloc_deinitializer);
+        alloc_caches[i] = slab_createCache("kmalloc cache", SLAB_CACHE_DEFAULT, __alloc_cache_sizes[i], 0, __kmalloc_initializer, __kmalloc_deinitializer);
         assert(alloc_caches[i]);
     }
 }

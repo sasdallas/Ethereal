@@ -13,12 +13,14 @@
 
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/slab.h>
+#include <kernel/mm/memleak.h>
 #include <kernel/debug.h>
 #include <assert.h>
 #include <kernel/panic.h>
 #include <kernel/misc/util.h>
 #include <kernel/processor_data.h>
 #include <string.h>
+#include <kernel/config.h>
 
 #define LOG(status, ...) dprintf_module(status, "MM:SLAB", __VA_ARGS__)
 
@@ -37,9 +39,10 @@ static slab_cache_t *magazine_list_cache = NULL; // Generated at slab_postSMPHoo
 /**
  * @brief (internal) Initialize slab cache
  */
-static void slab_initCache(slab_cache_t *cache, char *name, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer) {
+static void slab_initCache(slab_cache_t *cache, char *name, uint32_t flags, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer) {
     if (!alignment) alignment = 1;
     cache->name = name;
+    cache->flags = flags;
     MUTEX_INIT(&cache->mut);
     cache->slab_object_size = size;
     cache->slab_object_alignment = alignment;
@@ -130,17 +133,18 @@ static slab_t *slab_new(slab_cache_t *cache) {
  * Slab caches are great for repeated object allocations.
  * 
  * @param name The name of the cache
+ * @param flags Flags for the cache
  * @param size The size of the objects to allocate
  * @param alignment Alignment of the objects (leave as 0 for no alignment)
  * @param initializer Optional initializer
  * @param deinitializer Optional deinitializer
  */
-slab_cache_t *slab_createCache(char *name, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer) {
+slab_cache_t *slab_createCache(char *name, uint32_t flags, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer) {
     // Get a new cache from the slab cahce
     slab_cache_t *c = slab_allocate(slab_cache);
     assert(c);
 
-    slab_initCache(c, name, size, alignment, initializer, deinitializer);
+    slab_initCache(c, name, flags, size, alignment, initializer, deinitializer);
    
 #ifdef SLAB_DEBUG
     LOG(DEBUG, "New slab cache '%s' created (object_size = %d object_alignment = %d)\n", name, size, alignment);
@@ -265,6 +269,13 @@ void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags) {
     void *ptr = slab_allocateFast(cache, flags);
     if (ptr) {
         if (cache->init) cache->init(cache, ptr);
+
+
+#ifdef KERNEL_ENABLE_MEMORY_LEAK_SCANNER
+        if (((flags & SA_UNTRACEABLE) == 0) && ((cache->flags & SLAB_CACHE_NOLEAKTRACE) == 0)) {
+            memleak_alloc(ptr, cache->slab_object_size);
+        }
+#endif
         return ptr;
     }
 
@@ -273,8 +284,18 @@ void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags) {
         return NULL;
     }
 
-    return slab_slowAllocate(cache, flags); // possible sleeping via mutex
+    
 
+    ptr = slab_slowAllocate(cache, flags); // possible sleeping via mutex
+#ifdef KERNEL_ENABLE_MEMORY_LEAK_SCANNER
+    if (ptr) {
+        if (((flags & SA_UNTRACEABLE) == 0) && ((cache->flags & SLAB_CACHE_NOLEAKTRACE) == 0)) {
+            memleak_alloc(ptr, cache->slab_object_size);
+        }
+    }
+#endif
+
+    return ptr;
 }
 
 /**
@@ -282,7 +303,8 @@ void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags) {
  * @param cache The cache to allocate from
  */
 void *slab_allocate(slab_cache_t *cache) {
-    return slab_allocateFlags(cache, SA_DEFAULT);
+    void *ptr = slab_allocateFlags(cache, SA_DEFAULT);
+    return ptr;
 }
 
 /**
@@ -420,6 +442,10 @@ int slab_freeFast(slab_cache_t *cache, void *object) {
  * @param object The object which was allocated
  */
 void slab_free(slab_cache_t *cache, void *object) {
+#ifdef KERNEL_ENABLE_MEMORY_LEAK_SCANNER
+    if ((cache->flags & SLAB_CACHE_NOLEAKTRACE) == 0) memleak_free(object); 
+#endif
+
     if (cache->deinit) cache->deinit(cache, object);
     if (slab_freeFast(cache, object)) return;
     return slab_freeSlow(cache, object);
@@ -439,7 +465,7 @@ void slab_destroyCache(slab_cache_t *cache) {
 void slab_init() {
     slab_cache = vmm_map(NULL, sizeof(slab_cache_t), VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
     assert(slab_cache);
-    slab_initCache(slab_cache, "slab cache", sizeof(slab_cache_t), 1, NULL, NULL);
+    slab_initCache(slab_cache, "slab cache", SLAB_CACHE_NOLEAKTRACE, sizeof(slab_cache_t), 1, NULL, NULL);
 
     LOG(INFO, "Slab allocator initialized\n");
 }
@@ -495,6 +521,6 @@ void slab_reinitializeCache(slab_cache_t *cache) {
  */
 void slab_postSMPInit() {
     // Initialize the magazine cache
-    magazine_cache = slab_createCache("magazine cache", sizeof(magazine_t) + sizeof(void*)*MAGAZINE_SIZE, 0, magazine_initializer, NULL);
-    magazine_list_cache = slab_createCache("magazine list cache", sizeof(cpu_magazine_cache_t) * processor_count, 0, NULL, NULL);
+    magazine_cache = slab_createCache("magazine cache", SLAB_CACHE_NOLEAKTRACE, sizeof(magazine_t) + sizeof(void*)*MAGAZINE_SIZE, 0, magazine_initializer, NULL);
+    magazine_list_cache = slab_createCache("magazine list cache", SLAB_CACHE_NOLEAKTRACE, sizeof(cpu_magazine_cache_t) * processor_count, 0, NULL, NULL);
 }

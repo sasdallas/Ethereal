@@ -17,6 +17,14 @@
 
 #include <kernel/config.h>
 
+/**
+ * IMPORTANT
+ * IMPORTANT
+ * IMPORTANT
+ * 
+ * FOR OTHER CONFIGURATION DEFINITIONS, SEE THE build/conf/<arch>.mk FILE OR SEE hexahedron/include/kernel/config.h
+ */
+
 
 // This is part of vsnprintf() style formatting. TODO: Maybe not?
 // Example: 1.0.0-i386-DEBUG

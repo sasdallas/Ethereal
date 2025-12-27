@@ -145,6 +145,7 @@ gdt_end:
 // Reserve a stack in BSS
 .section .bss
 .align 16
+.global __stack_bottom
 __stack_bottom:
 .skip 65536 // Provide 16KiB of stack
 .global __stack_top

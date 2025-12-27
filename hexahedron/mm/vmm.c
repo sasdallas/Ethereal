@@ -83,10 +83,20 @@ int vmm_initializeContext(slab_cache_t *cache, void *object) {
 }
 
 /**
+ * @brief VMM slab object destructor
+ */
+int vmm_destroyContextObj(slab_cache_t *cache, void *object) {
+    vmm_context_t *ctx = (vmm_context_t*)object;
+    vmm_space_t *sp = (vmm_space_t*)((uintptr_t)object + sizeof(vmm_context_t));
+    mutex_destroy(sp->mut);
+    return 0;
+}
+
+/**
  * @brief Create a new VMM context
  */
 vmm_context_t *vmm_createContext() {
-    if (!vmm_context_cache) vmm_context_cache = slab_createCache("vmm context cache", sizeof(vmm_context_t) + sizeof(vmm_space_t), 0, vmm_initializeContext, NULL);
+    if (!vmm_context_cache) vmm_context_cache = slab_createCache("vmm context cache", SLAB_CACHE_NOLEAKTRACE, sizeof(vmm_context_t) + sizeof(vmm_space_t), 0, vmm_initializeContext, vmm_destroyContextObj);
     return slab_allocate(vmm_context_cache);
 }
 
@@ -266,11 +276,13 @@ int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_fl
  * @param prot MMU protection flags 
  * 
  * The remaining arguments depend on @c vm_flags
- * For VM_FLAG_FILE, pass the filesystem node to map into memory.
  * 
  * @returns The address mapped or NULL on failure.
  */
 void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, ...) {
+    if (size > 4096) {
+        LOG(DEBUG, "$$$$$$$$$$$$$$$$$$$$$ Big mapping of size %d requested by proc %s addr hint %p flags %x ret %p\n", size, current_cpu->current_process ? current_cpu->current_process->name : "(n/a)", addr, vm_flags, __builtin_return_address(0));
+    }
     // Locate the free range
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
     if (size & 0xFFF) size = PAGE_ALIGN_UP(size); // !!!: hope I dont forget about this 
@@ -432,7 +444,6 @@ void vmm_destroyContext(vmm_context_t *ctx) {
     vmm_switch(ctx);
 
     vmm_memory_range_t *r = ctx->space->range;
-    
     while (r) {
         vmm_memory_range_t *next = r->next;
         vmm_destroyRange(ctx->space, r);

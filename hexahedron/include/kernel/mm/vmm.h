@@ -126,7 +126,6 @@ vmm_space_t *vmm_getSpaceForAddress(void *addr);
  * @param prot MMU protection flags 
  * 
  * The remaining arguments depend on @c vm_flags
- * For VM_FLAG_FILE, pass the filesystem node to map into memory.
  * 
  * @returns The address mapped or NULL on failure.
  */

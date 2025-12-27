@@ -151,7 +151,7 @@ void tree_remove_reparent(tree_t *tree, tree_node_t *parent, tree_node_t *node) 
     
     // Drop the old node from the parent's list
     node_t *n = list_find(parent->children, (void*)node);
-    if (n) list_delete(parent->children, n);
+    if (n) { list_delete(parent->children, n); free(n); } 
 
     // If the node has a list of children..
     if (node->children->length) {

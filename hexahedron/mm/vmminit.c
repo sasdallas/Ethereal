@@ -12,6 +12,7 @@
  */
 
 #include <kernel/mm/vmm.h>
+#include <kernel/mm/memleak.h>
 #include <kernel/debug.h>
 #include <kernel/processor_data.h>
 #include <string.h>
@@ -85,6 +86,7 @@ void vmm_init(pmm_region_t *region) {
 
     // Initialize allocator
     alloc_init();
+    memleak_init();
 
     vmm_dumpContext(current_cpu->current_context);
 }

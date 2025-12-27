@@ -24,6 +24,10 @@
 
 #define SA_DEFAULT      0x0     // Default allocation flags
 #define SA_FAST         0x1     // Only use fast path for slab
+#define SA_UNTRACEABLE  0x2     // Not traceable allocation
+
+#define SLAB_CACHE_DEFAULT      0x0 // Default
+#define SLAB_CACHE_NOLEAKTRACE  0x1 // Do not use memleak tracing
 
 /**** TYPES ****/
 
@@ -92,6 +96,7 @@ typedef struct slab_cache {
     char *name;                     // Name of the caches
     mutex_t mut;                    // Mutex
     size_t mem_usage;               // Memory usage
+    uint32_t flags;                 // Flags
 
     // Magazine
     cpu_magazine_cache_t *per_cpu_cache;
@@ -112,12 +117,13 @@ void slab_init();
  * Slab caches are great for repeated object allocations.
  * 
  * @param name The name of the cache
+ * @param flags Flags for the cache
  * @param size The size of the objects to allocate
  * @param alignment Alignment of the objects (leave as 0 for no alignment)
  * @param initializer Optional initializer
  * @param deinitializer Optional deinitializer
  */
-slab_cache_t *slab_createCache(char *name, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer);
+slab_cache_t *slab_createCache(char *name, uint32_t flags, size_t size, size_t alignment, slab_initializer_t initializer, slab_deinitialize_t deinitializer);
 
 /**
  * @brief Slab allocate with special flags

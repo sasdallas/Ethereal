@@ -254,6 +254,7 @@ serial_port_t *serial_initializePort(int com_port, uint16_t baudrate) {
     outportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER, 0xAE);
     if (inportb(ser_port->io_address + SERIAL_TRANSMIT_BUFFER) != 0xAE) {
         dprintf(WARN, "COM%i is faulty or nonexistent\n", com_port);
+        kfree(ser_port);
         return NULL; // The chip must be faulty, or it doesn't exist
     } 
 

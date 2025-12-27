@@ -601,12 +601,16 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     uintptr_t entry;
     assert(!process_executeCommon(interpreter, &entry));
 
+    fs_close(interpreter);
+
     // Load the dynamic file
     elf_dynamic_info_t info;
     if (elf_loadDynamicELF(file, &info)) {
         LOG(ERR, "Error loading dynamic ELF file\n");
         return -ENOEXEC;
     }
+
+    fs_close(file);
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
@@ -719,6 +723,8 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     // Do the inner execution
     uintptr_t process_entrypoint;
     assert(!process_executeCommon(file, &process_entrypoint));
+
+    fs_close(file);
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
