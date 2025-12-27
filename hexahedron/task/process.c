@@ -329,7 +329,8 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         }
     }
 
-    if (process_list) list_append(process_list, (void*)process);
+    process->proc_list_node.value = (void*)process;
+    if (process_list) list_append_node(process_list, &process->proc_list_node);
 
     return process;
 }
@@ -475,6 +476,87 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
 }
 
 /**
+ * @brief Common process execute
+ */
+int process_executeCommon(fs_node_t *file, uintptr_t *entry) {
+    // Destroy previous threads
+    if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
+    if (current_cpu->current_process->thread_list) {
+        foreach(thread_node, current_cpu->current_process->thread_list) {
+            thread_t *thr = (thread_t*)thread_node->value;
+            if (thr && thr != current_cpu->current_thread) __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
+        }
+    }
+
+    // Switch away from old directory
+    vmm_switch(vmm_kernel_context);
+
+    // VMM context
+    vmm_context_t *oldctx = current_cpu->current_process->ctx;
+    current_cpu->current_process->ctx = vmm_createContext();
+    vmm_switch(current_cpu->current_process->ctx);
+    if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
+
+    // Create a new main thread with a blank entrypoint
+    if (current_cpu->current_thread && 0) {
+        current_cpu->current_process->main_thread = current_cpu->current_thread;
+        current_cpu->current_thread->parent = current_cpu->current_process;
+        current_cpu->current_thread->status |= THREAD_STATUS_RUNNING;
+        current_cpu->current_thread->ctx = current_cpu->current_process->ctx;
+
+        assert(!current_cpu->current_thread->joiners);
+        memset(&current_cpu->current_thread->pending_signals, 0, sizeof(sigset_t));
+        memset(&current_cpu->current_thread->blocked_signals, 0, sizeof(sigset_t));
+        memset(&current_cpu->current_thread->signals, 0, sizeof(proc_signal_t) * NSIG);
+        memset(&current_cpu->current_thread->blocked_signals, 0, sizeof(sigset_t));
+        // TODO: This is some hacky shit.. need to ensure almost ALL fields of the thread are cleared.
+    
+        // Need to also map the thread's stack in
+        assert(vmm_map((void*)(current_cpu->current_thread->stack - THREAD_STACK_SIZE), THREAD_STACK_SIZE + 4096, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_USER | MMU_FLAG_PRESENT));
+    } else {
+        current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
+        if (current_cpu->current_thread) {
+            // Reuse kernel-stack
+            kfree((void*)(current_cpu->current_process->main_thread->kstack - PROCESS_KSTACK_SIZE));
+            current_cpu->current_process->main_thread->kstack = current_cpu->current_thread->kstack;
+        }
+    }
+
+    // Load file into memory
+    // TODO: This runs check twice (redundant)
+    uintptr_t elf_binary = elf_load(file, ELF_USER);
+
+    // Success?
+    if (elf_binary == 0x0) {
+        // Something happened...
+        LOG(ERR, "ELF binary failed to load properly (but is valid?)\n");
+        return -EINVAL;
+    }
+
+    // Setup heap location
+    current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
+    current_cpu->current_process->heap = current_cpu->current_process->heap_base;
+
+    // Populate image
+    elf_createImage(elf_binary);
+
+    // Get the entrypoint
+    uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
+    arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
+
+    // We own this process
+    thread_t *old = current_cpu->current_thread;
+    current_cpu->current_thread = current_cpu->current_process->main_thread;
+    if (old) old->kstack = 0;
+
+    *entry = process_entrypoint;
+
+    // Done with ELF
+    kfree((void*)elf_binary);
+    return 0; // Enough loaded
+}
+
+/**
  * @brief Execute a new ELF binary for the current process (execve)
  * @param path Full path of the file
  * @param file The file to execute
@@ -515,63 +597,16 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
-    // Destroy previous threads
-    if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
-    if (current_cpu->current_process->thread_list) {
-        foreach(thread_node, current_cpu->current_process->thread_list) {
-            thread_t *thr = (thread_t*)thread_node->value;
-            if (thr && thr != current_cpu->current_thread) __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
-        }
-    }
+    // Do common execution
+    uintptr_t entry;
+    assert(!process_executeCommon(interpreter, &entry));
 
-    // !!!: LEAK OF PREVIOUS THREAD
-
-    // Switch away from old directory
-    vmm_switch(vmm_kernel_context);
-
-    // VMM context
-    vmm_context_t *oldctx = current_cpu->current_process->ctx;
-    current_cpu->current_process->ctx = vmm_createContext();
-    vmm_switch(current_cpu->current_process->ctx);
-    if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
-
-    // Create a new main thread with a blank entrypoint
-    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
-
-    // Load file into memory
-    // TODO: This runs check twice (redundant)
-    uintptr_t elf_binary = elf_load(interpreter, ELF_USER);
-
-    // Success?
-    if (elf_binary == 0x0) {
-        // Something happened...
-        LOG(ERR, "ELF binary failed to load properly (but is valid?)\n");
-        return -EINVAL;
-    }
-
-    // Alright cool we have an interpreter now, load the file
+    // Load the dynamic file
     elf_dynamic_info_t info;
     if (elf_loadDynamicELF(file, &info)) {
         LOG(ERR, "Error loading dynamic ELF file\n");
         return -ENOEXEC;
     }
-
-    // Setup heap location
-    current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
-    current_cpu->current_process->heap = current_cpu->current_process->heap_base;
-
-    // Populate image
-    elf_createImage(elf_binary);
-
-    // Get the entrypoint
-    uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
-    arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
-
-    // We own this process
-    current_cpu->current_thread = current_cpu->current_process->main_thread;
-
-    // Done with ELF
-    kfree((void*)elf_binary);
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
@@ -642,7 +677,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     // Enter
     LOG(DEBUG, "Launching new ELF process (stack = %p)\n", current_cpu->current_thread->stack);
     arch_prepare_switch(current_cpu->current_thread);
-    arch_start_execution(process_entrypoint, current_cpu->current_thread->stack);
+    arch_start_execution(entry, current_cpu->current_thread->stack);
     return 0;
 }
 
@@ -676,60 +711,14 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
         return -EINVAL;
     }
 
-
-
     // Setup new name
     // TODO: This should be a *pointer* to argv[0], not a duplicate.
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
-    // Destroy previous threads
-    if (current_cpu->current_process->main_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
-    if (current_cpu->current_process->thread_list) {
-        foreach(thread_node, current_cpu->current_process->thread_list) {
-            thread_t *thr = (thread_t*)thread_node->value;
-            if (thr && thr != current_cpu->current_thread) __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
-        }
-    }
-
-    // Switch away from old directory
-    vmm_switch(vmm_kernel_context);
-
-    // !!!: LEAK OF PREVIOUS THREAD
-
-    // VMM context
-    vmm_context_t *oldctx = current_cpu->current_process->ctx;
-    current_cpu->current_process->ctx = vmm_createContext();
-    vmm_switch(current_cpu->current_process->ctx);
-    vmm_destroyContext(oldctx);
-
-    // Create a new main thread with a blank entrypoint
-    current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
-
-    // Load file into memory
-    // TODO: This runs check twice (redundant)
-    uintptr_t elf_binary = elf_load(file, ELF_USER);
-
-    // Success?
-    if (elf_binary == 0x0) {
-        // Something happened...
-        LOG(ERR, "ELF binary failed to load properly (but is valid?)\n");
-        return -EINVAL;
-    }
-
-    // Setup heap location
-    current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
-    current_cpu->current_process->heap = current_cpu->current_process->heap_base;
-
-    // Populate image
-    elf_createImage(elf_binary);
-
-    // Get the entrypoint
-    uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
-    arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
-
-    // We own this process
-    current_cpu->current_thread = current_cpu->current_process->main_thread;
+    // Do the inner execution
+    uintptr_t process_entrypoint;
+    assert(!process_executeCommon(file, &process_entrypoint));
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 

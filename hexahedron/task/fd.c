@@ -112,11 +112,11 @@ int fd_remove(struct process *process, int fd_number) {
     // Get the file descriptor
     fd_t *fd = process->fd_table->fds[fd_number];
     fs_close(fd->node);
+    if (fd->path) kfree(fd->path);
     kfree(fd);
     process->fd_table->fds[fd_number] = NULL;
 
     process->fd_table->amount--;
-
 
     spinlock_release(&process->fd_table->lock);
 
