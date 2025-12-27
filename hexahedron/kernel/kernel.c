@@ -212,9 +212,10 @@ void kernel_loadFont(ini_t *ini) {
                     arch_say_hello(0);
                     printf("Loaded font from initial ramdisk successfully\n");
                 } else {
-                    fs_close(new_font);
                     LOG(ERR, "Failed to load font file \"/device/initrd/usr/share/ter-112n.psf\".\n");
                 }
+                
+                fs_close(new_font);
             } else {
                 LOG(ERR, "Could not find new font file \"/device/initrd/usr/share/ter-112n.psf\", using old font\n");
             }

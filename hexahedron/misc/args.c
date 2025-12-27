@@ -46,6 +46,8 @@ void kargs_init(char *args) {
 
         pch = strtok(NULL, " ");
     }
+
+    kfree(args);
 }
 
 /**

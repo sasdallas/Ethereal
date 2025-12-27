@@ -469,6 +469,7 @@ kernelfs_dir_t *kernelfs_createDirectory(kernelfs_dir_t *parent, char *name, int
     node->readdir = kernelfs_genericReaddir;
     node->finddir = kernelfs_genericFinddir;
     node->dev = (void*)dir;
+    fs_open(node, 0);
 
     // Add to parent
     if (dir->parent && dir->parent->entries) {
@@ -497,8 +498,7 @@ kernelfs_entry_t *kernelfs_createEntry(kernelfs_dir_t *dir, char *name, kernelfs
     entry->get_data = get_data;
     entry->data = data;
 
-    fs_node_t *node = kmalloc(sizeof(fs_node_t));
-    memset(node, 0, sizeof(fs_node_t));
+    fs_node_t *node = fs_node();
     strncpy(node->name, name, 256);
     node->flags = VFS_FILE;
     node->open = kernelfs_genericOpen;
@@ -508,6 +508,7 @@ kernelfs_entry_t *kernelfs_createEntry(kernelfs_dir_t *dir, char *name, kernelfs
     node->mask = 0777;
     node->ctime = node->atime = node->mtime = now();
     node->dev = (void*)entry;
+    node->refcount++; // fs_open would fuck itself
 
     // Add to parent
     if (dir && dir->entries) {
@@ -544,12 +545,12 @@ int kernelfs_memoryRead(kernelfs_entry_t *entry, void *data) {
             "TotalPhysMemory:%zu kB\n"
             "UsedPhysMemory:%zu kB\n"
             "FreePhysMemory:%zu kB\n"
-            "KernelMemoryAllocator:%zu kB\n",
+            "KernelMemoryAllocator:%zu\n",
                 total_blocks,
                 total_blocks * PAGE_SIZE / 1000,
                 used_blocks * PAGE_SIZE / 1000,
                 free_blocks * PAGE_SIZE / 1000,
-                kernel_in_use / 1000);
+                kernel_in_use);
     return 0;
 }
 
@@ -604,45 +605,6 @@ int kernelfs_uptimeRead(kernelfs_entry_t *entry, void *data) {
 }
 
 /**
- * @brief Recursive VFS dump method
- */
-static void kernelfs_filesystemsRecur(tree_node_t *node, int depth, kernelfs_entry_t *entry) {
-    if (!node) return;
-
-    // Calculate spaces
-    char spaces[256] = { 0 };
-    for (int i = 0; i < ((depth > 256) ? 256 : depth); i++) {
-        spaces[i] = ' ';
-    }
-    
-    if (node->value) {
-        vfs_tree_node_t *tnode = (vfs_tree_node_t*)node->value;
-        if (tnode->node) {
-            kernelfs_appendData(entry, "%s%s (filesystem %s) -> file %s\n", spaces, tnode->name, tnode->fs_type ? tnode->fs_type : "N/A", tnode->node->name);
-        } else {
-            kernelfs_appendData(entry, "%s%s (filesystem %s) -> N/A\n", spaces, tnode->name, tnode->fs_type ? tnode->fs_type : "N/A");
-        }
-    } else {
-        kernelfs_appendData(entry, "%s(node %p has NULL value)\n", spaces, node);
-    }
-
-    foreach (child, node->children) {
-        kernelfs_filesystemsRecur((tree_node_t*)child->value, depth + 1, entry);
-    }
-} 
-
-/**
- * @brief Kernel mounts read method
- * @param entry The entry to read
- * @param data NULL
- */
-int kernelfs_mountsRead(kernelfs_entry_t *entry, void *data) {
-extern tree_t *vfs_tree;
-    kernelfs_filesystemsRecur(vfs_tree->root, 0, entry);
-    return 0;
-}
-
-/**
  * @brief Kernel filesystems read method
  * @param entry The entry to read
  * @param data NULL
@@ -688,9 +650,6 @@ int kernelfs_init() {
 
     // Create cmdline
     kernelfs_createEntry(NULL, "cmdline", kernelfs_cmdlineRead, NULL);
-
-    // Create mounts
-    kernelfs_createEntry(NULL, "mounts", kernelfs_mountsRead, NULL);
 
     // Create filesystems
     kernelfs_createEntry(NULL, "filesystems", kernelfs_filesystemsRead, NULL);

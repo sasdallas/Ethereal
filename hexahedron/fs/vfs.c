@@ -760,8 +760,7 @@ fs_node_t *vfs_fakeNodeFinddir(fs_node_t *node, char *name) {
  * @param tnode The tree node at which we should display contents
  */
 fs_node_t *vfs_createFakeNode(char *name, tree_node_t *tnode) {
-    fs_node_t *fakenode = kmalloc(sizeof(fs_node_t));
-    memset(fakenode, 0, sizeof(fs_node_t));
+    fs_node_t *fakenode = fs_node();
 
     strcpy(fakenode->name, name);
     fakenode->dev = (void*)tnode;
@@ -827,13 +826,12 @@ tree_node_t *vfs_mount(fs_node_t *node, char *path) {
         }
     
         if (!found) {
-            // LOG(INFO, "Creating node at %s\n", pch);
-
             vfs_tree_node_t *newnode = kmalloc(sizeof(vfs_tree_node_t)); 
             newnode->name = strdup(pch);
             newnode->fs_type = NULL;
             parent_node = tree_insert_child(vfs_tree, parent_node, newnode);
             newnode->node = vfs_createFakeNode(pch, parent_node);
+            fs_open(newnode->node, 0); // open to increase reference count so fs_close isn't UB
         }
 
         pch = strtok_r(NULL, "/", &saveptr);
@@ -841,13 +839,15 @@ tree_node_t *vfs_mount(fs_node_t *node, char *path) {
 
     // Now parent_node should point to the newly created directory
     vfs_tree_node_t *entry = parent_node->value;
+
+    // Destroy the old entry node
+    if (entry->node) fs_close(entry->node);
     entry->node = node;
 
     kfree(strtok_path);
 
 _cleanup:
-
-    node->refcount++; // prevent destruction of this VFS node
+    fs_open(node, 0);
     spinlock_release(vfs_lock);
     return parent_node;
 }
