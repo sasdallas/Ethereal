@@ -112,7 +112,7 @@ void *celestial_getResponse(int type) {
 
         int p = poll(fds, 1, -1);
         if (p <= 0 || !(fds[0].revents & POLLIN)) {
-            fprintf(stderr, "celestial_lib: Poll failed (%d)\n", p);
+            fprintf(stderr, "celestial_lib: Poll failed (%d): %s\n", p, strerror(errno));
             return NULL;
         }
         

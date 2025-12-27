@@ -229,6 +229,34 @@ void mouse_events() {
             event_send(WM_MOUSE_WINDOW, &exit);
             WM_MOUSE_WINDOW = NULL;
         }
+
+        // Check if we exited
+        wm_window_t *win = window_top(WM_MOUSEX, WM_MOUSEY);
+        if (WM_MOUSE_WINDOW != win) {
+            // Send exit event
+            celestial_event_mouse_exit_t exit = {
+                .magic = CELESTIAL_MAGIC_EVENT,
+                .type = CELESTIAL_EVENT_MOUSE_EXIT,
+                .size = sizeof(celestial_event_mouse_exit_t),
+                .wid = WM_MOUSE_WINDOW->id
+            };
+
+            event_send(WM_MOUSE_WINDOW, &exit);
+            window_updateRegion(GFX_RECT(WM_MOUSE_WINDOW->x, WM_MOUSE_WINDOW->y, WM_MOUSE_WINDOW->width, WM_MOUSE_WINDOW->height));
+            WM_MOUSE_WINDOW = win;
+
+            // Send new event
+            celestial_event_mouse_enter_t enter = {
+                .magic = CELESTIAL_MAGIC_EVENT,
+                .type = CELESTIAL_EVENT_MOUSE_ENTER,
+                .size = sizeof(celestial_event_mouse_enter_t),
+                .wid = WM_MOUSE_WINDOW->id,
+                .x = WM_MOUSE_REL_WINDOW_X,
+                .y = WM_MOUSE_REL_WINDOW_Y,
+            };
+
+            event_send(WM_MOUSE_WINDOW, &enter);
+        }
     }
 
     // Send corresponding event
@@ -403,8 +431,8 @@ int mouse_update() {
     mouse_rel_y = event.y_difference;
 
     // Update X and Y
-    WM_MOUSEX += event.x_difference;
-    WM_MOUSEY -= event.y_difference; // TODO: Maybe add kernel flag to invert this or do it in driver
+    WM_MOUSEX += event.x_difference * 3;
+    WM_MOUSEY -= event.y_difference * 3; // TODO: Maybe add kernel flag to invert this or do it in driver
 
     // Update buttons
     if (WM_MOUSE_BUTTONS != event.buttons) {
@@ -445,7 +473,7 @@ int mouse_update() {
     // Did things change?
     if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY || WM_MOUSE_BUTTONS != __celestial_previous_buttons) {
         mouse_events();
-        window_updateRegion((gfx_rect_t){ .x = last_mouse_x, .y = last_mouse_y, .width = WM_MOUSE_SPRITE->width, .height = WM_MOUSE_SPRITE->height });
+        window_updateRegion((gfx_rect_t){ .x = last_mouse_x, .y = last_mouse_y, .width = WM_MOUSE_SPRITE->width-1, .height = WM_MOUSE_SPRITE->height-1 });
     }
 
     // Make clips

@@ -32,7 +32,7 @@ int __celestial_client_count = 0;
 
 /* Versioning information */
 #define CELESTIAL_VERSION_MAJOR     1
-#define CELESTIAL_VERSION_MINOR     0
+#define CELESTIAL_VERSION_MINOR     1
 #define CELESTIAL_VERSION_LOWER     0
 
 /**
@@ -71,17 +71,10 @@ void celestial_redraw() {
         if (win->animation) window_updateRegion(GFX_RECT(win->x,win->y,win->width+1,win->height+1));
     }
 
-
-
-    // Redraw windows
-    window_redraw();
-
-    // Render the mouse
-    mouse_render();
-
-    // Render the graphics
-    if (WM_GFX->clip) gfx_render(WM_GFX);
+    window_redraw();      // Redraw windows
+    mouse_render();       // Render the mouse
 }
+
 
 /**
  * @brief Main loop of Celestial
@@ -90,28 +83,20 @@ void celestial_main() {
     list_t *socket_keys = NULL;
 
     while (1) {
-        // Reset graphics clips once per frame
         gfx_resetClips(WM_GFX);
-
-        // Handle input devices and window management
         socket_accept();
         mouse_update();
         kbd_update();
 
-        // Process all socket events
         socket_keys = hashmap_keys(WM_SW_MAP);
-        
         foreach(kn, socket_keys) {
             socket_handle((int)(uintptr_t)kn->value);
         }
-
         list_destroy(socket_keys, false);
 
-        // Redraw only if there were changes
-        celestial_redraw();
 
-        // Control frame rate to reduce CPU usage
-        // usleep(16667); // ~60 FPS (1000000 microseconds / 60)
+        celestial_redraw();
+        if (WM_GFX->clip) gfx_render(WM_GFX);
     }
 }
 
@@ -200,7 +185,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    char *launch = "desktop";
+    char *launch = "login-gui";
     if (argc-optind) {
         launch = argv[optind];
     }
@@ -224,7 +209,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        gfx_clear(WM_GFX, GFX_RGB(0,0,0));
+        gfx_clear(WM_GFX, GFX_RGB(0x6c,0x3b,0xaa));
         gfx_render(WM_GFX);
     }
 

@@ -55,12 +55,14 @@ typedef struct wm_window {
     sprite_t *sp;               // Window sprite
     uint8_t animation;          // Animation ongoing
     uint64_t anim_start;        // Animation start
+    int last_frame;             // Last frame
 
     int z_array;                // Z array
 
     uint8_t *buffer;            // Buffer allocated to the window
     key_t bufkey;               // Buffer shared memory key
     int shmfd;                  // Buffer shared memory fd
+    bool pending_update;        // Pending update this frame
 } wm_window_t;
 
 typedef struct wm_update_window {

@@ -81,14 +81,14 @@ typedef struct celestial_event_mouse_motion_rel {
 } celestial_event_mouse_motion_rel_t;
 
 
-typedef struct celesital_event_mouse_button_down {
+typedef struct celestial_event_mouse_button_down {
     CELESTIAL_EVENT_COMMON              // Common
     int32_t x;                          // Relative X position
     int32_t y;                          // Relative Y position
     int32_t held;                       // The button that was held
 } celestial_event_mouse_button_down_t;
 
-typedef struct celesital_event_mouse_button_up {
+typedef struct celestial_event_mouse_button_up {
     CELESTIAL_EVENT_COMMON              // Common
     int32_t x;                          // Relative X position
     int32_t y;                          // Relative Y position

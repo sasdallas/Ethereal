@@ -20,6 +20,7 @@
 #include "event.h"
 #include <unistd.h>
 #include <immintrin.h>
+#include <math.h>
 
 /* Window map */
 hashmap_t *__celestial_window_map = NULL;
@@ -48,8 +49,8 @@ int window_anim_delays[] = {
 };
 
 int window_anim_frames[] = {
-    [WINDOW_ANIM_OPENING] = 100000,
-    [WINDOW_ANIM_CLOSING] = 100000,
+    [WINDOW_ANIM_OPENING] = 125000,
+    [WINDOW_ANIM_CLOSING] = 125000,
 };
 
 /**
@@ -88,7 +89,17 @@ static void window_freeID(pid_t id) {
 void window_beginAnimation(wm_window_t *win, int anim) {
     if (win->animation != WINDOW_ANIM_NONE) return;
 
-    if (win->flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS) {
+
+#define CELESTIAL_WINDOW_ENABLE_ANIMATIONS 
+#ifdef CELESTIAL_WINDOW_ENABLE_ANIMATIONS
+    if (!(win->flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS)) {
+        
+        win->animation = anim;
+        win->anim_start = CELESTIAL_NOW();
+    } else {
+#else
+    {
+#endif
         // No animations.. make it look already completed.
         if (anim == WINDOW_ANIM_CLOSING) {
             win->state = WINDOW_STATE_CLOSED;
@@ -99,9 +110,6 @@ void window_beginAnimation(wm_window_t *win, int anim) {
         window_updateRegion(GFX_RECT(win->x, win->y, win->width, win->height));
         return;
     }
-
-    win->animation = anim;
-    win->anim_start = CELESTIAL_NOW();
 }
 
 /**
@@ -111,15 +119,25 @@ void window_processAnimations(wm_window_t *win, int frame) {
     double tdiff = (double)frame / (double)window_anim_frames[win->animation];
  
     if (win->animation == WINDOW_ANIM_OPENING) {
-        double scale = 0.75 + tdiff * (1.0 - 0.75); // Starting scale at 75%, scale up to 100%
+        double scale = 0.85 + tdiff * (1.0 - 0.85); // Starting scale at 85%, scale up to 100%
         double off_x = (win->width - (win->width * scale)) / 2.0f;
         double off_y = (win->height - (win->height * scale)) / 2.0f;
-        gfx_renderSpriteScaled(WM_GFX, win->sp, GFX_RECT(win->x + off_x, win->y + off_y, win->width * scale, win->height * scale));
+        gfx_mat2x3_t mat = gfx_mat2x3_identity();
+        gfx_mat2x3_translate(&mat, off_x + win->x, off_y + win->y);
+        gfx_mat2x3_scale(&mat, scale, scale);
+
+        scale = 0.5 + tdiff * (1.0 - 0.5);
+        gfx_renderSpriteTransform(WM_GFX, win->sp, &mat, 255*scale);
     } else if (win->animation == WINDOW_ANIM_CLOSING) {
-        double scale = 1.00 + tdiff * (0.75 - 1.0); // Starting scale at 100%, scale down to 75%
+        double scale = 1.00 + tdiff * (0.85 - 1.0); // Starting scale at 100%, scale down to 85%
         double off_x = (win->width - (win->width * scale)) / 2.0f;
         double off_y = (win->height - (win->height * scale)) / 2.0f;
-        gfx_renderSpriteScaled(WM_GFX, win->sp, GFX_RECT(win->x + off_x, win->y + off_y, win->width * scale, win->height * scale));
+        gfx_mat2x3_t mat = gfx_mat2x3_identity();
+        gfx_mat2x3_translate(&mat, off_x + win->x, off_y + win->y);
+        gfx_mat2x3_scale(&mat, scale, scale);
+
+        scale = 1.00 + tdiff * (0.5 - 1.0);
+        gfx_renderSpriteTransform(WM_GFX, win->sp, &mat, 255*scale);
     }
 }
 
@@ -223,6 +241,9 @@ void window_redraw() {
         free(n);
 
 
+        if (upd->win->state == WINDOW_STATE_CLOSED) { free(upd); continue; } // residual event
+
+        upd->win->pending_update = false;
         if (upd->win->state == WINDOW_STATE_HIDDEN) { free(upd); continue; }
         if (upd->win->state == WINDOW_STATE_OPENING && upd->win->animation == WINDOW_ANIM_NONE) { free(upd); continue; }
 
@@ -249,15 +270,20 @@ void window_redraw() {
             // Pending animation that requires rendering!
             // Calculate the current frame
             int frame = CELESTIAL_SINCE(upd->win->anim_start);
+            
+            if (upd->win->last_frame == frame) {
+                free(upd);
+                continue;
+            }
+
+            upd->win->last_frame = frame;
 
             if (frame >= window_anim_frames[upd->win->animation]) {
                 // Expired
                 CELESTIAL_LOG("Window %d on frame %d expired animation\n", upd->win->id, frame);
-                int did_close = 0;
                 switch (upd->win->animation) {
                     case WINDOW_ANIM_CLOSING:
                         upd->win->state = WINDOW_STATE_CLOSED;
-                        did_close = 1;
                         break;
                     default:
                         upd->win->state = WINDOW_STATE_NORMAL;
@@ -266,13 +292,15 @@ void window_redraw() {
 
                 upd->win->animation = WINDOW_ANIM_NONE;
                 upd->win->anim_start = 0;
-                if (!did_close) window_update(upd->win, GFX_RECT(0,0,upd->win->width,upd->win->height));
+                window_updateRegion(GFX_RECT(upd->win->x,upd->win->y,upd->win->width,upd->win->height));
+                
+                WM_FOCUSED_WINDOW = NULL;
+                if (WM_WINDOW_LIST->length) window_changeFocused((wm_window_t*)WM_WINDOW_LIST->tail->value);
             } else {
                 window_processAnimations(upd->win, frame);
             }
         }
 #endif
-    
     
         // HACK: Is the window closing?
         if (upd->win && upd->win->state == WINDOW_STATE_CLOSED) {
@@ -329,6 +357,7 @@ int window_update(wm_window_t *win, gfx_rect_t rect) {
     upd->win = win;
     memcpy(&upd->rect, &rect, sizeof(gfx_rect_t));
     list_append(WM_UPDATE_QUEUE, upd);
+    win->pending_update = true;
     return 0;
 }
 
@@ -339,6 +368,7 @@ int window_update(wm_window_t *win, gfx_rect_t rect) {
  */
 void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign) {
     // First, handle the background update
+    // wm_window_t *bg_win = NULL;
     foreach(win_node, WM_WINDOW_LIST_BG) {
         wm_window_t *win = (wm_window_t*)win_node->value;
         if (win->state == WINDOW_STATE_HIDDEN) continue;
@@ -347,7 +377,25 @@ void window_updateRegionIgnoring(gfx_rect_t rect, wm_window_t *ign) {
         gfx_rect_t collider = { .x = win->x, .y = win->y, .width = win->width, .height = win->height };
         if (GFX_RECT_COLLIDES(WM_GFX, rect, collider)) {
             // The two rectangles collide
-            gfx_rect_t redraw_rect = { .x = rect.x - win->x, .y = rect.y - win->y, .width = rect.width, .height = rect.height };
+
+            gfx_rect_t redraw_rect = {
+                .x = GFX_RECT_MAX(collider.x, rect.x), 
+                .y = GFX_RECT_MAX(collider.y, rect.y),
+                .width = GFX_RECT_MIN(collider.width, rect.width),
+                .height = GFX_RECT_MIN(collider.height, rect.height)
+            };
+
+            redraw_rect.width = GFX_RECT_MIN(GFX_RECT_RIGHT(WM_GFX, rect), GFX_RECT_RIGHT(WM_GFX, redraw_rect)) - redraw_rect.x + 1;
+            redraw_rect.height = GFX_RECT_MIN(GFX_RECT_BOTTOM(WM_GFX, rect), GFX_RECT_BOTTOM(WM_GFX, redraw_rect)) - redraw_rect.y + 1;
+
+            redraw_rect.x -= win->x;
+            redraw_rect.y -= win->y;
+
+            if (redraw_rect.x + redraw_rect.width > win->width) redraw_rect.width = win->width - redraw_rect.x;
+            if (redraw_rect.y + redraw_rect.height > win->height) redraw_rect.height = win->height - redraw_rect.y;
+
+
+            // CELESTIAL_DEBUG("window: collision in WID %d (X: %d, Y: %d, W: %d, H: %d)\n", win->id, redraw_rect.x, redraw_rect.y, redraw_rect.width, redraw_rect.height);
             window_update(win, redraw_rect);
         }
     }
