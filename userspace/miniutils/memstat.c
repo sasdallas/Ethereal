@@ -106,13 +106,12 @@ int main(int argc, char *argv[]) {
     }
 
     unsigned long long total_memory, free_memory, used_memory, kernel_memory;
-    fscanf(kmem, "TotalPhysBlocks:%*lld\nTotalPhysMemory:%lld kB\nUsedPhysMemory:%lld kB\nFreePhysMemory:%lld kB\nKernelMemoryAllocator:%lld kB", &total_memory, &used_memory, &free_memory, &kernel_memory);
+    fscanf(kmem, "TotalPhysBlocks:%*lld\nTotalPhysMemory:%lld kB\nUsedPhysMemory:%lld kB\nFreePhysMemory:%lld kB\nKernelMemoryAllocator:%lld", &total_memory, &used_memory, &free_memory, &kernel_memory);
     fclose(kmem);
 
     total_memory *= 1000;
     free_memory *= 1000;
     used_memory *= 1000;
-    kernel_memory *= 1000;
 
 
     if (used) {
