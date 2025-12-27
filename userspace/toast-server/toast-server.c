@@ -70,7 +70,8 @@ void toast_handle(int fd) {
     TOAST_DEBUG("Received content from fd %d\n", fd);
 
     toast_t t;
-    if (recv(fd, &t, sizeof(toast_t), 0) < 0) {
+    ssize_t r = recv(fd, &t, sizeof(toast_t), 0);
+    if (r < 0) {
         if (errno == ECONNRESET) {
             TOAST_DEBUG("Connection reset!\n");
             list_delete(toast_clients, list_find(toast_clients, (void*)(uintptr_t)fd));
@@ -78,6 +79,12 @@ void toast_handle(int fd) {
         }
 
         perror("recv");
+        return;
+    }
+
+    if (!r) {
+        TOAST_DEBUG("Connection removed\n");
+        list_delete(toast_clients, list_find(toast_clients, (void*)(uintptr_t)fd));
         return;
     }
 
