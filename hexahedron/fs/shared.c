@@ -64,6 +64,7 @@ static int sharedfs_close(fs_node_t *node) {
         }
 
         LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
+        kfree(obj->blocks);
         kfree(obj);
     }
 
