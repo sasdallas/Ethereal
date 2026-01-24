@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/fs/vfs_new.h>
+#include <structs/list.h>
 
 /**** TYPES ****/
 

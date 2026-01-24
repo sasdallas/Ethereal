@@ -48,6 +48,7 @@
 #include <sys/poll.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/fs/poll.h>
+#include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/
 

@@ -327,8 +327,7 @@ halSyscallEntrypoint:
     // Clear directional flag
     cld
     
-    movq %cr4, %rax
-    pushq %rax
+    pushq $0                        // this used to read CR4 but CR4 causes a VMEXIT on KVM
     movq %cr3, %rax
     pushq %rax
     movq %cr2, %rax

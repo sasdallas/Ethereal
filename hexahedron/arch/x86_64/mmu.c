@@ -87,7 +87,7 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
     dprintf(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
 
     dprintf(NOHEADER, "CS %04X DS %04X SS %04X\n\n", regs->cs, regs->ds, regs->ss);
-    dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX CR4 %08X\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3, regs_extended->cr4);
+    dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3);
     dprintf(NOHEADER, "GDTR %016llX %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
     dprintf(NOHEADER, "IDTR %016llX %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
 
