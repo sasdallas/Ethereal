@@ -42,7 +42,6 @@
 #include <stddef.h>
 #include <dirent.h>
 #include <kernel/refcount.h>
-#include <kernel/lock/rwsem.h>
 #include <sys/time.h>
 #include <errno.h>
 #include <fcntl.h>
