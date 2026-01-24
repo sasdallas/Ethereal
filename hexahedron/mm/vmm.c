@@ -288,6 +288,9 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
         addr = (void*)MMU_KERNELSPACE_START;
     }
 
+    va_list ap;
+    va_start(ap, prot);
+
     void *r = NULL;
 
     // Find the appropriate space for the address
@@ -319,7 +322,7 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
 
     // We can back these pages if we're in the kernel's context.
     // Otherwise, allocations will be auto-backed by VMM faults.
-    if (vm_flags & VM_FLAG_ALLOC && sp == &__vmm_kernel_space) {
+    if (vm_flags & VM_FLAG_ALLOC && (sp == &__vmm_kernel_space || vm_flags & VM_FLAG_FAKE_ME_NOT) ) {
         // Back the pages now
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
             uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
@@ -329,10 +332,26 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
         arch_mmu_invalidate_range(range->start, range->end);
     }
 
+
     r = (void*)range->start;
+
+    if (range->vmm_flags & VM_FLAG_FILE) {
+        vmm_file_t *f =  va_arg(ap, vmm_file_t*);
+        memcpy(&range->file, f, sizeof(vmm_file_t));
+        file_hold(f->node);
+        int res = file_mmap_prepare(f->node, range);
+        if (res) {
+            // another design flaw
+            LOG(ERR, "ERROR: file_mmap_prepare failed with error %d, no way to return error.\n",  res);
+        }
+
+    
+        LOG(DEBUG, "mmap OK\n");
+    }
 
 _finish:
     mutex_release(sp->mut);
+    va_end(ap);
     return r;
 }
 

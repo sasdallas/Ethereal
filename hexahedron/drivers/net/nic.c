@@ -13,7 +13,9 @@
  */
 
 #include <kernel/drivers/net/nic.h>
+#include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/nicdev.h>
+#include <kernel/fs/devfs.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/task/syscall.h>
 #include <kernel/fs/kernelfs.h>
@@ -26,16 +28,44 @@
 
 /* NIC list */
 list_t *nic_list = NULL;
+static spinlock_t nic_list_lock = { 0 };
 
 /* Network directory for KernelFS */
 kernelfs_dir_t *kernelfs_net_dir = NULL;
 
-/* Indexes */
-static int net_ethernet_index = 0;
-static int net_wireless_index = 0;
+/* Cache */
+slab_cache_t *nic_cache;
+
+/* devfs */
+static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param);
+static ssize_t nic_write(devfs_node_t *node, loff_t off, size_t size, const char *buffer);
+
+static devfs_ops_t nic_devfs_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = NULL,
+    .write = nic_write,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
+    .ioctl = nic_ioctl, 
+};
+
+/* NIC last minor */
+atomic_int nic_last_minor = 0;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:NIC", __VA_ARGS__)
+
+/**
+ * @brief NIC write
+ */
+static ssize_t nic_write(devfs_node_t *node, loff_t off, size_t size, const char *buffer) {
+    nic_t *nic = node->priv;
+    return nic->ops->send(nic, size, (char*)buffer);
+}
 
 /**
  * @brief NIC info ioctl
@@ -45,28 +75,33 @@ static int net_wireless_index = 0;
  * 
  * Only accepts @c IO_NIC ioctls
  */
-int nic_ioctl(fs_node_t *node, unsigned long request, void *param) {
+static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param) {
     nic_info_t *info;
+    nic_t *nic = node->priv;
     switch (request) {
         case IO_NIC_GET_INFO:
             SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
             info = (nic_info_t*)param;
-            strcpy(node->name, info->nic_name);
-            info->nic_ipv4_addr = NIC(node)->ipv4_address;
-            info->nic_ipv4_gateway = NIC(node)->ipv4_gateway;
-            info->nic_ipv4_subnet = NIC(node)->ipv4_subnet;
-            info->nic_mtu = NIC(node)->mtu;
-            memcpy(info->nic_mac, NIC(node)->mac, 6);
+            strncpy(info->nic_name, nic->name, 128);
+            info->nic_ipv4_addr = nic->ipv4_address;
+            info->nic_ipv4_gateway = nic->ipv4_gateway;
+            info->nic_ipv4_subnet = nic->ipv4_subnet;
+            info->nic_mtu = nic->mtu;
+            memcpy(info->nic_mac, nic->mac, 6);
             return 0;
 
         case IO_NIC_SET_INFO:
             SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
             info = (nic_info_t*)param;
-            NIC(node)->ipv4_address = info->nic_ipv4_addr;
-            NIC(node)->ipv4_subnet = info->nic_ipv4_subnet;
-            NIC(node)->ipv4_gateway = info->nic_ipv4_gateway;
-            NIC(node)->mtu = info->nic_mtu;
+            nic->ipv4_address = info->nic_ipv4_addr;
+            nic->ipv4_subnet = info->nic_ipv4_subnet;
+            nic->ipv4_gateway = info->nic_ipv4_gateway;
+            nic->mtu = info->nic_mtu;
             return 0;
+    }
+
+    if (nic->ops->ioctl) {
+        return nic->ops->ioctl(nic, request, param);
     }
 
     return -EINVAL;
@@ -75,46 +110,46 @@ int nic_ioctl(fs_node_t *node, unsigned long request, void *param) {
 /**
  * @brief Create a new NIC structure
  * @param name Name of the NIC
- * @param mac 6-byte MAC address of the NIC
  * @param type Type of the NIC
+ * @param ops NIC operations
+ * @param mac 6-byte MAC address of the NIC
  * @param driver Driver-defined field in the NIC. Can be a structure of your choosing
  * @returns A filesystem node, setup methods and go
  * 
  * @note Please remember to setup your NIC's IP address fields
  */
-fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver) {
-    if (!name || !mac) return NULL;
-    if (type > NIC_TYPE_WIRELESS) return NULL;
+nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driver) {
+    nic_t *nic = slab_allocate(nic_cache);
+    assert(nic);
 
-    if (type == NIC_TYPE_WIRELESS) {
-        LOG(INFO, "NIC_TYPE_WIRELESS: That's great for you, but we don't support this.\n");
-        return NULL;
-    }
-
-    // Allocate a NIC
-    nic_t *nic = kmalloc(sizeof(nic_t));
-    memset(nic, 0, sizeof(nic_t));
-    
-    // Setup fields
-    strncpy(nic->name, name, 128);
+    memcpy(nic->name, name, strlen(name));
+    nic->type = type;
+    nic->ops = ops;
     memcpy(nic->mac, mac, 6);
     nic->driver = driver;
-    nic->type = type;
     nic->state = NIC_STATE_UP;
-
-    // Allocate a filesystem node
-    fs_node_t *node = kmalloc(sizeof(fs_node_t));
-    memset(node, 0, sizeof(fs_node_t));
-    strcpy(node->name, "*BADNIC*");
-    node->dev = (void*)nic;
-    node->ctime = now();
-    node->flags = VFS_BLOCKDEVICE;
-    node->mask = 0666;
-    node->ioctl = nic_ioctl;
-
-    nic->parent_node = node;
     
-    return node;
+    spinlock_acquire(&nic_list_lock);
+    list_append(nic_list, nic);
+    spinlock_release(&nic_list_lock);
+
+    // Mount with devfs
+    assert(devfs_register(devfs_root, name, VFS_BLOCKDEVICE, &nic_devfs_ops, DEVFS_MAJOR_NETWORK, nic_last_minor++, nic));
+
+    return nic;
+}
+
+/**
+ * @brief Destroy NIC interface
+ * @param nic The NIC to destroy
+ */
+int nic_destroy(nic_t *nic) {
+    spinlock_acquire(&nic_list_lock);
+    list_delete(nic_list, list_find(nic_list, nic));
+    spinlock_release(&nic_list_lock);
+
+    slab_free(nic_cache, nic);
+    return 0;
 }
 
 /**
@@ -180,52 +215,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
  * @returns 0 on success
  */
 int nic_register(fs_node_t *nic_device, char *interface_name) {
-    if (!nic_device || !nic_device->dev) return 1;
-
-    // Get the NIC
-    nic_t *nic = (nic_t*)nic_device->dev;
-
-    if (interface_name) {
-        strncpy(nic_device->name, interface_name, 128);
-        goto _name_done;
-    }
-
-    switch (nic->type) {
-        case NIC_TYPE_ETHERNET:
-            snprintf(nic_device->name, 128, NIC_ETHERNET_PREFIX, net_ethernet_index);
-            net_ethernet_index++;
-            break;
-        
-        case NIC_TYPE_WIRELESS:
-            snprintf(nic_device->name, 128, NIC_WIRELESS_PRERFIX, net_wireless_index);
-            net_wireless_index++;
-            break;
-        
-        default:
-            LOG(ERR, "Invalid NIC type %d\n", nic->type);
-            return 1;
-    }
-
-_name_done: ;
-
-    // Setup path
-    char fullpath[256];
-    snprintf(fullpath, 256, "/device/%s", nic_device->name);
-
-    // Mount it
-    if (vfs_mount(nic_device, fullpath) == NULL) {
-        LOG(WARN, "Error while mounting NIC \"%s\" to \"%s\"\n", nic->name, fullpath);
-        return 1;
-    }
-
-    // Append
-    list_append(nic_list, (void*)nic);
-
-    kernelfs_createEntry(kernelfs_net_dir, interface_name, nic_kernelfsRead, (void*)nic);
-
-    LOG(INFO, "Mounted a new NIC \"%s\" to \"%s\"\n", nic->name, fullpath);
     return 0;
-
 }
 
 /**
@@ -268,9 +258,10 @@ nic_t *nic_route(in_addr_t addr) {
 /**
  * @brief Initialize NIC system
  */
-int nic_init() {
+static int nic_init() {
     nic_list = list_create("nic list");
     kernelfs_net_dir = kernelfs_createDirectory(NULL, "net", 1);
+    assert((nic_cache = slab_createCache("nic cache", SLAB_CACHE_DEFAULT, sizeof(nic_t), 0, NULL, NULL)));
     return 0;
 }
 

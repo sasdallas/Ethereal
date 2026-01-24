@@ -37,6 +37,6 @@ typedef struct udp_sock {
 /**
  * @brief Handle a UDP packet
  */
-int udp_handle(fs_node_t *nic, void *frame, size_t size);
+int udp_handle(nic_t *nic, void *frame, size_t size);
 
 #endif

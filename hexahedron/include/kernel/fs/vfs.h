@@ -29,14 +29,28 @@
 /**** DEFINITIONS ****/
 
 // Type bitmasks
-#define VFS_FILE            0x01
-#define VFS_DIRECTORY       0x02
-#define VFS_CHARDEVICE      0x04
-#define VFS_BLOCKDEVICE     0x08
-#define VFS_PIPE            0x10
-#define VFS_SYMLINK         0x20
+// #define VFS_FILE            0x01
+// #define VFS_DIRECTORY       0x02
+// #define VFS_CHARDEVICE      0x04
+// #define VFS_BLOCKDEVICE     0x08
+// #define VFS_PIPE            0x10
+// #define VFS_SYMLINK         0x20
 #define VFS_MOUNTPOINT      0x40
-#define VFS_SOCKET          0x80
+// #define VFS_SOCKET          0x80
+
+#ifndef KERNEL_FS_VFS2_H
+typedef enum vfs_ino_type {
+    VFS_FILE,
+    VFS_DIRECTORY,
+    VFS_CHARDEVICE,
+    VFS_BLOCKDEVICE,
+    VFS_PIPE,               // S_IFIFO
+    VFS_LINK,
+    VFS_SOCKET
+} vfs_ino_type_t;
+
+#define VFS_SYMLINK VFS_LINK
+#endif
 
 // Event types for ready()
 #define VFS_EVENT_READ      0x01
@@ -141,7 +155,7 @@ typedef struct fs_node {
  */
 typedef int (*vfs_mount_callback_t)(char *argument, char *mountpoint, struct fs_node **node_out); // Argument can be whatever, it's fs-specific.
 
-typedef struct vfs_filesystem {
+typedef struct _vfs_filesystem {
     char *name;                     // Name of the filesystem
     vfs_mount_callback_t mount;     // Mount callback
 } vfs_filesystem_t;
@@ -400,13 +414,6 @@ fs_node_t *kopen_user(const char *path, unsigned int flags);
  * @param addition What to add to the current working directory
  */
 char *vfs_canonicalizePath(char *cwd, char *addition);
-
-/**
- * @brief Unmount a path from the filesystem
- * @param path The path to unmount
- * @returns 0 on success or error code
- */
-int vfs_unmount(char *path);
 
 /**
  * @brief Dump VFS tree system

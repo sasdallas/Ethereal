@@ -13,6 +13,7 @@
 
 #include <kernel/arch/arch.h>
 #include "rtl8169.h"
+#include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/mm/alloc.h>
@@ -34,6 +35,12 @@
 #define RTL8169_READ16(reg) (inportw(nic->base + reg))
 #define RTL8169_READ32(reg) (inportl(nic->base + reg))
 
+/* Operations */
+static ssize_t rtl8169_send(nic_t *nnic, size_t size, char *buffer);
+static nic_ops_t rtl8169_nic_ops = {
+    .send = rtl8169_send,
+    .ioctl = NULL,
+};
 
 /**
  * @brief Reset an RTL8169 NIC
@@ -193,11 +200,11 @@ void rtl8169_thread(void *context) {
             }
 
             // Update NIC statistics
-            NIC(nic->nic)->stats.rx_bytes += pkt_length;
-            NIC(nic->nic)->stats.rx_packets++;
+            nic->n->stats.rx_bytes += pkt_length;
+            nic->n->stats.rx_packets++;
 
             // Pass it on to the Ethernet handler
-            ethernet_handle((ethernet_packet_t*)(nic->rx_buffers + (nic->rx_current * RTL8169_RX_BUFFER_SIZE)), nic->nic, pkt_length);
+            ethernet_handle((ethernet_packet_t*)(nic->rx_buffers + (nic->rx_current * RTL8169_RX_BUFFER_SIZE)), nic->n, pkt_length);
 
         _next_desc:
             nic->rx_current = (nic->rx_current + 1) % RTL8169_RX_DESC_COUNT;
@@ -222,21 +229,21 @@ int rtl8169_irq(void *context) {
 
         if (isr & RTL8169_ISR_LINKCHG) {// Update link status
             if (RTL8169_READ8(RTL8169_REG_PHYStatus) & RTL8169_PHYStatus_LINKSTS) {
-                NIC(nic->nic)->state = NIC_STATE_UP;
+                nic->n->state = NIC_STATE_UP;
             } else {
-                NIC(nic->nic)->state = NIC_STATE_DOWN;
+                nic->n->state = NIC_STATE_DOWN;
             }
             
-            LOG(INFO, "Link status is now %s\n", (NIC(nic->nic)->state == NIC_STATE_UP) ? "UP" : "DOWN");
+            LOG(INFO, "Link status is now %s\n", (nic->n->state == NIC_STATE_UP) ? "UP" : "DOWN");
         }
 
         // Check for errors
         if (isr & RTL8169_ISR_RER) {
-            NIC(nic->nic)->stats.rx_dropped++;
+            nic->n->stats.rx_dropped++;
         }
 
         if (isr & RTL8169_ISR_TER) {
-            NIC(nic->nic)->stats.tx_dropped++;
+            nic->n->stats.tx_dropped++;
         }
 
         if (isr & RTL8169_ISR_TOK && nic->thr) {
@@ -280,9 +287,9 @@ char *rtl8169_link(rtl8169_t *nic) {
  * @param size Size
  * @param buffer Buffer 
  */
-ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+static ssize_t rtl8169_send(nic_t *nnic, size_t size, char *buffer) {
     if (!size) return 0;
-    rtl8169_t *nic = (rtl8169_t*)NIC(node)->driver;
+    rtl8169_t *nic = (rtl8169_t*)nnic->driver;
 
     spinlock_acquire(&nic->lock);
 
@@ -313,8 +320,8 @@ ssize_t rtl8169_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
     // Inform NIC gracefully
     RTL8169_WRITE8(RTL8169_REG_TPPoll, RTL8169_TPPoll_NPQ);
 
-    NIC(node)->stats.tx_bytes += size;
-    NIC(node)->stats.tx_packets++;
+    nnic->stats.tx_bytes += size;
+    nnic->stats.tx_packets++;
 
     spinlock_release(&nic->lock);
     return size;
@@ -410,32 +417,26 @@ int rtl8169_init(pci_device_t *device) {
     RTL8169_WRITE16(RTL8169_REG_ISR, 0xFFFF);
 
     // Create NIC object
-    nic->nic = nic_create("rtl8169", mac, NIC_TYPE_ETHERNET, (void*)nic);
+    char name[128];
+    snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
+    nic->n = nic_create(name, NIC_TYPE_ETHERNET, &rtl8169_nic_ops, mac, (void*)nic);
     
     // Link speed
     LOG(INFO, "Link speed: %s\n", rtl8169_link(nic));
 
     // Update link status
     if (RTL8169_READ8(RTL8169_REG_PHYStatus) & RTL8169_PHYStatus_LINKSTS) {
-        NIC(nic->nic)->state = NIC_STATE_UP;
+        nic->n->state = NIC_STATE_UP;
     } else {
-        NIC(nic->nic)->state = NIC_STATE_DOWN;
+        nic->n->state = NIC_STATE_DOWN;
     }
 
     // Make receive kernel thread
     nic->recv_proc = process_createKernel("rtl8169 receiever", PROCESS_KERNEL, PRIORITY_LOW, rtl8169_thread, (void*)nic);
     scheduler_insertThread(nic->recv_proc->main_thread);
-    
-    nic->nic->write = rtl8169_writePacket;
-
 
     // Set MTU
-    NIC(nic->nic)->mtu = 1500;
-
-    // Mount the NIC!
-    char name[128];
-    snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
-    nic_register(nic->nic, name);
+    nic->n->mtu = 1500;
 
     return 0;
 }

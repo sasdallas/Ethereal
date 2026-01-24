@@ -29,6 +29,9 @@
 #define IPV4_PROTOCOL_TCP       6
 #define IPV4_PROTOCOL_UDP       17
 
+/* Flags */
+#define IPV4_FLAG_MF            0x2000
+
 /* Defaults */
 #define IPV4_DEFAULT_TTL        64
 
@@ -63,7 +66,7 @@ typedef struct ipv4_packet {
  * @param size The size of the payload that was received
  * @returns 0 on success
  */
-typedef int (*ipv4_handler_t)(fs_node_t *nic, void *frame, size_t size);
+typedef int (*ipv4_handler_t)(nic_t *nic, void *frame, size_t size);
 
 /**** FUNCTIONS ****/
 
@@ -96,9 +99,9 @@ uint16_t ipv4_checksum(ipv4_packet_t *packet);
  * @param protocol Protocol to send, @c IPV4_PROTOCOL_xxx
  * @param frame Frame to send
  * @param size Size of the frame
- * @returns 0 on successful send
+ * @returns Size sent or error code
  */
-int ipv4_send(fs_node_t *nic, in_addr_t dest, uint8_t protocol, void *frame, size_t size);
+ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, size_t size);
 
 /**
  * @brief Send an IPv4 packet
@@ -114,6 +117,6 @@ int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet);
  * @param nic_node The NIC that got the packet 
  * @param size The size of the packet
  */
-int ipv4_handle(void *frame, fs_node_t *nic_node, size_t size);
+int ipv4_handle(void *frame, nic_t *nic_node, size_t size);
 
 #endif

@@ -521,12 +521,12 @@ _error:
  * @param type The type of file to look for
  * @returns 1 on valid ELF file, 0 on invalid
  */
-int elf_check(fs_node_t *file, int type) {
+int elf_check(vfs_file_t *file, int type) {
     if (!file) return 0;
 
     // Read the EHDR field into a temporary holder
     Elf64_Ehdr ehdrtmp;
-    if (fs_read(file, 0, sizeof(Elf64_Ehdr), (uint8_t*)&ehdrtmp) != sizeof(Elf64_Ehdr)) {
+    if (vfs_read(file, 0, sizeof(Elf64_Ehdr), (char*)&ehdrtmp) != sizeof(Elf64_Ehdr)) {
         LOG(ERR, "Failed to read ELF file\n");
         return 0;
     }
@@ -547,7 +547,7 @@ int elf_check(fs_node_t *file, int type) {
         // !!!: Load PHDR sections into memory
         for (int i = 0; i < ehdrtmp.e_phnum; i++) {
             Elf64_Phdr phdr;
-            if (fs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (uint8_t*)&phdr) != sizeof(Elf64_Phdr)) {
+            if (vfs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (char*)&phdr) != sizeof(Elf64_Phdr)) {
                 LOG(ERR, "Error reading PHDR %d into memory\n", ehdrtmp.e_phnum);
                 return 0;
             }
@@ -567,7 +567,7 @@ int elf_check(fs_node_t *file, int type) {
  * @param flags The flags to use (ELF_KERNEL or ELF_USER)
  * @returns A pointer to the file that can be passed to @c elf_startExecution or @c elf_findSymbol - or NULL if there was an error. 
  */
-uintptr_t elf_load(fs_node_t *node, int flags) {
+uintptr_t elf_load(vfs_file_t *node, int flags) {
     if (!node) return 0x0;
 
     // Check the file
@@ -576,9 +576,9 @@ uintptr_t elf_load(fs_node_t *node, int flags) {
     }
 
     // Now we can read the full file into a buffer 
-    uint8_t *fbuf = kmalloc(node->length);
-    memset(fbuf, 0, node->length);
-    if (fs_read(node, 0, node->length, fbuf) != (ssize_t)node->length) {
+    size_t len = inode_size(node->inode);
+    uint8_t *fbuf = kmalloc(len);
+    if (vfs_read(node, 0, len, (char*)fbuf) != (ssize_t)len) {
         LOG(ERR, "Failed to read ELF file\n");
         return 0x0;
     }
@@ -716,10 +716,10 @@ void elf_createImage(uintptr_t elf_address) {
  * @returns Interpreter string on success or NULL on failure
  * @note Free this yourself
  */
-char *elf_getInterpreter(fs_node_t *file) {
+char *elf_getInterpreter(vfs_file_t *file) {
     // Read the EHDR field into a temporary holder
     Elf64_Ehdr ehdrtmp;
-    if (fs_read(file, 0, sizeof(Elf64_Ehdr), (uint8_t*)&ehdrtmp) != sizeof(Elf64_Ehdr)) {
+    if (vfs_read(file, 0, sizeof(Elf64_Ehdr), (char*)&ehdrtmp) != sizeof(Elf64_Ehdr)) {
         LOG(ERR, "Failed to read ELF file\n");
         return NULL;
     }
@@ -727,7 +727,7 @@ char *elf_getInterpreter(fs_node_t *file) {
 
     for (int i = 0; i < ehdrtmp.e_phnum; i++) {
         Elf64_Phdr phdr;
-        if (fs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (uint8_t*)&phdr) != sizeof(Elf64_Phdr)) {
+        if (vfs_read(file, ehdrtmp.e_phoff + (ehdrtmp.e_phentsize * i), sizeof(Elf64_Phdr), (char*)&phdr) != sizeof(Elf64_Phdr)) {
             LOG(ERR, "Error reading PHDR %d into memory\n", ehdrtmp.e_phnum);
             return NULL;
         }
@@ -736,7 +736,7 @@ char *elf_getInterpreter(fs_node_t *file) {
             // Found the PT_DYNAMIC, read it in
             char *buffer = kmalloc(phdr.p_filesz); // rip stack
 
-            if (fs_read(file, phdr.p_offset, phdr.p_filesz, (uint8_t*)buffer) != (ssize_t)phdr.p_filesz) {
+            if (vfs_read(file, phdr.p_offset, phdr.p_filesz, buffer) != (ssize_t)phdr.p_filesz) {
                 LOG(ERR, "Error reading PT_DYNAMIC section into memory\n");
                 kfree(buffer);
                 return NULL;
@@ -757,11 +757,12 @@ char *elf_getInterpreter(fs_node_t *file) {
  * @param info Output @c elf_dynamic_info_t
  * @returns 0 on success
  */
-int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info) {
+int elf_loadDynamicELF(vfs_file_t *file, elf_dynamic_info_t *info) {
     // TODO: We could merge this with elf_load.. improve flags?
 
-    uint8_t *buf = kmalloc(file->length);
-    if (fs_read(file, 0, file->length, buf) != (ssize_t)file->length) {
+    size_t len = inode_size(file->inode);
+    uint8_t *buf = kmalloc(len);
+    if (vfs_read(file, 0, len, (char*)buf) != (ssize_t)len) {
         LOG(ERR, "Error reading ELF file\n");
         return 1;
     }

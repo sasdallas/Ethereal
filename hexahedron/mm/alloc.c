@@ -34,8 +34,9 @@ static size_t __alloc_cache_sizes[ALLOC_CACHES] = {
 /* Allocator caches */
 slab_cache_t *alloc_caches[ALLOC_CACHES] = { 0 };
 
-/* UNCOMMENT TO ENABLE TRACKING */
+/* UNCOMMENT TO ENABLE TRACKING/POISONING */
 #define ENABLE_TRACKING 1
+// #define ENABLE_POISON 1 // Slows down
 
 /* Magic values */
 #define ALLOC_MAGIC_ALLOCATED       0xCAFEBABE
@@ -181,6 +182,7 @@ inline void *kmalloc(size_t size) {
  * @brief krealloc
  */
 __attribute__((malloc)) void *krealloc(void *ptr, size_t size) {
+    if (!ptr) return kmalloc(size);
     alloc_header_t *old_h = ALLOC_GETHEADER(ptr);
     // assert(old_h->magic == ALLOC_MAGIC_ALLOCATED);
 

@@ -8,6 +8,7 @@ OUT_BUILD = $(BUILD_OUTPUT_DIRECTORY)/hexahedron
 # Edit this to add more source directories. MAKE SURE TO HAVE SUBDIRECTORIES SEPARATE!
 SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/sound drivers/storage debug mem misc gfx fs loader task mm
 SOURCE_DIRECTORIES += klib/string klib/stdio klib/stdlib klib/time
+SOURCE_DIRECTORIES += task/syscalls
 
 # Include the architecture Make configuration
 include arch/$(BUILD_ARCH)/make.config

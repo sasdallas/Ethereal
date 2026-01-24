@@ -19,7 +19,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 /**** DEFINITIONS ****/
 
@@ -33,7 +33,7 @@
  */
 typedef struct fd {
     int fd_number;              // File descriptor number
-    fs_node_t *node;            // File that this file descriptor is connected to
+    vfs_file_t *node;           // File that this file descriptor is connected to
     mode_t mode;                // Mode of file descriptor
     uint64_t offset;            // Offset of file descriptor
     void *dev;                  // Driver object
@@ -73,7 +73,7 @@ int fd_destroyTable(struct process *process);
  * @param node The node to add the file descriptor for
  * @returns A pointer to the file descriptor (for reference - it is already added to the process)
  */
-fd_t *fd_add(struct process *process, fs_node_t *file);
+fd_t *fd_add(struct process *process, vfs_file_t *file);
 
 /**
  * @brief Destroy a file descriptor for a process

@@ -45,6 +45,7 @@ MUTEX_DEFINE_LOCAL(arp_mutex);
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s] ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
 
+#define ARP_DEBUG
 
 /**
  * @brief ARP KernelFS read method
@@ -87,7 +88,7 @@ arp_table_entry_t *arp_get_entry(in_addr_t address) {
  * @param nic The NIC the entry corresponds to
  * @returns 0 on success
  */
-int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
+int arp_add_entry(in_addr_t address, uint8_t *mac, int type, nic_t *nic) {
     if (!nic || !mac) return 1;
 
     // First allocate the entry
@@ -100,13 +101,16 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic) {
     mutex_acquire(&arp_mutex);
     hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)entry);
     list_append(arp_entries, (void*)entry);
-    mutex_release(&arp_mutex);
 
     // Is someone waiting?
+
+    LOG(DEBUG, "ARP doing wakeup on anyone waiting for %x\n", address);
     if (hashmap_has(arp_waiters, (void*)(uintptr_t)address)) {
+    LOG(DEBUG, "Got one person\n");
         thread_t *thr = hashmap_get(arp_waiters, (void*)(uintptr_t)address);
         sleep_wakeup(thr);
     }
+    mutex_release(&arp_mutex);
 
     return 0;
 }
@@ -140,13 +144,13 @@ int arp_remove_entry(in_addr_t address) {
  * 
  * @returns 0 on successful send
  */
-int arp_request(fs_node_t *node, in_addr_t address) {
-    if (!node || !NIC(node)) return 1;
+int arp_request(nic_t *nic, in_addr_t address) {
     if (!arp_map) return 1;
  
-    nic_t *nic = NIC(node);
- 
-    LOG_NIC(DEBUG, node, " ARP: Request to find address %s %08x\n", inet_ntoa((struct in_addr){ .s_addr = address }), address);
+
+#ifdef ARP_DEBUG
+    LOG(DEBUG, " ARP: Request to find address %s %08x\n", inet_ntoa((struct in_addr){ .s_addr = address }), address);
+#endif
 
     // Construct an ARP packet
     arp_packet_t packet = { 0 };
@@ -164,7 +168,7 @@ int arp_request(fs_node_t *node, in_addr_t address) {
     if (nic->ipv4_address) packet.spa = nic->ipv4_address;
 
     // Send the packet!
-    ethernet_send(node, &packet, ARP_PACKET_TYPE, ETHERNET_BROADCAST_MAC, sizeof(arp_packet_t));
+    ethernet_send(nic, &packet, ARP_PACKET_TYPE, ETHERNET_BROADCAST_MAC, sizeof(arp_packet_t));
 
     return 0;
 }
@@ -176,19 +180,21 @@ int arp_request(fs_node_t *node, in_addr_t address) {
  * 
  * @returns 0 on success. Timeout, by default, is 20s
  */
-int arp_search(fs_node_t *nic, in_addr_t address) {
+int arp_search(nic_t *nic, in_addr_t address) {
     // Request
     if (arp_request(nic, address)) return 1;
     if (arp_get_entry(address)) return 0;
 
     mutex_acquire(&arp_mutex);
-    hashmap_set(arp_map, (void*)(uintptr_t)address, current_cpu->current_thread);
+    hashmap_set(arp_waiters, (void*)(uintptr_t)address, current_cpu->current_thread);
 
     sleep_time(1, 0);
     mutex_release(&arp_mutex);
 
     int w = sleep_enter();
     if (w == WAKEUP_ANOTHER_THREAD) return 0;
+
+    LOG(ERR, "woke up due to time? :(\n");
 
     mutex_acquire(&arp_mutex);
     hashmap_remove(arp_map, (void*)(uintptr_t)address);
@@ -203,7 +209,7 @@ int arp_search(fs_node_t *nic, in_addr_t address) {
  * @param packet The previous packet received
  * @param nic_node The NIC node to send on
  */
-static void arp_reply(arp_packet_t *packet, fs_node_t *nic_node) {
+static void arp_reply(arp_packet_t *packet, nic_t *nic) {
     // Allocate a response packet
     arp_packet_t resp = { 0 };
 
@@ -215,15 +221,15 @@ static void arp_reply(arp_packet_t *packet, fs_node_t *nic_node) {
     resp.htype = htons(ARP_HTYPE_ETHERNET);  // TODO
 
     // SHA and THA
-    memcpy(resp.sha, NIC(nic_node)->mac, 6);
+    memcpy(resp.sha, nic->mac, 6);
     memcpy(resp.tha, packet->sha, 6);
     
     // SPA and TPA
-    resp.spa = NIC(nic_node)->ipv4_address;
+    resp.spa = nic->ipv4_address;
     resp.tpa = packet->spa;
 
     // Send the packet
-    ethernet_send(nic_node, &resp, ARP_PACKET_TYPE, packet->sha, sizeof(arp_packet_t));
+    ethernet_send(nic, &resp, ARP_PACKET_TYPE, packet->sha, sizeof(arp_packet_t));
 }
 
 /**
@@ -241,47 +247,55 @@ static void __inet_ntoa(const uint32_t src_addr, char * out) {
 /**
  * @brief Handle ARP packet
  */
-int arp_handle_packet(void *frame, fs_node_t *nic_node, size_t size) {
+static int arp_handle(void *frame, nic_t *nic, size_t size) {
     arp_packet_t *packet = (arp_packet_t*)frame;
-    LOG_NIC(DEBUG, nic_node, " ARP: htype=%04x ptype=%04x op=%04x hlen=%d plen=%d\n", ntohs(packet->htype), ntohs(packet->ptype), ntohs(packet->oper), packet->hlen, packet->plen);
 
-    nic_t *nic = NIC(nic_node);
+#ifdef ARP_DEBUG
+    LOG(DEBUG, " ARP: htype=%04x ptype=%04x op=%04x hlen=%d plen=%d\n", ntohs(packet->htype), ntohs(packet->ptype), ntohs(packet->oper), packet->hlen, packet->plen);
+#endif
 
     // What do they want from us?
     if (ntohs(packet->ptype) == IPV4_PACKET_TYPE) {
         // Check the operation requested
         if (ntohs(packet->oper) == ARP_OPERATION_REQUEST) {
             // They're looking for someone. Who?
+        #ifdef ARP_DEBUG
             char *spa = inet_ntoa((struct in_addr){.s_addr = packet->spa});
-            LOG_NIC(DEBUG, nic_node, " ARP: Request from " MAC_FMT " (IP %s) ", MAC(packet->sha), spa);
+            LOG(DEBUG, " ARP: Request from " MAC_FMT " (IP %s) ", MAC(packet->sha), spa);
 
             char *tpa = inet_ntoa((struct in_addr){.s_addr = packet->tpa});
             LOG(NOHEADER, "for IP %s\n", tpa);
+        #endif
 
             // Do we need to cache them?
             arp_table_entry_t *exist = arp_get_entry((in_addr_t)packet->spa);
             if (!exist || memcmp(packet->sha, exist->hwmac, 6)) {
                 // Cache them
-                arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic_node);
+                arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic);
             }
 
             
             // Ok, are they looking for us?
             if (nic->ipv4_address && packet->tpa == nic->ipv4_address) {
                 // Yes, they are. Construct a response packet and send it back
-                LOG_NIC(DEBUG, nic_node, " ARP: Request from " MAC_FMT " (IP: %s) with us (" MAC_FMT ", IP %s)\n", MAC(packet->sha), spa, MAC(nic->mac), inet_ntoa((struct in_addr){ .s_addr = nic->ipv4_address } ));
-                arp_reply(packet, nic_node);
+            #ifdef ARP_DEBUG
+                LOG(DEBUG, " ARP: Request from " MAC_FMT " (IP: %s) with us (" MAC_FMT ", IP %s)\n", MAC(packet->sha), spa, MAC(nic->mac), inet_ntoa((struct in_addr){ .s_addr = nic->ipv4_address } ));
+            #endif
+
+                arp_reply(packet, nic);
             }
         } else {
+        #ifdef ARP_DEBUG
             char spa[17];
             __inet_ntoa(packet->spa, spa);
-            LOG_NIC(DEBUG, nic_node, " ARP: Response from " MAC_FMT " to show they are IP %s\n", MAC(packet->sha), spa);
+            LOG(DEBUG, " ARP: Response from " MAC_FMT " to show they are IP %s\n", MAC(packet->sha), spa);
+        #endif
 
             // Cache!
-            arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic_node);
+            arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic);
         }
     } else {
-        LOG_NIC(DEBUG, nic_node, " ARP: Invalid protocol type %04x\n", ntohs(packet->ptype));
+        LOG(WARN, " ARP: Invalid protocol type %04x\n", ntohs(packet->ptype));
     }
 
     return 0;
@@ -294,7 +308,7 @@ static int arp_init() {
     arp_map = hashmap_create_int("arp route map", 20);
     arp_waiters = hashmap_create_int("arp waiter map", 20);
     arp_entries = list_create("arp entries");
-    ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle_packet);
+    ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle);
     kernelfs_createEntry(kernelfs_net_dir, "arp", arp_readKernelFS, NULL);
     return 0;
 }

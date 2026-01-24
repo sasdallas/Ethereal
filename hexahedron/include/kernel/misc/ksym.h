@@ -16,10 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs.h>
-
-/**** TYPES ****/
-
+#include <kernel/fs/vfs_new.h>
 
 /**** FUNCTIONS ****/
 
@@ -28,7 +25,7 @@
  * @param file The symbol map file
  * @returns Number of symbols loaded or error code
  */
-int ksym_load(fs_node_t *file);
+int ksym_load(vfs_file_t *file);
 
 /**
  * @brief Resolve a symbol name to a symbol address

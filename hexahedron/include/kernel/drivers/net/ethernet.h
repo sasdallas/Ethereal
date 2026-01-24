@@ -40,10 +40,10 @@ typedef struct ethernet_packet {
 /**
  * @brief EtherType hander
  * @param frame The frame that was received (does not include the ethernet header)
- * @param nic_node The NIC that got the packet 
+ * @param nic The NIC that got the packet 
  * @param size The size of the packet
  */
-typedef int (*ethertype_handler_t)(void *frame, fs_node_t *nic_node, size_t size);
+typedef int (*ethertype_handler_t)(void *frame, nic_t *nic, size_t size);
 
 /**** MACROS ****/
 
@@ -70,10 +70,10 @@ int ethernet_unregisterHandler(uint16_t ethertype);
 /**
  * @brief Handle a packet that was received by an Ethernet device
  * @param packet The ethernet packet that was received
- * @param nic_node The NIC that got the packet
+ * @param nic The NIC that got the packet
  * @param size The size of the packet
  */
-void ethernet_handle(ethernet_packet_t *packet, fs_node_t *nic_node, size_t size);
+void ethernet_handle(ethernet_packet_t *packet, nic_t *nic, size_t size);
 
 /**
  * @brief Send a packet to an Ethernet device
@@ -83,7 +83,7 @@ void ethernet_handle(ethernet_packet_t *packet, fs_node_t *nic_node, size_t size
  * @param dest_mac The destination MAC address of the packet
  * @param size The size of the packet
  */
-void ethernet_send(fs_node_t *nic_node, void *payload, uint16_t type, uint8_t *dest_mac, size_t size);
+ssize_t ethernet_send(nic_t *nic, void *payload, uint16_t type, uint8_t *dest_mac, size_t size);
 
 
 

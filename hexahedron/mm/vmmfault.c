@@ -61,8 +61,20 @@ int vmm_fault(vmm_fault_information_t *info) {
         // Non-present - check the range
         if (r->vmm_flags & VM_FLAG_FILE) {
             // Map a page in
-            LOG(DEBUG, "Mapping a page in...\n");
-            fs_mmap(r->node, (void*)info->address, PAGE_SIZE, info->address - r->start);
+            // TODO: Page cache which will make this a lot easier
+            assert(r->file.node->ops->mmap);
+
+            void *addr = (void*)PAGE_ALIGN_DOWN(info->address);
+            uintptr_t offset = r->file.offset + ((uintptr_t)addr - r->start);
+            int res = file_mmap(r->file.node, addr, PAGE_SIZE, offset, r->mmu_flags);
+            if (res) {
+                LOG(ERR, "Mapping a page in failed (error code %d)\n", res);
+                mutex_release(sp->mut);
+                return VMM_FAULT_UNRESOLVED;
+            }
+
+            // LOG(DEBUG, "Mapping a page in...\n");
+            // fs_mmap(r->node, (void*)info->address, PAGE_SIZE, info->address - r->start);
         } else {
             // Anonymous memory, map a page
             arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);

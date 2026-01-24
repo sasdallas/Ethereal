@@ -15,7 +15,6 @@
 #define DRIVERS_NET_NIC_H
 
 /**** INCLUDES ****/
-#include <kernel/drivers/net/ethernet.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/kernelfs.h>
 #include <stdint.h>
@@ -52,6 +51,16 @@ typedef struct nic_stats {
     uint32_t tx_bytes;                  // Total transmitted bytes
 } nic_stats_t;
 
+struct nic;
+
+/**
+ * @brief NIC operations
+ */
+typedef struct nic_ops {
+    ssize_t (*send)(struct nic *nic, size_t size, char *buffer);
+    int (*ioctl)(struct nic *nic, unsigned long request, void *argp);
+} nic_ops_t;
+
 /**
  * @brief NIC structure
  * 
@@ -59,18 +68,18 @@ typedef struct nic_stats {
  */
 typedef struct nic {
     char name[128];                     // Name of the NIC
-    int type;                           // Type of the NIC
+    unsigned char type;                 // Type of the NIC
     nic_stats_t stats;                  // Statistics for the NIC
     size_t mtu;                         // MTU for the NIC
-    int state;                          // NIC state (default: UP)
+    unsigned char state;                // NIC state (default: UP)
+    nic_ops_t *ops;                     // NIC operations
 
     uint8_t mac[6];                     // MAC address of the NIC
     fs_node_t *parent_node;             // Parent node of the NIC
     void *driver;                       // Driver-defined field
 
-    list_t *raw_sockets;                // Raw sockets for the NIC
-
-    // TODO: Move this to another structure, perhaps
+    // TODO: Move this to another structure, perhaps?
+    atomic_int ip_id;                   // IP current packet ID
     uint32_t ipv4_address;              // IPv4 address
     uint32_t ipv4_subnet;               // IPv4 subnet
     uint32_t ipv4_gateway;              // IPv4 gateway
@@ -83,19 +92,24 @@ typedef struct nic {
 
 extern kernelfs_dir_t *kernelfs_net_dir;
 
+/**** INLINES ****/
+
+static inline ssize_t nic_send(nic_t *nic, size_t size, char *buffer) { return nic->ops->send(nic, size, buffer); }
+
 /**** FUNCTIONS ****/
 
 /**
  * @brief Create a new NIC structure
  * @param name Name of the NIC
- * @param mac 6-byte MAC address of the NIC
  * @param type Type of the NIC
+ * @param ops NIC operations
+ * @param mac 6-byte MAC address of the NIC
  * @param driver Driver-defined field in the NIC. Can be a structure of your choosing
  * @returns A filesystem node, setup methods and go
  * 
  * @note Please remember to setup your NIC's IP address fields
  */
-fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver);
+nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driver);
 
 /**
  * @brief Register a new NIC to the filesystem
@@ -104,6 +118,12 @@ fs_node_t *nic_create(char *name, uint8_t *mac, int type, void *driver);
  * @returns 0 on success
  */
 int nic_register(fs_node_t *nic_device, char *interface_name);
+
+/**
+ * @brief Destroy NIC interface
+ * @param nic The NIC to destroy
+ */
+int nic_destroy(nic_t *nic);
 
 /**
  * @brief Find a NIC device by their node name

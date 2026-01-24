@@ -54,5 +54,7 @@
 char *strsignal(int sig) {
     // if (sig > NSIG || sig < 0) sig = NSIG;
     // strncpy(__sigstr, __siglist[sig], 256);
-    return "Forgot";
+    // return __sigstr;
+
+    return "lwk forgot";
 }

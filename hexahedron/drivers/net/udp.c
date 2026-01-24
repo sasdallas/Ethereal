@@ -36,7 +36,29 @@ hashmap_t *udp_port_map = NULL;
 spinlock_t udp_port_lock = { 0 };
 
 /* Last port allocated */
-static in_port_t udp_port_last = 2332;
+static atomic_int udp_port_last = 2332;
+
+static ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
+static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
+static int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
+static int udp_close(sock_t *sock);
+
+static sock_ops_t udp_sock_ops = {
+    .sendmsg = udp_sendmsg,
+    .recvmsg = udp_recvmsg,
+    .accept = NULL,
+    .bind = udp_bind,
+    .close = udp_close,
+    .connect = NULL,
+    .getpeername = NULL,
+    .getsockname = NULL,
+    .getsockopt = NULL,
+    .setsockopt = NULL,
+    .listen = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
+};
+
 
 
 /**
@@ -45,16 +67,18 @@ static in_port_t udp_port_last = 2332;
  * @param frame The frame including the IPv4 packet header
  * @param size The size of the packet
  */
-int udp_handle(fs_node_t *nic, void *frame, size_t size) {
+int udp_handle(nic_t *nic, void *frame, size_t size) {
     ipv4_packet_t *ip_packet = (ipv4_packet_t*)frame;
     udp_packet_t *packet = (udp_packet_t*)ip_packet->payload;
     
-    LOG_NIC(DEBUG, nic, "Receive packet src_port=%d dest_port=%d length=%d\n", ntohs(packet->src_port), ntohs(packet->dest_port), ntohs(packet->length));
+    LOG(DEBUG, "Receive packet src_port=%d dest_port=%d length=%d\n", ntohs(packet->src_port), ntohs(packet->dest_port), ntohs(packet->length));
 
     if (hashmap_has(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
         // We have a handler!
         sock_t *sock = (sock_t*)hashmap_get(udp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port));
         socket_received(sock, frame, size);
+    } else {
+        LOG(WARN, "No port is open to receive this...\n");
     }
 
     return 0;
@@ -66,7 +90,7 @@ int udp_handle(fs_node_t *nic, void *frame, size_t size) {
  * @param msg The message to receive
  * @param length The length to receive
  */
-ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
 
     // Is it bound?
@@ -74,6 +98,8 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!udpsock->port) {
         return -ENOTCONN;
     }
+
+    LOG(DEBUG, "udp_recvmsg trace\n");
 
     sock_recv_packet_t *pkt = NULL;
 
@@ -125,7 +151,7 @@ ssize_t udp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @param msg The message to send
  * @param length The length to send
  */
-ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
 
     // Did they specify a msg_name?
@@ -147,10 +173,9 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     udp_sock_t *udpsock = (udp_sock_t*)sock->driver;
     if (!udpsock->port) {
         // Try to get a port
+        udpsock->port = udp_port_last++;
         spinlock_acquire(&udp_port_lock);
-        while (hashmap_has(udp_port_map, (void*)(uintptr_t)udp_port_last)) udp_port_last++;
-        hashmap_set(udp_port_map, (void*)(uintptr_t)udp_port_last, (void*)sock);
-        udpsock->port = udp_port_last;
+        hashmap_set(udp_port_map, (void*)(uintptr_t)udpsock->port, (void*)sock);
         spinlock_release(&udp_port_lock);
     }
 
@@ -163,19 +188,7 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     // UDP preserves message boundaries. Each iovec should contain one packet.
     for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         // Construct an IPv4 packet
-        ipv4_packet_t *pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
-        pkt->protocol = IPV4_PROTOCOL_UDP;
-        pkt->length = htons((sizeof(ipv4_packet_t) + sizeof(udp_packet_t) + msg->msg_iov[i].iov_len));
-        pkt->dest_addr = in->sin_addr.s_addr;
-        pkt->src_addr = nic->ipv4_address;
-        pkt->ttl = IPV4_DEFAULT_TTL;
-        pkt->offset = htons(0x4000);
-        pkt->versionihl = 0x45;
-        pkt->checksum = 0;
-        pkt->checksum = htons(ipv4_checksum(pkt));
-
-        // UDP packet
-        udp_packet_t *udp_pkt = (udp_packet_t*)(pkt->payload);
+        udp_packet_t *udp_pkt = kmalloc( sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
         udp_pkt->src_port = htons(udpsock->port);
         udp_pkt->dest_port = in->sin_port;
         udp_pkt->length = htons(sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
@@ -183,10 +196,11 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         // Copy the payload
         memcpy(udp_pkt->data, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-
-        ipv4_sendPacket(nic->parent_node, pkt);
-        kfree(pkt);
-        sent_bytes += msg->msg_iov[i].iov_len;
+    
+        ssize_t r = ipv4_send(nic, in->sin_addr.s_addr, IPV4_PROTOCOL_UDP, udp_pkt, sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
+        kfree(udp_pkt);
+        if (r < 0) return r;
+        sent_bytes += r;
     }
 
     return sent_bytes;
@@ -198,7 +212,7 @@ ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @param sockaddr The address to bind to
  * @param addrlen The length of the address structure
  */
-int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+static int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     // Check to see if this socket is bound already
     udp_sock_t *udpsock = (udp_sock_t*)sock->driver;
     if (udpsock->port) return -EINVAL; // Already bound
@@ -226,7 +240,7 @@ int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
  * @brief UDP close method
  * @param sock The socket to close
  */
-int udp_close(sock_t *sock) {
+static int udp_close(sock_t *sock) {
     udp_sock_t *udpsock = (udp_sock_t*)sock->driver;
     LOG(DEBUG, "Port %d unbound from socket %d\n", udpsock->port, sock->id);
 
@@ -243,11 +257,12 @@ int udp_close(sock_t *sock) {
  * @brief Create a UDP socket
  */
 sock_t *udp_socket() {
-    sock_t *sock = kzalloc(sizeof(sock_t));
+    sock_t *sock = socket_allocate(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     sock->sendmsg = udp_sendmsg;
     sock->recvmsg = udp_recvmsg;
     sock->bind = udp_bind;
     sock->close = udp_close;
+    sock->ops = &udp_sock_ops;
 
     udp_sock_t *udpsock = kzalloc(sizeof(udp_sock_t));
     sock->driver = (void*)udpsock;

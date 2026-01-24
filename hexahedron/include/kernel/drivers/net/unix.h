@@ -65,7 +65,7 @@ typedef struct unix_conn_req {
 typedef struct unix_sock {
     volatile uint8_t state;         // Socket state
     sock_t *sock;                   // Socket
-    fs_node_t *node;                // Bound socket node
+    vfs_inode_t *node;              // Bound socket node (not used except to drop ref)
     char *un_path;                  // Node path
     struct unix_sock *peer;         // Peer connected UNIX socket
     bool is_listener;               // !!!: stupid hack

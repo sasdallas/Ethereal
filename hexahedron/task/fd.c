@@ -42,7 +42,7 @@ int fd_destroyTable(struct process *process) {
     for (size_t i = 0; i < process->fd_table->total; i++) {
         fd_t *fd = process->fd_table->fds[i];
         if (fd) {
-            fs_close(fd->node);
+            vfs_close(fd->node);
             kfree(fd);
         }
     }
@@ -60,10 +60,8 @@ int fd_destroyTable(struct process *process) {
  * @param process The process to add the file descriptor to
  * @param node The node to add the file descriptor for
  * @returns A pointer to the file descriptor (for reference - it is already added to the process)
- * 
- * @note You should increment the file's refcount yourself
  */
-fd_t *fd_add(struct process *process, fs_node_t *node) {
+fd_t *fd_add(struct process *process, vfs_file_t *node) {
     if (!process || !node) return NULL;
 
     spinlock_acquire(&process->fd_table->lock);
@@ -86,6 +84,8 @@ fd_t *fd_add(struct process *process, fs_node_t *node) {
             new_fd->node = node;
             process->fd_table->fds[i] = new_fd;
             process->fd_table->amount++;
+
+            file_hold(node);
             
             spinlock_release(&process->fd_table->lock);
             return new_fd;
@@ -111,7 +111,7 @@ int fd_remove(struct process *process, int fd_number) {
 
     // Get the file descriptor
     fd_t *fd = process->fd_table->fds[fd_number];
-    fs_close(fd->node);
+    vfs_close(fd->node);
     if (fd->path) kfree(fd->path);
     kfree(fd);
     process->fd_table->fds[fd_number] = NULL;
@@ -143,7 +143,7 @@ int fd_duplicate(struct process *process, int oldfd, int newfd) {
     fd_t *fd = process->fd_table->fds[newfd];
     if (fd) {
         // Close existing file
-        fs_close(fd->node);
+        vfs_close(fd->node);
     } else {
         // Allocate a file descriptor there
         fd = kzalloc(sizeof(fd_t));
@@ -154,7 +154,7 @@ int fd_duplicate(struct process *process, int oldfd, int newfd) {
     fd->fd_number = newfd;
     fd->offset = fd_old->offset;
     fd->mode = fd_old->mode;
-    fs_open(fd->node, 0);
+    file_open(fd->node, 0); // TODO: fd->open_flags
 
     // Done
     spinlock_release(&process->fd_table->lock);

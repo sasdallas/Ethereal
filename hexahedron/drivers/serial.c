@@ -101,20 +101,20 @@ static int serial_writeOut(pty_t *pty, char ch) {
  * @brief Initialize serial port VFS hooks
  */
 static int serial_init() {
-    for (int i = 0; i < MAX_COM_PORTS; i++) {
-        serial_port_t *p = serial_initializePort(i+1, 9600); // !!!: stupid
+    // for (int i = 0; i < MAX_COM_PORTS; i++) {
+    //     serial_port_t *p = serial_initializePort(i+1, 9600); // !!!: stupid
 
-        if (p) {
-            serial_setPort(p);
-            serial_ptys[i] = pty_create(NULL, NULL, i);
-            serial_ptys[i]->write_out = serial_writeOut;
-            serial_ptys[i]->_impl = ports[i];
-            serial_reinitializePort(p, &serial_ptys[i]->tios);
-            char name[128] = { 0 };
-            snprintf(name, 128, "/device/ttyS%d", i);
-            vfs_mount(serial_ptys[i]->slave, name);
-        }
-    }
+    //     // if (p) {
+    //     //     serial_setPort(p);
+    //     //     serial_ptys[i] = pty_create(NULL, NULL, i);
+    //     //     serial_ptys[i]->write_out = serial_writeOut;
+    //     //     serial_ptys[i]->_impl = ports[i];
+    //     //     serial_reinitializePort(p, &serial_ptys[i]->tios);
+    //     //     char name[128] = { 0 };
+    //     //     snprintf(name, 128, "/device/ttyS%d", i);
+    //     //     vfs_mount(serial_ptys[i]->slave, name);
+    //     // }
+    // }
 
     return 0;
 }

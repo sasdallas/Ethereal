@@ -16,7 +16,7 @@
 #include <kernel/loader/elf_loader.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <sys/wait.h>
@@ -275,9 +275,16 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     // Create working directory
     if (parent && parent->wd_path) {
         process->wd_path = strdup(parent->wd_path);
+        process->wd_node = parent->wd_node;
+        inode_hold(process->wd_node);
     } else {
         // No parent, just use "/" I guess
         process->wd_path = strdup("/");
+    
+        // !!! violation of VFS things
+    extern vfs_inode_t *vfs_root_inode;
+        process->wd_node = vfs_root_inode;
+        if (vfs_root_inode) inode_hold(process->wd_node);
     }
 
     // Create tree node
@@ -323,7 +330,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
                     process->fd_table->fds[i]->offset = parent->fd_table->fds[i]->offset;
                     process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
                     
-                    process->fd_table->fds[i]->node = fs_copy(parent->fd_table->fds[i]->node);
+                    process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
                 }
             }
         }
@@ -406,6 +413,8 @@ void process_destroy(process_t *proc) {
 
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
+    vfs_close(proc->exe_image);
+    inode_release(proc->wd_node);
 
     // Destroy mmap mappings
     process_destroyMappings(proc);
@@ -478,7 +487,7 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
 /**
  * @brief Common process execute
  */
-int process_executeCommon(fs_node_t *file, uintptr_t *entry) {
+int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
     // Destroy previous threads
     if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
     if (current_cpu->current_process->thread_list) {
@@ -567,27 +576,28 @@ int process_executeCommon(fs_node_t *file, uintptr_t *entry) {
  * 
  * @todo There's a lot of pointless directory switching for some reason - need to fix
  */
-int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     // Execute dynamic loader
     // First, try to open the interpreter that's in PT_INTERP
     char *interpreter_path = elf_getInterpreter(file);
-    fs_node_t *interpreter = NULL;
+    vfs_file_t *interpreter;
+    int r = -1;
     if (interpreter_path) {
         // We have an interpreter path
         LOG(INFO, "Trying to execute interpreter: %s\n", interpreter_path);
-        interpreter = kopen(interpreter_path, 0);
+        r = vfs_open(interpreter_path, O_RDONLY, &interpreter);
         kfree(interpreter_path);
     }
 
     // Strike 2
-    if (!interpreter) {
+    if (r) {
         // Backup path: Run /usr/lib/ld.so
         LOG(INFO, "Trying to load interpreter: /usr/lib/ld.so\n");
-        interpreter = kopen("/usr/lib/ld.so", 0);
+        r = vfs_open("/usr/lib/ld.so", O_RDONLY, &interpreter);
     }
 
     // Strike 3
-    if (!interpreter) {
+    if (r) {
         LOG(ERR, "No interpreter available\n");
         return -ENOENT;
     }
@@ -601,7 +611,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
     uintptr_t entry;
     assert(!process_executeCommon(interpreter, &entry));
 
-    fs_close(interpreter);
+    vfs_close(interpreter);
 
     // Load the dynamic file
     elf_dynamic_info_t info;
@@ -610,7 +620,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
         return -ENOEXEC;
     }
 
-    fs_close(file);
+    current_cpu->current_process->exe_image = file;
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 
@@ -696,7 +706,7 @@ int process_executeDynamic(char *path, fs_node_t *file, int argc, char **argv, c
  * 
  * @todo There's a lot of pointless directory switching for some reason - need to fix
  */
-int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     if (!file) return -EINVAL;
     if (!current_cpu->current_process) return -EINVAL; // TODO: Handle this better
 
@@ -723,8 +733,7 @@ int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **e
     // Do the inner execution
     uintptr_t process_entrypoint;
     assert(!process_executeCommon(file, &process_entrypoint));
-
-    fs_close(file);
+    current_cpu->current_process->exe_image = file;
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
 

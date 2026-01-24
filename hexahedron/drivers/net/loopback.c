@@ -15,16 +15,22 @@
 #include <kernel/init.h>
 #include <arpa/inet.h>
 
+static ssize_t loopback_send(nic_t *n, size_t size, char *buffer);
+static nic_ops_t loopback_nic_ops = {
+    .send = loopback_send,
+    .ioctl = NULL
+};
+
 /**
- * @brief Loopback write
+ * @brief Loopback send
  */
-ssize_t loopback_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+static ssize_t loopback_send(nic_t *n, size_t size, char *buffer) {
     // Loop right back atcha
-    NIC(node)->stats.rx_bytes += size;
-    NIC(node)->stats.rx_packets++;
-    NIC(node)->stats.tx_bytes += size;
-    NIC(node)->stats.tx_packets++;
-    ethernet_handle((ethernet_packet_t*)buffer, node, size);
+    n->stats.rx_bytes += size;
+    n->stats.rx_packets++;
+    n->stats.tx_bytes += size;
+    n->stats.tx_packets++;
+    ethernet_handle((ethernet_packet_t*)buffer, n, size);
     return size;
 }
 
@@ -33,14 +39,12 @@ ssize_t loopback_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buff
  */
 static int loopback_install() {
     uint8_t mac[6] = {00, 00, 00, 00, 00, 00};
-    fs_node_t *nic_node = nic_create("loopback interface", mac, NIC_TYPE_ETHERNET, NULL);
+    nic_t *nic = nic_create("lo", NIC_TYPE_ETHERNET, &loopback_nic_ops, mac, NULL);
 
-    NIC(nic_node)->ipv4_address = inet_addr("127.0.0.1");
-    NIC(nic_node)->ipv4_subnet =  inet_addr("255.0.0.0");
-    NIC(nic_node)->mtu = 1500;
-
-    nic_node->write = loopback_write;
-    return nic_register(nic_node, "lo");
+    nic->ipv4_address = inet_addr("127.0.0.1");
+    nic->ipv4_subnet =  inet_addr("255.0.0.0");
+    nic->mtu = 1500;
+    return 0;
 }
 
 NET_INIT_ROUTINE(loopback, INIT_FLAG_DEFAULT, loopback_install);

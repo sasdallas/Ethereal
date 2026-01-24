@@ -1044,6 +1044,7 @@ static fs_node_t *kopen_relative(fs_node_t *current_node, char *path, unsigned i
                 if (symlink_buf[0] == '.') {
                     // TODO
                     LOG(ERR, "Relative symlinks are not supported (%s)\n", symlink_buf);
+                    fs_close(current_node);
                     return NULL;
                 }
 
@@ -1169,15 +1170,6 @@ _finish_node: ;
  * @returns A pointer to the file node or NULL if it couldn't be found
  */
 fs_node_t *kopen_user(const char *path, unsigned int flags) {
-    if (!path) return NULL;
-    if (!current_cpu->current_process) {
-        LOG(ERR, "kopen_user with no current process\n");
-        return NULL;
-    }
-
-    // Canonicalize
-    char *canonicalized = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)path);
-    fs_node_t *node = kopen(canonicalized, flags);
-    kfree(canonicalized);
-    return node;
+    assert(0 && "kopen_user");
+    return NULL;
 }

@@ -43,17 +43,17 @@ void ksym_bind_symbol(char *symname, uintptr_t address) {
  * @param file The symbol map file
  * @returns Number of symbols loaded or error code
  */
-int ksym_load(fs_node_t *file) {
+int ksym_load(vfs_file_t *file) {
     if (!file) return -EINVAL;
     if (ksym_hashmap) return -EALREADY;
     ksym_hashmap = hashmap_create("ksym", 20);
     
     // Read the contents of the file
-    uint8_t *symbuf = kmalloc(file->length);
-    memset(symbuf, 0, file->length);
-    ssize_t b = fs_read(file, 0, file->length, symbuf);
+    size_t len = inode_size(file->inode);
+    uint8_t *symbuf = kmalloc(len);
+    ssize_t b = vfs_read(file, 0, len, (char*)symbuf);
 
-    if ((size_t)b != file->length) {
+    if ((size_t)b != len) {
         kfree(symbuf);
         return -EINVAL;
     }

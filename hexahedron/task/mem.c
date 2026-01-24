@@ -93,7 +93,13 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         }
 
         // Use the
-        void *b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | vmfl, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+        void *b;
+        if (vmfl & VM_FLAG_FILE) {
+            b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | vmfl, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER, FD(current_cpu->current_process, filedes));
+        } else {
+            b = vmm_map(addr, len, VM_FLAG_FIXED | VM_FLAG_ALLOC | vmfl, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
+        }
+        
         if (b) {
             map->addr = b;
             if (filedes == -1 || flags & MAP_ANONYMOUS) {
@@ -119,7 +125,23 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
     }
 
     // Now let's get an allocation in the directory.
-    void *alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | vmfl, MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER);
+
+    void *alloc;
+    if (vmfl & VM_FLAG_FILE) {
+        vmm_file_t f = {
+            .node = FD(current_cpu->current_process, filedes)->node,
+            .offset = off
+        };
+
+        if (f.node->inode->flags & INODE_FLAG_MMAP_UNSUPPORTED) {
+            return (void*)-ENOTSUP; // TODO: customizable error number
+        }
+
+        alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | vmfl, MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER, &f);
+    } else {
+        alloc = vmm_map((void*)0x1000, len, VM_FLAG_ALLOC | VM_FLAG_DEFAULT | vmfl, MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER);
+    }
+
     if (!alloc) {
         // No memory?
         LOG(ERR, "Error while allocating a region. Failing mmap of %d bytes with ENOMEM\n", len);
@@ -135,14 +157,6 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         list_append(current_cpu->current_process->mmap, (void*)map);
         memset(alloc, 0, len);
         return alloc; // All done
-    }
-
-    // No - call fs_mmap()
-    int mmap_result = fs_mmap(FD(current_cpu->current_process, filedes)->node, alloc, len, off);
-    if (mmap_result < 0) {
-        
-        kfree(map);
-        return (void*)(uintptr_t)mmap_result;
     }
 
     // Success!
@@ -162,7 +176,7 @@ int process_removeMapping(process_t *proc, process_mapping_t *map) {
     if (!(map->flags & MAP_ANONYMOUS) && map->filedes != -1) {
         // Sometimes a proc will close a file descriptor before it exited
         if (FD_VALIDATE(proc, map->filedes)) {
-            fs_munmap(FD(proc, map->filedes)->node, map->addr, map->size, map->off);
+            assert(0 && "fs_munmap not implemented");
         }
     }
 

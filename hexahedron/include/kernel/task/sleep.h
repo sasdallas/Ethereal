@@ -54,6 +54,11 @@ typedef struct sleep_queue {
 } sleep_queue_t;
 
 
+/**** MACROS ****/
+
+#define SLEEP_QUEUE_INITIALIZER { .lock = SPINLOCK_INITIALIZER, .head = NULL }
+#define SLEEP_QUEUE_INIT(q) ({ SPINLOCK_INIT(&(q)->lock); (q)->head = NULL; })
+
 /**** FUNCTIONS ****/
 
 /**

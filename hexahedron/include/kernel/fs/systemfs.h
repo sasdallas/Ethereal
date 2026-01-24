@@ -1,0 +1,144 @@
+/**
+ * @file hexahedron/include/kernel/fs/systemfs.h
+ * @brief SystemFS
+ * 
+ * SystemFS is the successor to KernelFS, which was the legacy kernel filesystem.
+ * It provides a more robust API, similar to that of DevFS.
+ * 
+ * 
+ * @copyright
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * It is released under the terms of the BSD 3-clause license.
+ * Please see the LICENSE file in the main repository for more details.
+ * 
+ * Copyright (C) 2025 Samuel Stuart
+ */
+
+#ifndef KERNEL_FS_SYSTEMFS_H
+#define KERNEL_FS_SYSTEMFS_H
+
+/**** INCLUDES ****/
+#include <kernel/fs/vfs_new.h>
+#include <structs/hashmap.h>
+#include <stdint.h>
+
+
+/**** DEFINITIONS ****/
+
+
+/**** TYPES ****/
+
+struct systemfs_node;
+
+typedef struct systemfs_ops {
+    int (*open)(struct systemfs_node *file, unsigned long flags);
+    int (*close)(struct systemfs_node *file);
+    ssize_t (*read)(struct systemfs_node *file, loff_t off, size_t size, char *buffer);
+    ssize_t (*write)(struct systemfs_node *file, loff_t off, size_t size, const char *buffer);
+    int (*ioctl)(struct systemfs_node *file, unsigned long request, void *argp);
+    // Other APIs are not provided.
+} systemfs_ops_t;
+
+typedef struct systemfs_node {
+    struct systemfs_node *parent;       // Parent
+    char *name;                         // Name of the node
+    systemfs_ops_t *ops;                // SystemFS operations
+    hashmap_t *children;                // Children
+    void *priv;                         // Private
+    vfs_inode_attr_t attr;              // Attribute
+    mutex_t lck;                        // Lock
+
+    union {
+        struct {
+            int (*read_entry)(struct systemfs_node *node, vfs_dir_context_t *ctx);
+            int (*lookup)(struct systemfs_node *node, char *name, struct systemfs_node **node_out);
+        } dir;
+
+        struct {
+            char *contents;
+        } link;
+    };
+} systemfs_node_t;
+
+/**** FUNCTIONS ****/
+
+extern systemfs_node_t *systemfs_root;
+
+/**
+ * @brief Register a new SystemFS node
+ * @param parent The parent of the SystemFS node
+ * @param name The name of the SystemFS node
+ * @param type The type of the SystemFS node (VFS_xxx)
+ * @param ops The operations of the SystemFS node
+ * @param priv Private variables for the SystemFS node
+ * @returns New node
+ */
+systemfs_node_t *systemfs_register(systemfs_node_t *parent, char *name, int type, systemfs_ops_t *ops, void *priv);
+
+/**
+ * @brief Unregister SystemFS entry
+ * @param parent The parent of the SystemFS entry to unregister
+ * @param name The name of the SystemFS entry to unregister
+ */
+int systemfs_unregister(systemfs_node_t *parent, char *name);
+
+/**
+ * @brief Get SystemFS node
+ * @param parent The parent of the SystemFS node
+ * @param name The name of the SystemFS node
+ */
+systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name);
+
+/**
+ * @brief Register a "simple" SystemFS node
+ * 
+ * Simple SystemFS nodes are nodes that only provide either reading/writing.
+ * 
+ * @param parent The parent of the SystemFS node
+ * @param name The name of the SystemFS node
+ * @param read Reading function for the SystemFS node
+ * @param write Writing function for the SystemFS node
+ * @param priv Private variable
+ * @returns The node registered
+ */
+systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ssize_t (*read)(systemfs_node_t *, loff_t, size_t, char*), ssize_t (*write)(systemfs_node_t *, loff_t, size_t, const char*), void *priv);
+
+/**
+ * @brief Create a link in SystemFS
+ * @param parent The parent of the link
+ * @param link_name The link name
+ * @param link_contents The link contents
+ */
+systemfs_node_t *systemfs_symlink(systemfs_node_t *parent, char *link_name, char *link_contents);
+
+/**
+ * @brief Create and return a SystemFS directory
+ * @param parent The parent of the directory
+ * @param name The name of the directory
+ */
+systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name);
+
+/**
+ * @brief Register "special" SystemFS node
+ * 
+ * Special SystemFS nodes are SystemFS nodes that point to other nodes dynamically.
+ * A good example is /system/self/.
+ * 
+ * @param parent The parent of the SystemFS node
+ * @param name The name of the SystemFS node
+ * @param type The type of the SystemFS node (VFS_xxx), make this match with your target.
+ * @param fill The special fill function
+ * @param priv Private variables for the SystemFS node
+ */
+systemfs_node_t *systemfs_registerSpecial(systemfs_node_t *node, char *name, int type, systemfs_node_t* (*fill)(systemfs_node_t *n), void *priv);
+
+/**
+ * @brief Printf-formatter for SystemFS
+ * @param buffer User-provided buffer
+ * @param off Offset requested
+ * @param size Size requested to read
+ * @param fmt Format
+ */
+ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...);
+
+#endif

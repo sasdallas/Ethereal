@@ -17,7 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/drivers/video.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 /**** TYPES ****/
 
@@ -95,6 +95,6 @@ int font_getHeight();
  * @param file The PSF file to load
  * @returns 0 on success
  */
-int font_loadPSF(fs_node_t *file);
+int font_loadPSF(vfs_file_t *file);
 
 #endif

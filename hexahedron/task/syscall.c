@@ -15,9 +15,9 @@
 #include <kernel/task/process.h>
 #include <kernel/loader/binfmt.h>
 #include <kernel/drivers/net/socket.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/fs/pipe.h>
-#include <kernel/fs/pty.h>
+#include <kernel/fs/tty.h>
 #include <kernel/misc/args.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -216,57 +216,61 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     // !!!: HACK
     if (!strcmp(pathname, "/dev/ptmx")) {
         // Make a PTY
-        pty_t *pty = pty_create(NULL, NULL, -1);
+        // pty_t *pty = pty_create(NULL, NULL, -1);
         
         // Create file descriptors
-        fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
-        return master_fd->fd_number;
+        // fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
+        // return master_fd->fd_number;
+        assert(0 && "/dev/ptmx");
     }
 
     // Try and get it open
-    fs_node_t *node = kopen_user(pathname, flags);
+    vfs_file_t *file;
+    int r = vfs_open(pathname, flags, &file);
 
     // Did we find the node and they DIDN'T want us to create it?
-    if (node && (flags & O_CREAT) && (flags & O_EXCL)) {
-        fs_close(node);
+    if (r == 0 && (flags & O_CREAT) && (flags & O_EXCL)) {
+        vfs_close(file);
         return -EEXIST;
     }
 
     // Did we find it and did they want to create it?
-    if (!node && (flags & O_CREAT)) {
+    if ((r != 0) && (flags & O_CREAT)) {
         // Ok, make the file using some garbage hacks
-        int ret = vfs_creat(&node, (char*)pathname, mode);
-        if (ret < 0) {
-            return ret;
+        vfs_inode_t *ino_output;
+        r = vfs_create(pathname, mode, &ino_output);
+        if (r < 0) {
+            return r;
         }
 
         // HACK: Open the node
-        ret = fs_open(node, flags);
-        if (ret != 0) {
-            return ret;
+        r = vfs_openat(ino_output, NULL, flags, &file);
+        if (r != 0) {
+            return r;
         }
     }
 
     // Did they want a directory?
-    if (node && !(node->flags & VFS_DIRECTORY) && (flags & O_DIRECTORY)) {
-        fs_close(node);
+    if ((r == 0) && !(file->inode->attr.type == VFS_DIRECTORY) && (flags & O_DIRECTORY)) {
+        vfs_close(file);
         return -ENOTDIR;
     }
 
     // Did we find it and they want it?
-    if (!node) {
-        return -ENOENT;
+    if (r) {
+        return r;
     }
 
     // Create the file descriptor and return
-    fd_t *fd = fd_add(current_cpu->current_process, node);
+    fd_t *fd = fd_add(current_cpu->current_process, file);
 
-    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)pathname);
-    fd->path = p;
+    // !!!
+    fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
     
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
-        fd->offset = node->length;
+        fd->offset = inode_size(file->inode);
     }
 
     return fd->fd_number;
@@ -274,7 +278,10 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 
 int sys_open(const char *pathname, int flags, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
-    return __sys_open_internal((char*)pathname, flags, mode);
+    int r = __sys_open_internal((char*)pathname, flags, mode);
+
+    LOG(DEBUG, "sys_open %s %d %d -> returning %d\n", pathname, flags, mode, r);
+    return r;
 }
 
 ssize_t sys_read(int fd, void *buffer, size_t count) {
@@ -285,22 +292,22 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
     }
 
     fd_t *proc_fd = FD(current_cpu->current_process, fd);
-    ssize_t i = fs_read(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
-    proc_fd->offset += i;
+    ssize_t i = vfs_read(proc_fd->node, proc_fd->offset, count, (char*)buffer);
+    if (i >= 0) proc_fd->offset += i;
 
     return i;
 }
 
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
-    
+
     if (!FD_VALIDATE(current_cpu->current_process, fd)) {
         return -EBADF;
     }
 
     fd_t *proc_fd = FD(current_cpu->current_process, fd);
-    ssize_t i = fs_write(proc_fd->node, proc_fd->offset, count, (uint8_t*)buffer);
-    proc_fd->offset += i;
+    ssize_t i = vfs_write(proc_fd->node, proc_fd->offset, count, (const char*)buffer);
+    if (i >= 0) proc_fd->offset += i;
 
     if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     return i;
@@ -321,34 +328,40 @@ int sys_close(int fd) {
  * @param f The file to check
  * @param statbuf The stat buffer to use
  */
-static void sys_stat_common(fs_node_t *f, struct stat *statbuf) {
+static int sys_stat_common(vfs_file_t *f, struct stat *statbuf) {
+    vfs_inode_attr_t attr; 
+    int r = vfs_getattr(f->inode, &attr);
+    if (r) return r;
+
     // Convert VFS flags to st_dev
+
     statbuf->st_dev = 0;
-    if (f->flags & VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
-    if (f->flags & VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
-    if (f->flags & VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
-    if (f->flags & VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
-    if (f->flags & VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
-    if (f->flags & VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
-    if (f->flags & VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
-    if (f->flags & VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
+    if (attr.type == VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
+    if (attr.type == VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
+    if (attr.type == VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
+    if (attr.type == VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
+    if (attr.type == VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
+    if (attr.type == VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
+    if (attr.type == VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
+    if (attr.type == VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
 
     // st_mode is just st_dev with extra steps
     statbuf->st_mode = statbuf->st_dev;
 
     // Setup other fields
-    statbuf->st_ino = f->inode; // Inode number
-    statbuf->st_mode |= f->mask; // File mode - TODO: Make sure that file mode is properly set with vaild mask bits
+    statbuf->st_ino = attr.ino; // Inode number
+    statbuf->st_mode |= attr.mode; // File mode - TODO: Make sure that file mode is properly set with vaild mask bits
     statbuf->st_nlink = 0; // TODO
-    statbuf->st_uid = f->uid;
-    statbuf->st_gid = f->gid;
+    statbuf->st_uid = attr.uid;
+    statbuf->st_gid = attr.gid;
     statbuf->st_rdev = 0; // TODO
-    statbuf->st_size = f->length;
+    statbuf->st_size = attr.size;
     statbuf->st_blksize = 512; // TODO: This would prove useful for file I/O
     statbuf->st_blocks = 0; // TODO
-    statbuf->st_atime = f->atime;
-    statbuf->st_mtime = f->mtime;
-    statbuf->st_ctime = f->ctime;
+    statbuf->st_atime = attr.atime;
+    statbuf->st_mtime = attr.mtime;
+    statbuf->st_ctime = attr.ctime;
+    return 0;
 }
 
 long sys_stat(const char *pathname, struct stat *statbuf) {
@@ -356,14 +369,16 @@ long sys_stat(const char *pathname, struct stat *statbuf) {
     SYSCALL_VALIDATE_PTR(statbuf);
 
     // Try to open the file
-    fs_node_t *f = kopen_user(pathname, O_RDONLY); // TODO: return ELOOP, O_NOFOLLOW is supposed to work but need to refine this
-    if (!f) return -ENOENT;
+    vfs_file_t *f;
+    int r = vfs_open((char*)pathname, O_NOFOLLOW, &f);
+    if (r) return r;
 
     // Common stat
-    sys_stat_common(f, statbuf);
+    r = sys_stat_common(f, statbuf);
+    if (r) { vfs_close(f); return r; }
 
     // Close the file
-    fs_close(f);
+    vfs_close(f);
 
     // Done
     return 0;
@@ -374,8 +389,7 @@ long sys_fstat(int fd, struct stat *statbuf) {
     SYSCALL_VALIDATE_PTR(statbuf);
 
     // Try to do stat
-    sys_stat_common(FD(current_cpu->current_process, fd)->node, statbuf);
-    return 0;
+    return sys_stat_common(FD(current_cpu->current_process, fd)->node, statbuf);
 }
 
 /**
@@ -386,16 +400,16 @@ long sys_lstat(const char *pathname, struct stat *statbuf) {
     SYSCALL_VALIDATE_PTR(statbuf);
 
     // Try to open the file
-    fs_node_t *f = kopen_user(pathname, O_NOFOLLOW | O_PATH);   // Get actual link file
-                                                                // TODO: Handle open errors?
-    
-    if (!f) return -ENOENT;
+    vfs_file_t *f;
+    int r = vfs_open((char*)pathname, O_NOFOLLOW | O_PATH, &f);
+    if (r) return r;
 
     // Common stat
-    sys_stat_common(f, statbuf);
+    r = sys_stat_common(f, statbuf);
+    if (r) { vfs_close(f); return r; }
 
     // Close the file
-    fs_close(f);
+    vfs_close(f);
 
     // Done
     return 0;
@@ -408,7 +422,7 @@ long sys_ioctl(int fd, unsigned long request, void *argp) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
     
     // Do not validate argp
-    return fs_ioctl(FD(current_cpu->current_process, fd)->node, request, argp);
+    return vfs_ioctl(FD(current_cpu->current_process, fd)->node, request, argp);
 }
 
 /**
@@ -472,7 +486,7 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
         FD(current_cpu->current_process, fd)->offset += offset;
     } else if (whence == SEEK_END) {
         // TODO: This is the problem area (offset > node length)
-        FD(current_cpu->current_process, fd)->offset = FD(current_cpu->current_process, fd)->node->length + offset;
+        FD(current_cpu->current_process, fd)->offset = inode_size(FD(current_cpu->current_process, fd)->node->inode) + offset;
     } else {
         return -EINVAL;
     }
@@ -523,9 +537,10 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     if (envp) SYSCALL_VALIDATE_PTR(envp);
 
     // Try to get the file
-    fs_node_t *f = kopen_user(pathname, O_RDONLY);
-    if (!f) return -ENOENT;
-    if ((f->flags & (VFS_FILE | VFS_SYMLINK)) == 0) { fs_close(f); return -EISDIR; }
+    vfs_file_t *f;
+    int r = vfs_open((char*)pathname, O_RDONLY, &f);
+    if (r) return r;
+    if ((f->inode->attr.type == VFS_DIRECTORY)) { vfs_close(f); return -EISDIR; }
 
     // Collect any arguments that we need
     int argc = 0;
@@ -597,30 +612,30 @@ long sys_getcwd(char *buffer, size_t size) {
 long sys_chdir(const char *path) {
     SYSCALL_VALIDATE_PTR(path);
 
-    // Check that the path is accessible
-    char *new_path = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)path);
-    char *nn = strdup(new_path); // TEMPORARY
-
-    fs_node_t *tmpnode = kopen(new_path, O_RDONLY);
-    if (tmpnode) {
-        if ((tmpnode->flags & VFS_DIRECTORY) == 0) {
-            kfree(nn);
-            fs_close(tmpnode);
+    // !!!: this is bad
+    vfs_inode_t *i;
+    int res = vfs_lookup((char*)path, &i, LOOKUP_DEFAULT);
+    if (res == 0) {
+        if (i->attr.type != VFS_DIRECTORY) {
+            inode_release(i);
             return -ENOTDIR;
         }
-        
-        // Path exists
-        // TODO: Validate permissions?
-        kfree(current_cpu->current_process->wd_path);
-        current_cpu->current_process->wd_path = nn;
 
-        // Close node
-        fs_close(tmpnode);
+        char tmp[strlen(current_cpu->current_process->wd_path) + strlen(path) + 1];
+        vfs_canonicalize(current_cpu->current_process->wd_path, (char*)path, tmp);
+
+        kfree(current_cpu->current_process->wd_path);
+        current_cpu->current_process->wd_path = strdup(tmp);
+        
+        vfs_inode_t *old = current_cpu->current_process->wd_node;
+        current_cpu->current_process->wd_node = i; // already locked
+        inode_release(old);
+
+        LOG(DEBUG, "CHDIR: Inode %p Path %s\n", current_cpu->current_process->wd_node, current_cpu->current_process->wd_path);
         return 0;
     }
 
-    kfree(nn);
-    return -ENOENT;
+    return res;
 }
 
 /**
@@ -635,17 +650,19 @@ long sys_fchdir(int fd) {
  * @brief readdir system call
  */
 long sys_readdir(struct dirent *ent, int fd, unsigned long index) {
-    SYSCALL_VALIDATE_PTR(ent);
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
-        return -EBADF;
-    }
+    // SYSCALL_VALIDATE_PTR(ent);
+    // if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    //     return -EBADF;
+    // }
 
-    struct dirent *dent = fs_readdir(FD(current_cpu->current_process, fd)->node, index);
-    if (!dent) return 0; // EOF
+    // struct dirent *dent = fs_readdir(FD(current_cpu->current_process, fd)->node, index);
+    // if (!dent) return 0; // EOF
 
-    memcpy(ent, dent, sizeof(struct dirent));
-    kfree(dent);
-    return 1;
+    // memcpy(ent, dent, sizeof(struct dirent));
+    // kfree(dent);
+    // return 1;
+
+    assert(0 && "sys_readdir isn't used and i dont feel like remaking it");
 }
 
 long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
@@ -653,8 +670,6 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     SYSCALL_VALIDATE_PTR_SIZE(fds, sizeof(struct pollfd) * nfds);
 
     int have_hit = 0;
-
-#if 1
 
     poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, nfds ? nfds : 1);
 
@@ -667,17 +682,12 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         }
 
         // Does the file descriptor have available contents right now?
-        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+        int ready = vfs_poll(FD(current_cpu->current_process, fds[i].fd)->node, waiter, fds[i].events, (poll_events_t*)&fds[i].revents);
 
-        if (ready & events) {
+        if (ready == 1) {
             // Oh, we already have a hit! :D
-            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+            // LOG(DEBUG, "Hit on file descriptor %d for events 0x%x\n", fds[i].fd, fds[i].revents);
             have_hit++;
-        } else if (!have_hit) {
-            // LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
-            fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
         }
     }
 
@@ -713,203 +723,284 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     for (size_t i = 0; i < nfds; i++) {
         // Does the file descriptor have available contents right now?
         if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) continue;
-        int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-        int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-        if (ready & events) {
-            // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-            fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+        
+        // !!!: FLOW BREAKING TRASH
+        vfs_file_t *f = FD(current_cpu->current_process, fds[i].fd)->node;
+        assert(f->ops && f->ops->poll_events);
+        fds[i].revents = f->ops->poll_events(f) & fds[i].events;
+        if (fds[i].revents) {
             have_hit++;
-        } 
+        }
+        
     }
 
     poll_exit(waiter);
     poll_destroyWaiter(waiter);
     return have_hit;   // At least one thread woke us up
 
-#else
-    /* Legacy poll that doesn't sleep. For debugging. */
-    struct timeval tv_start;
-    gettimeofday(&tv_start, NULL);
 
-    while (1) {
-        for (size_t i = 0; i < nfds; i++) {
-            // Check the file descriptor
-            fds[i].revents = 0;
-            if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-                fds[i].revents |= POLLNVAL;
-                continue;
-            }
+// #if 1
 
-            // Does the file descriptor have available contents right now?
-            int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-            int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+//     poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, nfds ? nfds : 1);
 
-            if (ready & events) {
-                // Oh, we already have a hit! :D
-                // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-                fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-                have_hit++;
-            } 
-        }
+//     for (size_t i = 0; i < nfds; i++) {
+//         // Check the file descriptor
+//         fds[i].revents = 0;
+//         if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+//             fds[i].revents |= POLLNVAL;
+//             continue;
+//         }
 
-        if (have_hit) return have_hit;
+//         // Does the file descriptor have available contents right now?
+//         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+//         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
 
-        // We didn't get anything. Did they want us to wait?
-        if (timeout == 0) return 0;
+//         if (ready & events) {
+//             // Oh, we already have a hit! :D
+//             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+//             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+//             have_hit++;
+//         } else if (!have_hit) {
+//             // LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
+//             fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
+//         }
+//     }
 
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
+//     if (have_hit) {
+//         poll_exit(waiter);
+//         poll_destroyWaiter(waiter);
+//         return have_hit;
+//     }
+
+//     // We didn't get anything. Did they want us to wait?
+//     if (timeout == 0) {
+//         poll_exit(waiter);
+//         poll_destroyWaiter(waiter);
+//         return 0;
+//     }
+    
+//     // Yes, so prepare ourselves to wait
+//     int w = poll_wait(waiter, timeout);
+
+
+//     if (w == -EINTR) {
+//         poll_exit(waiter);
+//         poll_destroyWaiter(waiter);
+//         return -EINTR;
+//     }
+
+//     if (w == -ETIMEDOUT) {
+//         poll_exit(waiter);
+//         poll_destroyWaiter(waiter);
+//         return 0;
+//     }
+
+//     for (size_t i = 0; i < nfds; i++) {
+//         // Does the file descriptor have available contents right now?
+//         if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) continue;
+//         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+//         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+//         if (ready & events) {
+//             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+//             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+//             have_hit++;
+//         } 
+//     }
+
+//     poll_exit(waiter);
+//     poll_destroyWaiter(waiter);
+//     return have_hit;   // At least one thread woke us up
+
+// #else
+//     /* Legacy poll that doesn't sleep. For debugging. */
+//     struct timeval tv_start;
+//     gettimeofday(&tv_start, NULL);
+
+//     while (1) {
+//         for (size_t i = 0; i < nfds; i++) {
+//             // Check the file descriptor
+//             fds[i].revents = 0;
+//             if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+//                 fds[i].revents |= POLLNVAL;
+//                 continue;
+//             }
+
+//             // Does the file descriptor have available contents right now?
+//             int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
+//             int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
+
+//             if (ready & events) {
+//                 // Oh, we already have a hit! :D
+//                 // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
+//                 fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
+//                 have_hit++;
+//             } 
+//         }
+
+//         if (have_hit) return have_hit;
+
+//         // We didn't get anything. Did they want us to wait?
+//         if (timeout == 0) return 0;
+
+//         struct timeval tv;
+//         gettimeofday(&tv, NULL);
         
-        if ((tv.tv_sec*1000) - (tv_start.tv_sec*1000) + (tv.tv_usec/1000) > timeout && timeout != -1) {
-            return 0;
-        }
+//         if ((tv.tv_sec*1000) - (tv_start.tv_sec*1000) + (tv.tv_usec/1000) > timeout && timeout != -1) {
+//             return 0;
+//         }
 
-        process_yield(1);
-    }
-#endif
+//         process_yield(1);
+//     }
+// #endif
+
+    assert(0 && "poll");
+    return 0;
 
 }
 
 long sys_pselect(sys_pselect_context_t *ctx) {
-    if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
-    if (ctx->writefds) SYSCALL_VALIDATE_PTR(ctx->writefds);
-    if (ctx->errorfds) SYSCALL_VALIDATE_PTR(ctx->errorfds);
-    if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
-    if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
+    // if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
+    // if (ctx->writefds) SYSCALL_VALIDATE_PTR(ctx->writefds);
+    // if (ctx->errorfds) SYSCALL_VALIDATE_PTR(ctx->errorfds);
+    // if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
+    // if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
 
-    sigset_t old_set = current_cpu->current_thread->blocked_signals;
+    // sigset_t old_set = current_cpu->current_thread->blocked_signals;
 
-    if (ctx->sigmask) {
-        current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
-    }
+    // if (ctx->sigmask) {
+    //     current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
+    // }
 
-    // Create the return sets
-    fd_set rfds, wfds, efds;
-    FD_ZERO(&rfds);
-    FD_ZERO(&wfds);
-    FD_ZERO(&efds);
+    // // Create the return sets
+    // fd_set rfds, wfds, efds;
+    // FD_ZERO(&rfds);
+    // FD_ZERO(&wfds);
+    // FD_ZERO(&efds);
 
-    size_t ret = 0;
-
-
-    // First check if anything is reaady
-    for (int fd = 0; fd < ctx->nfds; fd++) {
-        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
-            continue; // No need to care, it isn't a wanted file descriptor
-        }
-
-        // Validate file descriptor
-        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+    // size_t ret = 0;
 
 
-        // Get events
-        int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
+    // // First check if anything is reaady
+    // for (int fd = 0; fd < ctx->nfds; fd++) {
+    //     if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+    //         continue; // No need to care, it isn't a wanted file descriptor
+    //     }
 
-        // Check
-        if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
-            // Read 
-            FD_SET(fd, &rfds);
-            ret++;
-        }
-
-        if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
-            // Write
-            FD_SET(fd, &wfds);
-            ret++;
-        }
-
-        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
-            // Error
-            FD_SET(fd, &efds);
-            ret++;
-        } 
-    }
-
-    // Did we get anything?
-    if (ret) {
-        (current_cpu->current_thread->blocked_signals) = old_set;
-        return ret;
-    }
-
-    // make a waiter object
-    poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
-
-    // Nope, looks like we have to go on an adventure.
-
-    // Now that we're prepped, go through each file descriptor one more time to wait in the queue
-    for (int fd = 0; fd < ctx->nfds; fd++) {
-        int wanted_evs = 0;
-        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
-        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
-        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
-
-        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
-
-        // Now wait in the node
-        fs_wait(w, FD(current_cpu->current_process, fd)->node, wanted_evs);
-    }
-
-    // Enter sleep
-    int r = poll_wait(w, ctx->timeout->tv_sec * 1000 + ctx->timeout->tv_nsec / 1000);
-    if (r == -EINTR) {
-        poll_exit(w);
-        poll_destroyWaiter(w);
-        (current_cpu->current_thread->blocked_signals) = old_set;
-        return -EINTR; // TODO: SA_RESTART
-    }
-
-    if (r == -ETIMEDOUT) {
-        poll_exit(w);
-        poll_destroyWaiter(w);
-        (current_cpu->current_thread->blocked_signals) = old_set;
-        return 0;
-    }
-
-    poll_exit(w);
-    poll_destroyWaiter(w);
+    //     // Validate file descriptor
+    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
 
 
-    // Another thread must have woken us up
-    for (int fd = 0; fd < ctx->nfds; fd++) {
-        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
-            continue; // No need to care, it isn't a wanted file descriptor
-        }
+    //     // Get events
+    //     int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
 
-        // Validate file descriptor
-        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+    //     // Check
+    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
+    //         // Read 
+    //         FD_SET(fd, &rfds);
+    //         ret++;
+    //     }
 
-        // Get events
-        int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
+    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
+    //         // Write
+    //         FD_SET(fd, &wfds);
+    //         ret++;
+    //     }
 
-        // Check
-        if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
-            // Read 
-            FD_SET(fd, &rfds);
-            ret++;
-        }
+    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
+    //         // Error
+    //         FD_SET(fd, &efds);
+    //         ret++;
+    //     } 
+    // }
 
-        if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
-            // Write
-            FD_SET(fd, &wfds);
-            ret++;
-        }
+    // // Did we get anything?
+    // if (ret) {
+    //     (current_cpu->current_thread->blocked_signals) = old_set;
+    //     return ret;
+    // }
 
-        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
-            // Error
-            FD_SET(fd, &efds);
-            ret++;
-        } 
-    }
+    // // make a waiter object
+    // poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
 
-    if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
-    if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
-    if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
+    // // Nope, looks like we have to go on an adventure.
 
-    (current_cpu->current_thread->blocked_signals) = old_set;
+    // // Now that we're prepped, go through each file descriptor one more time to wait in the queue
+    // for (int fd = 0; fd < ctx->nfds; fd++) {
+    //     int wanted_evs = 0;
+    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
+    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
+    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
 
-    // Ready!
-    return ret; 
+    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+    //     // Now wait in the node
+    //     fs_wait(w, FD(current_cpu->current_process, fd)->node, wanted_evs);
+    // }
+
+    // // Enter sleep
+    // int r = poll_wait(w, ctx->timeout->tv_sec * 1000 + ctx->timeout->tv_nsec / 1000);
+    // if (r == -EINTR) {
+    //     poll_exit(w);
+    //     poll_destroyWaiter(w);
+    //     (current_cpu->current_thread->blocked_signals) = old_set;
+    //     return -EINTR; // TODO: SA_RESTART
+    // }
+
+    // if (r == -ETIMEDOUT) {
+    //     poll_exit(w);
+    //     poll_destroyWaiter(w);
+    //     (current_cpu->current_thread->blocked_signals) = old_set;
+    //     return 0;
+    // }
+
+    // poll_exit(w);
+    // poll_destroyWaiter(w);
+
+
+    // // Another thread must have woken us up
+    // for (int fd = 0; fd < ctx->nfds; fd++) {
+    //     if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+    //         continue; // No need to care, it isn't a wanted file descriptor
+    //     }
+
+    //     // Validate file descriptor
+    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+    //     // Get events
+    //     int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
+
+    //     // Check
+    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
+    //         // Read 
+    //         FD_SET(fd, &rfds);
+    //         ret++;
+    //     }
+
+    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
+    //         // Write
+    //         FD_SET(fd, &wfds);
+    //         ret++;
+    //     }
+
+    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
+    //         // Error
+    //         FD_SET(fd, &efds);
+    //         ret++;
+    //     } 
+    // }
+
+    // if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
+    // if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
+    // if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
+
+    // (current_cpu->current_thread->blocked_signals) = old_set;
+
+    // // Ready!
+    // return ret; 
+
+    assert(0 && "pselect");
+    return 0;
 }
 
 ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
@@ -957,12 +1048,12 @@ long sys_unlink(const char *pathname) {
 
 long sys_ftruncate(int fd, off_t length) {
     if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
-    return fs_truncate(FD(current_cpu->current_process, fd)->node, length); 
+    return vfs_truncate(FD(current_cpu->current_process, fd)->node->inode, (size_t)length); 
 }
 
 long sys_mkdir(const char *pathname, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
-    return vfs_mkdir((char*)pathname, mode);
+    return vfs2_mkdir((char*)pathname, mode, NULL);
 }
 
 
@@ -994,18 +1085,18 @@ pid_t sys_getpid() {
 
 /* MMAP */
 
-long sys_mmap(sys_mmap_context_t *context) {
-    SYSCALL_VALIDATE_PTR(context);
-    LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off);
-    long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+// long sys_mmap(sys_mmap_context_t *context) {
+//     SYSCALL_VALIDATE_PTR(context);
     
-    return r;
-}
+//     long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
+//     LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d -> %p\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off, r);
+//     return r;
+// }
 
-long sys_munmap(void *addr, size_t len) {
-    LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
-    return process_munmap(addr, len);
-}
+// long sys_munmap(void *addr, size_t len) {
+//     LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
+//     return process_munmap(addr, len);
+// }
 
 long sys_msync(void *addr, size_t len, int flush) {
     LOG(WARN, "sys_msync %p %d %d\n");
@@ -1241,23 +1332,26 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
         return -EPERM;
     }
 
-    // Canonicalize paths
-    char *src_canonicalized = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)src);
-    char *dst_canonicalized = vfs_canonicalizePath(current_cpu->current_process->wd_path, (char*)dst);
+    if (strlen(src) > PATH_MAX) return -ENAMETOOLONG;
+    if (strlen(dst) > PATH_MAX) return -ENAMETOOLONG; 
 
+    // get filesystem
+    vfs2_filesystem_t *fs = vfs_getFilesystem((char*)type);
+    if (!fs) { return -ENODEV; }
+
+    // Canonicalize paths
+    char *src_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);
+    char *dst_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);  
+
+    if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)src, src_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
+    if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)dst, dst_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
 
     // Try to mount filesystem type
-    fs_node_t *node = NULL;
-    int success = vfs_mountFilesystemType((char*)type, (char*)src_canonicalized, (char*)dst_canonicalized, &node);
+    int success = vfs2_mount(fs, src_canonicalized, (char*)dst_canonicalized, 0, NULL);
     kfree(src_canonicalized);
     kfree(dst_canonicalized);
 
-    // Success?
-    if (success != 0) {
-        return success;
-    }
-
-    return 0;
+    return success;
 }
 
 long sys_umount(const char *mountpoint) {
@@ -1296,19 +1390,16 @@ long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *te
     SYSCALL_VALIDATE_PTR(aslave);
 
     // Make a PTY
-    pty_t *pty = pty_create((struct termios*)termp, (struct winsize*)winp, -1);
-    
-    // Create file descriptors
-    fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
-    fd_t *slave_fd = fd_add(current_cpu->current_process, pty->slave);
-    
-    // Set values
-    *amaster = master_fd->fd_number;
-    *aslave = slave_fd->fd_number;
+    vfs_file_t *master;
+    vfs_file_t *slave;
+    int r = pty_create(NULL, &master, &slave);
+    if (r) return r;
 
-    // Open the file descriptors too
-    fs_open(pty->master, 0);
-    fs_open(pty->slave, 0);
+    fd_t *mfd = fd_add(current_cpu->current_process, master);
+    fd_t *sfd = fd_add(current_cpu->current_process, slave);
+
+    *amaster = mfd->fd_number;
+    *aslave = sfd->fd_number;
 
     return 0;
 }
@@ -1501,35 +1592,38 @@ long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
 
 /**** MLIBC ****/
 
-struct readdir_context {
-    int fd;
-    int ent;
-};
 
 long sys_read_entries(int handle, void *buffer, size_t max_size) {
     if (!FD_VALIDATE(current_cpu->current_process, handle)) return -EBADF;
     SYSCALL_VALIDATE_PTR_SIZE(buffer, max_size);
 
     fd_t *f = FD(current_cpu->current_process, handle);
-    if (!f->dev) { f->dev = kzalloc(sizeof(struct readdir_context)); ((struct readdir_context*)f->dev)->fd = handle; }
+    if (!f->dev) {
+        f->dev = kzalloc(sizeof(vfs_dir_context_t)); 
+    }
 
-    struct readdir_context *ctx = (struct readdir_context*)f->dev;
+    vfs_dir_context_t *ctx = (vfs_dir_context_t*)f->dev;
 
     unsigned char *p = (unsigned char*)buffer;
     size_t read = 0;
     while (read + sizeof(struct dirent) <= max_size) {
-        struct dirent *ent = fs_readdir(f->node, ctx->ent);
-        if (!ent) {
+        int r = file_get_entries(f->node, ctx);
+        if (r == 1) {
             break;
         }
 
-        // !!!: HACK: SET d_reclen BECAUSE IT NORMALLY ISNT SET
+        if (r != 0) {
+            return r;
+        }
+
+        struct dirent *ent = (struct dirent*)p;
+        strncpy(ent->d_name, ctx->name, 1024);
+        LOG(DEBUG, "read entry: %s\n", ent->d_name);
+        ent->d_ino = ctx->ino;
+        ent->d_type = ctx->type;
         ent->d_reclen = sizeof(struct dirent);
 
-        memcpy(p, ent, sizeof(struct dirent));
-        kfree(ent);
-
-        ctx->ent++;
+        ctx->dirpos++;
         p += sizeof(struct dirent);
         read += sizeof(struct dirent);
     }  
@@ -1562,7 +1656,7 @@ long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
     }
 
     fd_t *f = FD(current_cpu->current_process, dirfd);
-    if (!(f->node->flags & VFS_DIRECTORY)) {
+    if (!(f->node->inode->attr.type == VFS_DIRECTORY)) {
         return -ENOTDIR;
     }
 

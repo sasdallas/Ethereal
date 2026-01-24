@@ -74,6 +74,7 @@ typedef struct process {
     char *name;                         // Name of the process
     int exit_status;                    // Exit statuscode
     int exit_reason;                    // Reason for exit
+    vfs_file_t *exe_image;              // Executable image
 
     // IDs
     pid_t pid;                          // Process ID
@@ -101,6 +102,7 @@ typedef struct process {
 
     // FILE INFORMATION
     char *wd_path;                      // Working directory path
+    vfs_inode_t *wd_node;               // Working directory node
     fd_table_t *fd_table;               // File descriptor table
 
     // MEMORY REGIONS
@@ -213,7 +215,7 @@ process_t *process_createKernel(char *name, unsigned int flags, unsigned int pri
  * @param envp The environment variables pointer
  * @returns Error code
  */
-int process_execute(char *path, fs_node_t *file, int argc, char **argv, char **envp);
+int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **envp);
 
 /**
  * @brief Exiting from a process

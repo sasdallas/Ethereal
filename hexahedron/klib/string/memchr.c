@@ -21,6 +21,6 @@ void *memchr(const void *s, int ch, size_t n) {
 
 void *memchrr(const void *s, int ch, size_t n) {
     unsigned char *p = (unsigned char*)s;
-    for (unsigned i = n; i > 0; i--) if (p[i] == ch) return &p[i];
+    for (size_t i = n; i > 0; i--) if (p[i-1] == (unsigned char)ch) return &p[i-1];
     return NULL;
 }

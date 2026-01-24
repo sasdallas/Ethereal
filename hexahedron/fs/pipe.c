@@ -173,8 +173,11 @@ int pipe_create(process_t *process, int fildes[2]) {
     fs_pipe_t *pipe = pipe_createPipe();
 
     // Add file descriptors to process
-    fd_t *read_fd = fd_add(process, pipe->read);
-    fd_t *write_fd = fd_add(process, pipe->write);
+    // fd_t *read_fd = fd_add(process, pipe->read);
+    // fd_t *write_fd = fd_add(process, pipe->write);
+    fd_t *read_fd = NULL;
+    fd_t *write_fd = NULL;
+    assert(0);
 
     // Set file descriptor numbers
     fildes[0] = read_fd->fd_number;

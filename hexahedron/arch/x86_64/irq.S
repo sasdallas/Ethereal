@@ -171,6 +171,7 @@ halCommonIRQHandler:
         jmp halCommonIRQHandler
 .endm
 
+// this used to be different, i dont care enough to change it.
 .macro LAPIC_IRQ name index
     .global \name
     &name:

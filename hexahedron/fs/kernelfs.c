@@ -83,9 +83,8 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
                     char tmp_buffer2[512] = { 0 };
                     node->length += snprintf(tmp_buffer2, 512-strlen(tmp_buffer),
                         "FileDescriptor:%d\n"
-                        "Name:%s\n",
-                            fd->fd_number,
-                            fd->node->name);
+                        "Path:%s\n",
+                            fd->fd_number, fd->path);
                 
                     strcat(tmp_buffer, tmp_buffer2);
                 }
@@ -119,8 +118,12 @@ int kernelfs_processdirOpen(fs_node_t *node, unsigned int flags) {
  * @brief /kernel/processes/<pid> finddir method
  */
 fs_node_t *kernelfs_processdirFinddir(fs_node_t *node, char *path) {
-    fs_node_t *file = kmalloc(sizeof(fs_node_t));
-    memset(file, 0, sizeof(fs_node_t));
+    if (!strncmp(path, "exe", 256)) {
+        assert(0);
+    }
+
+
+    fs_node_t *file = fs_node();
     snprintf(file->name, 256, "%s", path);
     file->flags = VFS_FILE;
     file->atime = file->mtime = file->ctime = now();
@@ -157,7 +160,7 @@ struct dirent *kernelfs_processdirReaddir(fs_node_t *node, unsigned long index) 
     index -= 2;
 
     // Maximum count
-    if (index > 1) {
+    if (index > 2) {
         return NULL;
     }
 
@@ -168,8 +171,11 @@ struct dirent *kernelfs_processdirReaddir(fs_node_t *node, unsigned long index) 
     if (index == 0) {
         strcpy(out->d_name, "info");
         return out;
-    } else {
+    } else if (index == 1) {
         strcpy(out->d_name, "fds");
+        return out;
+    } else {
+        strcpy(out->d_name, "exe");
         return out;
     }
 }
@@ -178,6 +184,19 @@ struct dirent *kernelfs_processdirReaddir(fs_node_t *node, unsigned long index) 
  * @brief /kernel/processes finddir method
  */
 fs_node_t *kernelfs_processesFinddir(fs_node_t *node, char *path) {
+    if (!strcmp(path, "self")) {
+        fs_node_t *file = kmalloc(sizeof(fs_node_t));
+        memset(file, 0, sizeof(fs_node_t));
+        snprintf(file->name, 256, "%i", current_cpu->current_process->pid);
+        file->flags = VFS_DIRECTORY;
+        file->atime = file->mtime = file->ctime = now();
+        file->mask = 0777;
+        file->readdir = kernelfs_processdirReaddir;
+        file->finddir = kernelfs_processdirFinddir;
+        file->dev = (void*)current_cpu->current_process;
+        return file;
+    }
+
     // TODO: better
     int pid = atoi(path);
 
@@ -229,6 +248,13 @@ struct dirent *kernelfs_processesReaddir(fs_node_t *node, unsigned long index) {
         }
 
         i++;
+    }
+
+    if (i == index) {
+        struct dirent *out = kmalloc(sizeof(struct dirent));
+        snprintf(out->d_name, 512, "self");
+        out->d_ino = current_cpu->current_process->pid;
+        return out;
     }
 
     return NULL;

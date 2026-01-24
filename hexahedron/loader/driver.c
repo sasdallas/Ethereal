@@ -27,8 +27,7 @@
 #include <kernel/loader/elf_loader.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/mm/vmm.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <kernel/misc/args.h>
@@ -131,16 +130,17 @@ static void driver_handleLoadError(int priority, char *error, char *file) {
  * @param argv Argument data
  * @returns 0 on success, anything else is a failure/panic
  */
-int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv) {
+int driver_load(vfs_file_t *driver_file, int priority, char *file, int argc, char **argv) {
+    size_t length = inode_size(driver_file->inode);
+
     // First we have to map the driver into memory. The mem subsystem provides functions for this.
-    uintptr_t driver_load_address = (uintptr_t)vmm_map(NULL, driver_file->length, VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
-    memset((void*)driver_load_address, 0, driver_file->length);
+    uintptr_t driver_load_address = (uintptr_t)vmm_map(NULL, length, VM_FLAG_ALLOC, MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
 
     // Now we can read the file into this address
-    if (fs_read(driver_file, 0, driver_file->length, (uint8_t*)driver_load_address) != (ssize_t)driver_file->length) {
+    if (vfs_read(driver_file, 0, length, (char*)driver_load_address) != (ssize_t)length) {
         // Uh oh, read error.
         driver_handleLoadError(priority, "Read error", file);
-        vmm_unmap((void*)driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, length);
         return -EIO;
     }
 
@@ -149,7 +149,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     if (elf == 0x0) {
         // Load failed
         driver_handleLoadError(priority, "ELF load error (check to make sure architecture matches)", file);
-        vmm_unmap((void*)driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, length);
         return -ENOEXEC;
     }
 
@@ -159,7 +159,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
         // No metadata
         driver_handleLoadError(priority, "No driver metadata (checked for driver_metadata symbol)", file);
         elf_cleanup(elf);
-        vmm_unmap((void*)driver_load_address, driver_file->length);
+        vmm_unmap((void*)driver_load_address, length);
         return -EINVAL;
     }
 
@@ -171,8 +171,7 @@ int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char
     loaded_driver->metadata = kmalloc(sizeof(driver_metadata_t));
     memcpy(loaded_driver->metadata, metadata, sizeof(driver_metadata_t));
 
-
-    // !!!: VERY VERY VERY VERY VERY BAD!!!!!!!!!!
+    // !!!: VERY VERY VERY VERY VERY BAD!!!!!!!!!! BREAKS ALL VMM RULES
     vmm_memory_range_t *r = vmm_getRange(vmm_kernel_space, driver_load_address, 1);
     assert(r);
     ssize_t driver_loaded_size = (ssize_t)(r->end - driver_load_address);
@@ -293,17 +292,17 @@ static hashmap_t *driver_getNoLoadHashmap() {
  * 
  * @note This will panic if any drivers have the label of "CRITICAL"
  */
-int driver_loadConfiguration(fs_node_t *file) {
+int driver_loadConfiguration(vfs_file_t *file) {
     if (!file) kernel_panic(KERNEL_BAD_ARGUMENT_ERROR, "driver");
 
     // Get the "no load" map
     hashmap_t *noload_map = driver_getNoLoadHashmap();
 
     // Read the file into a buffer
-    uint8_t *data = kmalloc(file->length);
-    memset(data, 0, file->length);
+    size_t conf_len = inode_size(file->inode);
+    uint8_t *data = kmalloc(conf_len);
 
-    if (fs_read(file, 0, file->length, data) != (ssize_t)file->length) {
+    if (vfs_read(file, 0, conf_len, (char*)data) != (ssize_t)conf_len) {
         kernel_panic_extended(DRIVER_LOADER_ERROR, "driver", "*** Failed to read driver configuration file\n");
         __builtin_unreachable();
     }
@@ -312,7 +311,7 @@ int driver_loadConfiguration(fs_node_t *file) {
     json_settings settings = { 0 };
     settings.value_extra = json_builder_extra;
     char error[128];
-    json_value *json_data = json_parse_ex(&settings, (char*)data, file->length, error);
+    json_value *json_data = json_parse_ex(&settings, (char*)data, conf_len, error);
 
     if (!data) {
         kernel_panic_extended(DRIVER_LOADER_ERROR, "driver", "*** Failed to parse JSON data of driver configuration file: %s\n", error);
@@ -365,8 +364,10 @@ int driver_loadConfiguration(fs_node_t *file) {
         LOG(INFO, "Loading driver \"%s\" with priority %s...\n", full_filename, priority_str);
      
         // Try to open the driver
-        fs_node_t *driver_file = kopen(full_filename, O_RDONLY);
-        if (!driver_file) {
+        vfs_file_t *driver_file;
+        int r = vfs_open(full_filename, 0, &driver_file);
+
+        if (r) {
             driver_handleLoadError(priority, "File not found", filename);
         } else {
             char *arguments[] = { filename }; // by default just filename
@@ -391,7 +392,7 @@ int driver_loadConfiguration(fs_node_t *file) {
         json_value_free(filename_obj);
 
         // Free values
-        fs_close(driver_file);
+        vfs_close(driver_file);
     }
 
     kfree(drivers_array->u.array.values);

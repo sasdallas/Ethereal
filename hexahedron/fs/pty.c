@@ -574,7 +574,7 @@ void pty_name(pty_t *pty, char *name) {
  * @param index The index of the TTY. If -1, an index will be auto assigned. If specified, it will not be mounted under /device/pts
  * @returns PTY or NULL on failure
  */
-pty_t *pty_create(struct termios *tios, struct winsize *size, int index) {
+pty_t *pty_create2(struct termios *tios, struct winsize *size, int index) {
     // Allocate a new pty
     pty_t *pty = kmalloc(sizeof(pty_t));
     memset(pty, 0, sizeof(pty_t));

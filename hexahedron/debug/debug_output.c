@@ -238,6 +238,7 @@ int debug_mount() {
  */
 static int debug_check() {
     if (kargs_has("--debug")) {
+        dprintf(DEBUG, "%s\n", kargs_get("--debug"));
         if (!strcmp(kargs_get("--debug"), "none")) {
             debug_ignore = 1;
         } else if (!strcmp(kargs_get("--debug"), "console")) {

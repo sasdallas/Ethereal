@@ -25,7 +25,7 @@
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/slab.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/
@@ -36,6 +36,7 @@
 #define VM_FLAG_FILE        0x4         // File mapping
 #define VM_FLAG_SHARED      0x8         // Shared memory mapping
 #define VM_FLAG_DEVICE      0x10        // The physical memory of this mapping refers to device memory and should not be held or freed
+#define VM_FLAG_FAKE_ME_NOT 0x20        // Do not allow this memory region to be filled in later and fill it in now
 
 /* VM_OP_ */
 #define VM_OP_SET_FLAGS     1
@@ -62,6 +63,11 @@
 
 typedef uint64_t vmm_flags_t;
 
+typedef struct vmm_file {
+    vfs_file_t *node;
+    off_t offset;                           // offset of the file
+} vmm_file_t;
+
 typedef struct vmm_memory_range {
     // Linked list fields
     struct vmm_memory_range *next;
@@ -71,7 +77,7 @@ typedef struct vmm_memory_range {
     uintptr_t end;                      // MMU end address
     vmm_flags_t vmm_flags;              // VMM flags
     mmu_flags_t mmu_flags;              // MMU flags
-    fs_node_t *node;                    // Filesystem node this node maps to    
+    vmm_file_t file;                    // File
 } vmm_memory_range_t;
 
 // Concept shamelessly taken from @mathewnd (thank you)

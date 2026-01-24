@@ -948,7 +948,8 @@ sock_t *tcp_socket() {
  */
 static int tcp_init() {
     tcp_port_map = hashmap_create_int("tcp port map", 20);
-    return ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
+    // return ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
+    return 0;
 }
 
 NET_INIT_ROUTINE(tcp, INIT_FLAG_DEFAULT, tcp_init, ipv4);

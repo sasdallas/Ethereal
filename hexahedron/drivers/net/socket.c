@@ -14,6 +14,7 @@
  */
 
 #include <kernel/drivers/net/socket.h>
+#include <kernel/drivers/net/socket_fs.h>
 #include <kernel/task/syscall.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -40,72 +41,29 @@ int last_socket_id = 0;
 #define SOCKET_CHANGE_FLAG(flag, value) { if (value) { sock->flags |= flag; } else { sock->flags &= ~(flag); } };
 #define SOCKET_GET_FLAG(flag, value, len) { if (sock->flags & flag) { *(int*)value = 1; } else { *(int*)value = 0; }; if (*len > sizeof(int)) *len = sizeof(int); }
 
+/* Socket cache */
+slab_cache_t *socket_cache;
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NET:SOCKET", __VA_ARGS__)
 
 /**
- * @brief Raw socket sendmsg method
+ * @brief Allocate a socket
+ * @param domain The domain of the socket
+ * @param type The type of the socket
+ * @param protocol The protocol of the socket
  */
-static ssize_t socket_raw_sendmsg(sock_t *sock, struct msghdr *message, int flags) {
-    // Is this socket bound?
-    if (!sock->bound_nic) return -EINVAL;
+sock_t *socket_allocate(int domain, int type, int protocol) {
+    sock_t *r = slab_allocate(socket_cache);
+    if (!r) return NULL;
 
-    // For each iovec...
-    size_t total_sent = 0;
-    LOG(DEBUG, "RAW: Sending message\n");
-    for (unsigned i = 0; i < message->msg_iovlen; i++) {
-        // Try to send some data to the NIC
-        total_sent += fs_write(sock->bound_nic->parent_node, 0, message->msg_iov[i].iov_len, message->msg_iov[i].iov_base);
-    }
+    memset(r, 0, sizeof(sock_t));
 
-    return total_sent;
-}
+    r->domain = domain;
+    r->type = type;
+    r->protocol = protocol;
 
-/**
- * @brief Raw socket recvmsg
- */
-static ssize_t socket_raw_recvmsg(sock_t *sock, struct msghdr *message, int flags) {
-    // Is this socket bound?
-    if (!sock->bound_nic) return -EINVAL;
-
-    // For each iovec...
-    ssize_t total_received = 0;
-    LOG(DEBUG, "RAW: Receiving message\n");
-    for (unsigned i = 0; i < message->msg_iovlen; i++) {
-        // Try to get some data
-        sock_recv_packet_t *pkt = socket_get(sock);
-        if (!pkt) return -EINTR;
-
-        // TODO: Handle size mismatch better?
-        if (pkt->size > message->msg_iov[i].iov_len) {
-            // TODO: Set MSG_TRUNC
-            LOG(WARN, "Truncating packet from %d -> %d\n", pkt->size, message->msg_iov[i].iov_len);
-            memcpy(message->msg_iov[i].iov_base, pkt->data, message->msg_iov[i].iov_len);
-            total_received += message->msg_iov[i].iov_len;
-            kfree(pkt);
-            continue;
-        }
-
-        // Copy it and free the packet
-        memcpy(message->msg_iov[i].iov_base, pkt->data, pkt->size);
-        total_received += pkt->size;
-        kfree(pkt);
-    }
-
-    return total_received;
-}
-
-
-/**
- * @brief Raw socket create method
- */
-static sock_t *socket_raw_create(int type, int protocol) {
-    sock_t *sock = kzalloc(sizeof(sock_t));
-
-    sock->sendmsg = socket_raw_sendmsg;
-    sock->recvmsg = socket_raw_recvmsg;
-
-    return sock;
+    return r;
 }
 
 /**
@@ -152,17 +110,17 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
     
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
 
-    sock_t *sock = (sock_t*)socknode->dev;
-    if (sock->sendmsg) {
-        return sock->sendmsg(sock, message, flags);
+    sock_t *sock = (sock_t*)f->priv;
+    if (sock->ops->sendmsg) {
+        return sock->ops->sendmsg(sock, message, flags);
     } else {
-        return -EINVAL;
+        return -ENODEV;
     }
 }
 
@@ -177,17 +135,17 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
     
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
 
-    sock_t *sock = (sock_t*)socknode->dev;
-    if (sock->recvmsg) {
-        return sock->recvmsg(sock, message, flags);
+    sock_t *sock = (sock_t*)f->priv;
+    if (sock->ops->recvmsg) {
+        return sock->ops->recvmsg(sock, message, flags);
     } else {
-        return -EINVAL;
+        return -ENODEV;
     }
 }
 
@@ -280,18 +238,7 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
             LOG(ERR, "Send buffer not implemented\n");
             return 0;   // Our receive/send buffers are dynamic
         case SO_BINDTODEVICE:
-            const char *device = option_value;
-            SYSCALL_VALIDATE_PTR(device);
-
-            // Find the NIC
-            nic_t *nic = nic_find((char*)device);
-            if (!nic) return -ENOENT;
-
-            // Bind it
-            sock->bound_nic = nic;
-
-            LOG(DEBUG, "Bound to NIC %s\n", device);
-
+            assert(0 && "SO_BINDTODEVICE");
             return 0;
     }
 
@@ -361,7 +308,7 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    fs_node_t *socknode = NULL; assert(0);
     if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
@@ -388,7 +335,7 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    fs_node_t *socknode = NULL; assert(0);
     if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
@@ -416,18 +363,18 @@ int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
 
-    if (sock->bind) {
-        return sock->bind(sock, addr, addrlen);
+    if (sock->ops->bind) {
+        return sock->ops->bind(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -441,18 +388,18 @@ int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
 
-    if (sock->connect) {
-        return sock->connect(sock, addr, addrlen);
+    if (sock->ops->connect) {
+        return sock->ops->connect(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -465,16 +412,16 @@ int socket_listen(int socket, int backlog) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
-    if (sock->listen) {
-        return sock->listen(sock, backlog);
+    if (sock->ops->listen) {
+        return sock->ops->listen(sock, backlog);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -488,19 +435,19 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
 
     // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->accept) {
-        return sock->accept(sock, addr, addrlen);
+    if (sock->ops->accept) {
+        return sock->ops->accept(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -514,7 +461,7 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    fs_node_t *socknode = NULL; assert(0);
     if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
@@ -541,7 +488,7 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
+    fs_node_t *socknode = NULL; assert(0);
     if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)socknode->dev;
@@ -656,21 +603,24 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     if (!sock->recv_wait_queue) sock->recv_wait_queue = sleep_createQueue("receive sleep queue");
     if (!sock->recv_queue) sock->recv_queue = list_create("receive queue");
 
-    // Build a filesystem node
-    if (!sock->node) {
-        fs_node_t *node = kzalloc(sizeof(fs_node_t));
-        strcpy(node->name, "socket");
-        node->flags = VFS_SOCKET;
-        node->atime = node->ctime = node->mtime = now();
-        node->dev = (void*)sock;
-        node->ready = socket_ready;
-        node->close = socket_close;
-        node->read = socket_read;
-        node->write = socket_write;
-        node->ioctl = socket_ioctl;
-        node->refcount = 1;
-        sock->node = node;
-    }
+    // // Build a filesystem node
+    // if (!sock->node) {
+    //     fs_node_t *node = kzalloc(sizeof(fs_node_t));
+    //     strcpy(node->name, "socket");
+    //     node->flags = VFS_SOCKET;
+    //     node->atime = node->ctime = node->mtime = now();
+    //     node->dev = (void*)sock;
+    //     node->ready = socket_ready;
+    //     node->close = socket_close;
+    //     node->read = socket_read;
+    //     node->write = socket_write;
+    //     node->ioctl = socket_ioctl;
+    //     node->refcount = 1;
+    //     sock->node = node;
+    // }
+
+    sock->node = (fs_node_t*)0xdeadbeef;
+    sock->inode = socketfs_create(sock);
 
     // Setup other parameters
     sock->domain = domain;
@@ -685,8 +635,10 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     }
 
     // Add as file descriptor
-    fd_t *fd = fd_add(proc, sock->node);
-    
+    vfs_file_t *f;    
+    assert(vfs_openat(sock->inode, NULL, O_RDWR, &f) == 0);
+
+    fd_t *fd = fd_add(proc, f);
     if (type_original & SOCK_CLOEXEC) {
         LOG(WARN, "SOCK_CLOEXEC is not supported\n");
     }
@@ -729,7 +681,7 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     list_append(sock->recv_queue, (void*)pkt);
 
     // Alert
-    fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
+    poll_signal(&sock->sock_event, POLLIN);
 
     // Wakeup a thread from the queue
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
@@ -791,6 +743,7 @@ sock_t *socket_fromID(int id) {
 static int socket_init() {
     socket_map = hashmap_create_int("socket map", 4);
     socket_list = list_create("socket list");
+    assert((socket_cache = slab_createCache("socket node cache", SLAB_CACHE_DEFAULT, sizeof(sock_t), 0, NULL, NULL)));
     return 0;
 }
 

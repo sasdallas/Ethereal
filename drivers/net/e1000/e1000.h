@@ -17,7 +17,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/drivers/net/nic.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/task/process.h>
@@ -176,7 +176,7 @@ typedef struct e1000_tx_desc {
 typedef struct e1000 {
     pci_device_t *pci_device;                   // PCI device
     uint16_t nic_type;                          // Device ID field
-    fs_node_t *nic;                             // NIC
+    nic_t *n;                             		// NIC
 	spinlock_t *lock;							// NIC lock
 
     uintptr_t mmio;                             // MMIO address

@@ -16,7 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 /**** TYPES ****/
 
@@ -61,8 +61,8 @@ typedef struct loaded_driver {
 /**** DEFINITIONS ****/
 
 // The default location of the drivers directory and config file
-#define DRIVER_DEFAULT_PATH                 "/device/initrd/boot/drivers/"
-#define DRIVER_DEFAULT_CONFIG_LOCATION      "/device/initrd/boot/drivers/driver_conf.json"
+#define DRIVER_DEFAULT_PATH                 "/boot/drivers/"
+#define DRIVER_DEFAULT_CONFIG_LOCATION      "/boot/drivers/driver_conf.json"
 
 // Make sure to update buildscripts/create_driver_data.py if you change this
 #define DRIVER_CRITICAL     0   // Panic if load fails
@@ -103,7 +103,7 @@ void driver_initialize();
  * 
  * @note This will panic if any drivers have the label of "CRITICAL"
  */
-int driver_loadConfiguration(fs_node_t *file);
+int driver_loadConfiguration(vfs_file_t *file);
 
 
 /* TODO: Maybe calm down on the arguments for this function */
@@ -117,7 +117,7 @@ int driver_loadConfiguration(fs_node_t *file);
  * @param argv Argument data
  * @returns Driver ID on success, anything else is a failure/panic
  */
-int driver_load(fs_node_t *driver_file, int priority, char *file, int argc, char **argv);
+int driver_load(vfs_file_t *driver_file, int priority, char *file, int argc, char **argv);
 
 /**
  * @brief Find a driver by name and return data on it

@@ -62,7 +62,7 @@ int icmp_send(fs_node_t *nic_node, in_addr_t dest, uint8_t type, uint8_t code, u
  * @param frame The frame that was received
  * @param size The size of the packet
  */
-int icmp_handle(fs_node_t *nic_node, void *frame, size_t size);
+int icmp_handle(nic_t *nic_node, void *frame, size_t size);
 
 /**
  * @brief Ping!

@@ -114,7 +114,7 @@ typedef struct rtl8139 {
     size_t tx_buffer_size;      // Tx buffer size
     uint32_t tx_current;        // Current Tx indicator
 
-    fs_node_t *nic;             // NIC object
+    nic_t *n;                   // NIC object
 } rtl8139_t;
 
 #endif

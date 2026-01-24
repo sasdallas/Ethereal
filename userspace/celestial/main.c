@@ -192,7 +192,7 @@ int main(int argc, char *argv[]) {
 
     // If there wasn't a log device, open one.
     if (!__celestial_log_device) {
-        __celestial_log_device = fopen("/device/log", "w");
+        __celestial_log_device = fopen("/device/fbcon", "w");
     }
 
     dup2(fileno(__celestial_log_device), STDOUT_FILENO);
