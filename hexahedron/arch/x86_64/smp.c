@@ -333,7 +333,7 @@ int smp_getCPUCount() {
 /**
  * @brief Get the current CPU's APIC ID
  */
-int smp_getCurrentCPU() {
+inline int smp_getCurrentCPU() {
     return current_cpu->cpu_id;
 }
 

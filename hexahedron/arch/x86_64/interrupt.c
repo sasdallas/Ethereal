@@ -208,7 +208,7 @@ int hal_registerInterruptVector(uint8_t index, uint8_t flags, uint16_t segment, 
 /**
  * @brief Handle ending an interrupt
  */
-void hal_endInterrupt(uintptr_t interrupt_number) {
+inline void hal_endInterrupt(uintptr_t interrupt_number) {
     pic_eoi(interrupt_number);
 }
 
@@ -243,7 +243,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
             return;
         }
 
-        // smp_acknowledgeCoreShutdown();
+        smp_acknowledgeCoreShutdown();
         for (;;);
     }
     

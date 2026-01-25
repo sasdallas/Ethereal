@@ -33,7 +33,7 @@ extern generic_parameters_t *parameters;
 /**
  * @brief Returns the current CPU active in the system
  */
-int arch_current_cpu() {
+inline int arch_current_cpu() {
     return smp_getCurrentCPU();
 }
 

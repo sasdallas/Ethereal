@@ -254,9 +254,10 @@ int signal_handle(struct thread *thr, registers_t *regs) {
     process_t *proc = thr->parent;
     if (!proc) return 0;
 
+    if (!SIGNAL_ANY_PENDING(thr)) goto _done;
+
     // Lock the process' siglock
     spinlock_acquire(&thr->siglock);
-    if (!SIGNAL_ANY_PENDING(thr)) goto _done;
     
     // !!!: RT signals are not supported
     for (int i = 0; i < SIGRTMIN; i++) {
