@@ -25,33 +25,19 @@
 struct drive;
 struct partition;
 
-/**
- * @brief Partition read method
- * @param partition The partition to read
- * @param off The offset to read at
- * @param size The size to read at
- * @param buffer The buffer to read into
- */
-typedef ssize_t (*partition_read_t)(struct partition *part, off_t off, size_t size, uint8_t *buffer);
-
-/**
- * @brief Partition write method
- * @param partition The partition to write
- * @param off The offset to write to
- * @param size The size to write to
- * @param buffer The buffer to write from
- */
-typedef ssize_t (*partition_write_t)(struct partition *part, off_t off, size_t size, uint8_t *buffer);
+typedef struct partition_ops {
+    ssize_t (*read)(struct partition *part, loff_t off, size_t size, char *buffer);
+    ssize_t (*write)(struct partition *part, loff_t off, size_t size, const char *buffer);
+} partition_ops_t;
 
 typedef struct partition {
     struct drive *parent;               // Parent drive
     size_t size;                        // Size of partition
     char *label;                        // Optional partition label
     unsigned long index;                // Last partition index
-    fs_node_t *node;                    // Node
+    devfs_node_t *node;                 // Device filesystem node
 
-    partition_read_t read;              // Read method
-    partition_write_t write;            // Write method
+    partition_ops_t *ops;               // Partition operations
     void *d;                            // Driver-specific
 } partition_t;
 
@@ -62,13 +48,9 @@ typedef struct partition {
  * @brief Create a new partition on a drive
  * @param drive The drive to create the partition on
  * @param size Size of the partition
+ * @param ops Partition operations
+ * @param d Private data variable
  */
-partition_t *partition_create(struct drive *drive, size_t size);
-
-/**
- * @brief Mount a partition
- * @param partition The partition to mount
- */
-int partition_mount(partition_t *part);
+partition_t *partition_create(struct drive *drive, size_t size, partition_ops_t *ops, void *d);
 
 #endif

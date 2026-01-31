@@ -191,8 +191,6 @@ void syscall_handle(syscall_t *syscall) {
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
     if (syscall->syscall_number == 999) {
-        // extern void arch_profiler_init();
-        // arch_profiler_init();
         syscall->return_value = 0;
         return;
     }
@@ -1625,7 +1623,7 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
 
         struct dirent *ent = (struct dirent*)p;
         strncpy(ent->d_name, ctx->name, 1024);
-        LOG(DEBUG, "read entry: %s\n", ent->d_name);
+        
         ent->d_ino = ctx->ino;
         ent->d_type = ctx->type;
         ent->d_reclen = sizeof(struct dirent);

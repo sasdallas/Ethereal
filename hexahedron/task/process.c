@@ -943,6 +943,7 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
     // Put ourselves in our wait queue
     if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
 
+    // !!!: memory leak
     node_t *n = kmalloc(sizeof(node_t));
     n->value = current_cpu->current_thread;
     n->prev = n->next = NULL;

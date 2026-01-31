@@ -20,28 +20,34 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "STORAGE:MBR", __VA_ARGS__)
 
+static ssize_t mbr_write(partition_t *part, loff_t offset, size_t size, const char *buffer);
+static ssize_t mbr_read(partition_t *part, loff_t offset, size_t size, char *buffer);
+
+static partition_ops_t mbr_ops = {
+    .read = mbr_read,
+    .write = mbr_write,
+};
+
 /**
  * @brief MBR read method
  */
-ssize_t mbr_read(partition_t *part, off_t offset, size_t size, uint8_t *buffer) {
-    // mbr_partition_t *p2 = (mbr_partition_t*)part->d;
-    // if (offset > (off_t)p2->size) return 0;
-    // if (size + offset > p2->size) size = p2->size - offset;
+static ssize_t mbr_read(partition_t *part, loff_t offset, size_t size, char *buffer) {
+    mbr_partition_t *p2 = (mbr_partition_t*)part->d;
+    if (offset > (off_t)p2->size) return 0;
+    if (size + offset > p2->size) size = p2->size - offset;
 
-    // return fs_read(part->parent->node, p2->offset + offset, size, buffer);
-    assert(0);
+    return part->parent->node->ops->read(part->parent->node, p2->offset + offset, size, buffer); // !!!
 }
 
 /**
  * @brief MBR write method
  */
-ssize_t mbr_write(partition_t *part, off_t offset, size_t size, uint8_t *buffer) {
-    // mbr_partition_t *p2 = (mbr_partition_t*)part->d;
-    // if (offset > (off_t)p2->size) return 0;
-    // if (size + offset > p2->size) size = p2->size - offset;
+static ssize_t mbr_write(partition_t *part, loff_t offset, size_t size, const char *buffer) {
+    mbr_partition_t *p2 = (mbr_partition_t*)part->d;
+    if (offset > (off_t)p2->size) return 0;
+    if (size + offset > p2->size) size = p2->size - offset;
 
-    // return fs_write(part->parent->node, p2->offset + offset, size, buffer);
-    assert(0);
+    return part->parent->node->ops->write(part->parent->node, p2->offset + offset, size, buffer); // !!!
 }
 
 /**
@@ -79,14 +85,7 @@ int mbr_init(struct drive *drive) {
             part->type = mbr_header.entries[i].type;
             part->size = mbr_header.entries[i].sector_count * drive->sector_size;
             part->offset = mbr_header.entries[i].lba * drive->sector_size;
-
-            partition_t *partition = partition_create(drive, part->size);
-            partition->d = part;
-            partition->label = NULL;
-            partition->read = mbr_read;
-            partition->write = mbr_write;
-
-            partition_mount(partition);
+            partition_create(drive, part->size, &mbr_ops, part);
         }
     }
 
