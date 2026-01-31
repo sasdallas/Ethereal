@@ -78,11 +78,9 @@ static int sharedfs_close(devfs_node_t *n) {
     if (obj->refcount <= 0) {
         // We hit the bottom of our refcounts, free the object
         for (uintptr_t i = 0; i < obj->size / PAGE_SIZE; i++) {
-            LOG(DEBUG, "Freeing page %p\n", obj->blocks[i]);
             if (obj->blocks[i]) pmm_freePage(obj->blocks[i]);
         }
 
-        LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
         kfree(obj->blocks);
         kfree(obj);
     }
@@ -132,7 +130,6 @@ static int sharedfs_munmap(devfs_node_t *n, void *addr, size_t size, off_t off) 
     // Align size to page size
     if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);  
 
-    LOG(DEBUG, "Unmapping shared filesystem\n");
     vmm_unmap(addr, size); // !!!: TO BE FIXED, this is a security vulnerability!
 
     return 0;
@@ -173,7 +170,6 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
     obj->f = f;
 
     fd_t *fd = fd_add(proc, f);
-    file_release(obj->f); // drop the initial reference we had, as fd_add() adds another one.
     return fd->fd_number;
 }
 
@@ -199,9 +195,15 @@ key_t sharedfs_key(vfs_file_t *f) {
  */
 int sharedfs_openFromKey(process_t *proc, key_t key) {
     // Validate that key exists
-    shared_object_t *obj = (shared_object_t*)hashmap_get(shared_hashmap, (void*)(uintptr_t)key);
-    if (obj == NULL) return -ENOENT;
-    fd_t *fd = fd_add(proc, obj->f);
+    if (!hashmap_has(shared_hashmap, (void*)(uintptr_t)key)) return -ENOENT;
+    char name[256];
+    snprintf(name, 256, "/device/shared/%d", key);
+
+    vfs_file_t *f = NULL;
+    int r = vfs_open(name, O_RDWR, &f);
+    if (r) return r;
+
+    fd_t *fd = fd_add(proc, f);
     return fd->fd_number;
 }
 

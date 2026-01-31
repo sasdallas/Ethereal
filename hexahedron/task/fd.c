@@ -85,8 +85,6 @@ fd_t *fd_add(struct process *process, vfs_file_t *node) {
             process->fd_table->fds[i] = new_fd;
             process->fd_table->amount++;
 
-            file_hold(node);
-            
             spinlock_release(&process->fd_table->lock);
             return new_fd;
         }

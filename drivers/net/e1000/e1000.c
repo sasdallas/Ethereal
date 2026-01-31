@@ -271,13 +271,13 @@ void e1000_reset(e1000_t *nic) {
     (void)status; // Discard
 
 
-    clock_sleep(1000);
+    clock_sleep(100);
 
     // Reset
     uint32_t ctrl = E1000_RECVCMD(E1000_REG_CTRL);
     ctrl |= E1000_CTRL_RST;
     E1000_SENDCMD(E1000_REG_CTRL, ctrl);
-    clock_sleep(500);
+    clock_sleep(100);
 
     // Disable IRQs again
 	E1000_SENDCMD(E1000_REG_IMC, 0xFFFFFFFF);

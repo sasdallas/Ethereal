@@ -49,6 +49,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/fs/poll.h>
 #include <kernel/misc/mutex.h>
+#include <kernel/debug.h>
 
 /**** DEFINITIONS ****/
 
@@ -115,8 +116,8 @@ struct vmm_memory_range;
 typedef struct vfs_file_ops {
     int (*open)(struct vfs_file *file, unsigned long flags);
     int (*close)(struct vfs_file *file);
-    ssize_t (*read)(struct vfs_file *file, loff_t off, ssize_t size, char *buffer);
-    ssize_t (*write)(struct vfs_file *file, loff_t off, ssize_t size, const char *buffer);
+    ssize_t (*read)(struct vfs_file *file, loff_t off, size_t size, char *buffer);
+    ssize_t (*write)(struct vfs_file *file, loff_t off, size_t size, const char *buffer);
     int (*ioctl)(struct vfs_file *file, long request, void *argp);
     int (*get_entries)(struct vfs_file *file, vfs_dir_context_t *ctx); // should return 1 on finished, 0 on still going, < 0 on error
     poll_events_t (*poll_events)(struct vfs_file *file); // get poll events. optional fast route.
@@ -226,8 +227,8 @@ static inline void file_release(vfs_file_t *f) { refcount_dec(&f->refcount); if 
 /* avoid using these, most of the time their VFS counterparts work fine */
 static inline int file_open(vfs_file_t *f, unsigned long flags) { file_hold(f); if (f->ops->open) { return f->ops->open(f, flags); } else { return 0; } }
 static inline void file_close(vfs_file_t *f) { file_release(f); }
-static inline ssize_t file_read(vfs_file_t *f, loff_t off, ssize_t size, char *buffer) { if (f->ops->read) { return f->ops->read(f, off, size, buffer); } else { return -ENOTSUP; }}
-static inline ssize_t file_write(vfs_file_t *f, loff_t off, ssize_t size, const char *buffer) { if (f->ops->write) { return f->ops->write(f, off, size, buffer); } else { return -ENOTSUP; }}
+static inline ssize_t file_read(vfs_file_t *f, loff_t off, size_t size, char *buffer) { if (f->ops->read) { return f->ops->read(f, off, size, buffer); } else { return -ENOTSUP; }}
+static inline ssize_t file_write(vfs_file_t *f, loff_t off, size_t size, const char *buffer) { if (f->ops->write) { return f->ops->write(f, off, size, buffer); } else { return -ENOTSUP; }}
 static inline int file_ioctl(vfs_file_t *f, long request, void *argp) { if (f->ops->ioctl) { return f->ops->ioctl(f, request, argp); } else { return -ENOTSUP; } }
 static inline int file_get_entries(vfs_file_t *f, vfs_dir_context_t *ctx) { if (f->ops->get_entries) { return f->ops->get_entries(f, ctx); } else { return -ENOTSUP; }}
 static inline int file_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events) { if (f->ops->poll) { return f->ops->poll(f, waiter, events); } else { return -ENOTSUP; }} // ambig. if file doesn't support polling. poll()/select() should exit on file_poll_events tho

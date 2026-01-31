@@ -22,8 +22,8 @@
 
 /* Protos */
 static int tmpfs_open(vfs_file_t *file, unsigned long flags);
-static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer);
-static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer);
+static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
+static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx);
 static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output);
 static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output);
@@ -335,7 +335,7 @@ static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
 /**
  * @brief tmpfs read
  */
-static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer) {
+static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     tmpfs_node_t *node = file->priv;
 
     if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
@@ -345,7 +345,7 @@ static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buff
         return 0;
     }
 
-    if (off + size > file->inode->attr.size) {
+    if (off + size > (size_t)file->inode->attr.size) {
         size = file->inode->attr.size - off;
     }
 
@@ -384,12 +384,12 @@ static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buff
 /**
  * @brief tmpfs write
  */
-static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer) {
+static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
     tmpfs_node_t *n = file->priv;
     if (n->attr.type == VFS_DIRECTORY) return -EISDIR;
     if (n->attr.type != VFS_FILE) return -EINVAL;
 
-    if (off + size >= file->inode->attr.size) {
+    if (off + size >= (size_t)file->inode->attr.size) {
         int r = tmpfs_truncate(file->inode, off+size);
         if (r) return r;
     }

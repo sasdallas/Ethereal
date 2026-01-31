@@ -35,8 +35,6 @@ int (*serial_write_character_early)(char ch) = NULL;
 /* Port data */
 static serial_port_t *ports[MAX_COM_PORTS] = { 0 };
 
-static pty_t *serial_ptys[MAX_COM_PORTS] = { 0 };
-
 /**
  * @brief Set port
  * @param port The port to set. Depending on the value of COM port it will be added.
@@ -83,9 +81,6 @@ int serial_printf(serial_port_t *port, char *format, ...) {
  * @brief Serial input handler
  */
 void serial_handleInput(serial_port_t *port, char ch) {
-    if (serial_ptys[port->com_port-1]) {
-        pty_input(serial_ptys[port->com_port-1], ch);
-    }
 }
 
 /**
@@ -134,5 +129,3 @@ static int serial_init() {
 
 //     return 0;
 // }
-
-FS_INIT_ROUTINE(serial, INIT_FLAG_DEFAULT, serial_init, pty);

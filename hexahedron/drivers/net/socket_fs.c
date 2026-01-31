@@ -18,8 +18,8 @@
 
 /* File operations */
 static int socketfs_open(vfs_file_t *file, unsigned long flags);
-static ssize_t socketfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer);
-static ssize_t socketfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer);
+static ssize_t socketfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
+static ssize_t socketfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int socketfs_poll(vfs_file_t *file, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t socketfs_poll_events(vfs_file_t *file);
 static int socketfs_ioctl(vfs_file_t *f, long request, void *argp);
@@ -68,7 +68,7 @@ static int socketfs_open(vfs_file_t *file, unsigned long flags) {
 /**
  * @brief socketfs read
  */
-static ssize_t socketfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer) {
+static ssize_t socketfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     sock_t *sock = (sock_t*)file->priv;
     if (sock->ops->recvmsg == NULL) return -ENODEV;
 
@@ -90,7 +90,7 @@ static ssize_t socketfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *b
 /**
  * @brief socketfs write
  */
-static ssize_t socketfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer) {
+static ssize_t socketfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
     sock_t *sock = (sock_t*)file->priv;
     if (sock->ops->sendmsg == NULL) return -ENODEV;
 

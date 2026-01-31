@@ -172,8 +172,6 @@ typedef struct vfs_tree_node {
 
 /**** FUNCTIONS ****/
 
-extern uint64_t now();
-
 /**
  * @brief Standard POSIX open call
  * @param node The node to open

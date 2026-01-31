@@ -19,6 +19,9 @@
 /* Enable the kernel memory leak scanner */
 // #define KERNEL_ENABLE_MEMORY_LEAK_SCANNER 1
 
+/* Enable profiler */
+#define KERNEL_ENABLE_PROFILER 1
+
 /**** EXPOSED ****/
 
 /* This just exposes things exposed in config.c, which is remade every build. */

@@ -51,7 +51,7 @@ int lapic_available() {
 /**
  * @brief Read register from local APIC
  */
-uint32_t lapic_read(uint32_t reg) {
+inline uint32_t lapic_read(uint32_t reg) {
     if (!lapic_base) return 0;
     return *((uint32_t volatile*)(lapic_base + reg));
 }
@@ -61,7 +61,7 @@ uint32_t lapic_read(uint32_t reg) {
  * @param reg Register to write
  * @param data Data to write
  */
-void lapic_write(uint32_t reg, uint32_t data) {
+inline void lapic_write(uint32_t reg, uint32_t data) {
     if (!lapic_base) return;
     *((volatile uint32_t*)(lapic_base + reg)) = data;
 }
@@ -69,7 +69,7 @@ void lapic_write(uint32_t reg, uint32_t data) {
 /**
  * @brief Check whether local APIC initialized
  */
-int lapic_initialized() {
+inline int lapic_initialized() {
     return !!lapic_base;
 }
 
@@ -181,7 +181,7 @@ int lapic_timer_irq(uintptr_t exception_index, uintptr_t irq_number, registers_t
 /**
  * @brief Acknowledge local APIC interrupt
  */
-void lapic_acknowledge() {
+inline void lapic_acknowledge() {
     lapic_write(LAPIC_REGISTER_EOI, LAPIC_EOI);
 }
 
@@ -199,6 +199,15 @@ uint8_t lapic_readError() {
     return error;
 }
 
+/**
+ * @brief Enable local APIC profiling
+ */
+void lapic_profilingInit() {
+    uint32_t lvtpc = lapic_read(LAPIC_REGISTER_PERF);
+    lvtpc &= ~(0xff | LAPIC_LVT_SETMASK);
+    lvtpc |= 0x400;
+    lapic_write(LAPIC_REGISTER_PERF, lvtpc);
+}
 
 /**
  * @brief Initialize the local APIC

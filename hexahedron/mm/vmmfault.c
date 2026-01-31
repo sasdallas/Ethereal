@@ -39,6 +39,15 @@ int vmm_fault(vmm_fault_information_t *info) {
     // Get the range for it.
     vmm_memory_range_t *r = vmm_getRange(sp, info->address, 1);
     if (!r) {
+        // Perhaps this is part of the thread stack?
+        if (info->address >= MMU_USERMODE_STACK_REGION && info->address < MMU_USERMODE_STACK_REGION + MMU_USERMODE_STACK_SIZE) {
+            // Yes it is, expand the stack
+            assert(vmm_map((void*)PAGE_ALIGN_DOWN(info->address), PAGE_SIZE, VM_FLAG_FIXED | VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_WRITE | MMU_FLAG_PRESENT));
+            mutex_release(sp->mut);
+            LOG(DEBUG, "Expanded thread stack!\n");
+            return VMM_FAULT_RESOLVED;
+        }
+
         LOG(WARN, "No range contains %p - fault resolution FAILED\n", info->address);
         mutex_release(sp->mut);
         return VMM_FAULT_UNRESOLVED;

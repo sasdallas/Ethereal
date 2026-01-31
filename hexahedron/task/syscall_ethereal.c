@@ -32,7 +32,11 @@
 /**** SHARED MEMORY API ****/
 
 long sys_ethereal_shared_new(size_t size, int flags) {
-    return sharedfs_new(current_cpu->current_process, size, flags);
+    int f = sharedfs_new(current_cpu->current_process, size, flags);
+    if (f >= 0) {
+        LOG(INFO, "New shared memory object created (fd %d): %p\n", f, FD(current_cpu->current_process, f));
+    }
+    return f;
 }
 
 key_t sys_ethereal_shared_key(int fd) {

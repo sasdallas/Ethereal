@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include <kernel/fs/vfs.h>
 
 /**** TYPES ****/
 typedef int (*log_putchar_method_t)(void *user, char ch); // Put character method used by logger
@@ -109,23 +108,6 @@ log_putchar_method_t debug_getOutput();
  */
 int debug_print(void *user, char ch);
 
-/**
- * @brief Write function for debug console node
- * @param node The node
- * @param offset The offset
- * @param size The size of how much to write
- * @param buffer The buffer
- */
-ssize_t debug_write(struct fs_node *node, off_t offset, size_t size, uint8_t *buffer);
-
-/**
- * @brief Read function for debug console node
- * @param node The node
- * @param offset The offset
- * @param size The size of how much to read
- * @param buffer The buffer
- */
-ssize_t debug_read(struct fs_node *node, off_t offset, size_t size, uint8_t *buffer);
 
 
 #endif

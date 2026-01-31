@@ -26,8 +26,8 @@
 
 static int devfs_open(vfs_file_t *file, unsigned long flags);
 static int devfs_close(vfs_file_t *file);
-static ssize_t devfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer);
-static ssize_t devfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer);
+static ssize_t devfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
+static ssize_t devfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int devfs_ioctl(vfs_file_t *file, long request, void *argp);
 static int devfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx);
 static int devfs_poll(vfs_file_t *file, poll_waiter_t *waiter, poll_events_t events);
@@ -145,7 +145,7 @@ static int devfs_close(vfs_file_t *file) {
 /**
  * @brief devfs read
  */
-static ssize_t devfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buffer) {
+static ssize_t devfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     if (file->inode->attr.type == VFS_DIRECTORY) return -EISDIR;
     if (file->inode->attr.type != VFS_BLOCKDEVICE && file->inode->attr.type != VFS_CHARDEVICE) return -ENODEV;
 
@@ -160,7 +160,7 @@ static ssize_t devfs_read(vfs_file_t *file, loff_t off, ssize_t size, char *buff
 /**
  * @brief devfs write
  */
-static ssize_t devfs_write(vfs_file_t *file, loff_t off, ssize_t size, const char *buffer) {
+static ssize_t devfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
     if (file->inode->attr.type == VFS_DIRECTORY) return -EISDIR;
     if (file->inode->attr.type != VFS_BLOCKDEVICE && file->inode->attr.type != VFS_CHARDEVICE) return -ENODEV;
 
@@ -269,7 +269,6 @@ static int devfs_poll(vfs_file_t *file, poll_waiter_t *waiter, poll_events_t eve
  * @brief devfs lookup
  */
 static int devfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **inode_dst) {
-    LOG(DEBUG, "devfs lookup %s\n", name);
     if (inode->attr.type != VFS_DIRECTORY) return -ENOTDIR;
     devfs_node_t *n = (devfs_node_t*)inode->priv;
 
@@ -406,6 +405,8 @@ devfs_node_t *devfs_register(devfs_node_t *parent, char *name, int type, devfs_o
     node->ops = ops;
     node->priv = priv;
     node->attr.type = type;
+
+    assert(type == VFS_BLOCKDEVICE || type == VFS_CHARDEVICE);
 
     char name_copy[strlen(name) + 1]; // !!!
     strcpy(name_copy, name);

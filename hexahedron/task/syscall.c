@@ -190,6 +190,13 @@ void syscall_handle(syscall_t *syscall) {
     // Enter
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
+    if (syscall->syscall_number == 999) {
+        // extern void arch_profiler_init();
+        // arch_profiler_init();
+        syscall->return_value = 0;
+        return;
+    }
+
     // Is the system call within bounds?
     if (syscall->syscall_number < 0 || syscall->syscall_number >= (int)(sizeof(syscall_table) / sizeof(*syscall_table))) {
         LOG(ERR, "Invalid system call %d received\n");

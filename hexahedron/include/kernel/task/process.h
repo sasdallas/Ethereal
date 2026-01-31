@@ -32,7 +32,6 @@
 #include <kernel/task/futex.h>
 
 #include <kernel/processor_data.h>
-#include <kernel/fs/vfs.h>
 #include <structs/tree.h>
 
 #include <kernel/arch/arch.h>

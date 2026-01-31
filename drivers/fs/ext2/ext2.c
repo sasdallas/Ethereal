@@ -21,6 +21,7 @@
 #include <string.h>
 #include <kernel/task/process.h>
 #include <sys/time.h>
+#include <kernel/drivers/clock.h>
 #include <assert.h>
 
 /**

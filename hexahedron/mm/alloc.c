@@ -293,7 +293,7 @@ void alloc_init() {
 /**
  * @brief Get allocator bytes in use (cache)
  */
-size_t alloc_used() {
+inline size_t alloc_used() {
     return alloc_in_use;
 }
 
@@ -317,4 +317,11 @@ void alloc_postSMPInit() {
     for (int i = 0; i < ALLOC_CACHES; i++) {
         slab_reinitializeCache(alloc_caches[i]);
     }
+}
+
+/**
+ * @brief Get allocator cache count
+ */
+inline size_t alloc_cacheCount() {
+    return ALLOC_CACHES;
 }

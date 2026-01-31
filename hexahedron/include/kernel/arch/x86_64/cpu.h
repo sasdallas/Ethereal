@@ -68,6 +68,23 @@
 #define X86_64_MSR_CSTAR                0xC0000083
 #define X86_64_MSR_SFMASK               0xC0000084
 
+#define MSR_AMD_PERFEVTSEL0             0xC0010000
+#define MSR_AMD_PERFEVTSEL1             0xC0010001
+#define MSR_AMD_PERFEVTSEL2             0xC0010002
+#define MSR_AMD_PERFEVTSEL3             0xC0010003
+#define MSR_AMD_PERFCTR0                0xC0010004
+#define MSR_AMD_PERFCTR1                0xC0010005
+#define MSR_AMD_PERFCTR2                0xC0010006
+#define MSR_AMD_PERFCTR3                0xC0010007
+
+#define MSR_IA32_PMC0                   0xC1
+#define MSR_IA32_PERFEVTSEL0            0x186
+#define MSR_IA32_FIXED_CTR0             0x309  // Instructions retired
+#define MSR_IA32_FIXED_CTR1             0x30A  // Core cycles
+#define MSR_IA32_FIXED_CTR2             0x30B  // Reference cycles
+#define MSR_IA32_FIXED_CTR_CTRL         0x38D
+#define MSR_IA32_PERF_GLOBAL_CTRL       0x38F
+
 #define IA32_PAT_MSR                    0x277
 
 /**** TYPES ****/
@@ -167,6 +184,22 @@ typedef union {
 } CPUID_INTELADDRSIZE_EAX;
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief Read MSR
+ */
+inline uint64_t rdmsrl(unsigned int msr) {
+    uint32_t high, low;
+    asm volatile ("rdmsr" : "=a"(low), "=d"(high) : "c"(msr) : "memory");
+    return ((uint64_t)high << 32) | ((uint64_t)low);
+}
+
+/**
+ * @brief Write MSR
+ */
+inline void wrmsrl(unsigned int msr, uint64_t value) {
+    asm volatile ("wrmsr" :: "c"(msr), "a"((uint32_t)(value & 0xffffffff)), "d"((uint32_t)(value >> 32)) : "memory");
+}
 
 /**
  * @brief Checks whether the RDMSR/WRMSR instructions are supported

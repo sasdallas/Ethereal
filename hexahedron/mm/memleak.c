@@ -24,7 +24,6 @@
 #include <structs/hashmap.h>
 #include <kernel/misc/ksym.h>
 #include <string.h>
-
 #include <kernel/config.h>
 
 
