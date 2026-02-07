@@ -18,7 +18,6 @@
 #include <kernel/fs/devfs.h>
 #include <kernel/drivers/storage/partition.h>
 #include <kernel/drivers/storage/mbr.h>
-#include <kernel/fs/drivefs.h>
 
 /**** DEFINITIONS ****/
 

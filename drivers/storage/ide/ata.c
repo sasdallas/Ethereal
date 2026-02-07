@@ -21,7 +21,7 @@
 #include <kernel/drivers/pci.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/fs/drivefs.h>
+#include <kernel/drivers/storage/drive.h>
 #include <string.h>
 #include <errno.h>
 

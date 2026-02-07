@@ -33,9 +33,7 @@
 // VFS
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramdev.h>
-#include <kernel/fs/null.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/fs/pty.h>
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
 #include <kernel/fs/shared.h>

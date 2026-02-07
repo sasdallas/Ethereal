@@ -300,13 +300,6 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
  */
 int vfs_lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t flags) {
     if (!inode) {
-        // // Ok bro
-        // if (*name != '/') {
-        //     assert(current_cpu->current_process && current_cpu->current_process->wd_node);
-        //     return vfs_lookupat(current_cpu->current_process->wd_node, name, output, flags);
-        // }
-
-        // return vfs_lookupat(vfs_root_inode, name, output, flags);
         return vfs_lookup(name, output, flags); // !!!: maybe inf. recursion? 
     }
 
