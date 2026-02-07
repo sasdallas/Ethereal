@@ -14,7 +14,6 @@
 #include <kernel/config.h>
 #include <kernel/drivers/serial.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/pty.h>
 #include <kernel/debug.h>
 
 #ifdef __ARCH_X86_64__
@@ -83,14 +82,14 @@ int serial_printf(serial_port_t *port, char *format, ...) {
 void serial_handleInput(serial_port_t *port, char ch) {
 }
 
-/**
- * @brief Serial write out
- */
-static int serial_writeOut(pty_t *pty, char ch) {
-    serial_port_t *p = (serial_port_t*)pty->_impl;
-    p->write(p, ch);
-    return 1;
-}
+// /**
+//  * @brief Serial write out
+//  */
+// static int serial_writeOut(pty_t *pty, char ch) {
+//     serial_port_t *p = (serial_port_t*)pty->_impl;
+//     p->write(p, ch);
+//     return 1;
+// }
 
 /**
  * @brief Initialize serial port VFS hooks

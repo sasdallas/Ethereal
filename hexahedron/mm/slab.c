@@ -29,6 +29,8 @@ static slab_cache_t *slab_cache = NULL;
 static slab_cache_t *magazine_cache = NULL;
 static slab_cache_t *magazine_list_cache = NULL; // Generated at slab_postSMPHook
 
+slab_cache_t *slab_cache_list = NULL;
+
 /* UNCOMMENT TO ENABLE SLAB DEBUGGING */
 // #define SLAB_DEBUG 1
 
@@ -149,6 +151,11 @@ slab_cache_t *slab_createCache(char *name, uint32_t flags, size_t size, size_t a
 #ifdef SLAB_DEBUG
     LOG(DEBUG, "New slab cache '%s' created (object_size = %d object_alignment = %d)\n", name, size, alignment);
 #endif
+
+    // assign to list
+    // TODO: worry about atomic
+    c->next = slab_cache_list;
+    slab_cache_list = c;
 
     return c;
 }

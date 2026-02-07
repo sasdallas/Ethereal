@@ -77,6 +77,8 @@ typedef int (*slab_initializer_t)(struct slab_cache *cache, void *object);
 typedef int (*slab_deinitialize_t)(struct slab_cache *cache, void *object);
 
 typedef struct slab_cache {
+    struct slab_cache *next;
+
     slab_t *slabs_full;             // Full slabs
     slab_t *slabs_partial;          // Partially filled slabs
     slab_t *slabs_free;             // Totally free slabs

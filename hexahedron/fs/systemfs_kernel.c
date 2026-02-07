@@ -32,9 +32,6 @@ static systemfs_ops_t systemfs_proc_dir_ops = {
     .lookup = systemfs_proc_lookup,
 };
 
-/* /system/memory */
-static systemfs_node_t *systemfs_memory_dir = NULL;
-
 /**
  * @brief proc dir lookup
  */
@@ -108,52 +105,12 @@ ssize_t systemfs_kernel_uptime(systemfs_node_t *node, loff_t off, size_t size, c
 }
 
 /**
- * @brief kernel pmm read
- */
-ssize_t systemfs_memory_pmm(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
-    uintptr_t total_blocks = pmm_getTotalBlocks();
-    uintptr_t used_blocks = pmm_getUsedBlocks();
-    uintptr_t free_blocks = pmm_getFreeBlocks();
-
-    return systemfs_printf(
-        buffer, off, size,
-        "TotalPhysBlocks:%d\n"
-        "TotalPhysMemory:%zu kB\n"
-        "UsedPhysMemory:%zu kB\n"
-        "FreePhysMemory:%zu kB\n",
-            total_blocks,
-            total_blocks * PAGE_SIZE / 1000,
-            used_blocks * PAGE_SIZE / 1000,
-            free_blocks * PAGE_SIZE / 1000
-    );
-}
-
-/**
- * @brief kernel alloc read
- */
-ssize_t systemfs_memory_alloc(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
-    size_t alloc = alloc_used();
-    size_t cache_count = alloc_cacheCount();
-
-    return systemfs_printf(
-        buffer, off, size,
-        "KernelMemoryAllocator:%zu kB\n"
-        "KernelMemoryAllocatorCacheCount:%d\n",
-        alloc / 1000,
-        cache_count
-    );
-}
-
-/**
  * @brief systemfs_kernel_init
  */
 static int systemfs_kernel_init() {
     systemfs_registerSimple(systemfs_root, "cmdline", systemfs_kernel_cmdline, NULL, NULL);
     systemfs_registerSimple(systemfs_root, "uptime", systemfs_kernel_uptime, NULL, NULL);
     systemfs_register(systemfs_root, "processes", VFS_DIRECTORY, &systemfs_proc_dir_ops, NULL);
-    assert((systemfs_memory_dir = systemfs_createDirectory(systemfs_root, "memory")));
-    systemfs_registerSimple(systemfs_memory_dir, "pmm", systemfs_memory_pmm, NULL, NULL);
-    systemfs_registerSimple(systemfs_memory_dir, "alloc", systemfs_memory_alloc, NULL, NULL);
 
     return 0;
 }

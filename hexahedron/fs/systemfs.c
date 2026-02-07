@@ -415,18 +415,11 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name) {
     return systemfs_register(parent, name, VFS_DIRECTORY, NULL, NULL);
 }
 
-struct systemfs_ctx {
-    char *buffer;
-    size_t size;
-    loff_t off;
-    int idx;
-};
-
 /**
  * @brief xvasprintf callback
  */
 static int __systemfs_xvasprintf(void *user, char c) {
-    struct systemfs_ctx *ctx = user;
+    struct systemfs_print_ctx *ctx = user;
     if (ctx->idx >= ctx->off && (size_t)(ctx->idx - ctx->off) < ctx->size) {
         ctx->buffer[ctx->idx-ctx->off] = c;
     }
@@ -445,7 +438,7 @@ static int __systemfs_xvasprintf(void *user, char c) {
 ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    struct systemfs_ctx ctx = {
+    struct systemfs_print_ctx ctx = {
         .buffer = buffer,
         .off = off,
         .size = size,
@@ -457,6 +450,20 @@ ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...) {
     
     if (ctx.idx <= ctx.off) return 0;
     return (ctx.idx - ctx.off);
+}
+
+/**
+ * @brief Append printf. Requires an initialized systemfs context by @c SYSTEMFS_PRINT_CTX_INIT()
+ * @param ctx The context to print to
+ * @param fmt The format
+ */
+ssize_t systemfs_printfAppend(struct systemfs_print_ctx *ctx, char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    xvasprintf(__systemfs_xvasprintf, ctx, fmt, ap);
+    va_end(ap);
+    if (ctx->idx <= ctx->off) return 0;
+    return (ctx->idx - ctx->off);
 }
 
 

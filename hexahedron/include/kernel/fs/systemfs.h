@@ -30,6 +30,13 @@
 
 struct systemfs_node;
 
+struct systemfs_print_ctx {
+    char *buffer;
+    size_t size;
+    loff_t off;
+    int idx;
+};
+
 typedef struct systemfs_ops {
     int (*open)(struct systemfs_node *file, unsigned long flags);
     int (*close)(struct systemfs_node *file);
@@ -50,6 +57,11 @@ typedef struct systemfs_node {
     mutex_t lck;                        // Lock
     char *link_contents;
 } systemfs_node_t;
+
+/**** MACROS ****/
+
+#define SYSTEMFS_PRINT_CTX_INIT(ctx, buf, offset, sz) { (ctx)->idx = 0; (ctx)->buffer = (buf); (ctx)->off = (offset); (ctx)->size = (sz); }
+#define SYSTEMFS_PRINT_CTX_NOT_DONE(ctx) ((size_t)((ctx)->idx - (ctx)->off) < (ctx)->size)
 
 /**** FUNCTIONS ****/
 
@@ -118,5 +130,12 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name);
  * @param fmt Format
  */
 ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...);
+
+/**
+ * @brief Append printf. Requires an initialized systemfs context by @c SYSTEMFS_PRINT_CTX_INIT()
+ * @param ctx The context to print to
+ * @param fmt The format
+ */
+ssize_t systemfs_printfAppend(struct systemfs_print_ctx *ctx, char *fmt, ...);
 
 #endif

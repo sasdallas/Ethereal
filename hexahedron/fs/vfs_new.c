@@ -54,6 +54,7 @@ static hashmap_t *vfs_map = NULL;
 /* Caches */
 slab_cache_t *inode_cache = NULL;
 slab_cache_t *file_cache = NULL;
+slab_cache_t *cache_entry_cache = NULL;
 
 /* Root */
 static vfs_inode_ops_t dummy_ops = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
@@ -67,6 +68,24 @@ hashmap_t *vfs_fs_map = NULL;
 static atomic_long vfs_next_ino = 1;
 
 /**
+ * @brief VFS directory entry hash
+ * @param name The name to hash
+ * FNV1a hash
+ * 
+ * @todo instead of uint64_t make it architecture-dependent
+ */
+uint64_t vfs_hash(char *name) {
+    uint64_t hash = 0xcbf29ce484222325;
+
+    while (*name) {
+        hash ^= (uint64_t)*name++;
+        hash *= 0x100000001b3;
+    }
+
+    return hash;
+}
+
+/**
  * @brief Initialize VFS
  * 
  * Create the caches and setup the filesystem map. Initializes a dummy node before initfs.
@@ -76,6 +95,7 @@ void VFS_PREFIX(init)() {
 
     inode_cache = slab_createCache("vfs inode cache", SLAB_CACHE_DEFAULT, sizeof(vfs_inode_t), 0, NULL, NULL);
     file_cache = slab_createCache("vfs file cache", SLAB_CACHE_DEFAULT, sizeof(vfs_file_t), 0, NULL, NULL);
+    cache_entry_cache = slab_createCache("vfs entry cache", SLAB_CACHE_DEFAULT, sizeof(vfs_cache_entry_t), 0, NULL, NULL);
     vfs_map = hashmap_create_int("vfs map", 20);
     vfs_fs_map = hashmap_create("vfs filesystem map", 10);
 
@@ -201,6 +221,24 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
     }
     mutex_release(&vfs_map_mut);
     
+    // Perform inode cache lookup
+    // We don't want the root to be cached
+    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0 && inode != vfs_root_inode) {
+        uint64_t name_hash = vfs_hash(name);
+
+        vfs_cache_entry_t *bucket = atomic_load_explicit(&inode->cache[name_hash % 5], memory_order_relaxed);
+        
+        while (bucket) {
+            if (name_hash == bucket->name_hash) {
+                inode_hold(bucket->ino);
+                *output = bucket->ino;
+                return 0;
+            }
+
+            bucket = bucket->next;
+        }
+    }
+
     // Not a mount, keep going
     vfs_inode_t *out_tmp = NULL;
     int res = inode_lookup(inode, name, &out_tmp);
@@ -224,6 +262,26 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         inode_release(out_tmp);
         return 0;
     }
+
+
+    // Add it to the cache
+    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0 && inode != vfs_root_inode) {
+        uint64_t name_hash = vfs_hash(name);
+
+        vfs_cache_entry_t *bucket = slab_allocate(cache_entry_cache);
+        if (bucket) {
+            inode_hold(out_tmp);
+            bucket->name_hash = name_hash;
+            bucket->ino = out_tmp;
+            
+            int index = name_hash % 5;
+            vfs_cache_entry_t *old_head = atomic_load_explicit(&inode->cache[index], memory_order_relaxed);
+            do {
+                bucket->next = old_head;
+            } while (!atomic_compare_exchange_weak_explicit(&inode->cache[index], &old_head, bucket, memory_order_release, memory_order_relaxed));
+        }
+    }
+
 
     // Lock the inode
     // The inode comes out of lookup locked
@@ -869,6 +927,20 @@ ino_t vfs_getNextInode() {
 void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
     // LOG(DEBUG, "Destroying inode %p, by %s\n", inode, fn);
     if (inode->ops->destroy) inode->ops->destroy(inode);
+
+    // destroy the cache
+    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0) {
+        for (int i = 0; i < 5; i++) {
+            vfs_cache_entry_t *b = inode->cache[i];
+            while (b) {
+                vfs_cache_entry_t *nxt = b->next;
+                inode_release(b->ino);
+                slab_free(cache_entry_cache, b);
+                b = nxt;
+            }
+        }
+    }
+
     slab_free(inode_cache, inode);
 }
 

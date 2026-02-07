@@ -217,18 +217,6 @@ void sys_exit(int status) {
 }
 
 int __sys_open_internal(char *pathname, int flags, mode_t mode) {
-
-    // !!!: HACK
-    if (!strcmp(pathname, "/dev/ptmx")) {
-        // Make a PTY
-        // pty_t *pty = pty_create(NULL, NULL, -1);
-        
-        // Create file descriptors
-        // fd_t *master_fd = fd_add(current_cpu->current_process, pty->master);
-        // return master_fd->fd_number;
-        assert(0 && "/dev/ptmx");
-    }
-
     // Try and get it open
     vfs_file_t *file;
     int r = vfs_open(pathname, flags, &file);

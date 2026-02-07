@@ -14,10 +14,9 @@
  *      + Holds a root inode
  * - A vfs_filesystem_t object for a filesystem
  *      + Only used on vfs_mountFilesystem() which mounts the fs and creates a vfs_mount_t
- * - A vfs_dentry_t object to represent a directory entry
+ * - A vfs_cache_entry_t object to represent a directory entry
  *      + Directory entries are stored in lookup caches in the parent vfs_inode_t
  *      + A directory entry can reference one inode, or can reference NULL (in this case it is called a NEGATIVE dentry, where it can quickly return NULL)
- *      + Directory entries are pruned often
  *      + Normally in your filesystem you will avoid using them.
  * 
  * The only main differences between this and a Linux VFS is that:
@@ -57,6 +56,7 @@
 #define INODE_FLAG_DEFAULT          0x0 
 #define INODE_FLAG_NOT_CACHEABLE    0x1     // can't cache in page cache
 #define INODE_FLAG_MMAP_UNSUPPORTED 0x2     // TODO: custom error numbers on this. will probably be a silly hack.
+#define INODE_FLAG_NO_DCACHE        0x4     // can't use dcache, always do lookups
 
 /* Attribute set request flags */
 #define INODE_ATTR_CHANGE_MODE      0x1
@@ -172,6 +172,7 @@ typedef struct vfs_inode {
     unsigned long flags;        // Flags to the inode (INODE_FLAG_xxx)
     refcount_t refcount;        // Reference count
     void *priv;                 // Private field for the inode
+    _Atomic(void*) cache[5];
 } vfs_inode_t;
 
 /* VFS file */
@@ -201,6 +202,14 @@ typedef struct vfs_filesystem {
 
     int (*mount)(struct vfs_filesystem *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
 } vfs2_filesystem_t;
+
+/* VFS cache entry */
+typedef struct vfs_cache_entry {
+    struct vfs_cache_entry *next;
+    uint64_t name_hash;
+    vfs_inode_t *ino;
+} vfs_cache_entry_t;
+
 
 /**** INLINE ****/
 
