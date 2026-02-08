@@ -35,7 +35,6 @@ typedef struct fd {
     int fd_number;              // File descriptor number
     vfs_file_t *node;           // File that this file descriptor is connected to
     mode_t mode;                // Mode of file descriptor
-    uint64_t offset;            // Offset of file descriptor
     void *dev;                  // Driver object
     char *path;                 // OPTIONAL path of the file descriptor
 } fd_t;
