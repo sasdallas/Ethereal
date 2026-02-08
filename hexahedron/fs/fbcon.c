@@ -25,6 +25,12 @@ static devfs_ops_t fbcon_dev_ops = {
     .read = NULL,
     .write = fbcon_write,
     .ioctl = NULL,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll_events = NULL,
+    .poll = NULL,
 };
 
 /**

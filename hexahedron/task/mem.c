@@ -44,10 +44,6 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         if (!FD_VALIDATE(current_cpu->current_process, filedes)) return (void*)-EBADF;
     }
 
-    if (flags & MAP_SHARED) {
-        LOG(WARN, "MAP_SHARED may unstable (more testing required)\n");
-    }
-
     // If protection flags were provided - we don't care.
     if (!(prot & PROT_WRITE)) {
         LOG(WARN, "Protection flags are not implemented\n");
@@ -103,7 +99,6 @@ void *process_mmap(void *addr, size_t len, int prot, int flags, int filedes, off
         if (b) {
             map->addr = b;
             if (filedes == -1 || flags & MAP_ANONYMOUS) {
-                LOG(DEBUG, "MAP_FIXED mapping at %p\n", b);
                 list_append(current_cpu->current_process->mmap, (void*)map);
                 memset(b, 0, len);
                 return b;

@@ -37,6 +37,10 @@ static devfs_ops_t kbd_ops = {
     .read = keyboard_read,
     .write = NULL,
     .ioctl = NULL, // maybe
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
     .poll = keyboard_poll,
     .poll_events = (typeof(kbd_ops.poll_events))keyboard_events,
 };
@@ -47,6 +51,10 @@ static devfs_ops_t mouse_ops = {
     .read = mouse_read,
     .write = NULL,
     .ioctl = NULL, // maybe
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
     .poll = mouse_poll,
     .poll_events = (typeof(mouse_ops.poll_events))mouse_events,
 };

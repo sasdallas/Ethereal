@@ -186,8 +186,6 @@ extern uintptr_t __kernel_end_phys;
  * @returns The address to which the structure can be placed at 
  */
 uintptr_t arch_allocate_structure(size_t bytes) {
-    dprintf(DEBUG, "CREATE STRUCTURE: %d bytes\n", bytes);
-    
     if (bytes > PAGE_SIZE) return (uintptr_t)vmm_map(NULL, PAGE_ALIGN_UP(bytes), VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     return (uintptr_t)kmalloc(bytes);
 }

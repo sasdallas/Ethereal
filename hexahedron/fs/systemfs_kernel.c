@@ -85,9 +85,8 @@ extern list_t *process_list;
 /**
  * @brief kernel cmdline read
  */
-ssize_t systemfs_kernel_cmdline(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
-    return systemfs_printf(
-        buffer, off, size,
+ssize_t systemfs_kernel_cmdline(systemfs_node_t *node) {
+    return systemfs_printf(node,
         "%s\n", arch_get_generic_parameters()->kernel_cmdline
     );
 }
@@ -95,11 +94,10 @@ ssize_t systemfs_kernel_cmdline(systemfs_node_t *node, loff_t off, size_t size, 
 /**
  * @brief kernel uptime read
  */
-ssize_t systemfs_kernel_uptime(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
+ssize_t systemfs_kernel_uptime(systemfs_node_t *node) {
     unsigned long seconds, subseconds;
     clock_relative(0, 0, &seconds, &subseconds);
-    return systemfs_printf(
-        buffer, off, size,
+    return systemfs_printf(node,
         "%lu.%016lu\n", seconds, subseconds
     );
 }

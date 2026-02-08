@@ -96,7 +96,6 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
 int thread_destroy(thread_t *thr) {
     if (!thr) return 1;
 
-    // TODO: Free memory
     __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPED);
 
     // Free the thread's stack
@@ -104,7 +103,7 @@ int thread_destroy(thread_t *thr) {
 
     kfree(thr);
 
-    LOG(DEBUG, "******************************************** Thread %p destroyed, kstack %p\n", thr, thr->kstack);
+    LOG(DEBUG, "******************************************** Thread %p destroyed\n", thr);
 
     return 0;
 }

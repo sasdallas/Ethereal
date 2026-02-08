@@ -55,6 +55,7 @@ static devfs_ops_t drive_ops = {
     .read = drive_read,
     .write = drive_write,
     .ioctl = NULL,
+    .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
     .mmap = NULL,

@@ -344,9 +344,6 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
             // another design flaw
             LOG(ERR, "ERROR: file_mmap_prepare failed with error %d, no way to return error.\n",  res);
         }
-
-    
-        LOG(DEBUG, "mmap OK\n");
     }
 
 _finish:

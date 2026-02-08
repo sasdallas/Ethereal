@@ -150,7 +150,6 @@ int fd_duplicate(struct process *process, int oldfd, int newfd) {
     // Setup parameters
     fd->node = fd_old->node;
     fd->fd_number = newfd;
-    fd->offset = fd_old->offset;
     fd->mode = fd_old->mode;
     file_open(fd->node, 0); // TODO: fd->open_flags
 

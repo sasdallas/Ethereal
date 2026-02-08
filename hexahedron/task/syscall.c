@@ -263,7 +263,8 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
-        fd->offset = inode_size(file->inode);
+        r = vfs_seek(fd->node, 0, SEEK_END);
+        if (r < 0) return r;
     }
 
     return fd->fd_number;
@@ -284,9 +285,10 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
         return -EBADF;
     }
 
-    fd_t *proc_fd = FD(current_cpu->current_process, fd);
-    ssize_t i = vfs_read(proc_fd->node, proc_fd->offset, count, (char*)buffer);
-    if (i >= 0) proc_fd->offset += i;
+    vfs_file_t *n = FD(current_cpu->current_process, fd)->node;
+
+    ssize_t i = vfs_read(n, n->pos, count, (char*)buffer);
+    if (i >= 0) n->pos += i;
 
     return i;
 }
@@ -298,9 +300,9 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
         return -EBADF;
     }
 
-    fd_t *proc_fd = FD(current_cpu->current_process, fd);
-    ssize_t i = vfs_write(proc_fd->node, proc_fd->offset, count, (const char*)buffer);
-    if (i >= 0) proc_fd->offset += i;
+    vfs_file_t *n = FD(current_cpu->current_process, fd)->node;
+    ssize_t i = vfs_write(n, n->pos, count, (const char*)buffer);
+    if (i >= 0) n->pos += i;
 
     if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     return i;
@@ -311,6 +313,8 @@ int sys_close(int fd) {
         LOG(WARN, "Bad file descriptor close attempt on fd %d\n", fd);
         return -EBADF;
     }
+
+    LOG(DEBUG, "sys_close %d\n", fd);
 
     fd_remove(current_cpu->current_process, fd);
     return 0;
@@ -472,21 +476,8 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
         return -EBADF;
     }
 
-    // Handle whence
-    if (whence == SEEK_SET) {
-        FD(current_cpu->current_process, fd)->offset = offset;
-    } else if (whence == SEEK_CUR) {
-        FD(current_cpu->current_process, fd)->offset += offset;
-    } else if (whence == SEEK_END) {
-        // TODO: This is the problem area (offset > node length)
-        FD(current_cpu->current_process, fd)->offset = inode_size(FD(current_cpu->current_process, fd)->node->inode) + offset;
-    } else {
-        return -EINVAL;
-    }
-
-
-    // TODO: What if offset > file size? We don't have proper safeguards, Linux does something but I didn't care enough to check...
-    return FD(current_cpu->current_process, fd)->offset;
+    vfs_file_t *f = FD(current_cpu->current_process, fd)->node;
+    return vfs_seek(f, offset, whence);
 }
 
 /**
@@ -1116,9 +1107,12 @@ long sys_dup2(int oldfd, int newfd) {
 
     if (newfd == -1) {
         // We assign!
-        fd_t *fd = fd_add(current_cpu->current_process, FD(current_cpu->current_process, oldfd)->node);
-        fd->mode = FD(current_cpu->current_process, oldfd)->mode;
-        fd->offset = FD(current_cpu->current_process, oldfd)->offset;
+        fd_t *old = FD(current_cpu->current_process, oldfd);
+        
+        file_open(old->node, 0); // TODO preserve opening flags
+        fd_t *fd = fd_add(current_cpu->current_process, old->node);
+        fd->mode = old->mode;
+
         return fd->fd_number;
     }
 

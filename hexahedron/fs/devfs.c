@@ -29,6 +29,7 @@ static int devfs_close(vfs_file_t *file);
 static ssize_t devfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
 static ssize_t devfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int devfs_ioctl(vfs_file_t *file, long request, void *argp);
+static int devfs_lseek(vfs_file_t *file, loff_t off, int whence, loff_t *pos);
 static int devfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx);
 static int devfs_poll(vfs_file_t *file, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t devfs_poll_events(vfs_file_t *file);
@@ -49,6 +50,7 @@ static vfs_file_ops_t devfs_file_ops = {
     .read           = devfs_read,
     .write          = devfs_write,
     .ioctl          = devfs_ioctl,
+    .lseek          = devfs_lseek,
     .get_entries    = devfs_get_entries,
     .poll_events    = devfs_poll_events,
     .poll           = devfs_poll,
@@ -233,6 +235,21 @@ static int devfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
     list_destroy(c, false);
     mutex_release(&n->lck);
     return 1;
+}
+
+/**
+ * @brief devfs lseek
+ */
+static int devfs_lseek(vfs_file_t *file, loff_t off, int whence, loff_t *pos) {
+    devfs_node_t *n = file->priv;
+    if (n->ops && n->ops->lseek) return n->ops->lseek(n, off, whence, pos);
+
+    switch (whence) {
+        // SEEK_END is not supported so we just set to the offset
+        case SEEK_SET: case SEEK_END: *pos = off; return 0;
+        case SEEK_CUR: *pos += off; return 0;
+        default: assert(0);
+    }
 }
 
 /**

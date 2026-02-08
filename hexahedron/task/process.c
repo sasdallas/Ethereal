@@ -305,36 +305,29 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     }
 
     // Create file descriptor table
-    if (parent && 0) {
-        // Reference parent table
-        // TODO: Maybe use some sort of process flag that forces recreation of a new fd table?
-        process->fd_table = parent->fd_table;
-        process->fd_table->references++;
-    } else {
-        size_t fd_count = (parent) ? parent->fd_table->total : PROCESS_FD_BASE_AMOUNT;
-        process->fd_table = kmalloc(sizeof(fd_table_t));
-        memset(process->fd_table, 0, sizeof(fd_table_t));
-        process->fd_table->total = fd_count;
-        process->fd_table->amount = (parent) ? parent->fd_table->amount : 0;
-        
-        process->fd_table->references = 1;
-        process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
+    size_t fd_count = (parent) ? parent->fd_table->total : PROCESS_FD_BASE_AMOUNT;
+    process->fd_table = kmalloc(sizeof(fd_table_t));
+    memset(process->fd_table, 0, sizeof(fd_table_t));
+    process->fd_table->total = fd_count;
+    process->fd_table->amount = (parent) ? parent->fd_table->amount : 0;
+    
+    process->fd_table->references = 1;
+    process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
 
-        memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
+    memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
 
-        if (parent) {
-            for (size_t i = 0; i < parent->fd_table->total; i++) {
-                if (parent->fd_table->fds[i]) {
-                    process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
-                    process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
-                    process->fd_table->fds[i]->offset = parent->fd_table->fds[i]->offset;
-                    process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
-                    
-                    process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
-                }
+    if (parent) {
+        for (size_t i = 0; i < parent->fd_table->total; i++) {
+            if (parent->fd_table->fds[i]) {
+                process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
+                process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
+                process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
+                
+                process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
             }
         }
     }
+    
 
     process->proc_list_node.value = (void*)process;
     if (process_list) list_append_node(process_list, &process->proc_list_node);
@@ -879,16 +872,15 @@ void process_exit(process_t *process, int status_code) {
             }
 
             // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-            if (process == current_cpu->current_process) process_switchNextThread(); // !!!: Hopefully that works and they free us..
         } 
 
     } 
 
-    // To the next process we go
+    // To the next process we go. Once the scheduler is unlocked we can be caught and destroyed.
+    // !!!: This approach seems very finnicky.
     if (process == current_cpu->current_process) {
         __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        scheduler_insertThread(current_cpu->current_thread);
-        process_switchNextThread();
+        process_yield(1);
     }
 }
 

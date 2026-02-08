@@ -60,6 +60,7 @@ devfs_ops_t video_ops = {
     .read = NULL,
     .write = NULL,
     .ioctl = video_ioctl,
+    .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
     .mmap = video_mmap,

@@ -55,6 +55,7 @@ typedef struct devfs_ops {
     ssize_t (*read)(struct devfs_node *file, loff_t off, size_t size, char *buffer);
     ssize_t (*write)(struct devfs_node *file, loff_t off, size_t size, const char *buffer);
     int (*ioctl)(struct devfs_node *file, unsigned long request, void *argp);
+    int (*lseek)(struct devfs_node *file, loff_t off, int whence, loff_t *pos); // just return the new position to set to
     poll_events_t (*poll_events)(struct devfs_node *file);
     int (*poll)(struct devfs_node *file, poll_waiter_t *waiter, poll_events_t events);
     int (*mmap)(struct devfs_node *file, void *addr, size_t len, off_t off, uint64_t flags);

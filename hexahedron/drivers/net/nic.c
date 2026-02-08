@@ -45,12 +45,13 @@ static devfs_ops_t nic_devfs_ops = {
     .close = NULL,
     .read = NULL,
     .write = nic_write,
+    .ioctl = nic_ioctl, 
+    .lseek = NULL,
     .mmap = NULL,
     .mmap_prepare = NULL,
     .munmap = NULL,
     .poll = NULL,
     .poll_events = NULL,
-    .ioctl = nic_ioctl, 
 };
 
 /* NIC last minor */

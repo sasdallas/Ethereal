@@ -43,6 +43,7 @@ devfs_ops_t sharedfs_ops = {
     .read = NULL,
     .write = NULL,
     .ioctl = NULL,
+    .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
     .mmap = sharedfs_mmap,

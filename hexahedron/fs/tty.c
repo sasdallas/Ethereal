@@ -55,6 +55,10 @@ static devfs_ops_t tty_ops = {
     .read = tty_read,
     .write = tty_write,
     .ioctl = tty_ioctl,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
     .poll = tty_poll,
     .poll_events = tty_poll_events
 };
@@ -65,6 +69,10 @@ static devfs_ops_t pty_master_ops = {
     .read = pty_master_read,
     .write = pty_master_write,
     .ioctl = pty_master_ioctl,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
     .poll = pty_master_poll,
     .poll_events = pty_master_poll_events,
 };

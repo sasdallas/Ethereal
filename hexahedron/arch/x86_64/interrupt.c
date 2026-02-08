@@ -238,11 +238,6 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
 
     // NMIs are fired as of now only for a core shutdown. If we receive one, just halt.
     if (exception_index == 2) {
-        extern int arch_profiler_nmi(registers_t*);
-        if (arch_profiler_nmi(regs)) {
-            return;
-        }
-
         smp_acknowledgeCoreShutdown();
         for (;;);
     }

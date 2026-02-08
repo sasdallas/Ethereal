@@ -125,6 +125,7 @@ typedef struct vfs_file_ops {
     int (*mmap)(struct vfs_file *file, void *addr, size_t size, off_t off, uint64_t flags); // size will always be page aligned
     int (*munmap)(struct vfs_file *file, void *addr, size_t size, off_t offset);
     int (*mmap_prepare)(struct vfs_file *file, struct vmm_memory_range *range); // prepare the range for mapping (yes, it will be a VMM memory range)
+    int (*lseek)(struct vfs_file *file, loff_t off, int whence, loff_t *pos); // optional lseek equivalent. pos is a pointer to file->pos. returns 0 on success and sets pos to the new pos.
 } vfs_file_ops_t;
 
 /* Inode attributes */
@@ -159,6 +160,7 @@ typedef struct vfs_inode_ops {
     int (*setattr)(struct vfs_inode *inode, vfs_inode_attr_t *attr, uint32_t attr_mask);
     int (*destroy)(struct vfs_inode *inode);
     int (*truncate)(struct vfs_inode *inode, size_t size);
+
 } vfs_inode_ops_t;
 
 /* VFS inode */
@@ -180,6 +182,7 @@ typedef struct vfs_file {
     vfs_inode_t *inode;         // Inode of the file
     vfs_file_ops_t *ops;        // File operations
     refcount_t refcount;        // Reference count
+    loff_t pos;                 // File position
     long flags;                 // Flags
     void *priv;                 // Private data for the file
 } vfs_file_t;
@@ -234,6 +237,7 @@ static inline void file_release(vfs_file_t *f) { refcount_dec(&f->refcount); if 
 
 
 /* avoid using these, most of the time their VFS counterparts work fine */
+/* note some functions are not included here such as lseek and poll_events */
 static inline int file_open(vfs_file_t *f, unsigned long flags) { file_hold(f); if (f->ops->open) { return f->ops->open(f, flags); } else { return 0; } }
 static inline void file_close(vfs_file_t *f) { file_release(f); }
 static inline ssize_t file_read(vfs_file_t *f, loff_t off, size_t size, char *buffer) { if (f->ops->read) { return f->ops->read(f, off, size, buffer); } else { return -ENOTSUP; }}
@@ -592,5 +596,14 @@ static inline vfs_file_t * vfs_duplicate(vfs_file_t *file) {
  * @returns IMPORTANT: Will either return 0 for "added to queue", 1 for "revents are ready", and anything else is an error.
  */
 int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_events_t *revents); 
+
+/**
+ * @brief Seek in a file
+ * @param f The file to seek in
+ * @param off The offset to seek to
+ * @param whence Seek whence
+ * @returns New offset or error code
+ */
+loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence);
 
 #endif

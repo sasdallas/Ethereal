@@ -792,6 +792,39 @@ int vfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr) {
 }
 
 /**
+ * @brief Seek in a file
+ * @param f The file to seek in
+ * @param off The offset to seek to
+ * @param whence Seek whence
+ * @returns New offset or error code
+ */
+loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence) {
+    if (file->ops->lseek) {
+        // Use the file's lseek
+        int r = file->ops->lseek(file, off, whence, &file->pos);
+        if (r < 0) return r;
+        return file->pos;
+    }
+
+    // try to use inode size
+    switch (whence) {
+        case SEEK_SET:
+            file->pos = off;
+            break;
+        case SEEK_CUR:
+            file->pos += off;
+            break;
+        case SEEK_END:
+            file->pos = off + file->inode->attr.size;
+            break;
+        default:
+            assert(0 && "unsupported seek value"); // debug
+    }
+
+    return file->pos;    
+}
+
+/**
  * @brief Get an inode from the mount cache
  * @param mount The VFS mount to retrieve the inode from
  * @param ino The inode number to retrieve

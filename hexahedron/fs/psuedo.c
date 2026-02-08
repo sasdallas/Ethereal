@@ -32,7 +32,13 @@ static devfs_ops_t null_dev_ops = {
     .close = NULL,
     .read = null_read,
     .write = null_write,
-    .ioctl = NULL
+    .ioctl = NULL,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll_events = NULL,
+    .poll = NULL,
 } ;
 
 /* /device/zero ops */
@@ -42,6 +48,11 @@ static devfs_ops_t zero_dev_ops = {
     .read = zero_read,
     .write = zero_write,
     .ioctl = NULL,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll_events = NULL,
     .poll = NULL,
 };
 
@@ -52,6 +63,11 @@ static devfs_ops_t full_dev_ops = {
     .read = full_read,
     .write = full_write,
     .ioctl = NULL,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll_events = NULL,
     .poll = NULL,
 };
 

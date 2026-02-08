@@ -434,6 +434,7 @@ static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, ch
     // Create the root node
     tmpfs_node_t *node = slab_allocate(tmpfs_node_cache);
     if (!node) return -ENOMEM;
+    memset(node, 0, sizeof(tmpfs_node_t));
     MUTEX_INIT(&node->lck);
     node->dir.children = hashmap_create("tmpfs node children", 10);
     node->parent = NULL;

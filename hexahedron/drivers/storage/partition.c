@@ -29,11 +29,12 @@ static devfs_ops_t partition_ops = {
     .read           = partition_read,
     .write          = partition_write,
     .ioctl          = NULL,
+    .lseek          = NULL,
     .mmap           = NULL,
     .mmap_prepare   = NULL,
     .munmap         = NULL,
     .poll           = NULL,
-    .poll_events    = NULL
+    .poll_events    = NULL,
 };
 
 /**

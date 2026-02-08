@@ -44,6 +44,7 @@ static ssize_t systemfs_read(vfs_file_t *node, loff_t off, size_t size, char *bu
 static ssize_t systemfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int systemfs_ioctl(vfs_file_t *file, long request, void *argp);
 static int systemfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx);
+static int systemfs_lseek(vfs_file_t *file, loff_t off, int whence, loff_t *pos);
 
 static vfs_file_ops_t systemfs_file_ops = {
     .open           = systemfs_open,
@@ -52,6 +53,7 @@ static vfs_file_ops_t systemfs_file_ops = {
     .write          = systemfs_write,
     .ioctl          = systemfs_ioctl,
     .get_entries    = systemfs_get_entries,
+    .lseek          = systemfs_lseek,
     .poll           = NULL,
     .poll_events    = NULL,
     .mmap           = NULL,
@@ -193,6 +195,18 @@ static int systemfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
     mutex_release(&n->lck);
     return 1;
 }
+
+/**
+ * @brief systemfs lseek
+ */
+static int systemfs_lseek(vfs_file_t *file, loff_t off, int whence, loff_t *pos) {
+    systemfs_node_t *n = file->priv;
+    if (n->attr.type == VFS_DIRECTORY) return -EISDIR;
+
+    if (n->ops && n->ops->lseek) return n->ops->lseek(n, off, whence, pos);
+    assert(0 && "lseek must be provided for systemfs node");
+}
+
 
 /**
  * @brief systemfs getattr
@@ -370,9 +384,70 @@ systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name) {
 }
 
 /**
+ * @brief Simple read systemfs
+ */
+ssize_t systemfs_readSimple(systemfs_node_t *n, loff_t off, size_t size, char *buffer) {
+    if (off > (loff_t)n->buf.bufidx) return 0;
+    if (off + size > n->buf.bufidx) size = n->buf.bufidx - off;
+    memcpy(buffer, n->buf.buffer + off, size);
+    return size;
+}
+
+/**
+ * @brief Simple open systemfs
+ */
+int systemfs_openSimple(systemfs_node_t *n, unsigned long flags) {
+    if (n->ops && n->ops->read_simple) {
+        n->buf.bufidx = 0;
+        n->buf.bufsize = 0;
+        n->buf.buffer = NULL;
+        n->attr.size = n->ops->read_simple(n);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Simple close systemfs
+ */
+int systemfs_closeSimple(systemfs_node_t *n) {
+    if (n->buf.buffer) {
+        kfree(n->buf.buffer);
+    }
+
+    n->buf.buffer = NULL;
+    n->buf.bufsize = 0;
+    n->buf.bufidx = 0;
+    return 0; 
+}
+
+/**
+ * @brief Simple lseek systemfs
+ */
+int systemfs_lseekSimple(systemfs_node_t *n, loff_t off, int whence, loff_t *pos) {
+    switch (whence) {
+        case SEEK_SET:
+            *pos = off;
+            return 0;
+        case SEEK_CUR:
+            *pos += off;
+            return 0;
+        case SEEK_END:
+            *pos = off + n->buf.bufidx;
+            return 0;
+        default:
+            assert(0);
+    }
+}
+
+/**
  * @brief Register a "simple" SystemFS node
  * 
  * Simple SystemFS nodes are nodes that only provide either reading/writing.
+ * The "read" method is called not just on read but also on opening to fill the SystemFS buffer.
+ * Write is only called on writes.
+ *
+ * @warning A simple node will NOT be updatable after it has been opened.
  * 
  * @param parent The parent of the SystemFS node
  * @param name The name of the SystemFS node
@@ -381,16 +456,19 @@ systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name) {
  * @param priv Private variable
  * @returns The node registered
  */
-systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ssize_t (*read)(systemfs_node_t *, loff_t, size_t, char*), ssize_t (*write)(systemfs_node_t *, loff_t, size_t, const char*), void *priv) {
+systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ssize_t (*read)(systemfs_node_t *), ssize_t (*write)(systemfs_node_t *, loff_t, size_t, const char*), void *priv) {
     // !!!: I don't like this :( Breaks ABI and is slow (LEAKS MEMORY IF UNREGISTERED)
+    // TODO: fix all of this junk, race conditions are possible
     systemfs_ops_t *o = kmalloc(sizeof(systemfs_ops_t));
-    o->read = read;
+    o->read = systemfs_readSimple;
     o->write = write;
-    o->open = NULL;
-    o->close = NULL;
+    o->open = systemfs_openSimple;
+    o->close = systemfs_closeSimple;
     o->ioctl = NULL;
     o->read_entry = NULL;
     o->lookup = NULL;
+    o->read_simple = read; // TODO: make this a better hack :(
+    o->lseek = systemfs_lseekSimple;
 
     return systemfs_register(parent, name, VFS_FILE, o, priv);
 }
@@ -419,53 +497,34 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name) {
  * @brief xvasprintf callback
  */
 static int __systemfs_xvasprintf(void *user, char c) {
-    struct systemfs_print_ctx *ctx = user;
-    if (ctx->idx >= ctx->off && (size_t)(ctx->idx - ctx->off) < ctx->size) {
-        ctx->buffer[ctx->idx-ctx->off] = c;
+    systemfs_node_t *n = (systemfs_node_t*)user;
+    
+    if (n->buf.bufidx >= n->buf.bufsize) {
+        n->buf.buffer = krealloc(n->buf.buffer, n->buf.bufsize + 128);
+        n->buf.bufsize += 128;
     }
-
-    ctx->idx++;
+    
+    n->buf.buffer[n->buf.bufidx++] = c;
+    n->buf.buffer[n->buf.bufidx] = 0;
     return 0;
 }
 
+
 /**
  * @brief Printf-formatter for SystemFS
- * @param buffer User-provided buffer
- * @param off Offset requested
- * @param size Size requested to read
+ * @param node The node to print out to
  * @param fmt Format
  */
-ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    struct systemfs_print_ctx ctx = {
-        .buffer = buffer,
-        .off = off,
-        .size = size,
-        .idx = 0,
-    };
-
-    xvasprintf(__systemfs_xvasprintf, &ctx, fmt, ap);
-    va_end(ap);
+ssize_t systemfs_printf(systemfs_node_t *node, char *fmt, ...) {
+    if (!node->buf.bufsize || !node->buf.buffer) { node->buf.buffer = kmalloc(128); node->buf.bufsize = 128; }
     
-    if (ctx.idx <= ctx.off) return 0;
-    return (ctx.idx - ctx.off);
-}
-
-/**
- * @brief Append printf. Requires an initialized systemfs context by @c SYSTEMFS_PRINT_CTX_INIT()
- * @param ctx The context to print to
- * @param fmt The format
- */
-ssize_t systemfs_printfAppend(struct systemfs_print_ctx *ctx, char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    xvasprintf(__systemfs_xvasprintf, ctx, fmt, ap);
+    ssize_t placed = xvasprintf(__systemfs_xvasprintf, node, fmt, ap);
     va_end(ap);
-    if (ctx->idx <= ctx->off) return 0;
-    return (ctx->idx - ctx->off);
-}
 
+    return placed;
+}
 
 /**
  * @brief systemfs init

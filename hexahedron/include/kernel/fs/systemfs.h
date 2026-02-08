@@ -45,7 +45,15 @@ typedef struct systemfs_ops {
     int (*ioctl)(struct systemfs_node *file, unsigned long request, void *argp);
     int (*read_entry)(struct systemfs_node *node, vfs_dir_context_t *ctx); // same pattern as get_entries in VFS
     int (*lookup)(struct systemfs_node *node, char *name, struct systemfs_node **node_out);
+    int (*lseek)(struct systemfs_node *node, loff_t off, int whence, loff_t *pos); // this is REQUIRED if not using simple
+    ssize_t (*read_simple)(struct systemfs_node *node); // hack
 } systemfs_ops_t;
+
+typedef struct systemfs_buffer {
+    char *buffer;
+    size_t bufidx;
+    size_t bufsize;
+} systemfs_buffer_t;
 
 typedef struct systemfs_node {
     struct systemfs_node *parent;       // Parent
@@ -55,7 +63,8 @@ typedef struct systemfs_node {
     void *priv;                         // Private
     vfs_inode_attr_t attr;              // Attribute
     mutex_t lck;                        // Lock
-    char *link_contents;
+    char *link_contents;                // Link contents
+    systemfs_buffer_t buf;              // SystemFS buffer
 } systemfs_node_t;
 
 /**** MACROS ****/
@@ -96,6 +105,10 @@ systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name);
  * @brief Register a "simple" SystemFS node
  * 
  * Simple SystemFS nodes are nodes that only provide either reading/writing.
+ * The "read" method is called not just on read but also on opening to fill the SystemFS buffer.
+ * Write is only called on writes.
+ *
+ * @warning A simple node will NOT be updatable after it has been opened.
  * 
  * @param parent The parent of the SystemFS node
  * @param name The name of the SystemFS node
@@ -104,7 +117,7 @@ systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name);
  * @param priv Private variable
  * @returns The node registered
  */
-systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ssize_t (*read)(systemfs_node_t *, loff_t, size_t, char*), ssize_t (*write)(systemfs_node_t *, loff_t, size_t, const char*), void *priv);
+systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ssize_t (*read)(systemfs_node_t *), ssize_t (*write)(systemfs_node_t *, loff_t, size_t, const char*), void *priv);
 
 /**
  * @brief Create a link in SystemFS
@@ -124,18 +137,9 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name);
 
 /**
  * @brief Printf-formatter for SystemFS
- * @param buffer User-provided buffer
- * @param off Offset requested
- * @param size Size requested to read
+ * @param node The node to print out to
  * @param fmt Format
  */
-ssize_t systemfs_printf(char *buffer, loff_t off, size_t size, char *fmt, ...);
-
-/**
- * @brief Append printf. Requires an initialized systemfs context by @c SYSTEMFS_PRINT_CTX_INIT()
- * @param ctx The context to print to
- * @param fmt The format
- */
-ssize_t systemfs_printfAppend(struct systemfs_print_ctx *ctx, char *fmt, ...);
+ssize_t systemfs_printf(systemfs_node_t *node, char *fmt, ...);
 
 #endif

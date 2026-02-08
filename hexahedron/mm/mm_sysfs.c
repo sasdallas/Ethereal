@@ -24,13 +24,13 @@ extern slab_cache_t *slab_cache_list;
 /**
  * @brief kernel pmm read
  */
-ssize_t systemfs_memory_pmm(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
+ssize_t systemfs_memory_pmm(systemfs_node_t *node) {
     uintptr_t total_blocks = pmm_getTotalBlocks();
     uintptr_t used_blocks = pmm_getUsedBlocks();
     uintptr_t free_blocks = pmm_getFreeBlocks();
 
     return systemfs_printf(
-        buffer, off, size,
+        node,
         "TotalPhysBlocks:%d\n"
         "TotalPhysMemory:%zu kB\n"
         "UsedPhysMemory:%zu kB\n"
@@ -45,12 +45,12 @@ ssize_t systemfs_memory_pmm(systemfs_node_t *node, loff_t off, size_t size, char
 /**
  * @brief kernel alloc read
  */
-ssize_t systemfs_memory_alloc(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
+ssize_t systemfs_memory_alloc(systemfs_node_t *node) {
     size_t alloc = alloc_used();
     size_t cache_count = alloc_cacheCount();
 
     return systemfs_printf(
-        buffer, off, size,
+        node,
         "KernelMemoryAllocator:%zu kB\n"
         "KernelMemoryAllocatorCacheCount:%d\n",
         alloc / 1000,
@@ -61,18 +61,21 @@ ssize_t systemfs_memory_alloc(systemfs_node_t *node, loff_t off, size_t size, ch
 /**
  * @brief kernel slab read
  */
-ssize_t systemfs_memory_slab(systemfs_node_t *node, loff_t off, size_t size, char *buffer) {
-    struct systemfs_print_ctx ctx;
-    SYSTEMFS_PRINT_CTX_INIT(&ctx, buffer, off, size);
-    systemfs_printfAppend(&ctx, "# name, mem_usage, obj_size, obj_align\n");
+ssize_t systemfs_memory_slab(systemfs_node_t *node) {
+    ssize_t tot = 0;
+    tot += systemfs_printf(node, "# name, mem_usage, obj_size, obj_align\n");
     slab_cache_t *i = slab_cache_list;
-    while (i && SYSTEMFS_PRINT_CTX_NOT_DONE(&ctx)) {
-        systemfs_printfAppend(&ctx, "%s %dkB %d %d\n", i->name, (i->mem_usage / 1000), i->slab_object_size, i->slab_object_alignment);
+    while (i) {
+        tot += systemfs_printf(node,
+                    "%s %dkB %d %d\n", 
+                        i->name,
+                        (i->mem_usage / 1000),
+                        i->slab_object_size,
+                        i->slab_object_alignment);
         i = i->next;
     }
 
-    if (ctx.idx <= ctx.off) return 0;
-    return (ctx.idx - ctx.off);
+    return tot;
 }
 
 
