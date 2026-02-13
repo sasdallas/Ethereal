@@ -199,9 +199,14 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     
         ssize_t r = ipv4_send(nic, in->sin_addr.s_addr, IPV4_PROTOCOL_UDP, udp_pkt, sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
         kfree(udp_pkt);
-        if (r < 0) return r;
-        sent_bytes += r;
+        if (r < 0) {
+            return r;
+        }
+
+        sent_bytes += msg->msg_iov[i].iov_len;
     }
+
+    LOG(DEBUG, "Successfully sent %d bytes of %d\n", sent_bytes, msg->msg_iov[0].iov_len);
 
     return sent_bytes;
 }

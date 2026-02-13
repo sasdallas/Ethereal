@@ -214,7 +214,7 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
 
         kfree(pkt);
         offset += chunk;
-        sent += ret;
+        sent += chunk;
     }
 
     return sent;
