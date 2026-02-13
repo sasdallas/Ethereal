@@ -13,12 +13,29 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/devfs.h>
 #include <kernel/init.h>
 
+static ssize_t random_read(devfs_node_t *n, loff_t off, size_t size, char *buffer);
+static devfs_ops_t random_dev_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = random_read,
+    .write = NULL,
+    .ioctl = NULL,
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll_events = NULL,
+    .poll = NULL,
+} ;
 
 
-static ssize_t random_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+/**
+ * @brief random read
+ */
+static ssize_t random_read(devfs_node_t *n, loff_t off, size_t size, char *buffer) {
 	size_t s = 0;
 	
     while (s < size) {
@@ -30,20 +47,11 @@ static ssize_t random_read(fs_node_t *node, off_t offset, size_t size, uint8_t *
 	return size;
 }
 
-
 /**
  * @brief Mount random device
  */
-int random_mount() {
-    fs_node_t *n = fs_node();
-    strcpy(n->name, "random");
-    n->mask = 0666;
-    n->uid = n->gid = 0;
-    n->flags = VFS_CHARDEVICE;
-    n->read = random_read;
-
-    vfs_mount(n, "/device/random");
-    return 0;
+static int random_mount() {
+    return !devfs_register(devfs_root, "random", VFS_CHARDEVICE, &random_dev_ops, DEVFS_MAJOR_RANDOM, 0, NULL);
 }
 
 FS_INIT_ROUTINE(random, INIT_FLAG_DEFAULT, random_mount);
