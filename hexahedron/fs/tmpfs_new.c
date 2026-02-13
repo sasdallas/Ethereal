@@ -143,6 +143,7 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     new_node->attr.atime = new_node->attr.mtime = new_node->attr.ctime = VFS_NOW();
     new_node->attr.mode = mode;
     new_node->attr.nlink = 1;
+    new_node->attr.size = 0;
 
     // Create an inode
     vfs_inode_t *ino = vfs2_inode();
