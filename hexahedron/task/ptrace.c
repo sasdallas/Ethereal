@@ -148,7 +148,6 @@ int ptrace_syscall(pid_t pid, void *data) {
     // Continue the tracee
     uintptr_t signum = data ? (uintptr_t)data : SIGCONT;
     signal_send(tracee, signum);
-    LOG(DEBUG, "ptrace: tracing system calls\n");
 
     // Until later
     return 0;

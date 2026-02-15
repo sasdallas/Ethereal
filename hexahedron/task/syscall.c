@@ -177,7 +177,7 @@ void syscall_pointerValidateFailed(void *ptr) {
 /**
  * @brief Finish a system call after setting registers
  */
-void syscall_finish() {
+inline void syscall_finish() {
     ptrace_event(PROCESS_TRACE_SYSCALL); // Can only ptrace after we've configured exit registers
 }
 
@@ -206,6 +206,11 @@ void syscall_handle(syscall_t *syscall) {
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
+
+                            
+    if ((long)syscall->return_value < 0 && syscall->return_value != -EWOULDBLOCK) {
+        LOG(WARN, "system call %d failed with error %d\n", syscall->syscall_number, syscall->return_value);
+    }
 
     return;
 }
@@ -258,8 +263,8 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     fd_t *fd = fd_add(current_cpu->current_process, file);
 
     // !!!
-    fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
-    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
+    // fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    // vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
     
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
@@ -991,12 +996,12 @@ ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
     SYSCALL_VALIDATE_PTR(path);
     SYSCALL_VALIDATE_PTR_SIZE(buf, bufsiz);
 
-    fs_node_t *n = kopen_user(path, O_RDONLY | O_NOFOLLOW);
-    if (!n) return -ENOENT;
-
-    ssize_t r = fs_readlink(n, buf, bufsiz);
-    fs_close(n);
-    return r;
+    vfs_inode_t *i;
+    int r = vfs_lookup((char*)path, &i, LOOKUP_NO_FOLLOW);
+    if (r != 0) return r;
+    ssize_t b = inode_readlink(i, buf, bufsiz);
+    inode_release(i);
+    return b;
 }
 
 long sys_access(const char *path, int amode) {
@@ -1009,10 +1014,10 @@ long sys_access(const char *path, int amode) {
     if (amode & W_OK) flags |= O_WRONLY;
 
     // TODO: Better this.. vfs_errno?
-    fs_node_t *n = kopen_user(path, amode);
-    if (!n) return -ENOENT;
-    fs_close(n);
-
+    vfs_file_t *f;
+    int r = vfs_open((char*)path, flags, &f);
+    if (r < 0) return r;
+    vfs_close(f);
     return 0;
 }
 
@@ -1196,7 +1201,7 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
 
         THREAD_SIGNAL(current_cpu->current_thread, signum).mask = act->sa_mask;
         THREAD_SIGNAL(current_cpu->current_thread, signum).flags = act->sa_flags;
-        LOG(DEBUG, "Changed signal %s to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), act->sa_handler, act->sa_mask, act->sa_flags);
+        LOG(DEBUG, "Changed signal %s (%d) to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), signum, act->sa_handler, act->sa_mask, act->sa_flags);
     }
 
     return 0;
@@ -1350,8 +1355,7 @@ long sys_umount(const char *mountpoint) {
 
 long sys_pipe(int fildes[2]) {
     SYSCALL_VALIDATE_PTR(fildes);
-
-    return pipe_create(current_cpu->current_process, fildes);
+    return pipe_create(fildes);
 }
 
 /**** EPOLL ****/
