@@ -322,7 +322,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
                 process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
                 process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
                 process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
-                
+                process->fd_table->fds[i]->path = parent->fd_table->fds[i]->path;
                 process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
             }
         }
