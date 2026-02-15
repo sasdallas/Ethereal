@@ -347,7 +347,7 @@ int vfs_lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t 
  * @param name The full path to look up the inode at
  * @param output The output inode
  * @param flags Lookup flags (LOOKUP_xxx)
- * @note The inode comes out LOCKED. When you are finished, release it with @c inode_unlock
+ * @note The inode comes out LOCKED. When you are finished, release it with @c inode_release
  * @returns 0 on success, anything else is an error code.
  */
 int vfs_lookup(char *path, vfs_inode_t **output, uint32_t flags) {
