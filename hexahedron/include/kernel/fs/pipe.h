@@ -16,40 +16,31 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs.h>
-#include <kernel/task/process.h>
+#include <kernel/fs/poll.h>
 #include <structs/circbuf.h>
 
 /**** TYPES ****/
 
 typedef struct fs_pipe {
-    fs_node_t *read;            // Reader pipe
-    fs_node_t *write;           // Writer pipe
+    poll_event_t read_event;    // Read event
+    poll_event_t write_event;   // Write event
     circbuf_t *buf;             // Pipe buffer
-    uint8_t closed_read;        // Read closed
-    uint8_t closed_write;       // Write closed
+    volatile char dead;         // Pipe dead
 } fs_pipe_t;
 
 /**** FUNCTIONS ****/
 
 /**
  * @brief Create a new pipe set for a process
- * @param process The process to create the pipes on
  * @param fildes The file descriptor array to fill with pipes
  * @returns Error code
  */
-int pipe_create(process_t *process, int fildes[2]);
+int pipe_create(int fildes[2]);
 
 /**
  * @brief Create a pipe set for usage
  * @returns Pipe object
  */
 fs_pipe_t *pipe_createPipe();
-
-/**
- * @brief Returns the amount of content available to read
- * @param pipe One end of a pipe
- */
-size_t pipe_remainingRead(fs_node_t *pipe);
 
 #endif
