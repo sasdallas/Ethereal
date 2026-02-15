@@ -106,8 +106,6 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
     driver->update = grubvid_updateScreen;
     driver->unload = grubvid_unload;
 
-    int wc = !kargs_has("--no-write-combine");
-
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
     size_t fbsize = (driver->screenHeight * driver->screenPitch);
     uintptr_t region = (uintptr_t)vmm_map(NULL, fbsize, VM_FLAG_DEFAULT, MMU_FLAG_WC | MMU_FLAG_WRITE | MMU_FLAG_PRESENT);

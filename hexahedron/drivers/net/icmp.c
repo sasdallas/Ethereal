@@ -241,8 +241,6 @@ static ssize_t icmp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  */
 sock_t *icmp_socket() {
     sock_t *sock = socket_allocate(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    sock->sendmsg = icmp_sendmsg;
-    sock->recvmsg = icmp_recvmsg;
     sock->ops = &icmp_sock_ops;
     return sock;
 }

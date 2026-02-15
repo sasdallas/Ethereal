@@ -414,7 +414,7 @@ int e1000_irq(void *context) {
     uint32_t icr = E1000_RECVCMD(E1000_REG_ICR);
     if (icr) {
         uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-        LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
+        // LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
         
         if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
             // TODO: Seems to cause issues when IRQs are allocated

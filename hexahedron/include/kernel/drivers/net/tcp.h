@@ -93,6 +93,6 @@ typedef struct tcp_sock {
 /**
  * @brief Handle a TCP packet
  */
-int tcp_handle(fs_node_t *nic, void *frame, size_t size);
+int tcp_handle(nic_t *nic, void *frame, size_t size);
 
 #endif

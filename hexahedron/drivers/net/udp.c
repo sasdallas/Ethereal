@@ -263,10 +263,6 @@ static int udp_close(sock_t *sock) {
  */
 sock_t *udp_socket() {
     sock_t *sock = socket_allocate(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    sock->sendmsg = udp_sendmsg;
-    sock->recvmsg = udp_recvmsg;
-    sock->bind = udp_bind;
-    sock->close = udp_close;
     sock->ops = &udp_sock_ops;
 
     udp_sock_t *udpsock = kzalloc(sizeof(udp_sock_t));

@@ -67,6 +67,13 @@ sock_t *socket_allocate(int domain, int type, int protocol) {
 }
 
 /**
+ * @brief Free a socket
+ */
+void socket_free(sock_t *sock) {
+    slab_free(socket_cache, sock);
+}
+
+/**
  * @brief Register a new handler for a socket type
  * @param domain The domain of the handler to register
  * @param socket_create Socket creation function
@@ -167,37 +174,6 @@ int socket_ioctl(fs_node_t *node, unsigned long request, void *argp) {
         default:
             return -EINVAL;
     }
-}
-
-/**
- * @brief Socket read method
- * @param node The node to read
- * @param off Offset
- * @param size Size
- * @param buffer Buffer
- */
-ssize_t socket_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
-    sock_t *sock = (sock_t*)node->dev;
-    if (!sock->recvmsg) return -EINVAL;
-
-    // TODO: Offset?
-    struct iovec iov = {
-        .iov_base = buffer,
-        .iov_len = size
-    };
-
-    struct msghdr msg = {
-        .msg_control = NULL,
-        .msg_controllen = 0,
-        .msg_flags = 0,
-        .msg_name = NULL,
-        .msg_namelen = 0,
-        .msg_iov = &iov,
-        .msg_iovlen = 1,
-    };
-
-    return sock->recvmsg(sock, &msg, 0);
 }
 
 /**
@@ -310,10 +286,10 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = NULL; assert(0);
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     // TODO: Replace this with a handler system. This is temporary
     switch (level) {
@@ -337,10 +313,10 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = NULL; assert(0);
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR(option_len);
     SYSCALL_VALIDATE_PTR_SIZE(option_value, *option_len);
@@ -463,20 +439,19 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = NULL; assert(0);
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
-    if (!(*addrlen)) return 0; // TODO: Weird cases in which we can handle this?
+    if (!(*addrlen)) return 0; // TODO: weird case?
 
-    // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->getpeername) {
-        return sock->getpeername(sock, addr, addrlen);
+    if (sock->ops->getpeername) {
+        return sock->ops->getpeername(sock, addr, addrlen);
     }
 
-    return -EOPNOTSUPP;
+    return -ENODEV;
 }
 
 /**
@@ -490,10 +465,10 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = NULL; assert(0);
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     // ???: Can addrlen be NULL?
     SYSCALL_VALIDATE_PTR(addrlen);
@@ -501,82 +476,12 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
 
     // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->getsockname) {
-        return sock->getsockname(sock, addr, addrlen);
+    if (sock->ops->getsockname) {
+        return sock->ops->getsockname(sock, addr, addrlen);
     }
 
     return -EOPNOTSUPP;
 }
-
-
-/**
- * @brief Socket close method
- */
-int socket_close(fs_node_t *node) {
-    sock_t *sock = (sock_t*)node->dev;
-
-    // First, call the socket's dedicated close method
-    if (sock->close) sock->close(sock);
-
-    // Now free memory
-    spinlock_acquire(sock->recv_lock);
-    if (sock->recv_lock) spinlock_destroy(sock->recv_lock);
-    if (sock->recv_queue) list_destroy(sock->recv_queue, true);
-    if (sock->recv_wait_queue) kfree(sock->recv_wait_queue);
-    kfree(sock);
-
-    return 0;
-}
-
-/**
- * @brief Socket node ready method
- * @param node The node to check 
- * @param events The events we are looking for
- */
-int socket_ready(fs_node_t *node, int events) {
-    if ((node->flags & VFS_SOCKET) == 0) return 0;
-
-    sock_t *sock = (sock_t*)node->dev;
-
-    // Does the socket provide its own ready method?
-    if (sock->ready) return sock->ready(sock, events);
-
-    int revents = VFS_EVENT_WRITE;
-    if (sock->recv_queue->length) revents |= VFS_EVENT_READ;
-
-    return revents;
-}
-
-/**
- * @brief Generic socket write method
- * @param node The node to write to
- * @param off The offset to write (ignored?)
- * @param size The size to write
- * @param buffer The buffer to write
- */
-ssize_t socket_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
-
-    struct iovec iov = {
-        .iov_base = buffer,
-        .iov_len = size
-    };
-
-    struct msghdr msg = {
-        .msg_control = NULL,
-        .msg_controllen = 0,
-        .msg_flags = 0,
-        .msg_iov = &iov,
-        .msg_iovlen = 1,
-        .msg_name = NULL,
-        .msg_namelen = 0
-    };
-
-    sock_t *sock = (sock_t*)node->dev;
-    if (sock->sendmsg) return sock->sendmsg(sock, &msg, 0);
-    return -EINVAL;
-}
-
 
 /**
  * @brief Create a new socket for a given process
@@ -605,22 +510,6 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     if (!sock->recv_wait_queue) sock->recv_wait_queue = sleep_createQueue("receive sleep queue");
     if (!sock->recv_queue) sock->recv_queue = list_create("receive queue");
 
-    // // Build a filesystem node
-    // if (!sock->node) {
-    //     fs_node_t *node = kzalloc(sizeof(fs_node_t));
-    //     strcpy(node->name, "socket");
-    //     node->flags = VFS_SOCKET;
-    //     node->atime = node->ctime = node->mtime = now();
-    //     node->dev = (void*)sock;
-    //     node->ready = socket_ready;
-    //     node->close = socket_close;
-    //     node->read = socket_read;
-    //     node->write = socket_write;
-    //     node->ioctl = socket_ioctl;
-    //     node->refcount = 1;
-    //     sock->node = node;
-    // }
-
     sock->node = (fs_node_t*)0xdeadbeef;
     sock->inode = socketfs_create(sock);
 
@@ -639,6 +528,8 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     // Add as file descriptor
     vfs_file_t *f;    
     assert(vfs_openat(sock->inode, NULL, O_RDWR, &f) == 0);
+
+    inode_release(sock->inode); // required after creation so that the last reference can be dropped
 
     fd_t *fd = fd_add(proc, f);
     if (type_original & SOCK_CLOEXEC) {

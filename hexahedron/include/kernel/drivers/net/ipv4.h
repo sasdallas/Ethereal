@@ -109,7 +109,7 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
  * @param packet The packet to send
  * @returns 0 on success
  */
-int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet);
+int ipv4_sendPacket(nic_t *nic, ipv4_packet_t *packet);
 
 /**
  * @brief Handle an IPv4 packet

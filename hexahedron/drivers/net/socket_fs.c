@@ -176,6 +176,6 @@ static int socketfs_destroy(vfs_inode_t *inode) {
     if (sock->recv_lock) spinlock_destroy(sock->recv_lock);
     if (sock->recv_queue) list_destroy(sock->recv_queue, true);
     if (sock->recv_wait_queue) kfree(sock->recv_wait_queue);
-    kfree(sock);
+    socket_free(sock);
     return 0;
 }

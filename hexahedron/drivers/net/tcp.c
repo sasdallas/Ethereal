@@ -57,10 +57,35 @@ spinlock_t tcp_port_lock = { 0 };
 /* Last port allocated */
 static in_port_t tcp_port_last = 2332;
 
+/* TCP socket operations */
+static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
+static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
+static int tcp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
+static int tcp_connect(sock_t *sock, const struct sockaddr *addr, socklen_t addrlen);
+static int tcp_close(sock_t *sock);
+static int tcp_getsockname(sock_t *sock, struct sockaddr *address, socklen_t *address_len);
+
+static sock_ops_t tcp_socket_ops = {
+    .sendmsg            = tcp_sendmsg,
+    .recvmsg            = tcp_recvmsg,
+    .bind               = tcp_bind,
+    .connect            = tcp_connect,
+    .listen             = NULL,
+    .accept             = NULL,
+    .close              = tcp_close,
+    .getsockname        = tcp_getsockname,
+    .getpeername        = NULL,
+    .getsockopt         = NULL,
+    .setsockopt         = NULL,
+    .poll               = NULL,
+    .poll_events        = NULL
+};
+
+
 /**
  * @brief TCP state to string
  */
-static char *tcp_stateToString(int state) {
+inline static char *tcp_stateToString(int state) {
     switch (state) {
         case TCP_STATE_DEFAULT:
             return "DEFAULT";
@@ -172,47 +197,36 @@ int tcp_acknowledge(nic_t *nic, sock_t *sock, ipv4_packet_t *ip_pkt, size_t size
         if (TCP_HAS_FLAG(pkt, SYN) && TCP_HAS_FLAG(pkt, ACK)) tcpsock->seq = 1; // Next sequence number
     }
 
-    // Transmit packet
-    ipv4_packet_t *resp_ip = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
-    resp_ip->length = htons(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
-    resp_ip->src_addr = nic->ipv4_address;
-    resp_ip->dest_addr = ip_pkt->src_addr;
-    resp_ip->protocol = IPV4_PROTOCOL_TCP;
-    resp_ip->ttl = IPV4_DEFAULT_TTL;
-    resp_ip->versionihl = 0x45;
-    resp_ip->checksum = 0;
-    resp_ip->checksum = htons(ipv4_checksum(resp_ip));
+    // // Send the ACK
+    tcp_packet_t tcppkt = {
+        .src_port = htons(tcpsock->port),
+        .dest_port = pkt->src_port,
+        .seq = htonl(tcpsock->seq),
+        .ack = htonl(tcpsock->ack),
+        .flags = htons(TCP_FLAG_ACK | 0x5000),
+        .winsz = htons(TCP_DEFAULT_WINSZ),
+        .checksum = 0,
+        .urgent = 0,
+    };
 
-    tcp_packet_t *resp = (tcp_packet_t*)resp_ip->payload;
-    resp->src_port = htons(tcpsock->port);
-    resp->dest_port = pkt->src_port;
-    resp->seq = htonl(tcpsock->seq);
-    resp->ack = htonl(tcpsock->ack);
-    resp->flags = htons(TCP_FLAG_ACK | 0x5000);
-    resp->winsz = htons(TCP_DEFAULT_WINSZ);
-    
-    // Calculate TCP checksum
-    tcp_checksum_header_t resp_cksum = {
-        .dest = resp_ip->dest_addr,
+    tcp_checksum_header_t tcpcksum = {
+        .dest = ip_pkt->src_addr,
         .length = htons(sizeof(tcp_packet_t)),
         .protocol = IPV4_PROTOCOL_TCP,
         .reserved = 0,
-        .src = resp_ip->src_addr
+        .src = nic->ipv4_address
     };
 
-    resp->checksum = htons(tcp_checksum(&resp_cksum, resp, NULL, 0));
+    tcppkt.checksum = htons(tcp_checksum(&tcpcksum, &tcppkt, NULL, 0));
 
-    // Transmit!
-    TCP_PRINT_PKT(resp, nic, resp_ip);
-    ipv4_sendPacket(nic->parent_node, resp_ip);
+    ipv4_send(nic, ip_pkt->src_addr, IPV4_PROTOCOL_TCP, &tcppkt, sizeof(tcp_packet_t));
 
     // Retransmit two more times?
     if (retransmit) {
-        ipv4_sendPacket(nic->parent_node, resp_ip);
-        ipv4_sendPacket(nic->parent_node, resp_ip);
+        ipv4_send(nic, ip_pkt->src_addr, IPV4_PROTOCOL_TCP, &tcppkt, sizeof(tcp_packet_t));
+        ipv4_send(nic, ip_pkt->src_addr, IPV4_PROTOCOL_TCP, &tcppkt, sizeof(tcp_packet_t));
     }
 
-    kfree(resp_ip);
     return ret;
 }
 
@@ -257,8 +271,7 @@ int tcp_sendPacket(sock_t *sock, nic_t *nic, in_addr_t dest, tcp_packet_t *tcp_p
     pkt->checksum = htons(tcp_checksum(&tcp_cksum, pkt, pkt->payload, len));
 
     // Send it!
-    TCP_PRINT_PKT(pkt, nic, ip_pkt);
-    int r = ipv4_sendPacket(nic->parent_node, ip_pkt);
+    int r = ipv4_sendPacket(nic, ip_pkt);
     kfree(ip_pkt);
     return r;
 }
@@ -269,11 +282,9 @@ int tcp_sendPacket(sock_t *sock, nic_t *nic, in_addr_t dest, tcp_packet_t *tcp_p
  * @param frame The frame inlcluding the IPv4 packet header
  * @param size The size of the packet
  */
-int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
+int tcp_handle(nic_t *nic, void *frame, size_t size) {
     ipv4_packet_t *ip_packet = (ipv4_packet_t*)frame;
     tcp_packet_t *packet = (tcp_packet_t*)ip_packet->payload;
-
-    TCP_PRINT_PKT(packet, NIC(nic), ip_packet);
 
     // Do we have a port willing to handle this?
     if (hashmap_has(tcp_port_map, (void*)(uintptr_t)ntohs(packet->dest_port))) {
@@ -288,7 +299,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
             // We are awaiting a SYN-ACK - if this is one then we can acknowledge it
             if (TCP_HAS_FLAG(packet, SYN) && TCP_HAS_FLAG(packet, ACK)) {
                 // This is a SYN-ACK, acknowledge request
-                if (tcp_acknowledge(NIC(nic), sock, ip_packet, 1) == 0) {
+                if (tcp_acknowledge(nic, sock, ip_packet, 1) == 0) {
                     // Successful acknowledgement, change state and alert socket
                     TCP_CHANGE_STATE(TCP_STATE_ESTABLISHED);
                     socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
@@ -316,7 +327,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                     socket_received(sock, (void*)packet, sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
                 }
 
-                if (tcp_acknowledge(NIC(nic), sock, ip_packet, payload_len) == 0) {
+                if (tcp_acknowledge(nic, sock, ip_packet, payload_len) == 0) {
                     socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
                 }
             } else {
@@ -326,7 +337,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                     if (tcpsock->state == TCP_STATE_FIN_WAIT1) {
                         // We were waiting for this, ACK back normally
                         TCP_CHANGE_STATE(TCP_STATE_FIN_WAIT2);
-                        if (tcp_acknowledge(NIC(nic), sock, ip_packet, 0) == 0) {
+                        if (tcp_acknowledge(nic, sock, ip_packet, 0) == 0) {
                             socket_received(sock, (void*)packet, size - sizeof(ipv4_packet_t));
                         }
                         TCP_CHANGE_STATE(TCP_STATE_CLOSED);
@@ -334,7 +345,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                         // We were probably not expecting this, send back a FIN-ACK
                         TCP_CHANGE_STATE(TCP_STATE_CLOSE_WAIT);
                         ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
-                        ip_pkt->src_addr = NIC(nic)->ipv4_address;
+                        ip_pkt->src_addr = nic->ipv4_address;
                         ip_pkt->dest_addr = ip_packet->src_addr;
                         ip_pkt->protocol = IPV4_PROTOCOL_TCP;
                         ip_pkt->id = ip_packet->id;
@@ -350,7 +361,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
                         pkt->ack = htonl(ntohl(packet->seq) + 1); // ???
                         pkt->flags = htons(TCP_FLAG_FIN | TCP_FLAG_ACK | 0x5000);
                         pkt->winsz = TCP_DEFAULT_WINSZ;
-            
+
                         tcp_checksum_header_t tcp_cksum = {
                             .dest = ip_pkt->dest_addr,
                             .length = htons(sizeof(tcp_packet_t)),
@@ -379,9 +390,9 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
     } else {
         // !!!: Also reply to any SYN-ACK requests to unknown ports with a RST, ACK
         if (TCP_HAS_FLAG(packet, SYN) && TCP_HAS_FLAG(packet, ACK)) {
-            LOG_NIC(WARN, nic, "Connection to port %d denied - replying with RST ACK\n", ntohs(packet->dest_port));
+            // LOG_NIC(WARN, nic, "Connection to port %d denied - replying with RST ACK\n", ntohs(packet->dest_port));
             ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
-            ip_pkt->src_addr = NIC(nic)->ipv4_address;
+            ip_pkt->src_addr = nic->ipv4_address;
             ip_pkt->dest_addr = ip_packet->src_addr;
             ip_pkt->protocol = IPV4_PROTOCOL_TCP;
             ip_pkt->id = ip_packet->id;
@@ -415,9 +426,9 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
         // !!!: Since our port sockets are stupid and are removed before the transactions are actually completed, 
         // !!!: we also should ACK any FIN, ACKs
         if (TCP_HAS_FLAG(packet, FIN) && TCP_HAS_FLAG(packet, ACK)) {
-            LOG_NIC(WARN, nic, "Closing connection to port %d (replying with ACK)\n", ntohs(packet->dest_port));
+            // LOG_NIC(WARN, nic, "Closing connection to port %d (replying with ACK)\n", ntohs(packet->dest_port));
             ipv4_packet_t *ip_pkt = kzalloc(sizeof(ipv4_packet_t) + sizeof(tcp_packet_t));
-            ip_pkt->src_addr = NIC(nic)->ipv4_address;
+            ip_pkt->src_addr = nic->ipv4_address;
             ip_pkt->dest_addr = ip_packet->src_addr;
             ip_pkt->protocol = IPV4_PROTOCOL_TCP;
             ip_pkt->id = ip_packet->id;
@@ -459,7 +470,7 @@ int tcp_handle(fs_node_t *nic, void *frame, size_t size) {
  * @param sockaddr The socket address
  * @param addrlen The length of the socket address
  */
-int tcp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+static int tcp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     // Check to see if this socket is bound already
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
     if (tcpsock->port) return -EINVAL; // Already bound
@@ -487,7 +498,7 @@ int tcp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
  * @param msg The message to receive
  * @param flags Flags for message receiving
  */
-ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
     if (!sock->connected_addr) return -ENOTCONN;
     if (msg->msg_namelen) return -EISCONN;
@@ -596,7 +607,7 @@ ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @param msg The message to send
  * @param flags Flags for message sending
  */
-ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
     if (!sock->connected_addr) return -ENOTCONN;
     if (msg->msg_namelen) return -EISCONN;
@@ -646,7 +657,7 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             // Off with the packet
             int handled = 0;
             poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
-            poll_add(w, &sock->node->event, VFS_EVENT_READ);
+            poll_add(w, &sock->sock_event, VFS_EVENT_READ);
             for (int attempts = 0; attempts < 3; attempts++) {
                 tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &pkt, iov.iov_base + sent_bytes, remain);
             
@@ -694,7 +705,7 @@ ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @param sock The socket to listen on
  * @param backlog Amount of allowed pending connections
  */
-int tcp_listen(sock_t *sock, int backlog) {
+static int tcp_listen(sock_t *sock, int backlog) {
     // TODO: Use backlog
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
     TCP_CHANGE_STATE(TCP_STATE_LISTEN);
@@ -707,7 +718,7 @@ int tcp_listen(sock_t *sock, int backlog) {
  * @param sockaddr The sockaddr structure to place new connection in
  * @param addrlen Pointer to address length to set
  */
-int tcp_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t addrlen) {
+static int tcp_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t addrlen) {
     return -EINVAL;
 }
 
@@ -717,7 +728,7 @@ int tcp_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t addrlen) {
  * @param sockaddr The socket address to connect on
  * @param addrlen The address length of the socket
  */
-int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+static int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     if (addrlen < sizeof(struct sockaddr_in)) return -EINVAL;
     struct sockaddr_in *addr = (struct sockaddr_in*)sockaddr;
 
@@ -781,14 +792,14 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
     pkt->checksum = htons(tcp_checksum(&tcp_cksum_pkt, pkt, NULL, 0));
 
     // Send TCP packet
-    ipv4_sendPacket(nic->parent_node, ip_packet);
+    ipv4_sendPacket(nic, ip_packet);
 
     // Change to SYN-SENT state
     TCP_CHANGE_STATE(TCP_STATE_SYN_SENT);
 
     // Wait for a response
     poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
-    poll_add(w, &sock->node->event, VFS_EVENT_READ);
+    poll_add(w, &sock->sock_event, VFS_EVENT_READ);
 
     for (int attempt = 0; attempt < 3; attempt++) {
         // Put the current thread to sleep and let it 
@@ -805,7 +816,7 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
         }
 
         if (r == -ETIMEDOUT) {
-            ipv4_sendPacket(nic->parent_node, ip_packet);
+            ipv4_sendPacket(nic, ip_packet);
             continue;
         }
 
@@ -854,7 +865,7 @@ int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen
 /**
  * @brief TCP close method
  */
-int tcp_close(sock_t *sock) {
+static int tcp_close(sock_t *sock) {
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
     if (tcpsock->state != TCP_STATE_ESTABLISHED) return 0; // Socket is already closing
     if (!sock->connected_addr || sock->connected_addr_len < sizeof(struct sockaddr_in)) goto _cleanup_socket;
@@ -893,7 +904,7 @@ _cleanup_socket:
 /**
  * @brief getsockname method for TCP
  */
-int tcp_getsockname(sock_t *sock, struct sockaddr *address, socklen_t *address_len) {
+static int tcp_getsockname(sock_t *sock, struct sockaddr *address, socklen_t *address_len) {
     tcp_sock_t *tcpsock = (tcp_sock_t*)sock->driver;
 
     // ???
@@ -928,15 +939,10 @@ int tcp_getsockname(sock_t *sock, struct sockaddr *address, socklen_t *address_l
  * @brief Create a TCP socket
  */
 sock_t *tcp_socket() {
-    sock_t *sock = kzalloc(sizeof(sock_t));
+    sock_t *sock = socket_allocate(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     tcp_sock_t *tcpsock = kzalloc(sizeof(tcp_sock_t));
 
-    sock->sendmsg = tcp_sendmsg;
-    sock->recvmsg = tcp_recvmsg;
-    sock->bind = tcp_bind;
-    sock->connect = tcp_connect;
-    sock->close = tcp_close;
-    sock->getsockname = tcp_getsockname;
+    sock->ops = &tcp_socket_ops;
 
     sock->driver = (void*)tcpsock;
     return sock;
@@ -948,8 +954,7 @@ sock_t *tcp_socket() {
  */
 static int tcp_init() {
     tcp_port_map = hashmap_create_int("tcp port map", 20);
-    // return ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
-    return 0;
+    return ipv4_register(IPV4_PROTOCOL_TCP, tcp_handle);
 }
 
 NET_INIT_ROUTINE(tcp, INIT_FLAG_DEFAULT, tcp_init, ipv4);

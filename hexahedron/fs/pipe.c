@@ -105,8 +105,6 @@ static int pipe_open(vfs_file_t *file, unsigned long flags) {
  * @brief pipe close
  */
 static int pipe_close(vfs_file_t *file) {
-    dprintf(DEBUG, "pipe_close\n");
-
     // do the actual destruction in pipe_destroy
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
     poll_signal(&pipe->read_event, POLLHUP);

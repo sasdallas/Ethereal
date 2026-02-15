@@ -64,7 +64,7 @@ int ethernet_unregisterHandler(uint16_t ethertype) {
  * @param size The size of the packet
  */
 void ethernet_handle(ethernet_packet_t *packet, nic_t *nic, size_t size) {
-    LOG(DEBUG, "ETH: Handle packet type=%04x dst=" MAC_FMT " src=" MAC_FMT "\n", ntohs(packet->ethertype), MAC(packet->destination_mac), MAC(packet->source_mac));
+    // LOG(DEBUG, "ETH: Handle packet type=%04x dst=" MAC_FMT " src=" MAC_FMT "\n", ntohs(packet->ethertype), MAC(packet->destination_mac), MAC(packet->source_mac));
 
     // Valid packet?
     if (!size) {

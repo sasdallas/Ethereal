@@ -91,20 +91,6 @@ typedef struct sock {
     // Operations
     sock_ops_t *ops;                    // Socket operations
 
-    // METHODS
-    sock_sendmsg_t sendmsg;             // sendmsg
-    sock_recvmsg_t recvmsg;             // recvmsg
-    sock_bind_t bind;                   // bind
-    sock_connect_t connect;             // connect
-    sock_listen_t listen;               // listen
-    sock_accept_t accept;               // accept
-    sock_close_t close;                 // close
-    sock_ready_t ready;                 // (VFS replacement) ready
-    sock_getsockname_t getsockname;     // getsockname
-    sock_getpeername_t getpeername;     // getpeername
-    sock_getsockopt_t getsockopt;       // getsockopt
-    sock_setsockopt_t setsockopt;       // setsockopt
-
     // RECEIVE
     spinlock_t *recv_lock;              // Receive lock
     sleep_queue_t *recv_wait_queue;     // Receive sleep queue
@@ -148,6 +134,11 @@ typedef sock_t* (*socket_create_t)(int type, int protocol);
  * @param protocol The protocol of the socket
  */
 sock_t *socket_allocate(int domain, int type, int protocol);
+
+/**
+ * @brief Free a socket
+ */
+void socket_free(sock_t *sock);
 
 /**
  * @brief Register a new handler for a socket type

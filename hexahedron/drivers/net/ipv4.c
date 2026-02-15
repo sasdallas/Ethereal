@@ -99,24 +99,24 @@ uint16_t ipv4_checksum(ipv4_packet_t *packet) {
  * @param packet The packet to send
  * @returns 0 on success
  */
-int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
+int ipv4_sendPacket(nic_t *nic, ipv4_packet_t *packet) {
     // Print packet
     char src[17];
-    __inet_ntoa(NIC(nic_node)->ipv4_address, src);
+    __inet_ntoa(nic->ipv4_address, src);
     char dst[17];
     __inet_ntoa(packet->dest_addr, dst);
-    LOG_NIC(DEBUG, nic_node, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
+    LOG(DEBUG, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
 
     // Try to get destination MAC from ARP
     // Is this a local address?
     arp_table_entry_t *entry = NULL;
-    if (!NIC(nic_node)->ipv4_subnet || (NIC(nic_node)->ipv4_subnet & packet->dest_addr) != (NIC(nic_node)->ipv4_address & NIC(nic_node)->ipv4_subnet)) {
-        entry = arp_get_entry(NIC(nic_node)->ipv4_gateway);
+    if (!nic->ipv4_subnet || (nic->ipv4_subnet & packet->dest_addr) != (nic->ipv4_address & nic->ipv4_subnet)) {
+        entry = arp_get_entry(nic->ipv4_gateway);
     } else {
         entry = arp_get_entry(packet->dest_addr);
         if (!entry) {
-            if (arp_search(NIC(nic_node), packet->dest_addr)) {
-                LOG_NIC(ERR, nic_node, "Send failed. Could not locate destination.\n");
+            if (arp_search(nic, packet->dest_addr)) {
+                LOG(ERR, "Send failed. Could not locate destination.\n");
                 return 1;
             }
 
@@ -125,7 +125,7 @@ int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
         }
     }
 
-    ethernet_send(nic_node->dev, (void*)packet, IPV4_PACKET_TYPE, entry ? entry->hwmac : ETHERNET_BROADCAST_MAC, ntohs(packet->length));
+    ethernet_send(nic, (void*)packet, IPV4_PACKET_TYPE, entry ? entry->hwmac : ETHERNET_BROADCAST_MAC, ntohs(packet->length));
 
     return 0;
 }
@@ -155,7 +155,6 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
         if (nic->ipv4_gateway && (!nic->ipv4_subnet || ((nic->ipv4_subnet & dest) != (nic->ipv4_address & nic->ipv4_subnet)))) {
             ent = arp_get_entry(nic->ipv4_gateway);
             tgt = nic->ipv4_gateway;
-            LOG(DEBUG, "path one, ipv4 gateway = %x dst = %x\n", nic->ipv4_gateway, dest);
         } else {
             ent = arp_get_entry(dest);
         }
