@@ -55,6 +55,11 @@ ssize_t circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
     size_t got = 0;
     while (!got) {
         if (circbuf->tail == circbuf->head) {
+            // Were we stopped? In this case finish up
+            if (circbuf->stop) {
+                return got;
+            }
+            
             // Did we collect anything?
             if (!got) {
                 // Wakeup the writers
@@ -64,9 +69,6 @@ ssize_t circbuf_read(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
                 sleep_inQueue(circbuf->readers);
                 int w = sleep_enter();
                 if (w == WAKEUP_SIGNAL) return -EINTR;
-
-                // Were we stopped?
-                if (circbuf->stop) return 0;
 
                 // Keep going
                 continue;
@@ -117,7 +119,7 @@ ssize_t circbuf_write(circbuf_t *circbuf, size_t size, uint8_t *buffer) {
             if (w == WAKEUP_SIGNAL) return -EINTR;
 
             // Were we stopped?
-            if (circbuf->stop) return 0;
+            if (circbuf->stop) return copied;
 
             continue;
         }
