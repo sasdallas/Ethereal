@@ -28,7 +28,6 @@ uint16_t htons(uint16_t hostshort) { return ((hostshort & 0xFF) << 8) | (((hosts
 static char __inet_ntoa_buf[256] = { 0 };
 char *inet_ntoa(struct in_addr in) {
     unsigned char *bytes;
-    in.s_addr = ntohl(in.s_addr); // Convert to host byte order
     bytes = (unsigned char *)&in.s_addr;
     snprintf(__inet_ntoa_buf, sizeof(__inet_ntoa_buf), "%u.%u.%u.%u",
              bytes[0], bytes[1], bytes[2], bytes[3]);
