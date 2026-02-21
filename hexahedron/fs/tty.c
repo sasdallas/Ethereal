@@ -86,8 +86,8 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
     if (tty->tios.c_lflag & ICANON || tty->tios.c_cc[VMIN] == 0) {
         return circbuf_read(tty->read_buf, size, (uint8_t*)buffer);
     } else {
-        size_t sz_to_read = tty->tios.c_cc[VMIN];
-        if (size < sz_to_read) sz_to_read = size;
+        size_t sz_to_read = size;
+        if (tty->tios.c_cc[VMIN] < sz_to_read) sz_to_read = tty->tios.c_cc[VMIN];
 
         for (size_t i = 0; i < sz_to_read; i++) {
             circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
@@ -164,12 +164,22 @@ void tty_handle(tty_t *tty, char ch) {
 
     if (tty->tios.c_lflag & ISIG) {
         // Process signals
+        int sig = -1;
         if (ch == tty->tios.c_cc[VINTR]) {
-            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, SIGINT);
+            sig = SIGINT;
         } else if (ch == tty->tios.c_cc[VQUIT]) {
-            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, SIGQUIT);
+            sig = SIGQUIT;
         } else if (ch == tty->tios.c_cc[VSUSP]) {
-            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, SIGTSTP);
+            sig = SIGTSTP;
+        }
+
+        if (sig != -1) {
+            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, sig);
+            if (tty->tios.c_lflag & ECHO) {
+                char ctrl[2] = { '^', TO_CTRL(ch) };
+                tty->write(tty, ctrl, 2);
+            }
+            return;
         }
     }
 
@@ -177,25 +187,30 @@ void tty_handle(tty_t *tty, char ch) {
         int flush_tty = 0;
     
         if (ch == tty->tios.c_cc[VERASE]) {
+            // Do canonical backspace
+            if (tty->canon_idx) {
+                tty->canon_idx--;
+                char prev = tty->canon_buffer[tty->canon_idx];
+                tty->canon_buffer[tty->canon_idx] = 0;
+                if ((tty->tios.c_lflag & ECHO) && (tty->tios.c_lflag & ECHOE)) {
+                    tty->write(tty, "\010 \010", 3);
+                    if (IS_CONTROL(prev)) tty->write(tty, "\010 \010", 3);
+                }
+            }
+
             if ((tty->tios.c_lflag & ECHO) && ((tty->tios.c_lflag & ECHOE) == 0)) {
                 tty->write(tty, "^", 1);
                 char control = TO_CTRL(ch);
                 tty->write(tty, &control, 1);
             }
             
-            // Do canonical backspace
-            if (!tty->canon_idx) return;
-            tty->canon_idx--;
-            char prev = tty->canon_buffer[tty->canon_idx];
-            tty->canon_buffer[tty->canon_idx] = 0;
-            if ((tty->tios.c_lflag & ECHO) && (tty->tios.c_lflag & ECHOE)) {
-                tty->write(tty, "\010 \010", 3);
-                if (IS_CONTROL(prev)) tty->write(tty, "\010 \010", 3);
-            }
 
             return;
-        } else if (ch == tty->tios.c_cc[VEOF] || (tty->tios.c_cc[VEOL] && ch == tty->tios.c_cc[VEOL]) || ch == '\n') {
+        } else if (ch == tty->tios.c_cc[VEOF]) {
             flush_tty = 1;
+        } else if ((tty->tios.c_cc[VEOL] && ch == tty->tios.c_cc[VEOL])) {
+            tty_flush(tty);
+            return;
         } else {
             // TODO: the rest (VKILL )
         }
@@ -203,6 +218,8 @@ void tty_handle(tty_t *tty, char ch) {
         // Store in buffer
         tty->canon_buffer[tty->canon_idx++] = ch;
         if (tty->canon_idx >= 4096) flush_tty = 1;
+
+        if (ch == '\n') flush_tty = 1;
 
         // Write the character if echoed
         if ((tty->tios.c_lflag & ECHO)) {
@@ -219,12 +236,7 @@ void tty_handle(tty_t *tty, char ch) {
             tty_flush(tty);
         }
     } else {
-        if (IS_CONTROL(ch) && ch != '\n') {
-            char ctrl[2] = {'^', TO_CTRL(ch) };
-            tty->write(tty, ctrl, 2);
-        } else {
-            tty->write(tty, &ch, 1);
-        }
+        if (tty->tios.c_lflag & ECHO) tty->write(tty, &ch, 1);
 
         mutex_acquire(&tty->mut);
         circbuf_write(tty->read_buf, 1, (uint8_t*)&ch);

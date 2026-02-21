@@ -32,6 +32,9 @@ static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount, char *
 static int tmpfs_truncate(vfs_inode_t *inode, size_t size);
 static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_name, vfs_inode_t **ino_output);
 static ssize_t tmpfs_readlink(vfs_inode_t *inode, char *buffer, size_t maxlen);
+static int tmpfs_unlink(vfs_inode_t *inode, vfs_inode_t *child, char *child_name);
+static int tmpfs_destroy(vfs_inode_t *inode);
+static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags);
 
 
 /* Filesystem */
@@ -43,7 +46,7 @@ static vfs2_filesystem_t tmpfs_filesystem = {
 /* Inode ops */
 static vfs_inode_ops_t tmpfs_inode_ops = {
     .create = tmpfs_create,
-    .destroy = NULL,
+    .destroy = tmpfs_destroy,
     .getattr = NULL,
     .link = NULL,
     .lookup = tmpfs_lookup,
@@ -53,7 +56,8 @@ static vfs_inode_ops_t tmpfs_inode_ops = {
     .setattr = NULL,
     .symlink = tmpfs_symlink,
     .truncate = tmpfs_truncate,
-    .unlink = NULL
+    .unlink = tmpfs_unlink,
+    .rename = tmpfs_rename,
 };
 
 /* File ops */
@@ -63,7 +67,13 @@ static vfs_file_ops_t tmpfs_file_ops = {
     .read = tmpfs_read,
     .write = tmpfs_write,
     .get_entries = tmpfs_get_entries,
-    .ioctl = NULL
+    .ioctl = NULL,
+    .mmap_prepare = NULL,
+    .mmap = NULL,
+    .munmap = NULL,
+    .lseek = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
 };
 
 /* Cache */
@@ -158,6 +168,36 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     hashmap_set(node->dir.children, name, new_node);
     *ino_output = ino;
     mutex_release(&node->lck);
+    return 0;
+}
+
+/**
+ * @brief tmpfs destroy
+ */
+static int tmpfs_destroy(vfs_inode_t *inode) {
+    // if the inode hits 0 links
+    if (inode->attr.nlink == 0) {
+        // then we can free all of its pages
+        tmpfs_node_t *n = inode->priv;
+        
+        if (inode->attr.type == VFS_FILE) {
+            if (inode->attr.size) {
+                for (unsigned i = 0; i < n->file.page_count; i++) {
+                    uintptr_t pg = n->file.page_list[i];
+                    pmm_freePage(pg);
+                }
+
+                kfree(n->file.page_list);
+            }
+        } else if (inode->attr.type == VFS_SYMLINK) {
+            kfree(n->symlink.path);
+        } else {
+            LOG(ERR, "Can't unlink VFS type %d as this is unimplemented\n", inode->attr.type);
+        }
+
+        slab_free(tmpfs_node_cache, n);
+    }
+
     return 0;
 }
 
@@ -426,6 +466,60 @@ static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char
     mutex_release(&n->lck);
 
     return size;
+}
+
+/**
+ * @brief tmpfs unlink
+ */
+static int tmpfs_unlink(vfs_inode_t *inode, vfs_inode_t *child, char *child_name) {
+    tmpfs_node_t *n_parent = inode->priv;
+    mutex_acquire(&n_parent->lck);
+    hashmap_remove(n_parent->dir.children, child_name);
+    mutex_release(&n_parent->lck);
+
+    inode->attr.nlink--; // each create() adds a link to the directory
+    child->attr.nlink--; // once released by all nodes tmpfs_destroy kills the child
+    return 0;
+}
+
+/**
+ * @brief tmpfs rename
+ */
+static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags) {
+    tmpfs_node_t *new_parent = dest_parent->priv;
+    tmpfs_node_t *old_parent = src_parent->priv;
+    tmpfs_node_t *child_node = child->priv;
+    tmpfs_node_t *dest_node = NULL;
+
+    // NOTE: the reason we do it this way is because we need to unlink the inode correctly lol
+    vfs_inode_t *t;
+    int r = vfs_lookupat(dest_parent, dest_name, &t, LOOKUP_NO_FOLLOW);
+    if (r != -ENOENT) return r;
+    if (!r)  {
+        // TODO do some checks
+        dest_node = t->priv;
+    }
+
+    mutex_acquire(&new_parent->lck);
+    child_node->parent = new_parent;
+    hashmap_set(new_parent->dir.children, dest_name, child_node);
+    mutex_release(&new_parent->lck);
+    
+    // remove it from the old parent's hashmap
+    mutex_acquire(&old_parent->lck);
+    hashmap_remove(old_parent->dir.children, src_name);
+    old_parent->attr.nlink--;
+    mutex_release(&old_parent->lck);
+
+    // delink the previous one
+    if (dest_node) {
+        // this is difficult as we dont actually have the inode for dest_node.. so just do this trash
+        dest_node->attr.nlink--;
+        t->attr.nlink = dest_node->attr.nlink;
+        inode_release(t);
+    }
+
+    return 0;
 }
 
 /**

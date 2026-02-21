@@ -17,8 +17,12 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/fs/vfs_new.h>
-#include <termios.h>
+
 #include <structs/circbuf.h>
+
+#define _GNU_SOURCE
+#include <termios.h>
+#undef _GNU_SOURCE
 
 /**** TYPES ***/
 

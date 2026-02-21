@@ -54,10 +54,9 @@ static hashmap_t *vfs_map = NULL;
 /* Caches */
 slab_cache_t *inode_cache = NULL;
 slab_cache_t *file_cache = NULL;
-slab_cache_t *cache_entry_cache = NULL;
 
 /* Root */
-static vfs_inode_ops_t dummy_ops = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+static vfs_inode_ops_t dummy_ops = {NULL};
 vfs_inode_t *vfs_root_inode = NULL; // Initialized as a dummy node in vfs_init
 
 /* Filesystem map */
@@ -95,7 +94,6 @@ void VFS_PREFIX(init)() {
 
     inode_cache = slab_createCache("vfs inode cache", SLAB_CACHE_DEFAULT, sizeof(vfs_inode_t), 0, NULL, NULL);
     file_cache = slab_createCache("vfs file cache", SLAB_CACHE_DEFAULT, sizeof(vfs_file_t), 0, NULL, NULL);
-    cache_entry_cache = slab_createCache("vfs entry cache", SLAB_CACHE_DEFAULT, sizeof(vfs_cache_entry_t), 0, NULL, NULL);
     vfs_map = hashmap_create_int("vfs map", 20);
     vfs_fs_map = hashmap_create("vfs filesystem map", 10);
 
@@ -220,24 +218,6 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         }
     }
     mutex_release(&vfs_map_mut);
-    
-    // Perform inode cache lookup
-    // We don't want the root to be cached
-    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0 && inode != vfs_root_inode) {
-        uint64_t name_hash = vfs_hash(name);
-
-        vfs_cache_entry_t *bucket = atomic_load_explicit(&inode->cache[name_hash % 5], memory_order_relaxed);
-        
-        while (bucket) {
-            if (name_hash == bucket->name_hash) {
-                inode_hold(bucket->ino);
-                *output = bucket->ino;
-                return 0;
-            }
-
-            bucket = bucket->next;
-        }
-    }
 
     // Not a mount, keep going
     vfs_inode_t *out_tmp = NULL;
@@ -261,25 +241,6 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         *output = out_again_tmp;
         inode_release(out_tmp);
         return 0;
-    }
-
-
-    // Add it to the cache
-    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0 && inode != vfs_root_inode) {
-        uint64_t name_hash = vfs_hash(name);
-
-        vfs_cache_entry_t *bucket = slab_allocate(cache_entry_cache);
-        if (bucket) {
-            inode_hold(out_tmp);
-            bucket->name_hash = name_hash;
-            bucket->ino = out_tmp;
-            
-            int index = name_hash % 5;
-            vfs_cache_entry_t *old_head = atomic_load_explicit(&inode->cache[index], memory_order_relaxed);
-            do {
-                bucket->next = old_head;
-            } while (!atomic_compare_exchange_weak_explicit(&inode->cache[index], &old_head, bucket, memory_order_release, memory_order_relaxed));
-        }
     }
 
 
@@ -406,6 +367,8 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
     ent->child = dst_inode;
     ent->mount = mount_dst;
     inode_hold(ent->mountpoint);
+
+    mount_dst->root->flags |= INODE_FLAG_MOUNTPOINT;
 
     LOG(DEBUG, "mountpoint has %d refs\n", ent->mountpoint->refcount);
 
@@ -825,6 +788,78 @@ loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence) {
 }
 
 /**
+ * @brief Unlink a file
+ * @param inode The inode to unlink at
+ * @param path The relative path to unlink
+ * @returns 0 on success or error code
+ */
+int vfs_unlinkat(vfs_inode_t *inode, char *path) {
+    // Locate the child first
+    vfs_inode_t *child;
+    int r = vfs_lookupat(inode, path, &child, LOOKUP_NO_FOLLOW);
+    if (r < 0) return r;
+
+    if (child->attr.type == VFS_DIRECTORY) { inode_release(child); return -EISDIR; }
+    if (child->flags & INODE_FLAG_MOUNTPOINT) { inode_release(child); return -EINVAL; }
+
+    // Now locate the parent of the inode trying to be removed.
+    vfs_inode_t *parent;
+    r = vfs_lookupat(inode, path, &parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
+    if (r < 0) return r;
+
+    assert(parent->mount == child->mount);
+
+    // silly
+    char *last;
+    vfs_pathLast(path, &last);
+
+    r = inode_unlink(parent, child, last);
+    inode_release(parent);
+    inode_release(child);
+    return r;
+}
+
+/**
+ * @brief VFS rename
+ * @param src_inode The source inode to rename at
+ * @param src_path The path to rename at
+ * @param dst_inode The destination inode to rename to
+ * @param dst_path The destination path to rename to
+ * @param flags Flags for the rename operation
+ */
+int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, unsigned int flags) {
+    // Locate the source inode
+    vfs_inode_t *child_parent;
+    int err = vfs_lookupat(src_inode, src_path, &child_parent, LOOKUP_NO_FOLLOW | LOOKUP_PARENT);
+    if (err) return err;
+
+    char *last_child;
+    vfs_pathLast(src_path, &last_child);
+    
+    vfs_inode_t *child;
+    err = __lookupat(child_parent, last_child, &child, LOOKUP_NO_FOLLOW);
+    if (err) { inode_release(child_parent); return err; }
+
+    // Now for the destination side
+    vfs_inode_t *dest_parent;
+    err = vfs_lookupat(dst_inode, dst_path, &dest_parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
+    if (err) { inode_release(child_parent); inode_release(child); return err; }
+
+    char *last_dest;
+    vfs_pathLast(dst_path, &last_dest);
+
+    assert(strcmp(last_dest, ".") && strcmp(last_dest, ".."));
+    assert(strcmp(last_child, ".") && strcmp(last_child, ".."));
+
+    // Perform the operation
+    err = inode_rename(child_parent, child, last_child, dest_parent, last_dest, flags);
+    inode_release(child_parent);
+    inode_release(child);
+    inode_release(dest_parent);
+    return err;
+}
+
+/**
  * @brief Get an inode from the mount cache
  * @param mount The VFS mount to retrieve the inode from
  * @param ino The inode number to retrieve
@@ -953,19 +988,6 @@ ino_t vfs_getNextInode() {
 void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
     // LOG(DEBUG, "Destroying inode %p, by %s\n", inode, fn);
     if (inode->ops->destroy) inode->ops->destroy(inode);
-
-    // destroy the cache
-    if ((inode->flags & INODE_FLAG_NO_DCACHE) == 0) {
-        for (int i = 0; i < 5; i++) {
-            vfs_cache_entry_t *b = inode->cache[i];
-            while (b) {
-                vfs_cache_entry_t *nxt = b->next;
-                inode_release(b->ino);
-                slab_free(cache_entry_cache, b);
-                b = nxt;
-            }
-        }
-    }
 
     slab_free(inode_cache, inode);
 }

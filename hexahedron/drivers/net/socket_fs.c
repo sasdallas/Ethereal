@@ -55,6 +55,7 @@ static vfs_inode_ops_t socket_inode_ops = {
     .symlink    = NULL,
     .truncate   = NULL,
     .unlink     = NULL,
+    .rename     = NULL,
 };
 
 /**

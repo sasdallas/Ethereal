@@ -28,6 +28,7 @@
 static slab_cache_t *slab_cache = NULL;
 static slab_cache_t *magazine_cache = NULL;
 static slab_cache_t *magazine_list_cache = NULL; // Generated at slab_postSMPHook
+static int slab_enable_magazines = 0;
 
 slab_cache_t *slab_cache_list = NULL;
 
@@ -63,7 +64,7 @@ static void slab_initCache(slab_cache_t *cache, char *name, uint32_t flags, size
     memset(&cache->depot_full, 0, sizeof(magazine_depot_t));
     memset(&cache->depot_empty, 0, sizeof(magazine_depot_t));
 
-    if (magazine_list_cache) {
+    if (slab_enable_magazines) {
         cache->per_cpu_cache = slab_allocate(magazine_list_cache);
         assert(cache->per_cpu_cache);
         memset(cache->per_cpu_cache, 0, sizeof(cpu_magazine_cache_t) * processor_count);
@@ -530,4 +531,5 @@ void slab_postSMPInit() {
     // Initialize the magazine cache
     magazine_cache = slab_createCache("magazine cache", SLAB_CACHE_NOLEAKTRACE, sizeof(magazine_t) + sizeof(void*)*MAGAZINE_SIZE, 0, magazine_initializer, NULL);
     magazine_list_cache = slab_createCache("magazine list cache", SLAB_CACHE_NOLEAKTRACE, sizeof(cpu_magazine_cache_t) * processor_count, 0, NULL, NULL);
+    slab_enable_magazines = 1;
 }

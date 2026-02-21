@@ -55,7 +55,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
     [SYS_CHMOD]             = (syscall_func_t)(uintptr_t)sys_chmod,
     [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)sys_fcntl,
-    [SYS_UNLINK]            = (syscall_func_t)(uintptr_t)sys_unlink,
+    [SYS_UNLINKAT]          = (syscall_func_t)(uintptr_t)sys_unlinkat,
     [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
     [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
@@ -135,7 +135,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_READ_ENTRIES]      = (syscall_func_t)(uintptr_t)sys_read_entries,
     [SYS_FUTEX_WAIT]        = (syscall_func_t)(uintptr_t)sys_futex_wait,
     [SYS_FUTEX_WAKE]        = (syscall_func_t)(uintptr_t)sys_futex_wake,
-    [SYS_OPENAT]            = (syscall_func_t)(uintptr_t)sys_openat
+    [SYS_OPENAT]            = (syscall_func_t)(uintptr_t)sys_openat,
+    [SYS_RENAMEAT]          = (syscall_func_t)(uintptr_t)sys_renameat
 }; 
 
 
@@ -719,277 +720,124 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         fds[i].revents = f->ops->poll_events(f) & fds[i].events;
         if (fds[i].revents) {
             have_hit++;
-        }
-        
+        }        
     }
 
     poll_exit(waiter);
     poll_destroyWaiter(waiter);
     return have_hit;   // At least one thread woke us up
-
-
-// #if 1
-
-//     poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, nfds ? nfds : 1);
-
-//     for (size_t i = 0; i < nfds; i++) {
-//         // Check the file descriptor
-//         fds[i].revents = 0;
-//         if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-//             fds[i].revents |= POLLNVAL;
-//             continue;
-//         }
-
-//         // Does the file descriptor have available contents right now?
-//         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-//         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-//         if (ready & events) {
-//             // Oh, we already have a hit! :D
-//             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-//             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-//             have_hit++;
-//         } else if (!have_hit) {
-//             // LOG(DEBUG, "poll is waiting on %s\n", FD(current_cpu->current_process, fds[i].fd)->node->name);
-//             fs_wait(waiter, FD(current_cpu->current_process, fds[i].fd)->node, events);
-//         }
-//     }
-
-//     if (have_hit) {
-//         poll_exit(waiter);
-//         poll_destroyWaiter(waiter);
-//         return have_hit;
-//     }
-
-//     // We didn't get anything. Did they want us to wait?
-//     if (timeout == 0) {
-//         poll_exit(waiter);
-//         poll_destroyWaiter(waiter);
-//         return 0;
-//     }
-    
-//     // Yes, so prepare ourselves to wait
-//     int w = poll_wait(waiter, timeout);
-
-
-//     if (w == -EINTR) {
-//         poll_exit(waiter);
-//         poll_destroyWaiter(waiter);
-//         return -EINTR;
-//     }
-
-//     if (w == -ETIMEDOUT) {
-//         poll_exit(waiter);
-//         poll_destroyWaiter(waiter);
-//         return 0;
-//     }
-
-//     for (size_t i = 0; i < nfds; i++) {
-//         // Does the file descriptor have available contents right now?
-//         if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) continue;
-//         int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-//         int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-//         if (ready & events) {
-//             // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-//             fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-//             have_hit++;
-//         } 
-//     }
-
-//     poll_exit(waiter);
-//     poll_destroyWaiter(waiter);
-//     return have_hit;   // At least one thread woke us up
-
-// #else
-//     /* Legacy poll that doesn't sleep. For debugging. */
-//     struct timeval tv_start;
-//     gettimeofday(&tv_start, NULL);
-
-//     while (1) {
-//         for (size_t i = 0; i < nfds; i++) {
-//             // Check the file descriptor
-//             fds[i].revents = 0;
-//             if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
-//                 fds[i].revents |= POLLNVAL;
-//                 continue;
-//             }
-
-//             // Does the file descriptor have available contents right now?
-//             int events = ((fds[i].events & POLLIN) ? VFS_EVENT_READ : 0) | ((fds[i].events & POLLOUT) ? VFS_EVENT_WRITE : 0);
-//             int ready = fs_ready(FD(current_cpu->current_process, fds[i].fd)->node, events);
-
-//             if (ready & events) {
-//                 // Oh, we already have a hit! :D
-//                 // LOG(DEBUG, "Hit on file descriptor %d for events %s %s\n", fds[i].fd, (ready & VFS_EVENT_READ) ? "VFS_EVENT_READ" : "", (ready & VFS_EVENT_WRITE) ? "VFS_EVENT_WRITE" : "");
-//                 fds[i].revents = (events & VFS_EVENT_READ && ready & VFS_EVENT_READ) ? POLLIN : 0 | (events & VFS_EVENT_WRITE && ready & VFS_EVENT_WRITE) ? POLLOUT : 0;
-//                 have_hit++;
-//             } 
-//         }
-
-//         if (have_hit) return have_hit;
-
-//         // We didn't get anything. Did they want us to wait?
-//         if (timeout == 0) return 0;
-
-//         struct timeval tv;
-//         gettimeofday(&tv, NULL);
-        
-//         if ((tv.tv_sec*1000) - (tv_start.tv_sec*1000) + (tv.tv_usec/1000) > timeout && timeout != -1) {
-//             return 0;
-//         }
-
-//         process_yield(1);
-//     }
-// #endif
-
-    assert(0 && "poll");
-    return 0;
-
 }
 
 long sys_pselect(sys_pselect_context_t *ctx) {
-    // if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
-    // if (ctx->writefds) SYSCALL_VALIDATE_PTR(ctx->writefds);
-    // if (ctx->errorfds) SYSCALL_VALIDATE_PTR(ctx->errorfds);
-    // if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
-    // if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
+    if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
+    if (ctx->writefds) SYSCALL_VALIDATE_PTR(ctx->writefds);
+    if (ctx->errorfds) SYSCALL_VALIDATE_PTR(ctx->errorfds);
+    if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
+    if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
 
-    // sigset_t old_set = current_cpu->current_thread->blocked_signals;
+    sigset_t old_set = current_cpu->current_thread->blocked_signals;
 
-    // if (ctx->sigmask) {
-    //     current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
-    // }
+    if (ctx->sigmask) {
+        current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
+    }
 
-    // // Create the return sets
-    // fd_set rfds, wfds, efds;
-    // FD_ZERO(&rfds);
-    // FD_ZERO(&wfds);
-    // FD_ZERO(&efds);
+    // Create the return sets
+    fd_set rfds, wfds, efds;
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    FD_ZERO(&efds);
 
-    // size_t ret = 0;
+    size_t ret = 0;
+
+    poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
+
+    for (int fd = 0; fd < ctx->nfds; fd++) {
+        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+            continue; // No need to care, it isn't a wanted file descriptor
+        }
+
+        // Validate file descriptor
+        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+
+        poll_events_t needed = 0;
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) needed |= POLLOUT;
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
+
+        poll_events_t out = 0;
+        int ready = vfs_poll(FD(current_cpu->current_process, fd)->node, waiter, needed, &out);
+        if (ready == 1) {
+            // Wow we have a hit oh my goodness
+            if (out & POLLIN) FD_SET(fd, &rfds);
+            if (out & POLLOUT) FD_SET(fd, &wfds);
+            if (out & POLLERR) FD_SET(fd, &efds);
+            ret++;
+        }
+    }
+
+    if (ret) {
+        (current_cpu->current_thread->blocked_signals) = old_set;
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
+        if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
+        if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
+        return ret;
+    }
+
+    int timeout = -1;
+    if (ctx->timeout) timeout = (ctx->timeout->tv_sec * 1000) + (ctx->timeout->tv_nsec / 1000);
+    
+    int w = poll_wait(waiter, timeout);
+
+    if (w == -EINTR) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+        return -EINTR;
+    }
+
+    if (w == -ETIMEDOUT) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+    }
+
+    for (int fd = 0; fd < ctx->nfds; fd++) {
+        if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
+            continue; // No need to care, it isn't a wanted file descriptor
+        }
+
+        // Does the file descriptor have available contents right now?
+        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+        
+        poll_events_t needed = 0;
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) needed |= POLLOUT;
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
+
+        // !!!: FLOW BREAKING TRASH
+        vfs_file_t *f = FD(current_cpu->current_process, fd)->node;
+        assert(f->ops && f->ops->poll_events);
+        poll_events_t out = f->ops->poll_events(f) & needed;
+        if (out) {
+            ret++;
+
+            if (out & POLLIN) FD_SET(fd, &rfds);
+            if (out & POLLOUT) FD_SET(fd, &wfds);
+            if (out & POLLERR) FD_SET(fd, &efds);
+        }        
+    }
 
 
-    // // First check if anything is reaady
-    // for (int fd = 0; fd < ctx->nfds; fd++) {
-    //     if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
-    //         continue; // No need to care, it isn't a wanted file descriptor
-    //     }
 
-    //     // Validate file descriptor
-    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+    if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
+    if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
+    if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
 
+    (current_cpu->current_thread->blocked_signals) = old_set;
 
-    //     // Get events
-    //     int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
-
-    //     // Check
-    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
-    //         // Read 
-    //         FD_SET(fd, &rfds);
-    //         ret++;
-    //     }
-
-    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
-    //         // Write
-    //         FD_SET(fd, &wfds);
-    //         ret++;
-    //     }
-
-    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
-    //         // Error
-    //         FD_SET(fd, &efds);
-    //         ret++;
-    //     } 
-    // }
-
-    // // Did we get anything?
-    // if (ret) {
-    //     (current_cpu->current_thread->blocked_signals) = old_set;
-    //     return ret;
-    // }
-
-    // // make a waiter object
-    // poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, ctx->nfds);
-
-    // // Nope, looks like we have to go on an adventure.
-
-    // // Now that we're prepped, go through each file descriptor one more time to wait in the queue
-    // for (int fd = 0; fd < ctx->nfds; fd++) {
-    //     int wanted_evs = 0;
-    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) wanted_evs |= VFS_EVENT_READ;
-    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) wanted_evs |= VFS_EVENT_WRITE;
-    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) wanted_evs |= VFS_EVENT_ERROR;
-
-    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
-
-    //     // Now wait in the node
-    //     fs_wait(w, FD(current_cpu->current_process, fd)->node, wanted_evs);
-    // }
-
-    // // Enter sleep
-    // int r = poll_wait(w, ctx->timeout->tv_sec * 1000 + ctx->timeout->tv_nsec / 1000);
-    // if (r == -EINTR) {
-    //     poll_exit(w);
-    //     poll_destroyWaiter(w);
-    //     (current_cpu->current_thread->blocked_signals) = old_set;
-    //     return -EINTR; // TODO: SA_RESTART
-    // }
-
-    // if (r == -ETIMEDOUT) {
-    //     poll_exit(w);
-    //     poll_destroyWaiter(w);
-    //     (current_cpu->current_thread->blocked_signals) = old_set;
-    //     return 0;
-    // }
-
-    // poll_exit(w);
-    // poll_destroyWaiter(w);
-
-
-    // // Another thread must have woken us up
-    // for (int fd = 0; fd < ctx->nfds; fd++) {
-    //     if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
-    //         continue; // No need to care, it isn't a wanted file descriptor
-    //     }
-
-    //     // Validate file descriptor
-    //     if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
-
-    //     // Get events
-    //     int ev = fs_ready(FD(current_cpu->current_process, fd)->node, VFS_EVENT_READ | VFS_EVENT_WRITE | VFS_EVENT_ERROR);
-
-    //     // Check
-    //     if (ctx->readfds && FD_ISSET(fd, ctx->readfds) && (ev & VFS_EVENT_READ)) {
-    //         // Read 
-    //         FD_SET(fd, &rfds);
-    //         ret++;
-    //     }
-
-    //     if (ctx->writefds && FD_ISSET(fd, ctx->writefds) && (ev & VFS_EVENT_WRITE)) {
-    //         // Write
-    //         FD_SET(fd, &wfds);
-    //         ret++;
-    //     }
-
-    //     if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds) && (ev & VFS_EVENT_ERROR)) {
-    //         // Error
-    //         FD_SET(fd, &efds);
-    //         ret++;
-    //     } 
-    // }
-
-    // if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
-    // if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
-    // if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
-
-    // (current_cpu->current_thread->blocked_signals) = old_set;
-
-    // // Ready!
-    // return ret; 
-
-    assert(0 && "pselect");
-    return 0;
+    poll_exit(waiter);
+    poll_destroyWaiter(waiter);
+    return ret;
 }
 
 ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz) {
@@ -1027,12 +875,6 @@ long sys_chmod(const char *path, mode_t mode) {
 
 long sys_fcntl(int fd, int cmd, int extra) {
     SYSCALL_UNIMPLEMENTED("sys_fcntl");
-}
-
-long sys_unlink(const char *pathname) {
-    SYSCALL_VALIDATE_PTR(pathname);
-    LOG(INFO, "sys_unlink: %s: UNIMPLEMENTED\n", pathname);
-    return -EROFS;
 }
 
 long sys_ftruncate(int fd, off_t length) {
@@ -1073,19 +915,6 @@ pid_t sys_getpid() {
 }
 
 /* MMAP */
-
-// long sys_mmap(sys_mmap_context_t *context) {
-//     SYSCALL_VALIDATE_PTR(context);
-    
-//     long r =  (long)process_mmap(context->addr, context->len, context->prot, context->flags, context->filedes, context->off);
-//     LOG(DEBUG, "TRACE: sys_mmap %p %d %d %d %d %d -> %p\n", context->addr, context->len, context->prot,context->flags, context->filedes, context->off, r);
-//     return r;
-// }
-
-// long sys_munmap(void *addr, size_t len) {
-//     LOG(DEBUG, "TRACE: sys_munmap %p %d\n", addr, len);
-//     return process_munmap(addr, len);
-// }
 
 long sys_msync(void *addr, size_t len, int flush) {
     LOG(WARN, "sys_msync %p %d %d\n");

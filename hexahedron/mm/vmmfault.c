@@ -81,9 +81,6 @@ int vmm_fault(vmm_fault_information_t *info) {
                 mutex_release(sp->mut);
                 return VMM_FAULT_UNRESOLVED;
             }
-
-            // LOG(DEBUG, "Mapping a page in...\n");
-            // fs_mmap(r->node, (void*)info->address, PAGE_SIZE, info->address - r->start);
         } else {
             // Anonymous memory, map a page
             arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);

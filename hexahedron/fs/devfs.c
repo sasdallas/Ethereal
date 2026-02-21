@@ -378,6 +378,7 @@ static devfs_node_t *devfs_node() {
     n->attr.type = VFS_BLOCKDEVICE;
     n->attr.mode = 0755;
     n->attr.ino = n->ino;
+    n->attr.uid = n->attr.gid = 0;
 
     return n;
 }

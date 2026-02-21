@@ -56,7 +56,7 @@
 #define INODE_FLAG_DEFAULT          0x0 
 #define INODE_FLAG_NOT_CACHEABLE    0x1     // can't cache in page cache
 #define INODE_FLAG_MMAP_UNSUPPORTED 0x2     // TODO: custom error numbers on this. will probably be a silly hack.
-#define INODE_FLAG_NO_DCACHE        0x4     // can't use dcache, always do lookups
+#define INODE_FLAG_MOUNTPOINT       0x4     // this inode is the root of a mountpoint
 
 /* Attribute set request flags */
 #define INODE_ATTR_CHANGE_MODE      0x1
@@ -154,13 +154,13 @@ typedef struct vfs_inode_ops {
     int (*link)(struct vfs_inode *inode, struct vfs_inode *parent, char *link_name);
     int (*symlink)(struct vfs_inode *inode, char *link_contents, char *link_name, struct vfs_inode **sym_output);
     int (*rmdir)(struct vfs_inode *inode, const char *dir);
-    int (*unlink)(struct vfs_inode *inode, const char *file);
+    int (*unlink)(struct vfs_inode *inode, struct vfs_inode *child, char *child_name);
     ssize_t (*readlink)(struct vfs_inode *inode, char *buffer, size_t maxlen);
     int (*getattr)(struct vfs_inode *inode, vfs_inode_attr_t *attr);
     int (*setattr)(struct vfs_inode *inode, vfs_inode_attr_t *attr, uint32_t attr_mask);
     int (*destroy)(struct vfs_inode *inode);
     int (*truncate)(struct vfs_inode *inode, size_t size);
-
+    int (*rename)(struct vfs_inode *parent, struct vfs_inode *child, char *child_name, struct vfs_inode *dst_dir, char *dst_name, unsigned int flags);
 } vfs_inode_ops_t;
 
 /* VFS inode */
@@ -174,7 +174,6 @@ typedef struct vfs_inode {
     unsigned long flags;        // Flags to the inode (INODE_FLAG_xxx)
     refcount_t refcount;        // Reference count
     void *priv;                 // Private field for the inode
-    _Atomic(void*) cache[5];
 } vfs_inode_t;
 
 /* VFS file */
@@ -205,14 +204,6 @@ typedef struct vfs_filesystem {
 
     int (*mount)(struct vfs_filesystem *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
 } vfs2_filesystem_t;
-
-/* VFS cache entry */
-typedef struct vfs_cache_entry {
-    struct vfs_cache_entry *next;
-    uint64_t name_hash;
-    vfs_inode_t *ino;
-} vfs_cache_entry_t;
-
 
 /**** INLINE ****/
 
@@ -253,13 +244,14 @@ static inline int inode_link(vfs_inode_t *i, vfs_inode_t *parent, char *link_nam
 static inline int inode_mkdir(vfs_inode_t *i, char *name, mode_t mode, vfs_inode_t **inode_output) { if (i->ops->mkdir) { return i->ops->mkdir(i, name, mode, inode_output); } else { return -ENOTSUP; }}
 static inline int inode_symlink(vfs_inode_t *i, char *link_contents, char *link_name, vfs_inode_t **sym_output) { if (i->ops->symlink) { return i->ops->symlink(i, link_contents, link_name, sym_output); } else { return -ENOTSUP; }}
 static inline int inode_rmdir(vfs_inode_t *i, const char *dir) { if (i->ops->rmdir) { return i->ops->rmdir(i, dir); } else { return -ENOTSUP; }}
-static inline int inode_unlink(vfs_inode_t *i, const char *file) { if (i->ops->unlink) { return  i->ops->unlink(i, file); } else { return -ENOTSUP; }}
+static inline int inode_unlink(vfs_inode_t *i, vfs_inode_t *child, char *child_name) { if (i->ops->unlink) { return  i->ops->unlink(i, child, child_name); } else { return -ENOTSUP; }}
 static inline ssize_t inode_readlink(vfs_inode_t *i, char *buffer, size_t maxlen) { if (i->ops->readlink) { return i->ops->readlink(i, buffer, maxlen); } else { return -ENOTSUP; }}
 static inline int inode_getattr(vfs_inode_t *i, vfs_inode_attr_t *attr) { if (i->ops->getattr) { return i->ops->getattr(i, attr); } else { return -ENOTSUP; }}
 static inline int inode_setattr(vfs_inode_t *i, vfs_inode_attr_t *attr, uint32_t attr_mask) { if (i->ops->setattr) { return i->ops->setattr(i, attr, attr_mask); } else { return -ENOTSUP; }}
 static inline int inode_lookup(vfs_inode_t *i, char *name, vfs_inode_t **output) { if (i->ops->lookup) { return i->ops->lookup(i, name, output); } else { return -ENOTSUP; }}
 static inline int inode_truncate(vfs_inode_t *i, size_t size) { if (i->ops->truncate) { return i->ops->truncate(i, size); } else { return -ENOTSUP; }}
 static inline void inode_created(vfs_inode_t *i) { i->state &= ~(INODE_STATE_NEW); inode_release(i); spinlock_release(&i->lock); }
+static inline int inode_rename(vfs_inode_t *parent, vfs_inode_t *child, char *child_name, vfs_inode_t *dst_dir, char *dst_name, unsigned int flags) { if (parent->ops->rename) { return parent->ops->rename(parent, child, child_name, dst_dir, dst_name, flags); } else { return -ENOTSUP; }}
 
 static inline int flush_inode(vfs_inode_t *i) { if (i->mount->ops && i->mount->ops->write_inode) { return i->mount->ops->write_inode(i); } else { return 0; } }
 
@@ -605,5 +597,24 @@ int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_ev
  * @returns New offset or error code
  */
 loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence);
+
+/**
+ * @brief Unlink a file
+ * @param inode The inode to unlink at
+ * @param path The relative path to unlink
+ * @returns 0 on success or error code
+ */
+int vfs_unlinkat(vfs_inode_t *inode, char *path);
+
+/**
+ * @brief VFS rename
+ * @param src_inode The source inode to rename at
+ * @param src_path The path to rename at
+ * @param dst_inode The destination inode to rename to
+ * @param dst_path The destination path to rename to
+ * @param flags Flags for the rename operation
+ */
+int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, unsigned int flags);
+
 
 #endif

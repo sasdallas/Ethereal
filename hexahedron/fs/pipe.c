@@ -61,7 +61,8 @@ static vfs_inode_ops_t pipe_inode_ops = {
     .setattr    = NULL,
     .symlink    = NULL,
     .truncate   = NULL,
-    .unlink     = NULL
+    .unlink     = NULL,
+    .rename     = NULL,
 };
 
 /* pipe cache */

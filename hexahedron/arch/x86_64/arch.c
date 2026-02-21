@@ -50,7 +50,6 @@
 
 // Filesystem
 #include <kernel/fs/vfs.h>
-#include <kernel/fs/tarfs.h>
 #include <kernel/fs/ramdev.h>
 
 // Loader

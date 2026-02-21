@@ -77,6 +77,7 @@ static vfs_inode_ops_t systemfs_inode_ops = {
     .symlink    = NULL,
     .truncate   = NULL,
     .unlink     = NULL,
+    .rename     = NULL,
 };
 
 

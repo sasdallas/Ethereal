@@ -117,11 +117,11 @@ int initrd_unpack(uint8_t *buffer, size_t size) {
                 goto _next_entry;
             }
         } else if (h->type[0] == USTAR_CHARDEV) {
-
+            LOG(ERR, "USTAR_CHARDEV unimplemented\n");
         } else if (h->type[0] == USTAR_BLOCKDEV) {
-
+            LOG(ERR, "USTAR_BLOCKDEV unimplemented\n");
         } else if (h->type[0] == USTAR_PIPE) {
-
+            LOG(ERR, "USTAR_PIPE unimplemented\n");
         } else {
             LOG(WARN, "Unrecognized USTAR file type: %c\n", h->type[0]);
         }
