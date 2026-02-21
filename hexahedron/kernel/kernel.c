@@ -32,7 +32,6 @@
 
 // VFS
 #include <kernel/fs/vfs.h>
-#include <kernel/fs/ramdev.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/fs/tmpfs.h>
 #include <kernel/fs/kernelfs.h>
@@ -88,7 +87,7 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
 
     while (mod) {
         if (mod->cmdline && !strncmp(mod->cmdline, "type=initrd", 9)) {
-            // Found it, mount the ramdev.
+            // Found it
             ram_start = (void*)mod->mod_start;
             ram_size = mod->mod_end - mod->mod_start;
             found_initrd = 1;
