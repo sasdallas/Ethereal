@@ -494,9 +494,8 @@ static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_n
     // NOTE: the reason we do it this way is because we need to unlink the inode correctly lol
     vfs_inode_t *t;
     int r = vfs_lookupat(dest_parent, dest_name, &t, LOOKUP_NO_FOLLOW);
-    if (r != -ENOENT) return r;
+    if (r != 0 && r != -ENOENT) return r;
     if (!r)  {
-        // TODO do some checks
         dest_node = t->priv;
     }
 

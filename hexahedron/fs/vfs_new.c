@@ -205,7 +205,7 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
                 // Mount for the child
                 if (flags & LOOKUP_NO_MOUNTS) { 
                     mutex_release(&vfs_map_mut); 
-                    return 123; // stupid magic val to let unlink/rmdir know this is a mount and it was violated :( 
+                    return -EXDEV;
                 }
 
                 mutex_release(&vfs_map_mut);
@@ -844,6 +844,14 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
     vfs_inode_t *dest_parent;
     err = vfs_lookupat(dst_inode, dst_path, &dest_parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
     if (err) { inode_release(child_parent); inode_release(child); return err; }
+
+    // cross-device is not allowed
+    if (dest_parent->mount != child_parent->mount) {
+        inode_release(child_parent);
+        inode_release(child);
+        inode_release(dest_parent);
+        return -EXDEV;
+    }
 
     char *last_dest;
     vfs_pathLast(dst_path, &last_dest);
