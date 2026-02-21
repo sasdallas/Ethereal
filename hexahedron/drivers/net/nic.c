@@ -18,7 +18,7 @@
 #include <kernel/fs/devfs.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/task/syscall.h>
-#include <kernel/fs/kernelfs.h>
+#include <kernel/fs/systemfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
@@ -30,8 +30,8 @@
 list_t *nic_list = NULL;
 static spinlock_t nic_list_lock = { 0 };
 
-/* Network directory for KernelFS */
-kernelfs_dir_t *kernelfs_net_dir = NULL;
+/* Network directory for SystemFS */
+systemfs_node_t *systemfs_net_dir = NULL;
 
 /* Cache */
 slab_cache_t *nic_cache;
@@ -59,6 +59,8 @@ atomic_int nic_last_minor = 0;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NETWORK:NIC", __VA_ARGS__)
+
+static ssize_t nic_systemfsRead(systemfs_node_t *entry);
 
 /**
  * @brief NIC write
@@ -123,7 +125,7 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
     nic_t *nic = slab_allocate(nic_cache);
     assert(nic);
 
-    memcpy(nic->name, name, strlen(name));
+    strncpy(nic->name, name, 128);
     nic->type = type;
     nic->ops = ops;
     memcpy(nic->mac, mac, 6);
@@ -136,6 +138,10 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
 
     // Mount with devfs
     assert(devfs_register(devfs_root, name, VFS_BLOCKDEVICE, &nic_devfs_ops, DEVFS_MAJOR_NETWORK, nic_last_minor++, nic));
+
+    // add to systemfs
+    systemfs_registerSimple(systemfs_net_dir, name, nic_systemfsRead, NULL, nic);
+    
 
     return nic;
 }
@@ -158,8 +164,8 @@ int nic_destroy(nic_t *nic) {
  * @param entry KernelFS entry
  * @param data NIC
  */
-static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
-    nic_t *nic = (nic_t*)data;
+static ssize_t nic_systemfsRead(systemfs_node_t *entry) {
+    nic_t *nic = (nic_t*)entry->priv;
 
 
     struct in_addr in = { 0 };
@@ -173,7 +179,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
     in.s_addr = nic->ipv4_gateway;
     char *ipv4_subnet = strdup(inet_ntoa(in));
 
-    kernelfs_writeData(entry,
+    ssize_t ret = systemfs_printf(entry,
                                 "Name:%s\n"
                                 "Type:%s\n"
                                 "MAC:" MAC_FMT "\n"
@@ -205,18 +211,7 @@ static int nic_kernelfsRead(kernelfs_entry_t *entry, void *data) {
     kfree(ipv4_addr);
     kfree(ipv4_subnet);
     kfree(ipv4_gateway);
-    return 0;
-}
-
-
-/**
- * @brief Register a new NIC to the filesystem
- * @param nic The node of the NIC to register
- * @param interface_name Optional interface name (e.g. "lo") to mount to instead of using the NIC type
- * @returns 0 on success
- */
-int nic_register(fs_node_t *nic_device, char *interface_name) {
-    return 0;
+    return ret;
 }
 
 /**
@@ -261,9 +256,9 @@ nic_t *nic_route(in_addr_t addr) {
  */
 static int nic_init() {
     nic_list = list_create("nic list");
-    kernelfs_net_dir = kernelfs_createDirectory(NULL, "net", 1);
+    systemfs_net_dir = systemfs_createDirectory(systemfs_root, "net");
     assert((nic_cache = slab_createCache("nic cache", SLAB_CACHE_DEFAULT, sizeof(nic_t), 0, NULL, NULL)));
     return 0;
 }
 
-FS_INIT_ROUTINE(nic, INIT_FLAG_DEFAULT, nic_init, kernelfs);
+FS_INIT_ROUTINE(nic, INIT_FLAG_DEFAULT, nic_init, systemfs);

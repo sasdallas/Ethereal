@@ -16,7 +16,7 @@
 
 /**** INCLUDES ****/
 #include <kernel/fs/vfs.h>
-#include <kernel/fs/kernelfs.h>
+#include <kernel/fs/systemfs.h>
 #include <stdint.h>
 #include <string.h>
 #include <netinet/in.h>
@@ -90,7 +90,7 @@ typedef struct nic {
 
 /**** VARIABLES ****/
 
-extern kernelfs_dir_t *kernelfs_net_dir;
+extern systemfs_node_t *systemfs_net_dir;
 
 /**** INLINES ****/
 
@@ -110,14 +110,6 @@ static inline ssize_t nic_send(nic_t *nic, size_t size, char *buffer) { return n
  * @note Please remember to setup your NIC's IP address fields
  */
 nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driver);
-
-/**
- * @brief Register a new NIC to the filesystem
- * @param nic The node of the NIC to register
- * @param interface_name Optional interface name (e.g. "lo") to mount to instead of using the NIC type
- * @returns 0 on success
- */
-int nic_register(fs_node_t *nic_device, char *interface_name);
 
 /**
  * @brief Destroy NIC interface

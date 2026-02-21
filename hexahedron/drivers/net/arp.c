@@ -48,21 +48,21 @@ MUTEX_DEFINE_LOCAL(arp_mutex);
 #define ARP_DEBUG
 
 /**
- * @brief ARP KernelFS read method
+ * @brief ARP SystemFS read method
  */
-int arp_readKernelFS(kernelfs_entry_t *kentry, void *data) {
-    kernelfs_writeData(kentry, "EntryCount:%d\n", arp_entries->length);
+static ssize_t arp_readSystemFS(systemfs_node_t *node) {
+    ssize_t ret = systemfs_printf(node, "EntryCount:%d\n", arp_entries->length);
     foreach(arp_node, arp_entries) {
         arp_table_entry_t *entry = (arp_table_entry_t*)arp_node->value;
         if (entry) {
             struct in_addr a = { .s_addr = entry->address };
             char *addr = inet_ntoa(a);
-            kernelfs_appendData(kentry, "Entry:%s  (" MAC_FMT ") HwType:%d\n",
+            ret += systemfs_printf(node, "Entry:%s  (" MAC_FMT ") HwType:%d\n",
                                                 addr, MAC(entry->hwmac), entry->hwtype);
         }
     }
 
-    return 0;
+    return ret;
 }
 
 /**
@@ -309,7 +309,7 @@ static int arp_init() {
     arp_waiters = hashmap_create_int("arp waiter map", 20);
     arp_entries = list_create("arp entries");
     ethernet_registerHandler(ARP_PACKET_TYPE, arp_handle);
-    kernelfs_createEntry(kernelfs_net_dir, "arp", arp_readKernelFS, NULL);
+    systemfs_registerSimple(systemfs_net_dir, "arp", arp_readSystemFS, NULL, NULL);
     return 0;
 }
 

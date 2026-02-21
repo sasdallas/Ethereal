@@ -147,7 +147,9 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     new_node->file.page_list = NULL;
     new_node->file.page_count = 0;
     new_node->parent = node;
-    
+
+    memset(&new_node->attr, 0, sizeof(vfs_inode_attr_t));
+
     new_node->attr.type = VFS_FILE;
     new_node->attr.ino = vfs_getNextInode();
     new_node->attr.atime = new_node->attr.mtime = new_node->attr.ctime = VFS_NOW();
@@ -284,6 +286,7 @@ static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t
     new->dir.children = hashmap_create("tmpfs dir children", 10);
     new->parent = node;
     
+    memset(&new->attr, 0, sizeof(vfs_inode_attr_t));
     new->attr.type = VFS_DIRECTORY;
     new->attr.nlink = 2; // . and ..
     new->attr.mode = mode;
