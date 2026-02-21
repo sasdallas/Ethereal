@@ -29,7 +29,7 @@ install:
 	# Install mlibc
 	set -e; \
 	cd $(OBJ_DIR); \
-	LDFLAGS="" CFLAGS="" meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=false -Dprefix=$(PREFIX) -Ddefault_library=both -Dlinux_kernel_headers=$(DESTDIR)/usr/include/  --reconfigure $(MLIBC_DIR); \
+	LDFLAGS="" CFLAGS="-nostdlib" meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=false -Dprefix=$(PREFIX) -Ddefault_library=both -Dlinux_kernel_headers=$(DESTDIR)/usr/include/  --reconfigure $(MLIBC_DIR); \
 	ninja install; \
 	cd $(LIBC_DIR)
 
