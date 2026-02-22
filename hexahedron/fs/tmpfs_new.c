@@ -94,12 +94,12 @@ static int tmpfs_open(vfs_file_t *file, unsigned long flags) {
 static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
     tmpfs_node_t *node = (tmpfs_node_t*)file->priv;
     if (ctx->dirpos == 0) {
-        ctx->name = ".";
+        strncpy(ctx->name, ".", NAME_MAX);
         ctx->ino = file->inode->attr.ino;
         ctx->type = DT_DIR;
         return 0;
     } else if (ctx->dirpos == 1) {
-        ctx->name = "..";
+        strncpy(ctx->name, "..", NAME_MAX);
         if (node->parent) ctx->ino = node->parent->ino;
         else ctx->ino = file->inode->attr.ino;
         ctx->type = DT_DIR;
@@ -116,7 +116,7 @@ static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
         assert(n_child);
         if (i == j) {
             mutex_release(&node->lck);
-            ctx->name = kn->value;
+            strncpy(ctx->name, kn->value, NAME_MAX);
             ctx->ino = n_child->ino;
             ctx->type = 0; // TODO
             list_destroy(keys, false);

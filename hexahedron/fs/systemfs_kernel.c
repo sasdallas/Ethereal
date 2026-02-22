@@ -54,7 +54,7 @@ static int systemfs_proc_lookup(systemfs_node_t *node, char *name, systemfs_node
 static int systemfs_proc_read_entry(systemfs_node_t *node, vfs_dir_context_t *ctx) {
     // first entry is self
     if (ctx->dirpos == 2) {
-        ctx->name = "self";
+        strncpy(ctx->name, "self", NAME_MAX);
         ctx->ino = 1; // !!!
         return 0;
     }
@@ -67,11 +67,7 @@ extern list_t *process_list;
     foreach(procnode, process_list) {
         if (i == j) {
             process_t *proc = procnode->value;
-            
-            // !!!: LEAKING MEMORY EVERY SINGLE TIME THIS IS CALLED
-            char tmp[50];
-            snprintf(tmp, 50, "%d", proc->pid);
-            ctx->name = strdup(tmp);
+            snprintf(ctx->name, NAME_MAX, "%ld", proc->pid);
             ctx->ino = proc->pid; // !!!
             return 0;
         }

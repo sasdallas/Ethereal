@@ -49,6 +49,7 @@
 #include <kernel/fs/poll.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
+#include <limits.h>
 
 /**** DEFINITIONS ****/
 
@@ -98,9 +99,8 @@ typedef enum vfs_ino_type {
 
 /* Used for the file operation get_entries */
 typedef struct vfs_dir_context {
+    char name[NAME_MAX];        // d_name - No need to duplicate. This will not be freed.
     unsigned int dirpos;        // Position in hte directory
-
-    char *name;                 // d_name - No need to duplicate. This will not be freed.
     uint64_t ino;               // d_ino
     unsigned int type;          // d_type
 } vfs_dir_context_t;

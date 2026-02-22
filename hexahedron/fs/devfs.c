@@ -198,12 +198,12 @@ static int devfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
 
     // read the entries from the directory
     if (ctx->dirpos == 0) {
-        ctx->name = ".";
+        strncpy(ctx->name, ".", NAME_MAX);
         ctx->ino = file->inode->attr.ino;
         ctx->type = DT_DIR;
         return 0;
     } else if (ctx->dirpos == 1) {
-        ctx->name = "..";
+        strncpy(ctx->name, "..", NAME_MAX);
         if (n->parent) ctx->ino = n->parent->ino;
         else ctx->ino = file->inode->attr.ino;
         ctx->type = DT_DIR;
@@ -219,7 +219,7 @@ static int devfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
     foreach(cn, c) {
         if (i == j) {
             devfs_node_t *ch = (devfs_node_t*)cn->value;
-            ctx->name = ch->name;
+            strncpy(ctx->name, ch->name, NAME_MAX);
             ctx->ino = ch->ino;
             // TODO d_type
 

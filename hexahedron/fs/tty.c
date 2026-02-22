@@ -90,7 +90,8 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
         if (tty->tios.c_cc[VMIN] < sz_to_read) sz_to_read = tty->tios.c_cc[VMIN];
 
         for (size_t i = 0; i < sz_to_read; i++) {
-            circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
+            ssize_t r = circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
+            if (r < 0) return r;
         }
 
         return sz_to_read;
@@ -105,6 +106,7 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
 static ssize_t tty_write(devfs_node_t *file, loff_t off, size_t size, const char *buffer) {
     tty_t *tty = file->priv;
 
+    int e;
     // Process the TTY write
     size_t written = 0;
     while (written < size) {
@@ -115,19 +117,22 @@ static ssize_t tty_write(devfs_node_t *file, loff_t off, size_t size, const char
             // Yeah, handle it.
             if (tty->tios.c_oflag & OLCUC ) ch = toupper(ch);
             if (tty->tios.c_oflag & ONLCR && ch == '\n') {
-                tty->write(tty, "\r\n", 2);
+                e = tty->write(tty, "\r\n", 2);
+                if (e < 0) return e;
                 written++;
                 continue;
             }
 
             if (tty->tios.c_oflag & OCRNL && ch == '\r') {
-                tty->write(tty, "\r\n", 2);
+                e = tty->write(tty, "\r\n", 2);
+                if (e < 0) return e;
                 written++;
                 continue;
             }
         }
 
-        tty->write(tty, &((char*)buffer)[written], 1);
+        e = tty->write(tty, &((char*)buffer)[written], 1);
+        if (e < 0) return e;
         written++;
     }
 
@@ -174,11 +179,11 @@ void tty_handle(tty_t *tty, char ch) {
         }
 
         if (sig != -1) {
-            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, sig);
             if (tty->tios.c_lflag & ECHO) {
                 char ctrl[2] = { '^', TO_CTRL(ch) };
                 tty->write(tty, ctrl, 2);
             }
+            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, sig);
             return;
         }
     }
@@ -273,8 +278,8 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
             return 0;
 
         case IOCTLTTYNAME:
-            SYSCALL_VALIDATE_PTR_SIZE(argp, strlen(tty->name) + 8);
-            snprintf(argp, strlen(tty->name) + 8, "/device/%s", tty->name); // !!!: bad
+            SYSCALL_VALIDATE_PTR_SIZE(argp, strlen(tty->name) + 9);
+            snprintf(argp, strlen(tty->name) + 9, "/device/%s", tty->name); // !!!: bad
             return 0;
 
         case IOCTLTTYLOGIN:
