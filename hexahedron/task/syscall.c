@@ -1451,18 +1451,6 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
     return read;
 }
 
-long sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
-    SYSCALL_VALIDATE_PTR(pointer);
-    if (time) SYSCALL_VALIDATE_PTR(time);
-
-    return futex_wait(pointer, expected, time);
-}
-
-long sys_futex_wake(int *pointer) {
-    SYSCALL_VALIDATE_PTR(pointer);
-    return futex_wakeup(pointer);
-}
-
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
 

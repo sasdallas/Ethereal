@@ -69,7 +69,7 @@ typedef struct poll_event {
 
 /**** MACROS ****/
 
-#define POLL_EVENT_INIT(e) ({ (e)->h = NULL; SPINLOCK_INIT(&(e)->lock); })
+#define POLL_EVENT_INIT(e) ({ (e)->h = NULL; SPINLOCK_INIT(&(e)->lock); (e)->checker = NULL; (e)->dev = NULL; })
 
 /**** FUNCTIONS ****/
 
