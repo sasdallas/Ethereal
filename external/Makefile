@@ -1,30 +1,13 @@
 include ../make.config
 
-ifeq ($(HOSTARCH), i386)
-# Required for I386
-PROJECTS := freetype plutosvg
-
-# ACPICA
-ifeq ($(USE_ACPICA), 1)
-PROJECTS += acpica
-endif
-
-else ifeq ($(HOSTARCH), x86_64)
+ifeq ($(HOSTARCH), x86_64)
 # Required for x86_64
-PROJECTS := freetype plutosvg
+PROJECTS := freetype plutosvg essence
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
 PROJECTS += acpica
 endif
-
-else ifeq ($(HOSTARCH), aarch64)
-# Required for aarch64
-# Freetype cannot be built
-PROJECTS :=
-
-else
-PROJECTS :=
 endif
 
 
