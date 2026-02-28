@@ -163,14 +163,8 @@ __attribute__((noreturn)) void smp_finalizeAP() {
 
     current_cpu->cpu_id = id;
 
-    // Setup the PAT
-    asm volatile(
-    	"movl $0x277, %%ecx\n"
-    	"rdmsr\n"
-    	"movw $0x0401, %%dx\n"
-    	"wrmsr\n"
-    	::: "eax", "ecx", "edx", "memory"
-    );
+    // Enter AP
+    arch_mmu_ap();
 
     // We want all cores to have a consistent GDT
     hal_gdtInitCore(smp_getCurrentCPU(), _ap_stack_base);
@@ -371,15 +365,15 @@ void smp_disableCores() {
  * @param size The size of the TLB shootdown
  * 
  * @ref https://github.com/Mathewnd/Astral/blob/rewrite/kernel-src/arch/x86-64/mmu.c#L222
+ * @todo Fix all of this junk
  */
 void smp_tlbShootdown(uintptr_t address, size_t size) {
     if (!size || !smp_data) return; // no.
     if (processor_count < 2) return; // No CPUs
     if (size & 0xfff) size = PAGE_ALIGN_UP(size);
 
-#pragma GCC diagnostic ignored "-Wtype-limits"
-    int is_user_shootdown = (address >= MMU_USERSPACE_START) && (address < MMU_USERSPACE_END);
-
+    int is_user_shootdown = (address < MMU_USERSPACE_END);
+    int state = hal_getInterruptState();
 
     // Ensure non-interruptable
     __PREEMPT_DISABLE();
@@ -394,13 +388,14 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
             tlb_shootdown_req[i].addr = address;
             tlb_shootdown_req[i].size = size;
             tlb_shootdown_req[i].pending_completion = &waiting;
-
-            lapic_sendIPI(i, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE);
+            lapic_sendIPI(processor_data[i].lapic_id, 124, LAPIC_ICR_DESTINATION_PHYSICAL | (1 << 14) | LAPIC_ICR_EDGE);
             expected++;
         }
 
     }
-
+    // dirty TLB hack
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
     while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) __builtin_ia32_pause();
+    hal_setInterruptState(state);
     __PREEMPT_ENABLE();
 }

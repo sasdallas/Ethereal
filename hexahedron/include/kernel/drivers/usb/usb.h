@@ -26,8 +26,6 @@
 #include <kernel/drivers/usb/status.h>
 #include <kernel/drivers/usb/api.h>
 
-#include <kernel/fs/kernelfs.h>
-
 /**** TYPES ****/
 
 // Prototype

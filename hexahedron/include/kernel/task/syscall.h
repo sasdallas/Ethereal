@@ -211,8 +211,8 @@ long sys_yield();
 long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue);
 long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
 long sys_read_entries(int handle, void *buffer, size_t max_size);
-long sys_futex_wait(int *pointer, int expected, const struct timespec *time);
-long sys_futex_wake(int *pointer);
+long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time);
+long sys_futex_wake(uint32_t *pointer);
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode);
 long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags); 
 

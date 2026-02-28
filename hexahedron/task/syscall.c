@@ -264,8 +264,8 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     fd_t *fd = fd_add(current_cpu->current_process, file);
 
     // !!!
-    // fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
-    // vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
+    fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
     
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
@@ -279,8 +279,6 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
 int sys_open(const char *pathname, int flags, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
     int r = __sys_open_internal((char*)pathname, flags, mode);
-
-    LOG(DEBUG, "sys_open %s %d %d -> returning %d\n", pathname, flags, mode, r);
     return r;
 }
 
@@ -775,7 +773,11 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         }
     }
 
-    if (ret) {
+
+    int timeout = -1;
+    if (ctx->timeout) timeout = (ctx->timeout->tv_sec * 1000) + (ctx->timeout->tv_nsec / 1000);
+    
+    if (ret || timeout == 0) {
         (current_cpu->current_thread->blocked_signals) = old_set;
         poll_exit(waiter);
         poll_destroyWaiter(waiter);
@@ -785,9 +787,6 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         return ret;
     }
 
-    int timeout = -1;
-    if (ctx->timeout) timeout = (ctx->timeout->tv_sec * 1000) + (ctx->timeout->tv_nsec / 1000);
-    
     int w = poll_wait(waiter, timeout);
 
     if (w == -EINTR) {

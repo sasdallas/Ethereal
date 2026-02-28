@@ -64,13 +64,11 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
                     "Egid:%d\n"
                     "Sid:%d\n"
                     "Pgid:%d\n"
-                    "KernelStack:%p\n"
                     "Parent:%s\n",
                         proc->name,
                         proc->pid,
                         proc->uid, proc->gid, proc->euid, proc->egid,
                         proc->sid, proc->pgid,
-                        proc->kstack,
                         (proc->parent ? proc->parent->name : "N/A"));
         
             break;

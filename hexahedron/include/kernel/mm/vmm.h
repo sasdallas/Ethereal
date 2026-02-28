@@ -66,6 +66,7 @@ typedef uint64_t vmm_flags_t;
 typedef struct vmm_file {
     vfs_file_t *node;
     off_t offset;                           // offset of the file
+    char *path;                             // path of the file
 } vmm_file_t;
 
 typedef struct vmm_memory_range {
@@ -268,12 +269,11 @@ void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages);
 
 /**
  * @brief Update the virtual memory mappings
- * @param space The space to update in
  * @param start The starting address to update
  * @param size The size to update
  * @param op_type VM_OP
  * @param mmu_flags MMU flags
  */
-int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_flags_t mmu_flags);
+int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags);
 
 #endif

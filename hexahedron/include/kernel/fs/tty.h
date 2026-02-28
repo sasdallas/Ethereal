@@ -16,8 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs_new.h>
-
+#include <kernel/fs/devfs.h>
 #include <structs/circbuf.h>
 
 #define _GNU_SOURCE
@@ -45,12 +44,15 @@ typedef struct tty {
 
     // Private
     void *priv;
+
+    devfs_node_t *node;
 } tty_t;
 
 typedef struct pty {
     tty_t *slave;                       // Slave TTY
     circbuf_t *out;                     // TTY output buffer
     poll_event_t out_event;             // Output event
+    devfs_node_t *master_node;
 } pty_t;
 
 /**** FUNCTIONS ****/

@@ -119,7 +119,6 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
  * @param val How many waiters to wakeup
  */
 int futex_wakeup(uint32_t *pointer, uint32_t val) {
-    LOG(DEBUG, "futex_wakeup\n");
     mutex_acquire(futex_mutex);
 
     uintptr_t ptr_phys = arch_mmu_physical(NULL, (uintptr_t)pointer);

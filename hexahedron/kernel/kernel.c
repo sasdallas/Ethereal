@@ -33,8 +33,6 @@
 // VFS
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/fs/tmpfs.h>
-#include <kernel/fs/kernelfs.h>
 #include <kernel/fs/shared.h>
 
 #include <kernel/fs/vfs_new.h>

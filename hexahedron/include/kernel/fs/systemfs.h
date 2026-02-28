@@ -142,4 +142,14 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name);
  */
 ssize_t systemfs_printf(systemfs_node_t *node, char *fmt, ...);
 
+/**
+ * @brief Create SystemFS node
+ */
+systemfs_node_t *systemfs_node();
+
+/**
+ * @brief Free SystemFS node
+ */
+void systemfs_free(systemfs_node_t *node);
+
 #endif

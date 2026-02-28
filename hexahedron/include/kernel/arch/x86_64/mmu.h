@@ -84,4 +84,11 @@ typedef union mmu_page {
     uint64_t data;
 } mmu_page_t;
 
+/**** FUNCTIONS ****/
+
+/**
+ * @brief MMU AP initialize
+ */
+void arch_mmu_ap();
+
 #endif

@@ -331,7 +331,8 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 
     process->proc_list_node.value = (void*)process;
     if (process_list) list_append_node(process_list, &process->proc_list_node);
-
+extern systemfs_node_t *systemfs_proc_create(process_t *proc);
+    process->proc_sysfs = systemfs_proc_create(process);
     return process;
 }
 
@@ -409,9 +410,6 @@ void process_destroy(process_t *proc) {
     vfs_close(proc->exe_image);
     inode_release(proc->wd_node);
 
-    // Destroy mmap mappings
-    process_destroyMappings(proc);
-
     // Destroy table of fds
     fd_destroyTable(proc);
 
@@ -435,6 +433,11 @@ void process_destroy(process_t *proc) {
     if (proc->node) {
         tree_remove(process_tree, proc->node);
     }
+
+
+extern void systemfs_proc_destroy(process_t *proc);
+    systemfs_proc_destroy(proc);
+
 
     kfree(proc->wd_path);
     kfree(proc->name);

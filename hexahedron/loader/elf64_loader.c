@@ -369,7 +369,12 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 // !!!: Presume that if we're being called, the page directory in use is the one assigned to the executable
                 LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
                 
-                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+                mmu_flags_t prot_flags = ((phdr->p_flags & PF_R) ? MMU_FLAG_PRESENT : 0) |
+                                         ((phdr->p_flags & PF_W) ? MMU_FLAG_WRITE : 0) |
+                                        ((phdr->p_flags & PF_X) ? 0 : MMU_FLAG_NOEXEC) |
+                                        MMU_FLAG_USER;
+
+                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_PRESENT | MMU_FLAG_WRITE) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -377,6 +382,9 @@ int elf_loadExecutable(Elf64_Ehdr *ehdr) {
                 if (phdr->p_memsz > phdr->p_filesz) {
                     memset((void*)phdr->p_vaddr + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
                 }
+
+                // change the mmu flags
+                vmm_update((void*)phdr->p_vaddr, phdr->p_memsz, VM_OP_SET_FLAGS, prot_flags);
 
                 break;
 

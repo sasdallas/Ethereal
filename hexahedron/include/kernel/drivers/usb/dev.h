@@ -19,7 +19,6 @@
 #include <kernel/drivers/usb/desc.h>
 #include <kernel/drivers/usb/req.h>
 #include <structs/list.h>
-#include <kernel/fs/kernelfs.h>
 
 /**** DEFINITIONS ****/
 

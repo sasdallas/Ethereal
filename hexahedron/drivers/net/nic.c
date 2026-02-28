@@ -160,8 +160,8 @@ int nic_destroy(nic_t *nic) {
 }
 
 /**
- * @brief Read data method for the NIC KernelFS node
- * @param entry KernelFS entry
+ * @brief Read data method for the NIC SystemFS node
+ * @param entry SystemFS entry
  * @param data NIC
  */
 static ssize_t nic_systemfsRead(systemfs_node_t *entry) {

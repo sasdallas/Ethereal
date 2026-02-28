@@ -24,12 +24,12 @@
 #include <kernel/task/scheduler.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/fd.h>
-#include <kernel/task/mem.h>
 #include <kernel/task/signal.h>
 #include <kernel/task/timer.h>
 #include <kernel/task/ptrace.h>
 #include <kernel/task/syscall.h>
 #include <kernel/task/futex.h>
+#include <kernel/fs/systemfs.h>
 
 #include <kernel/processor_data.h>
 #include <structs/tree.h>
@@ -47,6 +47,7 @@
 #define PROCESS_EXIT_NORMAL                 0           // The process chose to exit on its own will
 #define PROCESS_EXIT_SIGNAL                 1           // The process was exited by a signal, and exit_status contains the signal number
 
+#define PROCESS_MMAP_MINIMUM                0x1000
 /**** TYPES ****/
 
 /**
@@ -107,7 +108,6 @@ typedef struct process {
     // MEMORY REGIONS
     uintptr_t heap;                     // Heap of the process. Positioned after the ELF binary
     uintptr_t heap_base;                // Base location of the heap
-    list_t *mmap;                       // mmap() mappings
 
     // SIGNALS
     void *userspace;                    // Userspace allocation (only for sigtramp right now)
@@ -122,11 +122,9 @@ typedef struct process {
     process_ptrace_t ptrace;            // ptrace structure
 
     // OTHER
-    uintptr_t kstack;                   // Kernel stack (see PROCESS_KSTACK_SIZE)
     vmm_context_t *ctx;                 // VMM context
-    arch_context_t sigctx;              // Signal handler context
-    pid_t tid_next;                     // Next TID to use
     node_t proc_list_node;              // Process list node
+    systemfs_node_t *proc_sysfs;        // Process SystemFS
 } process_t;
 
 /**** MACROS ****/

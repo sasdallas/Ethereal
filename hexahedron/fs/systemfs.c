@@ -18,7 +18,7 @@
 #include <stdio.h>
 
 /* Cache */
-static slab_cache_t *systemfs_node_cache;
+slab_cache_t *systemfs_node_cache;
 
 /* Root */
 systemfs_node_t *systemfs_root;
@@ -256,7 +256,7 @@ static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_out
 /**
  * @brief Create SystemFS node
  */
-static systemfs_node_t *systemfs_node() {
+systemfs_node_t *systemfs_node() {
     systemfs_node_t *n = slab_allocate(systemfs_node_cache);
     if (!n) return NULL;
 
@@ -269,6 +269,14 @@ static systemfs_node_t *systemfs_node() {
     n->attr.nlink = 1;
     n->attr.type = VFS_FILE;
     return n;
+}
+
+
+/**
+ * @brief Free SystemFS node
+ */
+void systemfs_free(systemfs_node_t *node) {
+    slab_free(systemfs_node_cache, node);
 }
 
 /**
@@ -352,8 +360,38 @@ systemfs_node_t *systemfs_register(systemfs_node_t *parent, char *name, int type
  * @param name The name of the SystemFS entry to unregister
  */
 int systemfs_unregister(systemfs_node_t *parent, char *name) {
-    assert(0 && "TBD");
-    return 1;
+    // Find the child
+    mutex_acquire(&parent->lck);
+    systemfs_node_t *child = hashmap_get(parent->children, name);
+    if (child) {
+        hashmap_remove(parent->children, name);
+    }
+    mutex_release(&parent->lck);
+
+    if (!child) return 1;
+
+    // Directories need more work
+    if (child->attr.type == VFS_DIRECTORY) {
+        list_t *k = hashmap_keys(child->children);
+        if (k) {
+            foreach (n, k) {
+                systemfs_unregister(child, n->value); // !!!: Recursion  
+            } 
+
+            list_destroy(k, false);
+        }
+
+        hashmap_free(child->children);
+    } else if (child->attr.type == VFS_SYMLINK) {
+        kfree(child->link_contents);
+    } else {
+        if (child->buf.buffer) kfree(child->buf.buffer);
+    }
+
+    kfree(child->name);
+
+    slab_free(systemfs_node_cache, child);
+    return 0;
 }
 
 /**

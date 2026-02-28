@@ -232,10 +232,10 @@ _start:
     or $32, %eax
     mov %eax, %cr4
 
-    // Enable EFER, enabling SYSCALL/SYSRET
+    // EFER
     movl $0xC0000080, %ecx
     rdmsr
-    or $256, %eax
+    or $0x100, %eax
     wrmsr
 
     // Check PG - bootloader may already have enabled paging

@@ -32,20 +32,81 @@ static systemfs_ops_t systemfs_proc_dir_ops = {
     .lookup = systemfs_proc_lookup,
 };
 
+
+/**
+ * @brief maps read
+ */
+ssize_t systemfs_proc_maps(systemfs_node_t *n) {
+    process_t *p = n->priv;
+
+    vmm_space_t *sp = p->ctx->space;
+    vmm_memory_range_t *r = sp->range;
+    ssize_t tot = 0;
+    while (r) {
+        
+        // Entry format:
+        // start-end rwxp size name
+
+        tot += systemfs_printf(n,
+            "%llx-%llx r%c%c%c %6d %s\n",
+            r->start, r->end,
+            (r->mmu_flags & MMU_FLAG_WRITE) ? 'w' : '-',
+            (r->mmu_flags & MMU_FLAG_NOEXEC) ? '-' : 'x',
+            (r->vmm_flags & VM_FLAG_SHARED) ? '-' : 'p',
+            r->vmm_flags & VM_FLAG_FILE ? r->file.offset : 0,
+            r->vmm_flags & VM_FLAG_FILE ? r->file.path : "[anonymous]");
+        
+        r = r->next;
+    }
+
+    return tot;
+}
+
+
+/**
+ * @brief Create process systemfs node
+ * @param proc The process to creat eit for
+ */
+systemfs_node_t *systemfs_proc_create(process_t *proc) {
+    // !!! I hate this entire fucking function
+extern slab_cache_t *systemfs_node_cache;
+    if (!systemfs_node_cache) return NULL; // To stop the idle process from trying to allocate bullshit...
+    systemfs_node_t *n = systemfs_node();
+    n->attr.type = VFS_DIRECTORY;
+    n->name = "proc"; // n->name is never actually used
+    n->children = hashmap_create("proc children", 10);
+    n->priv = proc;
+
+    systemfs_registerSimple(n, "maps", systemfs_proc_maps, NULL, proc);
+    return n;
+}
+
+/**
+ * @brief Destroy process SystemFS node
+ */
+void systemfs_proc_destroy(process_t *proc) {
+    systemfs_node_t *n = proc->proc_sysfs;
+    systemfs_unregister(n, "maps");
+    systemfs_free(n);
+}
+
+
 /**
  * @brief proc dir lookup
  */
 static int systemfs_proc_lookup(systemfs_node_t *node, char *name, systemfs_node_t **output) {
-    pid_t tp = 0;
-
+    process_t *proc = NULL;
     if (!strcmp(name, "self")) {
-        tp = current_cpu->current_process->pid;    
+        proc = current_cpu->current_process;    
     } else {
-        tp = strtol(name, NULL, 10);
+        proc = process_getFromPID(strtol(name, NULL, 10));
     }
 
-    process_t *target = process_getFromPID(tp);
-    return -ENOENT;
+    if (!proc || proc->pid == -1) return -ENOENT;
+
+
+    *output = proc->proc_sysfs;
+    return 0;
 }
 
 /**
@@ -65,8 +126,9 @@ static int systemfs_proc_read_entry(systemfs_node_t *node, vfs_dir_context_t *ct
     // !!!: unsafe without RCU
 extern list_t *process_list;
     foreach(procnode, process_list) {
+        process_t *proc = procnode->value;
+        if (proc->pid < 0) continue;
         if (i == j) {
-            process_t *proc = procnode->value;
             snprintf(ctx->name, NAME_MAX, "%ld", proc->pid);
             ctx->ino = proc->pid; // !!!
             return 0;

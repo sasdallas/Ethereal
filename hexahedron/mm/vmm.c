@@ -255,13 +255,17 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
 /**
  * @brief Update the virtual memory mappings
- * @param space The space to update in
  * @param start The starting address to update
  * @param size The size to update
  * @param op_type VM_OP
  * @param mmu_flags MMU flags
  */
-int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+    start = (void*)PAGE_ALIGN_DOWN((uintptr_t)start);
+    if (size & 0xfff) size = PAGE_ALIGN_UP(size);
+    vmm_space_t *space = vmm_getSpaceForAddress(start);
+    if (!space) return -EINVAL; 
+
     mutex_acquire(space->mut);
     int err = __vmm_update(space, start, size, op_type, mmu_flags);
     mutex_release(space->mut);
