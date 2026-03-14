@@ -304,7 +304,7 @@ static int devfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **inode_dst)
         ret->mount = inode->mount;
         ret->priv = (void*)child;
         if (!n->ops->mmap) ret->flags |= INODE_FLAG_MMAP_UNSUPPORTED; // Kinda a hack
-        inode_created(ret);
+        vfs_createdInode(ret);
     }
 
     *inode_dst = ret;

@@ -91,4 +91,11 @@
 /* caller */
 #define CALLER __builtin_return_address(0)
 
+/* container_of macro */
+#define CONTAINER_OF(ptr, type, member) ({ \
+    void *__mptr = (void*)(ptr); \
+    ((type *)(__mptr - offsetof(type, member))); \
+})
+
+
 #endif

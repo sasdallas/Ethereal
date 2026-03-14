@@ -407,7 +407,7 @@ void process_destroy(process_t *proc) {
 
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
-    vfs_close(proc->exe_image);
+    if (proc->exe_image) vfs_close(proc->exe_image);
     inode_release(proc->wd_node);
 
     // Destroy table of fds

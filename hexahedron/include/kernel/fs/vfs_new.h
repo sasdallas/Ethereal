@@ -50,6 +50,7 @@
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
 #include <limits.h>
+#include <structs/hashmap.h>
 
 /**** DEFINITIONS ****/
 
@@ -163,17 +164,32 @@ typedef struct vfs_inode_ops {
     int (*rename)(struct vfs_inode *parent, struct vfs_inode *child, char *child_name, struct vfs_inode *dst_dir, char *dst_name, unsigned int flags);
 } vfs_inode_ops_t;
 
+/* VFS page cache operations */
+typedef struct vfs_cache_ops {
+    int (*read_page)(struct vfs_file *file, loff_t offset, uintptr_t page);
+    int (*write_page)(struct vfs_file *file, loff_t offset, uintptr_t page);
+} vfs_cache_ops_t;
+
+typedef struct vfs_icache_entry {
+    struct vfs_icache_entry *next;
+    struct vfs_icache_entry *prev;
+} vfs_icache_entry_t;
+
 /* VFS inode */
 typedef struct vfs_inode {
     spinlock_t lock;            // Locks state
     vfs_inode_attr_t attr;      // Fast attr
     vfs_inode_ops_t *ops;       // Inode operations
     vfs_file_ops_t *f_ops;      // File operations
+    vfs_cache_ops_t *c_ops;     // Cache operations
     int state;                  // Inode state
     struct vfs_mount *mount;    // Mountpoint
     unsigned long flags;        // Flags to the inode (INODE_FLAG_xxx)
     refcount_t refcount;        // Reference count
     void *priv;                 // Private field for the inode
+
+    vfs_icache_entry_t c_entry;
+    struct page_cache *cache;
 } vfs_inode_t;
 
 /* VFS file */
@@ -198,7 +214,7 @@ typedef struct vfs_mount {
 
 /* VFS filesystem */
 typedef struct vfs_filesystem {
-    const char *name;           // Name
+    const char *name;
     unsigned long flags;        // Filesystem flags (not impl)
     vfs_mount_t *fs_mounts;     // Linked list of mounts
 
@@ -250,12 +266,11 @@ static inline int inode_getattr(vfs_inode_t *i, vfs_inode_attr_t *attr) { if (i-
 static inline int inode_setattr(vfs_inode_t *i, vfs_inode_attr_t *attr, uint32_t attr_mask) { if (i->ops->setattr) { return i->ops->setattr(i, attr, attr_mask); } else { return -ENOTSUP; }}
 static inline int inode_lookup(vfs_inode_t *i, char *name, vfs_inode_t **output) { if (i->ops->lookup) { return i->ops->lookup(i, name, output); } else { return -ENOTSUP; }}
 static inline int inode_truncate(vfs_inode_t *i, size_t size) { if (i->ops->truncate) { return i->ops->truncate(i, size); } else { return -ENOTSUP; }}
-static inline void inode_created(vfs_inode_t *i) { i->state &= ~(INODE_STATE_NEW); inode_release(i); spinlock_release(&i->lock); }
 static inline int inode_rename(vfs_inode_t *parent, vfs_inode_t *child, char *child_name, vfs_inode_t *dst_dir, char *dst_name, unsigned int flags) { if (parent->ops->rename) { return parent->ops->rename(parent, child, child_name, dst_dir, dst_name, flags); } else { return -ENOTSUP; }}
 
-static inline int flush_inode(vfs_inode_t *i) { if (i->mount->ops && i->mount->ops->write_inode) { return i->mount->ops->write_inode(i); } else { return 0; } }
 
 /* these are fine to use */
+static inline int flush_inode(vfs_inode_t *i) { if (i->mount->ops && i->mount->ops->write_inode) { return i->mount->ops->write_inode(i); } else { return 0; } }
 static inline size_t inode_size(vfs_inode_t *i) { return i->attr.size; }; // TODO maybe getsize() callback?
 
 /**** MACROS ****/
@@ -265,6 +280,7 @@ static inline size_t inode_size(vfs_inode_t *i) { return i->attr.size; }; // TOD
 
 /* Now */
 #define VFS_NOW() ({ struct timeval tv; gettimeofday(&tv, NULL); tv.tv_sec; })
+#define VFS_CACHEABLE(i) ((i)->attr.type == VFS_FILE && (((i)->flags & INODE_FLAG_NOT_CACHEABLE) == 0) && (i)->c_ops)
 
 /**** FUNCTIONS ****/
 
@@ -554,6 +570,14 @@ ino_t vfs_getNextInode();
  * alternative APIs.
  */
 vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino);
+
+/**
+ * @brief Finished creating inode
+ * @param inode The inode to finish
+ * 
+ * Call this after you finish setting up an inode of @c INODE_STATE_NEW
+ */
+void vfs_createdInode(vfs_inode_t *inode);
 
 /**
  * @brief Destroy inode

@@ -26,6 +26,7 @@
 #include <kernel/mm/slab.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/fs/vfs_new.h>
+#include <kernel/mm/cache.h>
 #include <kernel/misc/mutex.h>
 
 /**** DEFINITIONS ****/

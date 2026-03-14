@@ -175,6 +175,7 @@ void pmm_init(pmm_region_t *region) {
             // Mark the pages in the page array as free
             for (unsigned idx = 0; idx < pages_in_section; idx++) {
                 s->pages[idx].flags |= PAGE_FLAG_FREE;
+                s->pages[idx].sect = s;
             }
 
             // Adjust nfree count to account for pages consumed to hold the page array
@@ -506,6 +507,14 @@ pmm_page_t *pmm_page(uintptr_t page) {
     }
 
     return &s->pages[((page-s->start) / PAGE_SIZE)];
+}
+
+/**
+ * @brief Get address
+ */
+uintptr_t pmm_address(pmm_page_t *page) {
+    uintptr_t offset = ((uintptr_t)page - (uintptr_t)page->sect->pages) / sizeof(pmm_page_t);
+    return page->sect->start + (offset * PAGE_SIZE); 
 }
 
 /**

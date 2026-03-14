@@ -920,11 +920,6 @@ long sys_msync(void *addr, size_t len, int flush) {
     return 0;
 }
 
-long sys_mprotect(void *addr, size_t len, int prot) {
-    LOG(WARN, "sys_mprotect %p %d %d\n", addr, len, prot);
-    return 0;
-}
-
 /* TIMES */
 
 clock_t sys_times(struct tms *buf) {

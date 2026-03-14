@@ -35,7 +35,10 @@ static ssize_t tmpfs_readlink(vfs_inode_t *inode, char *buffer, size_t maxlen);
 static int tmpfs_unlink(vfs_inode_t *inode, vfs_inode_t *child, char *child_name);
 static int tmpfs_destroy(vfs_inode_t *inode);
 static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags);
-
+static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags);
+static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off);
+static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page);
 
 /* Filesystem */
 static vfs2_filesystem_t tmpfs_filesystem = {
@@ -69,11 +72,17 @@ static vfs_file_ops_t tmpfs_file_ops = {
     .get_entries = tmpfs_get_entries,
     .ioctl = NULL,
     .mmap_prepare = NULL,
-    .mmap = NULL,
-    .munmap = NULL,
+    .mmap = tmpfs_mmap,
+    .munmap = tmpfs_munmap,
     .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
+};
+
+/* Cache ops */
+static vfs_cache_ops_t tmpfs_cache_ops = {
+    .read_page = tmpfs_read_page,
+    .write_page = tmpfs_write_page,
 };
 
 /* Cache */
@@ -164,6 +173,7 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     ino->mount = parent->mount;
     ino->ops = &tmpfs_inode_ops;
     ino->f_ops = &tmpfs_file_ops;
+    ino->c_ops = &tmpfs_cache_ops;
     ino->priv = new_node;
     new_node->ino = ino->attr.ino;
 
@@ -240,6 +250,7 @@ static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_na
     ino->mount = parent->mount;
     ino->ops = &tmpfs_inode_ops;
     ino->f_ops = &tmpfs_file_ops;
+    ino->c_ops = &tmpfs_cache_ops;
     ino->priv = new_node;
     new_node->ino = ino->attr.ino;
     
@@ -299,6 +310,7 @@ static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t
     i->mount = parent->mount;
     i->ops = &tmpfs_inode_ops;
     i->f_ops = &tmpfs_file_ops;
+    i->c_ops = &tmpfs_cache_ops;
     i->priv = (void*)new;
     
     new->ino = i->attr.ino;
@@ -332,7 +344,8 @@ static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
         i->mount = inode->mount;
         i->ops = &tmpfs_inode_ops;
         i->f_ops = &tmpfs_file_ops;
-        inode_created(i);
+        i->c_ops = &tmpfs_cache_ops;
+        vfs_createdInode(i);
     }
 
     *output = i;
@@ -525,6 +538,97 @@ static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_n
 }
 
 /**
+ * @brief tmpfs mmap
+ */
+static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags) {
+    tmpfs_node_t *node = f->priv;
+
+    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (node->attr.type != VFS_FILE) return -EINVAL;
+
+    if (off >= f->inode->attr.size) {
+        return -ENXIO; // should send a SIGBUS
+    }
+    
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    uintptr_t *pgl = node->file.page_list;
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        // map the corresponding page into memory
+        uintptr_t pg = pgl[pg_ind];
+        pmm_retain(pg);
+        arch_mmu_map(NULL, (uintptr_t)addr + bpos, pg, flags);
+
+        bpos += PAGE_SIZE;
+        remaining -= PAGE_SIZE;
+        pg_ind++;
+    }
+
+    arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
+
+    mutex_release(&node->lck);
+    return 0;
+}
+
+/**
+ * @brief tmpfs munmap
+ */
+static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off) {
+    tmpfs_node_t *node = f->priv;
+    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (node->attr.type != VFS_FILE) return -EINVAL;
+
+    if (off >= f->inode->attr.size) assert(0); // ???
+
+    if (off + size > (size_t)f->inode->attr.size) {
+        size = f->inode->attr.size - off;
+    }
+
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        // unmap the corresponding page from memory
+        uintptr_t pg = arch_mmu_physical(NULL, (uintptr_t)addr + bpos);
+        pmm_release(pg);
+        arch_mmu_unmap(NULL, (uintptr_t)addr + bpos);
+
+        bpos += PAGE_SIZE;
+        remaining -= PAGE_SIZE;
+        pg_ind++;
+    }
+
+    mutex_release(&node->lck);
+    return size;
+}
+
+/**
+ * @brief tmpfs read page
+ */
+static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
+    tmpfs_node_t *n = f->priv;
+    if (offset > n->attr.size) return -ENXIO;
+    memset((void*)page, 0, PAGE_SIZE);
+    return 0;
+}
+
+/**
+ * @brief tmpfs write page
+ */
+static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
+    return 0;
+}
+
+/**
  * @brief Mount to tmpfs
  */
 static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data) {
@@ -547,6 +651,7 @@ static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, ch
     if (!root_inode) { slab_free(tmpfs_node_cache, node); return -ENOMEM; }
     root_inode->ops = &tmpfs_inode_ops;
     root_inode->f_ops = &tmpfs_file_ops;
+    root_inode->c_ops = &tmpfs_cache_ops;
     memcpy(&root_inode->attr, &node->attr, sizeof(vfs_inode_attr_t));
     root_inode->mount = mount_dst;
     root_inode->priv = (void*)node;

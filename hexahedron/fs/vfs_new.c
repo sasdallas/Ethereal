@@ -19,6 +19,8 @@
 #include <kernel/lock/rwsem.h>
 #include <kernel/debug.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/misc/hash.h>
+#include <kernel/misc/util.h>
 #include <structs/tree.h>
 #include <structs/hashmap.h>
 #include <kernel/mm/vmm.h>
@@ -61,6 +63,10 @@ vfs_inode_t *vfs_root_inode = NULL; // Initialized as a dummy node in vfs_init
 
 /* Filesystem map */
 hashmap_t *vfs_fs_map = NULL;
+
+/* Inode cache */
+vfs_icache_entry_t *vfs_inode_cache[40] = { NULL };
+spinlock_t vfs_inode_cache_lock = SPINLOCK_INITIALIZER;
 
 /* Next inode */
 /* Used by memory things like tmpfs/initfs */
@@ -184,6 +190,89 @@ int vfs_canonicalize(char *wd, char *input, char *output) {
     // LOG(DEBUG, "Canon finished: %s\n", output);
 
     return 0;
+}
+
+/**
+ * @brief Find an inode in the inode cache
+ * @param mount The inode mount
+ * @param ino The inode number to lookup
+ * @returns Held inode or NULL
+ */
+static vfs_inode_t *vfs_cacheFindInode(vfs_mount_t *mount, ino_t ino) {
+    // First hash the mount and the ino number together
+    struct to_hash {
+        vfs_mount_t *m;
+        ino_t i;
+    };
+
+    struct to_hash hash_struct =  { .m = mount, .i = ino };
+    uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
+
+    spinlock_acquire(&vfs_inode_cache_lock);
+    vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
+    while (ent) {
+        vfs_inode_t *i = CONTAINER_OF(ent, vfs_inode_t, c_entry);
+        
+        if (i->mount == mount && i->attr.ino == ino) {
+            spinlock_release(&vfs_inode_cache_lock);
+            return i;
+        }
+
+        ent = ent->next;
+    }
+    spinlock_release(&vfs_inode_cache_lock);
+    return NULL;
+}
+
+/**
+ * @brief Insert inode into cache
+ */
+static void vfs_cacheInsertInode(vfs_mount_t *mount, ino_t ino, vfs_inode_t *inode) {
+    // First hash the mount and the ino number together
+    struct to_hash {
+        vfs_mount_t *m;
+        ino_t i;
+    };
+
+    struct to_hash hash_struct =  { .m = mount, .i = ino };
+    uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
+
+    spinlock_acquire(&vfs_inode_cache_lock);
+    vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
+
+    vfs_inode_cache[hash % 40] = &inode->c_entry;
+    inode->c_entry.next = ent;
+    inode->c_entry.prev = NULL;
+    if (ent) ent->prev = &inode->c_entry;
+
+    spinlock_release(&vfs_inode_cache_lock);
+}
+
+/**
+ * @brief Remove inode from cache
+ */
+static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
+    // we still have to recalculate the bucket..
+    struct to_hash {
+        vfs_mount_t *m;
+        ino_t i;
+    };
+
+    struct to_hash hash_struct =  { .m = mount, .i = inode->attr.ino };
+    uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
+
+    spinlock_acquire(&vfs_inode_cache_lock);
+    vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
+
+    // Delink
+    if (inode->c_entry.next) inode->c_entry.next->prev = inode->c_entry.prev;
+    if (inode->c_entry.prev) inode->c_entry.prev->next = inode->c_entry.next;
+
+    if (ent == &inode->c_entry) {
+        vfs_inode_cache[hash % 40] = inode->c_entry.next;
+    }
+    
+    spinlock_release(&vfs_inode_cache_lock);
 }
 
 /**
@@ -666,7 +755,10 @@ int vfs_createat(vfs_inode_t *inode, char *path, mode_t mode, vfs_inode_t **inod
     if (r == 0) {
         // Now, release the inode again. This drops the initial reference when it was made by vfs_inode().
         // TODO: Add caching to store the inode
-        inode_release(tmp);
+        // inode_release(tmp);
+
+        // Cache the inode
+        vfs_cacheInsertInode(tmp->mount, tmp->attr.ino, tmp);
     }
 
     inode_release(parent);
@@ -723,8 +815,50 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
  * @returns Amount of bytes read or negative error code
  */
 ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
-    // TODO: page cache
-    return file_read(file, off, size, buffer);
+    if (!VFS_CACHEABLE(file->inode)) {
+        return file_read(file, off, size, buffer);
+    }
+
+    if (file->inode->cache == NULL) {
+        file->inode->cache = cache_create();
+        inode_hold(file->inode);
+    }
+
+    if (off > file->inode->attr.size) {
+        return 0;
+    }
+
+    if (off+size > (size_t)file->inode->attr.size) {
+        size = file->inode->attr.size - off;
+    }
+
+    // Now do a page cache read
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t pg_off = off % PAGE_SIZE;
+    size_t bpos = 0;
+    
+    while (remaining) {
+        size_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > remaining) chunk = remaining;
+
+        pmm_page_t *output;
+        int r = cache_getPage(file, pg_ind * PAGE_SIZE, &output);
+        if (r) { return r; }
+
+        uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
+        memcpy(buffer + bpos, (void*)rmap + pg_off, chunk);
+        arch_mmu_unmap_physical(rmap, PAGE_SIZE);
+
+        pmm_release(pmm_address(output));
+
+        bpos += chunk;
+        remaining -= chunk;
+        pg_ind++;
+        pg_off = 0;
+    }
+
+    return (ssize_t)size;
 }
 
 /**
@@ -736,8 +870,47 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
  * @returns Amount of bytes write or negative error code
  */
 ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
-    // TODO: page cache
-    return file_write(file, off, size, buffer);
+    if (!VFS_CACHEABLE(file->inode)) {
+        return file_write(file, off, size, buffer);
+    }
+
+    if (!file->inode->cache) {
+        file->inode->cache = cache_create();
+        inode_hold(file->inode);
+    }
+
+    if ((size_t)file->inode->attr.size < off+size) {
+        int r = inode_truncate(file->inode, off+size);
+        if (r < 0) return r;
+    }
+
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t pg_off = off % PAGE_SIZE;
+    size_t bpos = 0;
+    
+    while (remaining) {
+        size_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > remaining) chunk = remaining;
+
+        pmm_page_t *output;
+        int r = cache_getPage(file, pg_ind * PAGE_SIZE, &output);
+        if (r) { return r; }
+
+        uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
+        memcpy((void*)rmap + pg_off, buffer + bpos, chunk);
+        arch_mmu_unmap_physical(rmap, PAGE_SIZE);
+
+        pmm_release(pmm_address(output));
+        cache_markDirty(output);
+
+        bpos += chunk;
+        remaining -= chunk;
+        pg_ind++;
+        pg_off = 0;
+    }
+
+    return (ssize_t)size;
 }
 
 /**
@@ -882,14 +1055,33 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
  * alternative APIs.
  */
 vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
-    // TODO: inode cache, very bad that I don't have one
-    // TODO: check all the reference counting and locking in this func
+    // Lookup inode in VFS cache
+    vfs_inode_t *inode = vfs_cacheFindInode(mount, ino);
+    if (inode) {
+        // yay
+        inode_hold(inode);
+        return inode;
+    }
 
-    vfs_inode_t *inode = vfs2_inode();
+    // create it
+    inode = vfs2_inode();
     spinlock_acquire(&inode->lock);
     inode->state |= INODE_STATE_NEW;
     inode_hold(inode); // Hold the inode again until it's done
     return inode;
+}
+
+/**
+ * @brief Finished creating inode
+ * @param inode The inode to finish
+ * 
+ * Call this after you finish setting up an inode of @c INODE_STATE_NEW
+ */
+void vfs_createdInode(vfs_inode_t *inode) {
+    inode->state &= ~(INODE_STATE_NEW);
+    inode_release(inode);
+    vfs_cacheInsertInode(inode->mount, inode->attr.ino, inode);
+    spinlock_release(&inode->lock);
 }
 
 /**
@@ -996,7 +1188,7 @@ ino_t vfs_getNextInode() {
 void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
     // LOG(DEBUG, "Destroying inode %p, by %s\n", inode, fn);
     if (inode->ops->destroy) inode->ops->destroy(inode);
-
+    vfs_cacheRemoveInode(inode->mount, inode);
     slab_free(inode_cache, inode);
 }
 

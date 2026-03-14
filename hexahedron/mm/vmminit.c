@@ -81,12 +81,11 @@ void vmm_init(pmm_region_t *region) {
     
     LOG(DEBUG, "Mapped all necessary regions successfully.\n");
     
-    // Initialize slab allocator
+    // Initialize other systems
     slab_init();
-
-    // Initialize allocator
     alloc_init();
     memleak_init();
+    cache_init();
 
     vmm_dumpContext(current_cpu->current_context);
 }

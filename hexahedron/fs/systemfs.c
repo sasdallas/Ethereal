@@ -246,7 +246,7 @@ static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_out
         ret->f_ops = &systemfs_file_ops;
         ret->mount = inode->mount;
         ret->priv = (void*)child;
-        inode_created(ret);
+        vfs_createdInode(ret);
     }
 
     *ino_output = ret;
