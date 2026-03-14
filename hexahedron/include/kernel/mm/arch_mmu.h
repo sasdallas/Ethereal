@@ -36,6 +36,7 @@
 #define MMU_FLAG_WC                     0x20    // Write combine
 #define MMU_FLAG_WT                     0x40    // Write through
 #define MMU_FLAG_UC                     0x80    // Not cacheable
+#define MMU_FLAG_DIRTY                  0x100   // Dirty page (only returned on arch_mmu_read_flags)
 
 #define MMU_USERMODE_STACK_REGION   (uintptr_t)0x0000060000000000 
 #define MMU_USERMODE_STACK_SIZE     (uintptr_t)0x0000010000000000 

@@ -445,6 +445,7 @@ mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr) {
     MMU_FLAG_CASE(usermode, MMU_FLAG_USER, 0);
     MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, 0);
     MMU_FLAG_CASE(global, MMU_FLAG_GLOBAL, 0);
+    MMU_FLAG_CASE(dirty, MMU_FLAG_DIRTY, 0);
 #undef MMU_FLAG_CASE
 
     int index = 
