@@ -93,25 +93,26 @@ int main(int argc, char *argv[]) {
     while (celestial_running()) {
         gfx_clear(ctx, GFX_RGB(0xFB, 0xFB, 0xFB));
 
-        FILE *f = fopen("/kernel/memory", "r");
+        FILE *f = fopen("/system/memory/pmm", "r");
         if (!f) return 1;
 
 
         uintptr_t total_phys_memory;
         uintptr_t used_phys_memory;
-        uintptr_t dma_usage;
-        uintptr_t mmio_usage;
+        uintptr_t kheap_usage;
 
-        fscanf(f, 
+        fscanf(f,    
             "TotalPhysBlocks:%*d\n"
             "TotalPhysMemory:%zu kB\n"
             "UsedPhysMemory:%zu kB\n"
             "FreePhysMemory:%*zu kB\n"
-            "KHeapPosUsage:%*zu kB\n"
-            "DMAUsage:%zu kB\n"
-            "MMIOUsage:%zu kB\n"
-            "DriverUsage:%*zu kB\n", &total_phys_memory, &used_phys_memory, &dma_usage, &mmio_usage);
+            "PhysMemoryBytes:%*zu\n", &total_phys_memory, &used_phys_memory);
 
+        fclose(f);
+
+        f = fopen("/system/memory/alloc", "r");
+        if (!f) return 1;
+        fscanf(f, "KernelMemoryAllocator:%zu kB\n", &kheap_usage);
         fclose(f);
 
         int ty = 20;
@@ -119,14 +120,14 @@ int main(int argc, char *argv[]) {
         ty += 10;
         draw_progress_bar(used_phys_memory, total_phys_memory, ty);
         ty += 40;
-        render_centered("DMA", ty);
+        render_centered("Kernel Allocator", ty);
         ty += 10;
-        draw_progress_bar(dma_usage, total_phys_memory, ty);
+        draw_progress_bar(kheap_usage, total_phys_memory, ty);
         ty += 40;
-        render_centered("MMIO", ty);
-        ty += 10;
-        draw_progress_bar(mmio_usage, total_phys_memory, ty);
-        ty += 40;
+        // render_centered("MMIO", ty);
+        // ty += 10;
+        // draw_progress_bar(mmio_usage, total_phys_memory, ty);
+        // ty += 40;
 
         struct timeval tvs;
         gettimeofday(&tvs, NULL);
