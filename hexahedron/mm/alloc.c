@@ -19,7 +19,7 @@
 #include <assert.h>
 #include <kernel/panic.h>
 #include <string.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "MM:ALLOC", __VA_ARGS__)
@@ -36,7 +36,7 @@ slab_cache_t *alloc_caches[ALLOC_CACHES] = { 0 };
 
 /* UNCOMMENT TO ENABLE TRACKING/POISONING */
 #define ENABLE_TRACKING 1
-// #define ENABLE_POISON 1 // Slows down
+#define ENABLE_POISON 1 // Slows down
 
 /* Magic values */
 #define ALLOC_MAGIC_ALLOCATED       0xCAFEBABE
@@ -71,12 +71,13 @@ size_t alloc_in_use = 0;
  */
 static int __kmalloc_initializer(slab_cache_t *cache, void *object) {
     alloc_header_t *hdr = (alloc_header_t*)object;
-    hdr->magic = ALLOC_MAGIC_ALLOCATED;
-    hdr->cache_size = cache->slab_object_size;
 
 #ifdef ENABLE_POISON
-    #error "TODO"
+    memset(hdr, 0xCD, cache->slab_object_size);
 #endif
+
+    hdr->magic = ALLOC_MAGIC_ALLOCATED;
+    hdr->cache_size = cache->slab_object_size;
 
     return 0;
 }
@@ -87,11 +88,13 @@ static int __kmalloc_initializer(slab_cache_t *cache, void *object) {
 static int __kmalloc_deinitializer(slab_cache_t *cache, void *object) {
     alloc_header_t *hdr = (alloc_header_t*)object;
     assert(hdr->magic == ALLOC_MAGIC_ALLOCATED);
-    hdr->magic = ALLOC_MAGIC_FREE;
 
 #ifdef ENABLE_POISON
-    #error "TODO"
+    memset(hdr, 0xAB, cache->slab_object_size);
 #endif
+
+    hdr->magic = ALLOC_MAGIC_FREE;
+
     return 0;
 }
 
