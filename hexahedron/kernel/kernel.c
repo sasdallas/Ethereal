@@ -123,20 +123,28 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
         }
 
         LOG(INFO, "Decompression finished\n");
-    
-        // TODO: Free the old PMM blocks
-
+        
         ram_start = mem;
         ram_size = extracted_size;
+
+        printf("\nUnpacking ramdisk...\n");
+        int r = initrd_unpack(mem, extracted_size);
+        if (r) {
+            kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** initrd_unpack failed with %d\n", r);
+        }
+        
+        kfree(mem);
     } else {
-        LOG(INFO, "Ramdisk is not packed");
+        LOG(INFO, "Ramdisk is not packed\n");
+        printf("\nUnpacking ramdisk...\n");
+        int r = initrd_unpack(ram_start, ram_size);
+        if (r) {
+            kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** initrd_unpack failed with %d\n", r);
+        }
+    
+        // pmm reclaiming system will free it at KERN_LATE
     }
 
-    printf("\nUnpacking ramdisk...\n");
-    int r = initrd_unpack(ram_start, ram_size);
-    if (r) {
-        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** initrd_unpack failed with %d\n", r);
-    }
 
     LOG(INFO, "Mounted initial ramdisk to /device/initrd\n");
     printf("Mounted initial ramdisk successfully\n");

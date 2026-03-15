@@ -418,14 +418,14 @@ void process_destroy(process_t *proc) {
     // Destroy the remainder of the context
     if (!(proc->flags & PROCESS_KERNEL)) vmm_destroyContext(proc->ctx);
 
-    if (proc->ptrace.tracees) {
+    if (proc->ptrace.tracees) 
         foreach(tracee, proc->ptrace.tracees) {
             // TODO: PTRACE_O_EXITKILL
             ptrace_untrace((process_t*)tracee->value, proc);
         }
 
         list_destroy(proc->ptrace.tracees, 0);
-    }
+    
 
     // !!! HOTFIX TO FIX STRACE
     if (proc->ptrace.tracer) {
