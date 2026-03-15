@@ -110,6 +110,8 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
 
     // Setup environment variables
     putenv("PATH=/usr/bin/"); // TEMP
+    putenv("HOME=/root/");
+    putenv("USER=root");
     setbuf(stdout, NULL);
 
     // Hi guys
