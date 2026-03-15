@@ -9,6 +9,7 @@
  * - A vfs_file_t object is an open file in memory.
  *      + Files are temporary, created by open() and destroyed when their refcount hits 0
  *      + Files implement things like open/read/write/ioctl/readdir
+ *      + One file can represent multiple fds, but it should signify ONE open file (same opening flags, same position, etc.)
  * - A vfs_mount_t object for a mounted filesystem
  *      + The only operation for this is unmount which is done on unmount and vfs_mount_t free
  *      + Holds a root inode
@@ -100,8 +101,8 @@ typedef enum vfs_ino_type {
 
 /* Used for the file operation get_entries */
 typedef struct vfs_dir_context {
-    char name[NAME_MAX];        // d_name - No need to duplicate. This will not be freed.
-    unsigned int dirpos;        // Position in hte directory
+    char name[NAME_MAX];        // d_name
+    unsigned int dirpos;        // Position in the directory
     uint64_t ino;               // d_ino
     unsigned int type;          // d_type
 } vfs_dir_context_t;
@@ -177,15 +178,15 @@ typedef struct vfs_icache_entry {
 
 /* VFS inode */
 typedef struct vfs_inode {
-    spinlock_t lock;            // Locks state
+    spinlock_t lock;            // Lock for the inode state
     vfs_inode_attr_t attr;      // Fast attr
     vfs_inode_ops_t *ops;       // Inode operations
     vfs_file_ops_t *f_ops;      // File operations
     vfs_cache_ops_t *c_ops;     // Cache operations
-    int state;                  // Inode state
-    struct vfs_mount *mount;    // Mountpoint
-    unsigned long flags;        // Flags to the inode (INODE_FLAG_xxx)
-    refcount_t refcount;        // Reference count
+    int state;
+    struct vfs_mount *mount;
+    unsigned long flags;        // INODE_FLAG_xxx
+    refcount_t refcount;
     void *priv;                 // Private field for the inode
 
     vfs_icache_entry_t c_entry;
@@ -196,9 +197,9 @@ typedef struct vfs_inode {
 typedef struct vfs_file {
     vfs_inode_t *inode;         // Inode of the file
     vfs_file_ops_t *ops;        // File operations
-    refcount_t refcount;        // Reference count
-    loff_t pos;                 // File position
-    long flags;                 // Flags
+    refcount_t refcount;
+    loff_t pos;                 // File position, note that in directories this is used to iterate
+    long flags;                 // Opening flags
     void *priv;                 // Private data for the file
 } vfs_file_t;
 
@@ -208,7 +209,7 @@ typedef struct vfs_mount {
     struct vfs_mount *prev;     // Previous in list of filesystem mounts
     unsigned long flags;        // Mount flags
     struct vfs_filesystem *fs;  // Filesystem
-    vfs_mount_ops_t *ops;       // VFS mount operations
+    vfs_mount_ops_t *ops;
     vfs_inode_t *root;          // Root inode
 } vfs_mount_t;
 

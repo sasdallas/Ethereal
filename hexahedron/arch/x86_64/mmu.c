@@ -14,7 +14,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/arch/x86_64/mmu.h>
 #include <kernel/arch/x86_64/smp.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
 #include <string.h>

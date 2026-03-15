@@ -18,7 +18,6 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/init.h>
-#include <kernel/processor_data.h>
 #include <kernel/task/process.h>
 #include <string.h>
 #include <errno.h>
@@ -234,12 +233,8 @@ int pipe_create(int fildes[2]) {
     inode_release(write_node);
 
     // Add file descriptors to process
-    fd_t *read_fd = fd_add(current_cpu->current_process, read_file);
-    fd_t *write_fd = fd_add(current_cpu->current_process, write_file);
-
-    // Set file descriptor numbers
-    fildes[0] = read_fd->fd_number;
-    fildes[1] = write_fd->fd_number;
+    assert(fd_add(read_file, &fildes[0]) == 0);
+    assert(fd_add(write_file, &fildes[1]) == 0);
 
     return 0;
 }

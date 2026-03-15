@@ -80,7 +80,6 @@ int ptrace_trace(process_t *tracee, process_t *tracer) {
  * @param tracer The tracer to release from
  */
 int ptrace_untrace(process_t *tracee, process_t *tracer) {
-    spinlock_acquire(&tracee->ptrace.lock);
     spinlock_acquire(&tracer->ptrace.lock);
 
     list_delete(tracer->ptrace.tracees, list_find(tracer->ptrace.tracees, tracee));
@@ -91,9 +90,7 @@ int ptrace_untrace(process_t *tracee, process_t *tracer) {
         signal_send(tracee, SIGCONT);
     }
 
-    spinlock_release(&tracee->ptrace.lock);
-    spinlock_release(&tracee->ptrace.lock);
-    
+    spinlock_release(&tracer->ptrace.lock);
     return 0;
 }
 

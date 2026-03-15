@@ -73,22 +73,22 @@ ssize_t kernelfs_processdirRead(fs_node_t *node, off_t off, size_t size, uint8_t
         
             break;
 
-        case 2:
-            node->length = 0;
-            for (size_t i = 0; i < proc->fd_table->total; i++) {
-                fd_t *fd = proc->fd_table->fds[i];
-                if (fd) {
-                    char tmp_buffer2[512] = { 0 };
-                    node->length += snprintf(tmp_buffer2, 512-strlen(tmp_buffer),
-                        "FileDescriptor:%d\n"
-                        "Path:%s\n",
-                            fd->fd_number, fd->path);
+        // case 2:
+        //     node->length = 0;
+        //     for (size_t i = 0; i < proc->fd_table->total; i++) {
+        //         fd_t *fd = proc->fd_table->fds[i];
+        //         if (fd) {
+        //             char tmp_buffer2[512] = { 0 };
+        //             node->length += snprintf(tmp_buffer2, 512-strlen(tmp_buffer),
+        //                 "FileDescriptor:%d\n"
+        //                 "Path:%s\n",
+        //                     fd->fd_number, fd->path);
                 
-                    strcat(tmp_buffer, tmp_buffer2);
-                }
-            }
+        //             strcat(tmp_buffer, tmp_buffer2);
+        //         }
+        //     }
             
-            break;
+        //     break;
 
         default:
             node->length = 0;

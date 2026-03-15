@@ -28,8 +28,8 @@ long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *
     } else if (olddirfd == AT_FDCWD) {
         src_inode = current_cpu->current_process->wd_node;
     } else {
-        if (!FD_VALIDATE(current_cpu->current_process, olddirfd)) return -EBADF;
-        src_inode = FD(current_cpu->current_process, olddirfd)->node->inode;
+        if (!FD_VALIDATE(olddirfd)) return -EBADF;
+        src_inode = FD(olddirfd)->inode;
     }
     if (src_inode) inode_hold(src_inode);
 
@@ -39,12 +39,12 @@ long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *
     } else if (newdirfd == AT_FDCWD) {
         dst_inode = current_cpu->current_process->wd_node;
     } else {
-        if (!FD_VALIDATE(current_cpu->current_process, newdirfd)) {
+        if (!FD_VALIDATE(newdirfd)) {
             if (src_inode) inode_release(src_inode);
             return -EBADF;
         }
         
-        dst_inode = FD(current_cpu->current_process, newdirfd)->node->inode;
+        dst_inode = FD(newdirfd)->inode;
     }
     if (dst_inode) inode_hold(dst_inode);
 

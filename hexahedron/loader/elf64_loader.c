@@ -20,7 +20,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 
 #include <string.h>
 

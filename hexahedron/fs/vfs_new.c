@@ -15,7 +15,7 @@
  */
 
 #include <kernel/fs/vfs_new.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/lock/rwsem.h>
 #include <kernel/debug.h>
 #include <kernel/mm/vmm.h>
@@ -553,94 +553,96 @@ int vfs_changeGlobalRoot(vfs2_filesystem_t *filesystem, char *src, unsigned long
  * @param path The path to unmount
  */
 int vfs_unmount(char *path) {
-    char canon_path[PATH_MAX];
+    assert(0 && "vfs_unmount is unimplemented");
+    return 0;
+//     char canon_path[PATH_MAX];
 
-    // look for it
-    if (current_cpu->current_process) {
-        int r = vfs_canonicalize(current_cpu->current_process->wd_path, path, canon_path);
-        if (r) return r;
-    } else {
-        assert(*path == '/');
-        int r = vfs_canonicalize(NULL, path, canon_path);
-        if (r) return r;
-    }
+//     // look for it
+//     if (current_cpu->current_process) {
+//         int r = vfs_canonicalize(current_cpu->current_process->wd_path, path, canon_path);
+//         if (r) return r;
+//     } else {
+//         assert(*path == '/');
+//         int r = vfs_canonicalize(NULL, path, canon_path);
+//         if (r) return r;
+//     }
 
-#ifdef VFS_DEBUG
-    LOG(DEBUG, "Unmounting %s\n", canon_path);
-#endif
+// #ifdef VFS_DEBUG
+//     LOG(DEBUG, "Unmounting %s\n", canon_path);
+// #endif
 
-    if (*canon_path == '/' && *(canon_path+1) == 0) {
-        LOG(ERR, "Cannot unmount root yet - not implemented\n");
-        return -ENOTSUP;
-    }
+//     if (*canon_path == '/' && *(canon_path+1) == 0) {
+//         LOG(ERR, "Cannot unmount root yet - not implemented\n");
+//         return -ENOTSUP;
+//     }
 
-    // Get the parent at the path
-    vfs_inode_t *n;
-    int r = vfs_lookup(canon_path, &n, LOOKUP_PARENT); // !!!: very minor waste, this runs canonicalization twice
-    if (r != 0) {
-        return r; 
-    }
+//     // Get the parent at the path
+//     vfs_inode_t *n;
+//     int r = vfs_lookup(canon_path, &n, LOOKUP_PARENT); // !!!: very minor waste, this runs canonicalization twice
+//     if (r != 0) {
+//         return r; 
+//     }
 
-    // Now find the last part of the path.
-    // Fix the end of it, since it ends with a slash.
-    canon_path[strlen(canon_path)-1] = 0;
-    char *p = strrchr(canon_path, '/');
-    assert(p && *(p+1));
-    p++;
+//     // Now find the last part of the path.
+//     // Fix the end of it, since it ends with a slash.
+//     canon_path[strlen(canon_path)-1] = 0;
+//     char *p = strrchr(canon_path, '/');
+//     assert(p && *(p+1));
+//     p++;
 
-    LOG(DEBUG, "Unmounting: %s\n", p);
+//     LOG(DEBUG, "Unmounting: %s\n", p);
 
-    // Parent isn't pinned, no need to release a ref on it.
-    // Get the mount entry
-    mutex_acquire(&vfs_map_mut);
-    vfs_mount_entry_t *ent = hashmap_get(vfs_map, n);
-    if (!ent) { mutex_release(&vfs_map_mut); inode_release(n); return -EINVAL; } // Waste...
-    vfs_mount_entry_t *last = NULL;
+//     // Parent isn't pinned, no need to release a ref on it.
+//     // Get the mount entry
+//     mutex_acquire(&vfs_map_mut);
+//     vfs_mount_entry_t *ent = hashmap_get(vfs_map, n);
+//     if (!ent) { mutex_release(&vfs_map_mut); inode_release(n); return -EINVAL; } // Waste...
+//     vfs_mount_entry_t *last = NULL;
 
-    while (ent) {
-        if (!strncmp(ent->child_name, p, NAME_MAX)) {
-            // Found the corresponding mount!
+//     while (ent) {
+//         if (!strncmp(ent->child_name, p, NAME_MAX)) {
+//             // Found the corresponding mount!
 
-            // Perform the unmount operation if needed
-            vfs_mount_t *mount = ent->mount;
-            assert(mount->root == ent->mountpoint);
+//             // Perform the unmount operation if needed
+//             vfs_mount_t *mount = ent->mount;
+//             assert(mount->root == ent->mountpoint);
 
-            if (mount->ops && mount->ops->unmount) {
-                int r = mount->ops->unmount(mount);
-                if (r) {
-                    mutex_release(&vfs_map_mut);
-                    inode_release(n);
-                    return r;
-                }
-            }
+//             if (mount->ops && mount->ops->unmount) {
+//                 int r = mount->ops->unmount(mount);
+//                 if (r) {
+//                     mutex_release(&vfs_map_mut);
+//                     inode_release(n);
+//                     return r;
+//                 }
+//             }
 
-            // Safe to unlink and release the mutex
-            if (last) last->next = ent->next;
-            else hashmap_set(vfs_map, n, ent->next);
-            mutex_release(&vfs_map_mut);
+//             // Safe to unlink and release the mutex
+//             if (last) last->next = ent->next;
+//             else hashmap_set(vfs_map, n, ent->next);
+//             mutex_release(&vfs_map_mut);
 
-            // Now destroy the unmount and remove it from the fs_links
-            // !!!: LOCK
-            if (mount->prev) mount->prev->next = mount->next;
-            if (mount->next) mount->next->prev = mount->prev;
+//             // Now destroy the unmount and remove it from the fs_links
+//             // !!!: LOCK
+//             if (mount->prev) mount->prev->next = mount->next;
+//             if (mount->next) mount->next->prev = mount->prev;
 
-            // We held the child
-            inode_release(ent->child);
-            inode_release(ent->mountpoint);
+//             // We held the child
+//             inode_release(ent->child);
+//             inode_release(ent->mountpoint);
 
-            kfree(mount);
-            kfree(ent);
-            inode_release(n);
-            return 0;
-        }
+//             kfree(mount);
+//             kfree(ent);
+//             inode_release(n);
+//             return 0;
+//         }
 
-        last = ent;
-        ent = ent->next;
-    }
+//         last = ent;
+//         ent = ent->next;
+//     }
 
-    mutex_release(&vfs_map_mut);
-    inode_release(n);
-    return -EINVAL; // Not a mountpoint
+//     mutex_release(&vfs_map_mut);
+//     inode_release(n);
+//     return -EINVAL; // Not a mountpoint
 }
 
 /**

@@ -116,10 +116,10 @@ static int socket_validateMsg(struct msghdr *message) {
  */
 ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
     
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
@@ -141,10 +141,10 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
  */
 ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
     
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
@@ -283,10 +283,10 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
  */
 int socket_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -310,10 +310,10 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
  */
 int socket_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -338,10 +338,10 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
  */
 int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -363,10 +363,10 @@ int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
  */
 int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -387,10 +387,10 @@ int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
  */
 int socket_listen(int socket, int backlog) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -410,10 +410,10 @@ int socket_listen(int socket, int backlog) {
  */
 int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -436,10 +436,10 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
  */
 int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -462,10 +462,10 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
  */
 int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    vfs_file_t *f = FD(current_cpu->current_process, socket)->node;
+    vfs_file_t *f = FD(socket);
     if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
     sock_t *sock = (sock_t*)f->priv;
@@ -531,12 +531,13 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
 
     inode_release(sock->inode); // required after creation so that the last reference can be dropped
 
-    fd_t *fd = fd_add(proc, f);
+    int fd_num;
+    assert(fd_add(f, &fd_num) == 0);
     if (type_original & SOCK_CLOEXEC) {
         LOG(WARN, "SOCK_CLOEXEC is not supported\n");
     }
 
-    return fd->fd_number;
+    return fd_num;
 }
 
 /**

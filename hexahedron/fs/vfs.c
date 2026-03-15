@@ -26,7 +26,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/misc/spinlock.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/util.h>
 
 #include <structs/tree.h>

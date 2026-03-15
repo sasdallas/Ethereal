@@ -304,30 +304,32 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->ctx = vmm_createContext();
     }
 
-    // Create file descriptor table
-    size_t fd_count = (parent) ? parent->fd_table->total : PROCESS_FD_BASE_AMOUNT;
-    process->fd_table = kmalloc(sizeof(fd_table_t));
-    memset(process->fd_table, 0, sizeof(fd_table_t));
-    process->fd_table->total = fd_count;
-    process->fd_table->amount = (parent) ? parent->fd_table->amount : 0;
+    // // Create file descriptor table
+    // size_t fd_count = (parent) ? parent->fd_table->total : PROCESS_FD_BASE_AMOUNT;
+    // process->fd_table = kmalloc(sizeof(fd_table_t));
+    // memset(process->fd_table, 0, sizeof(fd_table_t));
+    // process->fd_table->total = fd_count;
+    // process->fd_table->amount = (parent) ? parent->fd_table->amount : 0;
     
-    process->fd_table->references = 1;
-    process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
+    // process->fd_table->references = 1;
+    // process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
 
-    memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
+    // memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
 
-    if (parent) {
-        for (size_t i = 0; i < parent->fd_table->total; i++) {
-            if (parent->fd_table->fds[i]) {
-                process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
-                process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
-                process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
-                process->fd_table->fds[i]->path = parent->fd_table->fds[i]->path;
-                process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
-            }
-        }
-    }
+    // if (parent) {
+    //     for (size_t i = 0; i < parent->fd_table->total; i++) {
+    //         if (parent->fd_table->fds[i]) {
+    //             process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
+    //             process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
+    //             process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
+    //             process->fd_table->fds[i]->path = parent->fd_table->fds[i]->path;
+    //             process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
+    //         }
+    //     }
+    // }
     
+
+    fd_copyTable(parent, process);
 
     process->proc_list_node.value = (void*)process;
     if (process_list) list_append_node(process_list, &process->proc_list_node);
@@ -423,6 +425,16 @@ void process_destroy(process_t *proc) {
         }
 
         list_destroy(proc->ptrace.tracees, 0);
+    }
+
+    // !!! HOTFIX TO FIX STRACE
+    if (proc->ptrace.tracer) {
+        process_ptrace_t *trace = &proc->ptrace.tracer->ptrace;
+        spinlock_acquire(&trace->lock);
+        // TODO send PTRACE_EVENT_EXIT
+        list_delete(trace->tracees, list_find(trace->tracees, proc));
+        spinlock_release(&trace->lock);
+        proc->ptrace.tracer = NULL;
     }
 
     // Destroy everything we can

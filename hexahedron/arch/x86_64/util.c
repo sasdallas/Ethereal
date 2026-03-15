@@ -17,7 +17,7 @@
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/fs/systemfs.h>
 #include <kernel/arch/arch.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/debug.h>
 #include <ethereal/user.h>
 #include <kernel/init.h>

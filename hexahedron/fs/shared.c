@@ -170,8 +170,14 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
 
     obj->f = f;
 
-    fd_t *fd = fd_add(proc, f);
-    return fd->fd_number;
+    int fd_num;
+    r = fd_add(f, &fd_num);
+    if (r < 0) {
+        vfs_close(f);
+        return r;
+    }
+
+    return fd_num;
 }
 
 /**
@@ -204,8 +210,10 @@ int sharedfs_openFromKey(process_t *proc, key_t key) {
     int r = vfs_open(name, O_RDWR, &f);
     if (r) return r;
 
-    fd_t *fd = fd_add(proc, f);
-    return fd->fd_number;
+    int fd_num;
+    r = fd_add(f, &fd_num);
+    if (r < 0) { vfs_close(f); return r; }
+    return fd_num;
 }
 
 /* Init routines */

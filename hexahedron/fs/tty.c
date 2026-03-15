@@ -19,8 +19,7 @@
 #include <asm/ioctls.h>
 #include <sys/ioctl_ethereal.h>
 #include <kernel/task/syscall.h>
-#include <kernel/task/signal.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:TTY", __VA_ARGS__)

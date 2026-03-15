@@ -39,7 +39,7 @@
 #include <kernel/arch/x86_64/interrupt.h>
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/arch/x86_64/arch.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/clock.h>

@@ -30,7 +30,7 @@
 static log_putchar_method_t debug_putchar_method = NULL; 
 
 /* Spinlock */
-static spinlock_t debug_lock = { 0 };
+spinlock_t debug_lock = { 0 };
 
 /* Debug buffer */
 char *debug_buffer = NULL;
@@ -178,9 +178,8 @@ log_putchar_method_t debug_getOutput() {
  * 
  * @todo better...
  */
-static int debug_check() {
+int debug_check() {
     if (kargs_has("--debug")) {
-        dprintf(DEBUG, "%s\n", kargs_get("--debug"));
         if (!strcmp(kargs_get("--debug"), "none")) {
             debug_ignore = 1;
         } else if (!strcmp(kargs_get("--debug"), "console")) {

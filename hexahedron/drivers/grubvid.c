@@ -17,7 +17,7 @@
 #include <kernel/drivers/grubvid.h>
 #include <kernel/drivers/video.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>
 #include <string.h>

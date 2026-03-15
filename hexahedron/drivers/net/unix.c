@@ -238,7 +238,7 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
         return -ECONNABORTED;
     }
 
-    sock_t *new_sock = FD(current_cpu->current_process, sfd)->node->priv;
+    sock_t *new_sock = FD(sfd)->priv;
     unix_sock_t *new_usock = USOCK(new_sock);
 
     refcount_inc(&new_usock->ref);

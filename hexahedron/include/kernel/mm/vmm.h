@@ -75,19 +75,28 @@ typedef struct vmm_memory_range {
     struct vmm_memory_range *next;
     struct vmm_memory_range *prev;
 
-    uintptr_t start;                    // MMU start address
-    uintptr_t end;                      // MMU end address
-    vmm_flags_t vmm_flags;              // VMM flags
-    mmu_flags_t mmu_flags;              // MMU flags
-    vmm_file_t file;                    // File
+    uintptr_t start;
+    uintptr_t end;
+    vmm_flags_t vmm_flags;
+    mmu_flags_t mmu_flags;
+    vmm_file_t file;
 } vmm_memory_range_t;
+
+typedef struct vmm_metrics_t {
+    uintptr_t anon_usage;
+    uintptr_t file_usage;
+    uintptr_t anon_resident;
+    uintptr_t file_resident;
+    uintptr_t stack;                    // stack is included in anon_usage
+} vmm_metrics_t;
 
 // Concept shamelessly taken from @mathewnd (thank you)
 typedef struct vmm_space {
-    uintptr_t start;                    // Start of this
-    uintptr_t end;                      // End of this
-    vmm_memory_range_t *range;          // Range beginning
-    mutex_t *mut;                       // Mutex
+    uintptr_t start;
+    uintptr_t end;
+    vmm_memory_range_t *range;
+    mutex_t *mut;
+    vmm_metrics_t metrics;
 } vmm_space_t;
 
 typedef struct vmm_context {
@@ -266,7 +275,7 @@ void vmm_postSMP();
  * @brief Internal function to demark pages
  * Don't even think about calling this.
  */
-void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages);
+void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages);
 
 /**
  * @brief Update the virtual memory mappings

@@ -14,12 +14,11 @@
  * @todo Check this for security issues. Messing with physical pointers seems like, well, a bad idea..
  */
 
-#include <kernel/task/futex.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/processor_data.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
 #include <kernel/event.h>

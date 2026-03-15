@@ -25,8 +25,8 @@ long sys_unlinkat(int dirfd, const char *path, int flags) {
     } else if (dirfd == AT_FDCWD) {
         at = current_cpu->current_process->wd_node;
     } else {
-        if (!FD_VALIDATE(current_cpu->current_process, dirfd)) return -EBADF;
-        at = FD(current_cpu->current_process,dirfd)->node->inode;
+        if (!FD_VALIDATE(dirfd)) return -EBADF;
+        at = FD(dirfd)->inode;
     }
 
     if (at) inode_hold(at);

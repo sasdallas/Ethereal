@@ -23,8 +23,6 @@
 #include <stdint.h>
 #include <kernel/arch/arch.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/task/process.h>
-#include <kernel/mm/vmm.h>
 
 /**** TYPES ****/
 
@@ -32,6 +30,12 @@
 struct process;
 struct thread;
 struct vmm_context;
+
+typedef struct scheduler_cpu {
+    uint8_t state;              // Scheduler state
+    list_t *queue;              // Queue data
+    spinlock_t *lock;           // Lock
+} scheduler_cpu_t;
 
 typedef struct _processor {
     int cpu_id;                             // CPU ID

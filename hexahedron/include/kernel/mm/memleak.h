@@ -29,13 +29,13 @@
 /**** TYPES ****/
 
 typedef struct memleak_object {
-    spinlock_t lck;         // Lock
-    rb_tree_node_t node;   // Tree node
-    node_t lnode;           // Linked list node
+    spinlock_t lck;
+    rb_tree_node_t node;
+    node_t lnode;
     void *frames[10];       // Stack frames
     void *ptr;              // Pointer
-    size_t size;            // Size
-    uint8_t paint;          // Paint
+    size_t size;
+    uint8_t paint;
 } memleak_object_t;
 
 /**** FUNCTIONS ****/

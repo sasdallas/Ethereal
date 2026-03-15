@@ -12,7 +12,7 @@
  */
 
 #include <kernel/mm/vmm.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
@@ -78,6 +78,7 @@ int vmm_initializeContext(slab_cache_t *cache, void *object) {
     sp->end = MMU_USERSPACE_END;
     sp->mut = mutex_create("mut");
     sp->range = NULL;
+    memset(&sp->metrics, 0, sizeof(vmm_metrics_t));
 
     return 0;
 }
@@ -144,7 +145,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_FREE) {
                 // No need to create another range.
-                vmm_freePages(r, start - r->start, size / PAGE_SIZE);
+                vmm_freePages(space, r, start - r->start, size / PAGE_SIZE);
                 if (r->next) r->next->prev = new_range;
                 new_range->next = r->next;
                 new_range->prev = r;
@@ -191,7 +192,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             // Split the regions up
             if (op_type == VM_OP_FREE) {
                 // Don't actually just update this existing range
-                vmm_freePages(r, start - r->start, (r->end - start) / PAGE_SIZE);
+                vmm_freePages(space, r, start - r->start, (r->end - start) / PAGE_SIZE);
                 r->end = start;
                 goto _next_range;
             }
@@ -222,7 +223,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_FREE) {
                 // Don't actually split
-                vmm_freePages(r, 0, (end - r->start) / PAGE_SIZE);
+                vmm_freePages(space, r, 0, (end - r->start) / PAGE_SIZE);
                 r->start = end;
                 goto _next_range;
             }
@@ -324,9 +325,16 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     // Insert into range
     vmm_insertRange(sp, range);
 
+    if (vm_flags & VM_FLAG_FILE) {
+        sp->metrics.file_usage += size;
+    } else if (vm_flags & VM_FLAG_ALLOC) {
+        sp->metrics.anon_usage += size;
+    }
+
     // We can back these pages if we're in the kernel's context.
     // Otherwise, allocations will be auto-backed by VMM faults.
     if (vm_flags & VM_FLAG_ALLOC && (sp == &__vmm_kernel_space || vm_flags & VM_FLAG_FAKE_ME_NOT) ) {
+        assert((vm_flags & VM_FLAG_FILE) == 0);
         // Back the pages now
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
             uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
@@ -334,6 +342,7 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
         }
 
         arch_mmu_invalidate_range(range->start, range->end);
+        sp->metrics.anon_resident += size;
     }
 
 

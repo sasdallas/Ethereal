@@ -62,6 +62,44 @@ ssize_t systemfs_proc_maps(systemfs_node_t *n) {
     return tot;
 }
 
+/**
+ * @brief mem_usage read
+ */
+ssize_t systemfs_proc_mem_usage(systemfs_node_t *n) {
+    process_t *p = n->priv;
+
+    vmm_metrics_t *met = &p->ctx->space->metrics;
+    return systemfs_printf(n,
+        "TotalMemoryUsage:%d kB\n"
+        "TotalMemoryResident:%d kB\n"
+        "AnonUsage:%d kB\n"
+        "AnonResident:%d kB\n"
+        "FileUsage:%d kB\n"
+        "FileResident:%d kB\n",
+        (met->anon_usage + met->file_usage) / 1024,
+        (met->anon_resident + met->file_resident) / 1024,
+        (met->anon_usage) / 1024,
+        (met->anon_resident) / 1024,
+        (met->file_usage) / 1024,
+        (met->file_resident) / 1024);
+}
+
+/**
+ * @brief Status
+ */
+ssize_t systemfs_proc_status(systemfs_node_t *n) {
+    process_t *p = n->priv;
+    return systemfs_printf(n,
+        "ProcessName:%s\n"
+        "Pid:%d\n"
+        "Pgid:%d\n"
+        "Uid:%d %d\n"
+        "Gid:%d %d\n"
+        "Sid:%d",
+        p->name, p->pid, p->pgid,
+        p->uid, p->euid, p->gid, p->egid,
+        p->sid);
+}
 
 /**
  * @brief Create process systemfs node
@@ -77,7 +115,9 @@ extern slab_cache_t *systemfs_node_cache;
     n->children = hashmap_create("proc children", 10);
     n->priv = proc;
 
+    systemfs_registerSimple(n, "status", systemfs_proc_status, NULL, proc);
     systemfs_registerSimple(n, "maps", systemfs_proc_maps, NULL, proc);
+    systemfs_registerSimple(n, "mem_usage", systemfs_proc_mem_usage, NULL, proc);
     return n;
 }
 
@@ -86,7 +126,9 @@ extern slab_cache_t *systemfs_node_cache;
  */
 void systemfs_proc_destroy(process_t *proc) {
     systemfs_node_t *n = proc->proc_sysfs;
+    systemfs_unregister(n, "status");
     systemfs_unregister(n, "maps");
+    systemfs_unregister(n, "mem_usage");
     systemfs_free(n);
 }
 

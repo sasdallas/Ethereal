@@ -70,10 +70,10 @@ typedef struct process_image {
  */
 typedef struct process {
     // GENERAL INFORMATION
-    struct process *parent;             // Parent process
-    char *name;                         // Name of the process
-    int exit_status;                    // Exit statuscode
-    int exit_reason;                    // Reason for exit
+    struct process *parent;
+    char *name;
+    int exit_status;
+    int exit_reason;
     vfs_file_t *exe_image;              // Executable image
 
     // IDs

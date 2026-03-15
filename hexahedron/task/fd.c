@@ -1,22 +1,66 @@
 /**
  * @file hexahedron/task/fd.c
- * @brief File descriptor handler
+ * @brief Task file descriptor system
  * 
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
 #include <kernel/task/process.h>
-#include <kernel/task/fd.h>
 #include <kernel/mm/alloc.h>
-#include <string.h>
 #include <kernel/debug.h>
-#include <errno.h>
+#include <string.h>
+
+/* Log method */
+#define LOG(status, ...) dprintf_module(status, "TASK:FD", __VA_ARGS__)
+
+/**
+ * @brief Create a new file descriptor table
+ */
+fd_table_t *fd_createTable(int fd_count) {
+    // TODO: does this get used enough to warrant a slab?
+    fd_table_t *table = kmalloc(sizeof(fd_table_t));
+    MUTEX_INIT(&table->lck);
+    table->fds = kzalloc(sizeof(vfs_file_t*) * fd_count);
+    table->table_size = fd_count;
+    table->lowest_avl = 0;
+    return table;
+}
+
+/**
+ * @brief Copy one process' fd table to another process' fd table
+ * @param parent The parent process
+ * @param child The child process
+ */
+void fd_copyTable(struct process *parent, struct process *child) {
+    if (!parent) {
+        child->fd_table = fd_createTable(PROCESS_FD_BASE_AMOUNT);
+        return;
+    }
+
+    fd_table_t *source = parent->fd_table;
+    mutex_acquire(&source->lck);
+    
+    fd_table_t *target = fd_createTable(source->table_size);
+    child->fd_table = target;
+
+    target->lowest_avl = source->lowest_avl;
+
+    for (int i = 0; i < source->table_size; i++) {
+        vfs_file_t *f = source->fds[i];
+        if (f) {
+            file_hold(f);
+            target->fds[i] = f;
+        }
+    }
+    
+    mutex_release(&source->lck);
+}
 
 /**
  * @brief Destroy a file descriptor table for a process
@@ -24,136 +68,183 @@
  * @returns 0 on success
  */
 int fd_destroyTable(struct process *process) {
-    if (!process->fd_table) return 1;
-
-    spinlock_acquire(&process->fd_table->lock);
-    
-    // Does the process fd table still have any references?
-    if (process->fd_table->references > 1) {
-        // Yes. Decrement and NULL
-        process->fd_table->references--;
-        spinlock_release(&process->fd_table->lock);
-        process->fd_table = NULL;
-        return 0;
-    }
-
-    // No, we can free this now.
-    // For each file descriptor we'll free the memory
-    for (size_t i = 0; i < process->fd_table->total; i++) {
-        fd_t *fd = process->fd_table->fds[i];
-        if (fd) {
-            vfs_close(fd->node);
-            kfree(fd);
+    fd_table_t *table = process->fd_table;
+    for (int i = 0; i < table->table_size; i++) {
+        if (table->fds[i]) {
+            vfs_close(table->fds[i]);
         }
     }
 
-    kfree(process->fd_table->fds);
-    spinlock_release(&process->fd_table->lock);
-    kfree(process->fd_table);
-    process->fd_table = NULL;
+    kfree(table->fds);
+    kfree(table);
+    return 0;
+}
+
+/**
+ * @brief Recalculate lowest available
+ */
+static inline int fd_recalculateFirstFree(fd_table_t *table) {
+    if (table->lowest_avl >= table->table_size) {
+        return 1;    
+    }
+
+    while (table->fds[table->lowest_avl] != NULL) {
+        if (table->lowest_avl >= table->table_size) {
+            return 1;
+        }
+
+        table->lowest_avl++;
+    }
 
     return 0;
 }
 
 /**
- * @brief Add a file descriptor for a process
- * @param process The process to add the file descriptor to
- * @param node The node to add the file descriptor for
- * @returns A pointer to the file descriptor (for reference - it is already added to the process)
+ * @brief Grow fd table
  */
-fd_t *fd_add(struct process *process, vfs_file_t *node) {
-    if (!process || !node) return NULL;
-
-    spinlock_acquire(&process->fd_table->lock);
-
-    // First, make sure the process' has enough file descriptors
-    if (process->fd_table->total <= process->fd_table->amount) {
-        // Reallocate to a new capacity, adding PROCESS_FD_EXPAND_AMOUNT
-        process->fd_table->total += PROCESS_FD_EXPAND_AMOUNT;
-        process->fd_table->fds = krealloc(process->fd_table->fds, sizeof(fd_t*) * process->fd_table->total);
-        memset(&process->fd_table->fds[process->fd_table->total-PROCESS_FD_EXPAND_AMOUNT], 0, PROCESS_FD_EXPAND_AMOUNT * sizeof(fd_t*));
+static int fd_growTable(fd_table_t *table, int new_fd_count) {
+    if (new_fd_count > PROCESS_MAX_FDS) {
+        return -EMFILE;
     }
 
-    // Search through the file descriptor list to find a spot
-    for (unsigned int i = 0; i < process->fd_table->total; i++) {
-        if (!process->fd_table->fds[i]) {
-             // Allocate a new fd
-            fd_t *new_fd = kmalloc(sizeof(fd_t));
-            memset(new_fd, 0, sizeof(fd_t));
-            new_fd->fd_number = i;
-            new_fd->node = node;
-            process->fd_table->fds[i] = new_fd;
-            process->fd_table->amount++;
+    int old_fd_count = table->table_size;
+    table->fds = krealloc(table->fds, sizeof(vfs_file_t*) * new_fd_count);
+    table->table_size = new_fd_count;
 
-            spinlock_release(&process->fd_table->lock);
-            return new_fd;
-        }
+    if (new_fd_count > old_fd_count) {
+        memset(&table->fds[old_fd_count], 0, sizeof(vfs_file_t*) * (new_fd_count - old_fd_count));
     }
 
-    // ???
-    dprintf_module(ERR, "TASK:FD", "CRITICAL: Corrupted file descriptor bitmap. Could not find a spot\n");
-    return NULL;
+    return 0;
 }
 
 /**
- * @brief Destroy a file descriptor for a process
- * @param process The process to take the file descriptor from
- * @param fd The file descriptor to remove
- * @returns 0 on success
+ * @brief Find free file descriptor
  */
-int fd_remove(struct process *process, int fd_number) {
-    if (!process || !process->fd_table) return 1;
-    if ((size_t)fd_number > process->fd_table->total) return 1;
+static int fd_allocateFree(fd_table_t *table) {
+    if (fd_recalculateFirstFree(table)) {
+        // then we need to grow the table
+        int r = fd_growTable(table, table->table_size + 8);
+        if (r!=0) return r;    
+    }
 
-    spinlock_acquire(&process->fd_table->lock);
+    int fd = table->lowest_avl;
+    table->lowest_avl++;
+    fd_recalculateFirstFree(table);
+    return fd;
+}
 
-    // Get the file descriptor
-    fd_t *fd = process->fd_table->fds[fd_number];
-    vfs_close(fd->node);
-    if (fd->path) kfree(fd->path);
-    kfree(fd);
-    process->fd_table->fds[fd_number] = NULL;
+/**
+ * @brief Get file descriptor
+ * @param fd_number The file descriptor number
+ * @param file The file
+ */
+int fd_get(int fd_number, vfs_file_t **file) {
+    fd_table_t *target = current_cpu->current_process->fd_table;
+    mutex_acquire(&target->lck);
+    if (fd_number >= target->table_size || target->fds[fd_number] == NULL) {
+        mutex_release(&target->lck);
+        return -EBADF;
+    }
 
-    process->fd_table->amount--;
+    vfs_file_t *ret = target->fds[fd_number];
+    FD_HOLD(ret);
+    *file = ret;
+    mutex_release(&target->lck);
+    return 0;
+}
 
-    spinlock_release(&process->fd_table->lock);
+/**
+ * @brief Add a new file descriptor to a process
+ * @param file The file to add to the process
+ * @param fd_out (Output) fd number
+ * @returns Error code
+ */
+int fd_add(vfs_file_t *file, int *fd_out) {
+    fd_table_t *table = current_cpu->current_process->fd_table;
+    mutex_acquire(&table->lck);
 
+    // Allocate a new file descriptor
+    int r = fd_allocateFree(table);
+    if (r < 0) {
+        mutex_release(&table->lck);
+        return r;
+    }
+
+    // Ok set it up now
+    table->fds[r] = file;
+    file_hold(file);
+    *fd_out = r;
+
+    // Done
+    mutex_release(&table->lck);
+    return 0;
+}
+
+/**
+ * @brief Remove a file descriptor from the current process
+ * @param fd The file descriptor to remove
+ */
+int fd_remove(int fd_number) {
+    fd_table_t *table = current_cpu->current_process->fd_table;
+    mutex_acquire(&table->lck);
+
+    if (fd_number >= table->table_size || table->fds[fd_number] == NULL) {
+        mutex_release(&table->lck);
+        return -EBADF;
+    }
+
+    vfs_file_t *f = table->fds[fd_number];
+    table->fds[fd_number] = NULL;
+    if (fd_number < table->lowest_avl) table->lowest_avl = fd_number;
+    mutex_release(&table->lck);
+
+    vfs_close(f);
     return 0;
 }
 
 /**
  * @brief Duplicate a file descriptor for a process
- * @param process The process to duplicate the file descriptor to
  * @param oldfd The old file descriptor to duplicate
  * @param newfd The new file descriptor to duplicate
+ * @param ret Returning file descriptor
  * @returns 0 on success
  */
-int fd_duplicate(struct process *process, int oldfd, int newfd) {
-    if (!process || !process->fd_table) return 1;
-    if ((size_t)oldfd > process->fd_table->total || (size_t)newfd > process->fd_table->total) return 1;
+int fd_duplicate(int oldfd, int newfd, int *ret) {
+    LOG(DEBUG, "fd_duplicate %d %d\n", oldfd, newfd);
+    fd_table_t *table = current_cpu->current_process->fd_table;
+    if (oldfd < 0) return -EBADF;
+    mutex_acquire(&table->lck);
 
-    spinlock_acquire(&process->fd_table->lock);
-
-    // Get the file descriptor
-    fd_t *fd_old = process->fd_table->fds[oldfd];
-    if (!fd_old) return -EBADF;
-
-    fd_t *fd = process->fd_table->fds[newfd];
-    if (fd) {
-        // Close existing file
-        vfs_close(fd->node);
-    } else {
-        // Allocate a file descriptor there
-        fd = kzalloc(sizeof(fd_t));
+    if (oldfd >= table->table_size || table->fds[oldfd] == NULL) {
+        mutex_release(&table->lck);
+        return -EBADF;
     }
 
-    // Setup parameters
-    fd->node = fd_old->node;
-    fd->fd_number = newfd;
-    fd->mode = fd_old->mode;
-    file_open(fd->node, 0); // TODO: fd->open_flags
+    if (newfd != -1 && newfd >= PROCESS_MAX_FDS) {
+        mutex_release(&table->lck);
+        return -EINVAL;
+    }
 
-    // Done
-    spinlock_release(&process->fd_table->lock);
+    // depending on whether this is a generic duplication, do different things
+    if (newfd == -1) {
+        newfd = fd_allocateFree(table);
+        if (newfd < 0) {
+            mutex_release(&table->lck);
+            return newfd;
+        }
+    } else if (newfd >= table->table_size) {
+        int r = fd_growTable(table, newfd+1);
+        if (r < 0) {
+            mutex_release(&table->lck);
+            return r;
+        }
+    }
+
+    vfs_file_t *f = table->fds[oldfd];
+    file_hold(f);
+    table->fds[newfd] = f;
+    *ret = newfd;
+    mutex_release(&table->lck);
     return 0;
 }

@@ -74,6 +74,7 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
         if (!(flags & THREAD_FLAG_CHILD)) {
             vmm_map((void*)(thr->stack - THREAD_STACK_SIZE), THREAD_STACK_SIZE, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_USER | MMU_FLAG_PRESENT);
             memset((void*)(thr->stack - PAGE_SIZE), 0, PAGE_SIZE);
+            thr->ctx->space->metrics.stack += THREAD_STACK_SIZE; 
         }
     } else {
         // Don't bother, use the parent's kernel stack

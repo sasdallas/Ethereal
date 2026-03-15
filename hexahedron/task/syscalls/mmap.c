@@ -42,7 +42,7 @@ long sys_mmap(sys_mmap_context_t *context) {
 
     int file = ((flags & MAP_ANONYMOUS) == 0);
     if (file) {
-        if (!FD_VALIDATE(current_cpu->current_process, filedes)) {
+        if (!FD_VALIDATE(filedes)) {
             return -EBADF;
         }
     }
@@ -67,13 +67,13 @@ long sys_mmap(sys_mmap_context_t *context) {
     
     void *r;
     if (file) {
-        fd_t *fd = FD(current_cpu->current_process, filedes);
+        vfs_file_t *fd = FD(filedes);
         
         // TODO: More checks when page cache added
         vmm_file_t f = {
-            .node = fd->node,
+            .node = fd,
             .offset = off,
-            .path = fd->path
+            .path = NULL
         };
 
         if (f.node->inode->flags & INODE_FLAG_MMAP_UNSUPPORTED) {

@@ -261,19 +261,24 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     }
 
     // Create the file descriptor and return
-    fd_t *fd = fd_add(current_cpu->current_process, file);
+    int fd_out;
+    r = fd_add(file, &fd_out);
+    if (r < 0) {
+        vfs_close(file);
+        return r;
+    }
 
     // !!!
-    fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
-    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
+    // fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    // vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
     
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
-        r = vfs_seek(fd->node, 0, SEEK_END);
+        r = vfs_seek(file, 0, SEEK_END);
         if (r < 0) return r;
     }
 
-    return fd->fd_number;
+    return fd_out;
 }
 
 int sys_open(const char *pathname, int flags, mode_t mode) {
@@ -285,11 +290,11 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
 ssize_t sys_read(int fd, void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    if (!FD_VALIDATE(fd)) {
         return -EBADF;
     }
 
-    vfs_file_t *n = FD(current_cpu->current_process, fd)->node;
+    vfs_file_t *n = FD(fd);
 
     ssize_t i = vfs_read(n, n->pos, count, (char*)buffer);
     if (i >= 0) n->pos += i;
@@ -300,11 +305,11 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    if (!FD_VALIDATE(fd)) {
         return -EBADF;
     }
 
-    vfs_file_t *n = FD(current_cpu->current_process, fd)->node;
+    vfs_file_t *n = FD(fd);
     ssize_t i = vfs_write(n, n->pos, count, (const char*)buffer);
     if (i >= 0) n->pos += i;
 
@@ -313,15 +318,14 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
 }
 
 int sys_close(int fd) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    if (!FD_VALIDATE(fd)) {
         LOG(WARN, "Bad file descriptor close attempt on fd %d\n", fd);
         return -EBADF;
     }
 
     LOG(DEBUG, "sys_close %d\n", fd);
 
-    fd_remove(current_cpu->current_process, fd);
-    return 0;
+    return fd_remove(fd);
 }
 
 /**
@@ -386,11 +390,11 @@ long sys_stat(const char *pathname, struct stat *statbuf) {
 }
 
 long sys_fstat(int fd, struct stat *statbuf) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
+    if (!FD_VALIDATE(fd)) return -EBADF;
     SYSCALL_VALIDATE_PTR(statbuf);
 
     // Try to do stat
-    return sys_stat_common(FD(current_cpu->current_process, fd)->node, statbuf);
+    return sys_stat_common(FD(fd), statbuf);
 }
 
 /**
@@ -420,10 +424,10 @@ long sys_lstat(const char *pathname, struct stat *statbuf) {
  * @brief ioctl
  */
 long sys_ioctl(int fd, unsigned long request, void *argp) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
+    if (!FD_VALIDATE(fd)) return -EBADF;
     
     // Do not validate argp
-    return vfs_ioctl(FD(current_cpu->current_process, fd)->node, request, argp);
+    return vfs_ioctl(FD(fd), request, argp);
 }
 
 /**
@@ -475,12 +479,12 @@ pid_t sys_fork() {
  * @brief lseek system call
  */
 off_t sys_lseek(int fd, off_t offset, int whence) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    if (!FD_VALIDATE(fd)) {
         LOG(ERR, "Bad file descriptor %d\n", fd);
         return -EBADF;
     }
 
-    vfs_file_t *f = FD(current_cpu->current_process, fd)->node;
+    vfs_file_t *f = FD(fd);
     return vfs_seek(f, offset, whence);
 }
 
@@ -639,11 +643,11 @@ long sys_fchdir(int fd) {
  */
 long sys_readdir(struct dirent *ent, int fd, unsigned long index) {
     // SYSCALL_VALIDATE_PTR(ent);
-    // if (!FD_VALIDATE(current_cpu->current_process, fd)) {
+    // if (!FD_VALIDATE(fd)) {
     //     return -EBADF;
     // }
 
-    // struct dirent *dent = fs_readdir(FD(current_cpu->current_process, fd)->node, index);
+    // struct dirent *dent = fs_readdir(FD(fd), index);
     // if (!dent) return 0; // EOF
 
     // memcpy(ent, dent, sizeof(struct dirent));
@@ -664,13 +668,13 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     for (size_t i = 0; i < nfds; i++) {
         // Check the file descriptor
         fds[i].revents = 0;
-        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) {
+        if (!FD_VALIDATE(fds[i].fd)) {
             fds[i].revents |= POLLNVAL;
             continue;
         }
 
         // Does the file descriptor have available contents right now?
-        int ready = vfs_poll(FD(current_cpu->current_process, fds[i].fd)->node, waiter, fds[i].events, (poll_events_t*)&fds[i].revents);
+        int ready = vfs_poll(FD(fds[i].fd), waiter, fds[i].events, (poll_events_t*)&fds[i].revents);
 
         if (ready == 1) {
             // Oh, we already have a hit! :D
@@ -710,10 +714,10 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
 
     for (size_t i = 0; i < nfds; i++) {
         // Does the file descriptor have available contents right now?
-        if (!FD_VALIDATE(current_cpu->current_process, fds[i].fd)) continue;
+        if (!FD_VALIDATE(fds[i].fd)) continue;
         
         // !!!: FLOW BREAKING TRASH
-        vfs_file_t *f = FD(current_cpu->current_process, fds[i].fd)->node;
+        vfs_file_t *f = FD(fds[i].fd);
         assert(f->ops && f->ops->poll_events);
         fds[i].revents = f->ops->poll_events(f) & fds[i].events;
         if (fds[i].revents) {
@@ -755,7 +759,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         }
 
         // Validate file descriptor
-        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+        if (!FD_VALIDATE(fd)) continue;
 
         poll_events_t needed = 0;
         if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
@@ -763,7 +767,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
 
         poll_events_t out = 0;
-        int ready = vfs_poll(FD(current_cpu->current_process, fd)->node, waiter, needed, &out);
+        int ready = vfs_poll(FD(fd), waiter, needed, &out);
         if (ready == 1) {
             // Wow we have a hit oh my goodness
             if (out & POLLIN) FD_SET(fd, &rfds);
@@ -806,7 +810,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         }
 
         // Does the file descriptor have available contents right now?
-        if (!FD_VALIDATE(current_cpu->current_process, fd)) continue;
+        if (!FD_VALIDATE(fd)) continue;
         
         poll_events_t needed = 0;
         if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
@@ -814,7 +818,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
 
         // !!!: FLOW BREAKING TRASH
-        vfs_file_t *f = FD(current_cpu->current_process, fd)->node;
+        vfs_file_t *f = FD(fd);
         assert(f->ops && f->ops->poll_events);
         poll_events_t out = f->ops->poll_events(f) & needed;
         if (out) {
@@ -877,8 +881,8 @@ long sys_fcntl(int fd, int cmd, int extra) {
 }
 
 long sys_ftruncate(int fd, off_t length) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
-    return vfs_truncate(FD(current_cpu->current_process, fd)->node->inode, (size_t)length); 
+    if (!FD_VALIDATE(fd)) return -EBADF;
+    return vfs_truncate(FD(fd)->inode, (size_t)length); 
 }
 
 long sys_mkdir(const char *pathname, mode_t mode) {
@@ -929,24 +933,15 @@ clock_t sys_times(struct tms *buf) {
 /* DUP */
 
 long sys_dup2(int oldfd, int newfd) {
-    if (!FD_VALIDATE(current_cpu->current_process, oldfd)) {
+    if (!FD_VALIDATE(oldfd)) {
         return -EBADF;
-    }   
-
-    if (newfd == -1) {
-        // We assign!
-        fd_t *old = FD(current_cpu->current_process, oldfd);
-        
-        file_open(old->node, 0); // TODO preserve opening flags
-        fd_t *fd = fd_add(current_cpu->current_process, old->node);
-        fd->mode = old->mode;
-
-        return fd->fd_number;
     }
+    LOG(DEBUG, "sys_dup2 oldfd=%d newfd=%d\n", oldfd, newfd);
 
-    int err = fd_duplicate(current_cpu->current_process, oldfd, newfd);
+    int fd_out;
+    int err = fd_duplicate(oldfd, newfd, &fd_out);
     if (err != 0) return err;
-    return newfd;
+    return fd_out;
 }
 
 /* SIGNALS */
@@ -1209,11 +1204,11 @@ long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *te
     int r = pty_create(NULL, &master, &slave);
     if (r) return r;
 
-    fd_t *mfd = fd_add(current_cpu->current_process, master);
-    fd_t *sfd = fd_add(current_cpu->current_process, slave);
 
-    *amaster = mfd->fd_number;
-    *aslave = sfd->fd_number;
+    r = fd_add(master, amaster);
+    if (r < 0) assert(0); // todo
+    r = fd_add(slave, aslave);
+    if (r < 0) assert(0); // todo
 
     return 0;
 }
@@ -1408,20 +1403,19 @@ long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
 
 
 long sys_read_entries(int handle, void *buffer, size_t max_size) {
-    if (!FD_VALIDATE(current_cpu->current_process, handle)) return -EBADF;
+    if (!FD_VALIDATE(handle)) return -EBADF;
     SYSCALL_VALIDATE_PTR_SIZE(buffer, max_size);
 
-    fd_t *f = FD(current_cpu->current_process, handle);
-    if (!f->dev) {
-        f->dev = kzalloc(sizeof(vfs_dir_context_t)); 
-    }
+    vfs_file_t *f = FD(handle);
 
-    vfs_dir_context_t *ctx = (vfs_dir_context_t*)f->dev;
+    vfs_dir_context_t ctx = {
+        .dirpos = f->pos
+    };
 
     unsigned char *p = (unsigned char*)buffer;
     size_t read = 0;
     while (read + sizeof(struct dirent) <= max_size) {
-        int r = file_get_entries(f->node, ctx);
+        int r = file_get_entries(f, &ctx);
         if (r == 1) {
             break;
         }
@@ -1430,14 +1424,16 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
             return r;
         }
 
+        ctx.dirpos++;
+        f->pos++;
+
         struct dirent *ent = (struct dirent*)p;
-        strncpy(ent->d_name, ctx->name, 1024);
+        strncpy(ent->d_name, ctx.name, 1024);
         
-        ent->d_ino = ctx->ino;
-        ent->d_type = ctx->type;
+        ent->d_ino = ctx.ino;
+        ent->d_type = ctx.type;
         ent->d_reclen = sizeof(struct dirent);
 
-        ctx->dirpos++;
         p += sizeof(struct dirent);
         read += sizeof(struct dirent);
     }  
@@ -1446,24 +1442,25 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
 }
 
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
-    SYSCALL_VALIDATE_PTR(pathname);
+    // SYSCALL_VALIDATE_PTR(pathname);
 
-    if (dirfd == AT_FDCWD || pathname[0] == '/') {
-        // Easy enough
-        return sys_open(pathname, flags, mode);
-    }
+    // if (dirfd == AT_FDCWD || pathname[0] == '/') {
+    //     // Easy enough
+    //     return sys_open(pathname, flags, mode);
+    // }
 
-    if (!FD_VALIDATE(current_cpu->current_process, dirfd) || FD(current_cpu->current_process, dirfd)->path == NULL) {
-        return -EBADF;
-    }
+    // if (!FD_VALIDATE(dirfd) || FD(dirfd)->path == NULL) {
+    //     return -EBADF;
+    // }
 
-    fd_t *f = FD(current_cpu->current_process, dirfd);
-    if (!(f->node->inode->attr.type == VFS_DIRECTORY)) {
-        return -ENOTDIR;
-    }
+    // fd_t *f = FD(dirfd);
+    // if (!(f->node->inode->attr.type == VFS_DIRECTORY)) {
+    //     return -ENOTDIR;
+    // }
 
-    char *p = vfs_canonicalizePath(f->path, (char*)pathname);
-    long r = __sys_open_internal(p, flags, mode);
-    kfree(p);
-    return r;
+    // char *p = vfs_canonicalizePath(f->path, (char*)pathname);
+    // long r = __sys_open_internal(p, flags, mode);
+    // kfree(p);
+    // return r;
+    assert(0);
 }

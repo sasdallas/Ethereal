@@ -34,11 +34,13 @@ ssize_t systemfs_memory_pmm(systemfs_node_t *node) {
         "TotalPhysBlocks:%d\n"
         "TotalPhysMemory:%zu kB\n"
         "UsedPhysMemory:%zu kB\n"
-        "FreePhysMemory:%zu kB\n",
+        "FreePhysMemory:%zu kB\n"
+        "PhysMemoryBytes:%zu\n",
             total_blocks,
             total_blocks * PAGE_SIZE / 1000,
             used_blocks * PAGE_SIZE / 1000,
-            free_blocks * PAGE_SIZE / 1000
+            free_blocks * PAGE_SIZE / 1000,
+            used_blocks * PAGE_SIZE
     );
 }
 
