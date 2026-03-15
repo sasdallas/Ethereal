@@ -173,7 +173,6 @@ int fd_add(vfs_file_t *file, int *fd_out) {
 
     // Ok set it up now
     table->fds[r] = file;
-    file_hold(file);
     *fd_out = r;
 
     // Done
