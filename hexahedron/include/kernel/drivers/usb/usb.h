@@ -26,8 +26,6 @@
 #include <kernel/drivers/usb/status.h>
 #include <kernel/drivers/usb/api.h>
 
-#include <kernel/fs/kernelfs.h>
-
 /**** TYPES ****/
 
 // Prototype
@@ -63,10 +61,6 @@ typedef struct USBController {
     list_t *devices;            // List of USB devices with a maximum of 127
     uint32_t last_address;      // Last address given to a device. Starts at 0x1
 } USBController_t;
-
-/**** VARIABLES ****/
-
-extern kernelfs_dir_t *usb_kernelfs;
 
 /**** FUNCTIONS ****/
 

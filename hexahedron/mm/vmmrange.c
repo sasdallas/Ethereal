@@ -214,15 +214,19 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
 /**
  * @brief Internal function to demark pages
  */
-void vmm_freePages(vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
+void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start + offset; i < range->start + (npages * PAGE_SIZE); i += PAGE_SIZE) {
         if (range->vmm_flags & VM_FLAG_FILE) {
             // TODO
+            space->metrics.file_resident -= PAGE_SIZE;
+            space->metrics.file_usage -= PAGE_SIZE;
         } else if (range->vmm_flags & VM_FLAG_DEVICE) {
             // Device memory is never freed
         } else {
             if (range->vmm_flags & VM_FLAG_ALLOC) {
+                space->metrics.anon_usage -= PAGE_SIZE;
+                space->metrics.anon_resident -= PAGE_SIZE;
                 uintptr_t pg = arch_mmu_physical(NULL, i);
                 if (pg != 0x0) pmm_freePage(pg);
             }
@@ -244,7 +248,11 @@ void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
     if (range == space->range) space->range = range->next;
 
     // First, destroy the range if it was allocated
-    vmm_freePages(range, 0, (range->end - range->start) / PAGE_SIZE);
+    vmm_freePages(space, range, 0, (range->end - range->start) / PAGE_SIZE);
+
+    if (range->vmm_flags & VM_FLAG_FILE && range->file.node) {
+        file_release(range->file.node);
+    }
 
     // Now get the range page
     vmm_range_page_t *p = (vmm_range_page_t *)PAGE_ALIGN_DOWN((uintptr_t)range);

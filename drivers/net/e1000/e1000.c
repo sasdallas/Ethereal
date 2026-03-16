@@ -16,6 +16,7 @@
 
 #include "e1000.h"
 #include <kernel/drivers/net/nic.h>
+#include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/loader/driver.h>
 #include <kernel/task/process.h>
@@ -50,6 +51,12 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:E1000", __VA_ARGS__)
 
+/* NIC */
+static ssize_t e1000_send(nic_t *nic, size_t size, char *buffer);
+static nic_ops_t e1000_nic_ops = {
+    .send = e1000_send,
+    .ioctl = NULL
+};
 
 /**
  * @brief Send a command to the nic
@@ -57,7 +64,7 @@
  * @param reg The register to send the command to
  * @param value The value to write
  */
-static void e1000_sendCommand(e1000_t *nic, uint16_t reg, uint32_t value) {
+static inline void e1000_sendCommand(e1000_t *nic, uint16_t reg, uint32_t value) {
     E1000_WRITE32(reg, value);
 }
 
@@ -66,7 +73,7 @@ static void e1000_sendCommand(e1000_t *nic, uint16_t reg, uint32_t value) {
  * @param nic The nic to get from
  * @param reg The register to read from
  */
-static uint32_t e1000_receiveCommand(e1000_t *nic, uint16_t reg) {
+static inline uint32_t e1000_receiveCommand(e1000_t *nic, uint16_t reg) {
     uint32_t value = E1000_READ32(reg);
     return value;
 }
@@ -264,13 +271,13 @@ void e1000_reset(e1000_t *nic) {
     (void)status; // Discard
 
 
-    clock_sleep(1000);
+    clock_sleep(100);
 
     // Reset
     uint32_t ctrl = E1000_RECVCMD(E1000_REG_CTRL);
     ctrl |= E1000_CTRL_RST;
     E1000_SENDCMD(E1000_REG_CTRL, ctrl);
-    clock_sleep(500);
+    clock_sleep(100);
 
     // Disable IRQs again
 	E1000_SENDCMD(E1000_REG_IMC, 0xFFFFFFFF);
@@ -317,12 +324,12 @@ static void e1000_receiverThread(void *data) {
                 // Let ethernet take care of this
                 if (!(nic->rx_descs[nic->rx_current].errors & 0x97)) {
                     // Handle this packet
-                    NIC(nic->nic)->stats.rx_dropped++;
-                    NIC(nic->nic)->stats.rx_bytes += nic->rx_descs[nic->rx_current].length;
-                    ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->nic, nic->rx_descs[nic->rx_current].length);
+                    nic->n->stats.rx_dropped++;
+                    nic->n->stats.rx_bytes += nic->rx_descs[nic->rx_current].length;
+                    ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->n, nic->rx_descs[nic->rx_current].length);
                 } else {
                     LOG(WARN, "Packet has error bits set: 0x%x\n", nic->rx_descs[nic->rx_current].errors);
-                    NIC(nic->nic)->stats.rx_dropped++;
+                    nic->n->stats.rx_dropped++;
                 }
 
                 // Reset status
@@ -358,12 +365,9 @@ static void e1000_receiverThread(void *data) {
 /**
  * @brief Write method for E1000
  */
-static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (!buffer || !size || !NIC(node)) return 0;
-
+static ssize_t e1000_send(nic_t *n, size_t size, char *buffer) {
     // Get E1000
-    e1000_t *nic = (e1000_t*)(NIC(node)->driver);
-    if (!nic) return 0;
+    e1000_t *nic = n->driver;
 
     // Lock the E1000, we're gonna mess with it
     spinlock_acquire(nic->lock);
@@ -389,8 +393,8 @@ static ssize_t e1000_write(fs_node_t *node, off_t offset, size_t size, uint8_t *
     (void)status;
 
     // Update statistics
-    NIC(nic->nic)->stats.tx_packets++;
-    NIC(nic->nic)->stats.tx_bytes += size;
+    n->stats.tx_packets++;
+    n->stats.tx_bytes += size;
 
     // Release
     spinlock_release(nic->lock);
@@ -410,7 +414,7 @@ int e1000_irq(void *context) {
     uint32_t icr = E1000_RECVCMD(E1000_REG_ICR);
     if (icr) {
         uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-        LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
+        // LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
         
         if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
             // TODO: Seems to cause issues when IRQs are allocated
@@ -494,8 +498,10 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     e1000_readMAC(nic, mac);
 
     // We have a confirmed NIC, time to create its generic structure.
-    nic->nic = nic_create("e1000", mac, NIC_TYPE_ETHERNET, (void*)nic);
-    nic->nic->write = e1000_write;
+    char name[128];
+    snprintf(name, 128, "enp%ds%d", dev->bus, dev->slot);
+
+    nic->n = nic_create(name, NIC_TYPE_ETHERNET, &e1000_nic_ops, mac, (void*)nic);
 
     LOG(INFO, "E1000 found with MAC " MAC_FMT "\n", MAC(mac));
 
@@ -509,8 +515,6 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
 
     // Clear the statistical counters
     for (int i = 0; i < 128; i++) E1000_SENDCMD(0x5200 + i * 4, 0);
-    
-
     for (int i = 0; i < 64; i++) {
         uint32_t value = e1000_receiveCommand(nic, 0x4000 + i * 4);
         (void)value; // Discard
@@ -534,12 +538,8 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     E1000_SENDCMD(E1000_REG_IMASK, E1000_ICR_LSC | E1000_ICR_RXO | E1000_ICR_RXT0 | E1000_ICR_TXQE | E1000_ICR_TXDW | E1000_ICR_ACK | E1000_ICR_RXDMT0 | E1000_ICR_SRPD);
 
     // Set MTU
-    NIC(nic->nic)->mtu = 1500;
-
-    // Mount the NIC!
-    char name[128];
-    snprintf(name, 128, "enp%ds%d", dev->bus, dev->slot);
-    nic_register(nic->nic, name);
+    nic->n->mtu = 1500;
+    nic->n->state = nic->link ? NIC_STATE_UP : NIC_STATE_DOWN;
 
     nic->receiver = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
     scheduler_insertThread(nic->receiver->main_thread);
@@ -549,10 +549,6 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
 
 _cleanup:
     // TODO: Improve this cleanup code. We're probably leaking memory
-    if (nic->nic) {
-        if (nic->nic->dev) kfree(nic->nic->dev);
-        fs_close(nic->nic);
-    }
 
     // Unmap MMIO
     mmio_unmap(nic->mmio, bar->size);

@@ -14,7 +14,6 @@
 
 #include <kernel/drivers/pci.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/kernelfs.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
@@ -778,44 +777,3 @@ pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function) {
     if (dev->valid) return dev;
     return NULL;
 }
-
-/**
- * @brief PCI KernelFS scan method
- */
-static int pci_kernelFSScan(pci_device_t *dev, void *data) {
-    kernelfs_entry_t *entry = (kernelfs_entry_t*)data;
-
-    kernelfs_appendData(entry,   "%02x:%02x.%d (%04x, %04x:%04x)\n"
-        " IRQ: %d Pin: %d\n"
-        " BAR0: 0x%08x BAR1: 0x%08x BAR2: 0x%08x BAR3: 0x%08x BAR4: 0x%08x BAR5: 0x%08x\n", 
-            dev->bus, dev->slot, dev->function, pci_readType(dev->bus, dev->slot, dev->function), dev->vid, dev->pid,
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_OFFSET, 1), pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_INTERRUPT_PIN_OFFSET, 1),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR0_OFFSET, 4),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR1_OFFSET, 4),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR2_OFFSET, 4),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR3_OFFSET, 4),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR4_OFFSET, 4),
-            pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_GENERAL_BAR5_OFFSET, 4));
-
-    return 0;
-}
-
-/**
- * @brief PCI KernelFS 
- */
-static int pci_fillKernelFS(struct kernelfs_entry *entry, void *data) {
-    pci_scanDevice(pci_kernelFSScan, NULL, (void*)entry);
-    entry->finished = 1;
-    return 0;
-}
-
-/**
- * @brief Mount PCI KernelFS node
- */
-static int pci_mount() {
-    kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "pci", 1);
-    kernelfs_createEntry(dir, "devices", pci_fillKernelFS, NULL);
-    return 0;
-}
-
-FS_INIT_ROUTINE(pci, INIT_FLAG_DEFAULT, pci_mount, kernelfs);

@@ -17,7 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <stddef.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 /**** DEFINITIONS ****/
 
@@ -38,7 +38,7 @@
  * @param envp The environment variables pointer
  * @returns Error code (jump to process if successful)
  */
-typedef int (*binfmt_load_t)(char *path, fs_node_t *file, int argc, char **argv, char **envp);
+typedef int (*binfmt_load_t)(char *path, vfs_file_t *file, int argc, char **argv, char **envp);
 
 typedef struct binfmt_entry {
     char *name;                     // Optional name
@@ -64,6 +64,6 @@ int binfmt_register(binfmt_entry_t entry);
  * @param envp The environment variables pointer
  * @returns Error code
  */
-int binfmt_exec(char *path, fs_node_t *file, int argc, char **argv, char **envp);
+int binfmt_exec(char *path, vfs_file_t *file, int argc, char **argv, char **envp);
 
 #endif

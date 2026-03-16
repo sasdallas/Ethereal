@@ -183,7 +183,7 @@ arch_yield:
     // prev in %rdi and dest in %rsi
 
     /* Load destination context */
-    addq $0x88, %rsi
+    addq $0x90, %rsi
     movq 0(%rsi), %rsp
     movq 8(%rsi), %rbp
     movq 16(%rsi), %rbx

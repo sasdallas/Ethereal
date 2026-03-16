@@ -20,7 +20,6 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>
-#include <kernel/fs/vfs.h>
 #include <sys/types.h>
 
 /**** DEFINITIONS ****/

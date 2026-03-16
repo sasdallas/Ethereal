@@ -20,7 +20,7 @@ char buffer[128];
 
 char *get_process_name(char *proc_dir_name) {
     char name[512];
-    snprintf(name, 512, "/kernel/processes/%s/info", proc_dir_name);
+    snprintf(name, 512, "/system/processes/%s/status", proc_dir_name);
 
     FILE *f = fopen(name, "r");
     memset(buffer, 0, 128);
@@ -39,7 +39,7 @@ char *get_process_name(char *proc_dir_name) {
 
 
 int main(int argc, char *argv[]) {
-    DIR *dirp = opendir("/kernel/processes");
+    DIR *dirp = opendir("/system/processes");
 
     printf("PID\t\t\tNAME\n");
 

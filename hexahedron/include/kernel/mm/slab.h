@@ -33,27 +33,27 @@
 
 typedef uint32_t sa_flags_t;
 typedef struct magazine {
-    struct magazine *next;          // Next magazine in the list
-    size_t nrounds;                 // Number of rounds
-    void *rounds[];                 // Rounds
+    struct magazine *next;
+    size_t nrounds;
+    void *rounds[];
 } magazine_t;
 
 typedef struct cpu_magazine_cache {
-    magazine_t *loaded;             // Loaded magazine
-    magazine_t *previous;           // Previous magazine
-    spinlock_t lock;                // Spinlock
+    magazine_t *loaded;
+    magazine_t *previous;
+    spinlock_t lock;
 } cpu_magazine_cache_t;
 
 typedef struct magazine_depot {
-    spinlock_t lock;                // Spinlock
-    magazine_t *head;               // Head
+    spinlock_t lock;
+    magazine_t *head;
 } magazine_depot_t;
 
 typedef struct slab {
-    struct slab *next;              // Next slab in the list
+    struct slab *next;
     struct slab *prev;
-    void **free_list;               // Free list
-    size_t free_cnt;                // Free count of objects
+    void **free_list;
+    size_t free_cnt;
 } slab_t;
 
 struct slab_cache;
@@ -77,6 +77,8 @@ typedef int (*slab_initializer_t)(struct slab_cache *cache, void *object);
 typedef int (*slab_deinitialize_t)(struct slab_cache *cache, void *object);
 
 typedef struct slab_cache {
+    struct slab_cache *next;
+
     slab_t *slabs_full;             // Full slabs
     slab_t *slabs_partial;          // Partially filled slabs
     slab_t *slabs_free;             // Totally free slabs

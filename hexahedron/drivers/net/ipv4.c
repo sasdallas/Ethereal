@@ -99,24 +99,24 @@ uint16_t ipv4_checksum(ipv4_packet_t *packet) {
  * @param packet The packet to send
  * @returns 0 on success
  */
-int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
+int ipv4_sendPacket(nic_t *nic, ipv4_packet_t *packet) {
     // Print packet
     char src[17];
-    __inet_ntoa(NIC(nic_node)->ipv4_address, src);
+    __inet_ntoa(nic->ipv4_address, src);
     char dst[17];
     __inet_ntoa(packet->dest_addr, dst);
-    LOG_NIC(DEBUG, nic_node, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
+    LOG(DEBUG, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
 
     // Try to get destination MAC from ARP
     // Is this a local address?
     arp_table_entry_t *entry = NULL;
-    if (!NIC(nic_node)->ipv4_subnet || (NIC(nic_node)->ipv4_subnet & packet->dest_addr) != (NIC(nic_node)->ipv4_address & NIC(nic_node)->ipv4_subnet)) {
-        entry = arp_get_entry(NIC(nic_node)->ipv4_gateway);
+    if (!nic->ipv4_subnet || (nic->ipv4_subnet & packet->dest_addr) != (nic->ipv4_address & nic->ipv4_subnet)) {
+        entry = arp_get_entry(nic->ipv4_gateway);
     } else {
         entry = arp_get_entry(packet->dest_addr);
         if (!entry) {
-            if (arp_search(nic_node, packet->dest_addr)) {
-                LOG_NIC(ERR, nic_node, "Send failed. Could not locate destination.\n");
+            if (arp_search(nic, packet->dest_addr)) {
+                LOG(ERR, "Send failed. Could not locate destination.\n");
                 return 1;
             }
 
@@ -125,7 +125,7 @@ int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
         }
     }
 
-    ethernet_send(nic_node, (void*)packet, IPV4_PACKET_TYPE, entry ? entry->hwmac : ETHERNET_BROADCAST_MAC, ntohs(packet->length));
+    ethernet_send(nic, (void*)packet, IPV4_PACKET_TYPE, entry ? entry->hwmac : ETHERNET_BROADCAST_MAC, ntohs(packet->length));
 
     return 0;
 }
@@ -138,41 +138,86 @@ int ipv4_sendPacket(fs_node_t *nic_node, ipv4_packet_t *packet) {
  * @param protocol Protocol to send, @c IPV4_PROTOCOL_xxx
  * @param frame Frame to send
  * @param size Size of the frame
- * @returns 0 on successful send
+ * @returns Size sent or error code
  */
-int ipv4_send(fs_node_t *nic_node, in_addr_t dest, uint8_t protocol, void *frame, size_t size) {
-    if (!nic_node || !NIC(nic_node) || !frame || !size) return 0;
-    nic_t *nic = NIC(nic_node);
+ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, size_t size) {
+    if (!size) return 0;
     
-    // Allocate a packet
-    size_t total_size = sizeof(ipv4_packet_t) + size;
-    ipv4_packet_t *packet = kmalloc(total_size);
-    memset(packet, 0, sizeof(ipv4_packet_t));
+    // First, resolve the IP address
 
-    // Copy data in
-    memcpy(packet->payload, frame, size);
+    uint8_t hwmac[6];
 
-    // Setup packet fields
-    packet->length = htons(total_size);
-    packet->dest_addr = dest;
-    packet->src_addr = nic->ipv4_address;
-    packet->ttl = IPV4_DEFAULT_TTL;
-    packet->offset = (protocol == IPV4_PROTOCOL_ICMP) ? htons(0x4000) : htons(0x0); // TODO: Fix this
-    packet->id = htons(0x0); // TODO
-    packet->versionihl = 0x45;
-    packet->dscp = htons(0x0); // TODO
-    packet->ecn = htons(0x0); // TODO
-    packet->protocol = protocol;
+    if (dest != IPV4_BROADCAST_IP) {
+        arp_table_entry_t *ent = NULL;
+        in_addr_t tgt = dest;
 
+        // TODO: idk if this check is correct
+        if (nic->ipv4_gateway && (!nic->ipv4_subnet || ((nic->ipv4_subnet & dest) != (nic->ipv4_address & nic->ipv4_subnet)))) {
+            ent = arp_get_entry(nic->ipv4_gateway);
+            tgt = nic->ipv4_gateway;
+        } else {
+            ent = arp_get_entry(dest);
+        }
 
-    packet->checksum = 0;
-    packet->checksum = htons(ipv4_checksum(packet));
+        if (!ent) {
+            if (arp_search(nic, tgt)) {
+                LOG(ERR, "Send to IP %x failed (destination could not be located)\n", dest);
+                return -ENETUNREACH;
+            }
 
-    // Send!
-    int r = ipv4_sendPacket(nic_node, packet);    
-    kfree(packet);
+            ent = arp_get_entry(tgt);
+            assert(ent);
+        }
 
-    return r;
+        memcpy(hwmac, ent->hwmac, 6);
+    } else {
+        memset(hwmac, 0xff, 6);
+    }
+
+    assert(nic->mtu > sizeof(ipv4_packet_t));
+    size_t max_per_packet = (nic->mtu - sizeof(ipv4_packet_t)) & ~7;
+
+    // get a new packet ID
+    int id = atomic_fetch_add(&nic->ip_id, 1);
+
+    // Now we can chunk and calculate
+    size_t offset = 0;
+    ssize_t sent = 0;
+
+    while (offset < size) {
+        size_t chunk = size - offset;
+        if (chunk > max_per_packet) chunk = max_per_packet;
+        
+        // TODO: efficiency, ofc cant be stack allocated but need to find better way
+        ipv4_packet_t *pkt = kmalloc(sizeof(ipv4_packet_t) + chunk);
+        memcpy(pkt->payload, (frame + offset), chunk);
+
+        pkt->versionihl = (4 << 4) | 5;
+        pkt->dscp = 0;
+        pkt->ecn = 0;
+        pkt->length = htons(sizeof(ipv4_packet_t) + chunk);
+        pkt->id = htons(id);
+        pkt->offset = ((offset + chunk < size) ? IPV4_FLAG_MF : 0) | (offset >> 3);
+        pkt->src_addr = nic->ipv4_address;
+        pkt->dest_addr = dest;
+        pkt->protocol = protocol;
+        pkt->ttl = 64;
+        pkt->checksum = 0;
+        pkt->checksum = htons(ipv4_checksum(pkt));
+
+        ssize_t ret = ethernet_send(nic, pkt, IPV4_PACKET_TYPE, hwmac, sizeof(ipv4_packet_t) + chunk);
+        if (ret < 0) { 
+            kfree(pkt);
+            return ret;
+        }
+
+        kfree(pkt);
+        offset += chunk;
+        sent += chunk;
+    }
+
+    return sent;
+
 }
 
 /**
@@ -181,7 +226,7 @@ int ipv4_send(fs_node_t *nic_node, in_addr_t dest, uint8_t protocol, void *frame
  * @param nic_node The NIC that got the packet 
  * @param size The size of the packet
  */
-int ipv4_handle(void *frame, fs_node_t *nic_node, size_t size) {
+int ipv4_handle(void *frame, nic_t *nic, size_t size) {
     ipv4_packet_t *packet = (ipv4_packet_t*)frame;
 
     // Get addresses
@@ -190,15 +235,13 @@ int ipv4_handle(void *frame, fs_node_t *nic_node, size_t size) {
     char src[17];
     __inet_ntoa(packet->src_addr, src);
 
-
-    LOG_NIC(DEBUG, nic_node, "Handle packet protocol=%02x ttl=%d length=%d dest=%s src=%s\n", packet->protocol, packet->ttl, ntohs(packet->length), dest, src);
-
     // Handle protocol
     ipv4_handler_t handler = hashmap_get(ipv4_handler_hashmap, (void*)(uintptr_t)packet->protocol);
     if (handler) {
-        return handler(nic_node, (void*)packet, size);
+        return handler(nic, (void*)packet, size);
     }
 
+    LOG(WARN, "no handler available for %x\n", packet->protocol);
     return 0;
 }
 

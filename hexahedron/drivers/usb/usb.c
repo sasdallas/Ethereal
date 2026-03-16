@@ -18,7 +18,6 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
-#include <kernel/fs/kernelfs.h>
 #include <kernel/init.h>
 
 /* Log method */
@@ -26,9 +25,6 @@
 
 /* List of USB controllers */
 list_t *usb_controller_list = NULL;
-
-/* USB kernelfs node */
-kernelfs_dir_t *usb_kernelfs = NULL;
 
 /* Last controller ID */
 static volatile uint32_t usb_last_controller_id = 0;
@@ -79,13 +75,4 @@ void usb_registerController(USBController_t *controller) {
     list_append(usb_controller_list, controller);
 }
 
-/**
- * @brief Mount USB KernelFS node 
- */
-int usb_mount() {
-    usb_kernelfs = kernelfs_createDirectory(NULL, "usb", 1);
-    return 0;
-}
-
 KERN_EARLY_INIT_ROUTINE(usb, INIT_FLAG_DEFAULT, usb_init);
-FS_INIT_ROUTINE(usb, INIT_FLAG_DEFAULT, usb_mount, kernelfs);

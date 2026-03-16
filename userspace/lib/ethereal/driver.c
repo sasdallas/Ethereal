@@ -17,16 +17,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define SYSCALL3(name, num, p1_type, p2_type, p3_type) \
-    __syscall_prefix __syscall_##name(p1_type p1, p2_type p2, p3_type p3) { \
-        long __return_value = num;\
-        asm volatile (SYSCALL_INSTRUCTION \
-            : "=a"(__return_value) \
-            : "a"(__return_value), "D"((long)(p1)), "S"((long)(p2)), "d"((long)(p3)) : SYSCALL_CLOBBERS); \
-        return __return_value;  \
-    }
-
-SYSCALL3(load_driver, SYS_LOAD_DRIVER, char*, int, char**);
+DEFINE_SYSCALL3(load_driver, SYS_LOAD_DRIVER, char*, int, char**);
 DEFINE_SYSCALL1(unload_driver, SYS_UNLOAD_DRIVER, pid_t);
 DEFINE_SYSCALL2(get_driver, SYS_GET_DRIVER, pid_t, ethereal_driver_t*);
 

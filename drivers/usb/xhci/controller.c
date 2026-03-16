@@ -242,8 +242,6 @@ int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
     }
 
     clock_sleep(3);
-
-    LOG(DEBUG, "New portsc: %x\n", regs->portsc);
     return 0;
 }
 
@@ -276,7 +274,7 @@ int xhci_irq(void *context) {
 
             if (dev_connected) {
                 // Try to reset the port
-                if (!kargs_has("--xhci-no-reset-ports") && xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
+                if (xhci_resetPort(xhci, trb->port_id-1, (volatile xhci_port_regs_t*)&xhci->op->ports[trb->port_id-1])) {
                     // If a reset on this port failed, let's assume the port is dead
                     // TODO: Recovery? I need to read the spec for this sort of thing
                     LOG(ERR, "Reset failure detected. Assuming port %d is dead\n");
@@ -367,6 +365,13 @@ int xhci_initInterrupt(xhci_t *xhci) {
  */
 void xhci_initScratchpad(xhci_t *xhci) {
     uint32_t scratchpads = (xhci->cap->max_scratchpad_buffers_hi << 5) | (xhci->cap->max_scratchpad_buffers_lo);
+    
+    if (!scratchpads) {
+        LOG(INFO, "xHCI controller has no scratchpad buffers?\n");
+        xhci->scratchpad = 0x0;
+        return;
+    }
+    
     xhci->scratchpad = dma_map(scratchpads * sizeof(uint64_t));
     uintptr_t phys = arch_mmu_physical(NULL, xhci->scratchpad);
 

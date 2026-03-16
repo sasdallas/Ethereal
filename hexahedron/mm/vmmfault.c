@@ -39,6 +39,16 @@ int vmm_fault(vmm_fault_information_t *info) {
     // Get the range for it.
     vmm_memory_range_t *r = vmm_getRange(sp, info->address, 1);
     if (!r) {
+        // Perhaps this is part of the thread stack?
+        if (info->address >= MMU_USERMODE_STACK_REGION && info->address < MMU_USERMODE_STACK_REGION + MMU_USERMODE_STACK_SIZE) {
+            // Yes it is, expand the stack
+            assert(vmm_map((void*)PAGE_ALIGN_DOWN(info->address), PAGE_SIZE, VM_FLAG_FIXED | VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_WRITE | MMU_FLAG_PRESENT));
+            mutex_release(sp->mut);
+            sp->metrics.stack += PAGE_SIZE;
+            LOG(DEBUG, "Expanded thread stack!\n");
+            return VMM_FAULT_RESOLVED;
+        }
+
         LOG(WARN, "No range contains %p - fault resolution FAILED\n", info->address);
         mutex_release(sp->mut);
         return VMM_FAULT_UNRESOLVED;
@@ -46,11 +56,13 @@ int vmm_fault(vmm_fault_information_t *info) {
 
     // Determine the action they were trying to accomplish
     int actions = 0;
+    if (r->mmu_flags & MMU_FLAG_PRESENT) actions |= VMM_FAULT_NONPRESENT;
     if (r->mmu_flags & MMU_FLAG_WRITE) actions |= VMM_FAULT_WRITE;
     if (!(r->mmu_flags & MMU_FLAG_NOEXEC)) actions |= VMM_FAULT_EXECUTE;
 
     if (info->exception_type & ~(actions)) {
         LOG(WARN, "Cannot perform access on range - fault resolution failed\n");
+        LOG(WARN, "Allowed access: %x Attempted: %x\n", actions, info->exception_type);
         mutex_release(sp->mut);
         return VMM_FAULT_UNRESOLVED;
     }
@@ -61,12 +73,24 @@ int vmm_fault(vmm_fault_information_t *info) {
         // Non-present - check the range
         if (r->vmm_flags & VM_FLAG_FILE) {
             // Map a page in
-            LOG(DEBUG, "Mapping a page in...\n");
-            fs_mmap(r->node, (void*)info->address, PAGE_SIZE, info->address - r->start);
+            // TODO: Page cache which will make this a lot easier
+            assert(r->file.node->ops->mmap);
+
+            void *addr = (void*)PAGE_ALIGN_DOWN(info->address);
+            uintptr_t offset = r->file.offset + ((uintptr_t)addr - r->start);
+            int res = file_mmap(r->file.node, addr, PAGE_SIZE, offset, r->mmu_flags);
+            if (res) {
+                LOG(ERR, "Mapping a page in failed (error code %d)\n", res);
+                mutex_release(sp->mut);
+                return VMM_FAULT_UNRESOLVED;
+            }
+
+            sp->metrics.file_resident += PAGE_SIZE;
         } else {
             // Anonymous memory, map a page
             arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);
             memset((void*)info->address, 0, PAGE_SIZE);
+            sp->metrics.anon_resident += PAGE_SIZE;
         }
     } else if (!(fl & MMU_FLAG_WRITE)) {
         // Readable page but not writable

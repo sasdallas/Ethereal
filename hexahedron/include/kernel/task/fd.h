@@ -19,46 +19,66 @@
 #include <kernel/arch/arch.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
+#include <kernel/processor_data.h>
 
 /**** DEFINITIONS ****/
 
 #define PROCESS_FD_BASE_AMOUNT      8
 #define PROCESS_FD_EXPAND_AMOUNT    8
 
+#define PROCESS_MAX_FDS             128
+
 /**** TYPES ****/
 
-/**
- * @brief A single file descriptor. Located in a process' @c fd_table
- */
-typedef struct fd {
-    int fd_number;              // File descriptor number
-    fs_node_t *node;            // File that this file descriptor is connected to
-    mode_t mode;                // Mode of file descriptor
-    uint64_t offset;            // Offset of file descriptor
-    void *dev;                  // Driver object
-    char *path;                 // OPTIONAL path of the file descriptor
-} fd_t;
-
-/**
- * @brief File descriptor table
- * @todo    Use a bitmap to keep track of free/used file descriptors? Right now the solution is sort of janky.
- *          We can also just loop through to check for a NULL entry.
- */
 typedef struct fd_table {
-    fd_t **fds;                 // List of expanding file descriptors
-    size_t amount;              // Amount of used file descriptors
-    size_t total;               // Total space for file descriptors allocated
-    size_t references;          // References by other processes
-    spinlock_t lock;            // Lock
+    mutex_t lck;
+    int table_size;
+    int lowest_avl;             // Lowest available fd, if set to table_size there is none.
+    vfs_file_t **fds;
 } fd_table_t;
 
 /**** MACROS ****/
 
-#define FD(proc, fd) (proc->fd_table->fds[fd])
-#define FD_VALIDATE(proc, fd) (proc->fd_table->amount >= (size_t)fd && proc->fd_table->fds[fd])
+/* legacy!!! */
+#define FD(fd) (current_cpu->current_process->fd_table->fds[fd])
+#define FD_VALIDATE(fd) (current_cpu->current_process->fd_table->table_size >= fd && current_cpu->current_process->fd_table->fds[fd])
+
+#define GET_FD_OR_ERROR(fd) ({ \
+                            vfs_file_t *tmp;\
+                            int ret = fd_get(fd, &tmp);\
+                            if (ret != 0) { \
+                                return ret; \
+                            } \
+                            tmp;\
+                           })
+
+#define FD_HOLD(file) file_hold(file)
+#define FD_FINISH(file) file_release(file)
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief Retrieve a file descriptor for the current process
+ * @param fd The file descriptor number
+ * @param out The output file
+ * @returns Error code
+ * 
+ * The file is returned with an extra reference, use @c FD_FINISH to lose that extra reference.
+ */
+int fd_get(int fd_number, vfs_file_t **file);
+
+/**
+ * @brief Create a new file descriptor table
+ */
+fd_table_t *fd_createTable(int fd_count);
+
+/**
+ * @brief Copy one process' fd table to another process' fd table
+ * @param parent The parent process
+ * @param child The child process
+ */
+void fd_copyTable(struct process *parent, struct process *child);
 
 /**
  * @brief Destroy a file descriptor table for a process
@@ -68,28 +88,27 @@ typedef struct fd_table {
 int fd_destroyTable(struct process *process);
 
 /**
- * @brief Add a file descriptor for a process
- * @param process The process to add the file descriptor to
- * @param node The node to add the file descriptor for
- * @returns A pointer to the file descriptor (for reference - it is already added to the process)
+ * @brief Add a new file descriptor to a process
+ * @param file The file to add to the process
+ * @param fd_out (Output) fd number
+ * @returns Error code
  */
-fd_t *fd_add(struct process *process, fs_node_t *file);
+int fd_add(vfs_file_t *file, int *fd_out);
 
 /**
- * @brief Destroy a file descriptor for a process
- * @param process The process to take the file descriptor from
+ * @brief Remove a file descriptor from the current process
  * @param fd The file descriptor to remove
- * @returns 0 on success
  */
-int fd_remove(struct process *process, int fd_number);
+int fd_remove(int fd_number);
+
 
 /**
  * @brief Duplicate a file descriptor for a process
- * @param process The process to duplicate the file descriptor to
  * @param oldfd The old file descriptor to duplicate
  * @param newfd The new file descriptor to duplicate
+ * @param ret Returning file descriptor
  * @returns 0 on success
  */
-int fd_duplicate(struct process *process, int oldfd, int newfd);
+int fd_duplicate(int oldfd, int newfd, int *ret);
 
 #endif

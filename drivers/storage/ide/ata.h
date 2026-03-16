@@ -17,7 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <sys/types.h>
-#include <kernel/fs/vfs.h>
 #include <kernel/debug.h>
 #include <errno.h>
 

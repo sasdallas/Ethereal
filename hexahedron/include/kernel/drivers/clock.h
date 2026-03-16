@@ -57,6 +57,11 @@ typedef void (*clock_callback_t)(uint64_t ticks);
 /**** FUNCTIONS ****/
 
 /**
+ * @brief Now
+ */
+extern unsigned long long now();
+
+/**
  * @brief Get the current time of day
  */
 int clock_gettimeofday(struct timeval *t, void *z);

@@ -12,7 +12,7 @@
  */
 
 #include <kernel/fs/shared.h>
-#include <kernel/fs/kernelfs.h> 
+#include <kernel/fs/devfs.h> 
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <structs/hashmap.h>
@@ -29,41 +29,59 @@ static hashmap_t *shared_hashmap = NULL;
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:SHARED", __VA_ARGS__)
 
+/* devfs directory */
+static devfs_node_t *shared_directory = NULL;
+
+static int sharedfs_open(devfs_node_t *n, unsigned long flags);
+static int sharedfs_close(devfs_node_t *n);
+static int sharedfs_mmap(devfs_node_t *n, void *addr, size_t size, off_t off, mmu_flags_t flags);
+static int sharedfs_munmap(devfs_node_t *n, void *addr, size_t size, off_t off);
+
+devfs_ops_t sharedfs_ops = {
+    .open = sharedfs_open,
+    .close = sharedfs_close,
+    .read = NULL,
+    .write = NULL,
+    .ioctl = NULL,
+    .lseek = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
+    .mmap = sharedfs_mmap,
+    .mmap_prepare = NULL,
+    .munmap = sharedfs_munmap,
+};
+
 /**
  * @brief Initialize shared memory system
  */
 int shared_init() {
+    shared_directory = devfs_createDirectory(devfs_root, "shared");
     shared_hashmap = hashmap_create_int("shared memory object hashmap", 20);
     return 0;
 }
 
 /**
- * @brief Open method for a shared memory object
- * @param node The node to open
- * @param flags Open flags
+ * @brief sharedfs open
  */
-static int sharedfs_open(fs_node_t *node, unsigned int flags) {
-    shared_object_t *obj = (shared_object_t*)node->dev;
+static int sharedfs_open(devfs_node_t *n, unsigned long flags) {
+    shared_object_t *obj = (shared_object_t*)n->priv;
     obj->refcount++;
-
     return 0;
 }
 
 /**
- * @brief Close method for a shared memory object
- * @param node The node to close
+ * @brief sharedfs close
  */
-static int sharedfs_close(fs_node_t *node) {
-    shared_object_t *obj = (shared_object_t*)node->dev;
+static int sharedfs_close(devfs_node_t *n) {
+    LOG(DEBUG, "sharedfs_close\n");
+    shared_object_t *obj = (shared_object_t*)n->priv;
     obj->refcount--;
-
     if (obj->refcount <= 0) {
         // We hit the bottom of our refcounts, free the object
         for (uintptr_t i = 0; i < obj->size / PAGE_SIZE; i++) {
             if (obj->blocks[i]) pmm_freePage(obj->blocks[i]);
         }
 
-        LOG(INFO, "Shared memory object (key: %d) destroyed\n", obj->key);
         kfree(obj->blocks);
         kfree(obj);
     }
@@ -79,8 +97,8 @@ static int sharedfs_close(fs_node_t *node) {
  * @param off The offset of the mappings
  * @returns Error code
  */
-static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
-    shared_object_t *obj = (shared_object_t*)node->dev;
+static int sharedfs_mmap(devfs_node_t *n, void *addr, size_t size, off_t off, mmu_flags_t flags) {
+    shared_object_t *obj = (shared_object_t*)n->priv;
 
     if (off < 0) return -EINVAL;
     if ((off % PAGE_SIZE) != 0) return -EINVAL;
@@ -95,7 +113,7 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         uintptr_t block_idx = start_idx + (i / PAGE_SIZE);
         if (!obj->blocks[block_idx]) obj->blocks[block_idx] = pmm_allocatePage(ZONE_DEFAULT);
-        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], MMU_FLAG_WRITE | MMU_FLAG_USER | MMU_FLAG_PRESENT);
+        arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], flags);
     }
 
     return 0;
@@ -109,18 +127,11 @@ static int sharedfs_mmap(fs_node_t *node, void *addr, size_t size, off_t off) {
  * @param off The offset of the mappings
  * @returns Error code
  */
-static int sharedfs_munmap(fs_node_t *node, void *addr, size_t size, off_t off) {
+static int sharedfs_munmap(devfs_node_t *n, void *addr, size_t size, off_t off) {
     // Align size to page size
     if (size % PAGE_SIZE != 0) size = PAGE_ALIGN_UP(size);  
 
-    // // Start mapping
-    // for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
-    //     page_t *pg = mem_getPage(NULL, (uintptr_t)addr + i, MEM_DEFAULT);
-    //     if (pg) mem_allocatePage(pg, MEM_PAGE_NOALLOC | MEM_PAGE_NOT_PRESENT);
-    // }
-
-    LOG(DEBUG, "Unmapping shared filesystem\n");
-    vmm_unmap(addr, size);
+    vmm_unmap(addr, size); // !!!: TO BE FIXED, this is a security vulnerability!
 
     return 0;
 }
@@ -147,38 +158,39 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
 
     hashmap_set(shared_hashmap, (void*)(uintptr_t)obj->key, obj);
 
-    // Make a node for this device
-    // TODO: Find a better way to identify shared memory objects (?)
-    fs_node_t *node = fs_node();
-    strncpy(node->name, "shared memory object", 256);
-    node->flags = VFS_BLOCKDEVICE;
-    node->impl = SHARED_IMPL;
-    node->dev = (void*)obj;
-    node->atime = node->ctime = node->mtime = now();
-    node->length = size;
+    char name[256];
+    snprintf(name, 256, "%d", obj->key);
+    assert(devfs_register(shared_directory, name, VFS_BLOCKDEVICE, &sharedfs_ops, 0, 0, obj));
 
-    node->mmap = sharedfs_mmap;
-    node->munmap = sharedfs_munmap;
-    node->close = sharedfs_close;
-    node->open = sharedfs_open;
+    snprintf(name, 256, "/device/shared/%d", obj->key);
 
-    fs_open(node, 0);
+    vfs_file_t *f = NULL;
+    int r = vfs_open(name, O_RDWR, &f);
+    if (r) return r;
 
-    // Add file descriptor
-    fd_t *fd = fd_add(proc, node);
-    return fd->fd_number;
+    obj->f = f;
+
+    int fd_num;
+    r = fd_add(f, &fd_num);
+    if (r < 0) {
+        vfs_close(f);
+        return r;
+    }
+
+    return fd_num;
 }
 
 /**
  * @brief Get the key of a shared memory object
- * @param node The node of the shared memory object
+ * @param f The node of the shared memory object
  * @returns A key or errno
  */
-key_t sharedfs_key(fs_node_t *node) {
+key_t sharedfs_key(vfs_file_t *f) {
     // Vaildate node is a shared object node
-    if ((node->flags & VFS_BLOCKDEVICE) == 0 || node->impl != SHARED_IMPL) return -EINVAL;
-
-    shared_object_t *obj = (shared_object_t*)node->dev;
+    // !!!: EXPLOITABLE
+    if ((f->inode->attr.type != VFS_BLOCKDEVICE)) return -EINVAL;
+    devfs_node_t *n = f->priv;
+    shared_object_t *obj = (shared_object_t*)n->priv;
     return obj->key;
 }
 
@@ -190,30 +202,19 @@ key_t sharedfs_key(fs_node_t *node) {
  */
 int sharedfs_openFromKey(process_t *proc, key_t key) {
     // Validate that key exists
-    shared_object_t *obj = (shared_object_t*)hashmap_get(shared_hashmap, (void*)(uintptr_t)key);
-    if (obj == NULL) return -ENOENT;
+    if (!hashmap_has(shared_hashmap, (void*)(uintptr_t)key)) return -ENOENT;
+    char name[256];
+    snprintf(name, 256, "/device/shared/%d", key);
 
-    // Create filesystem node
-    // TODO: Find a better way to identify shared memory objects (?)
-    fs_node_t *node = fs_node();
-    strncpy(node->name, "shared memory object", 256);
-    node->flags = VFS_BLOCKDEVICE;
-    node->impl = SHARED_IMPL;
-    node->dev = (void*)obj;
-    node->atime = node->ctime = node->mtime = now();
-    node->length = obj->size;
+    vfs_file_t *f = NULL;
+    int r = vfs_open(name, O_RDWR, &f);
+    if (r) return r;
 
-    node->mmap = sharedfs_mmap;
-    node->munmap = sharedfs_munmap;
-    node->close = sharedfs_close;
-    node->open = sharedfs_open;
-
-    fs_open(node, 0);
-
-    // Add file descriptor
-    fd_t *fd = fd_add(proc, node);
-    return fd->fd_number;    
+    int fd_num;
+    r = fd_add(f, &fd_num);
+    if (r < 0) { vfs_close(f); return r; }
+    return fd_num;
 }
 
 /* Init routines */
-FS_INIT_ROUTINE(sharedfs, INIT_FLAG_DEFAULT, shared_init);
+FS_INIT_ROUTINE(sharedfs, INIT_FLAG_DEFAULT, shared_init, devfs);

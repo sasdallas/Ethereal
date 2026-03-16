@@ -17,7 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <structs/circbuf.h>
-#include <kernel/fs/vfs.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/net/socket.h>
@@ -65,7 +64,7 @@ typedef struct unix_conn_req {
 typedef struct unix_sock {
     volatile uint8_t state;         // Socket state
     sock_t *sock;                   // Socket
-    fs_node_t *node;                // Bound socket node
+    vfs_inode_t *node;              // Bound socket node (not used except to drop ref)
     char *un_path;                  // Node path
     struct unix_sock *peer;         // Peer connected UNIX socket
     bool is_listener;               // !!!: stupid hack

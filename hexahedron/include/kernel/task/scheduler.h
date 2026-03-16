@@ -44,14 +44,6 @@
  */
 extern time_t scheduler_timeslices[];
 
-/**** TYPES ****/
-
-typedef struct scheduler_cpu {
-    uint8_t state;              // Scheduler state
-    list_t *queue;              // Queue data
-    spinlock_t *lock;           // Lock
-} scheduler_cpu_t;
-
 /**** FUNCTIONS ****/
 
 /**

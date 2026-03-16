@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/task/thread.h>
+#include <kernel/event.h>
 #include <kernel/task/sleep.h>
 #include <sys/time.h>
 
@@ -25,8 +26,9 @@
 /**** TYPES ****/
 
 typedef struct futex {
-    sleep_queue_t *queue;           // Sleep queue
-
+    event_t futex_event;
+    volatile size_t waiters;
+    volatile size_t wakers;
 } futex_t;
 
 /**** FUNCTIONS ****/
@@ -37,13 +39,14 @@ typedef struct futex {
  * @param value The vaue to look for
  * @param time Time to wait on
  */
-int futex_wait(int *pointer, int val, const struct timespec *time);
+int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time);
 
 /**
  * @brief Wake up a futex
  * @param pointer Pointer to the futex
+ * @param val How many waiters to wakeup
  */
-int futex_wakeup(int *pointer);
+int futex_wakeup(uint32_t *pointer, uint32_t val);
 
 /**
  * @brief Initialize futexes

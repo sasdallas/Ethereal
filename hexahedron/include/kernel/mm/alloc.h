@@ -55,4 +55,9 @@ void alloc_init();
  */
 void alloc_postSMPInit();
 
+/**
+ * @brief Get allocator cache count
+ */
+size_t alloc_cacheCount();
+
 #endif

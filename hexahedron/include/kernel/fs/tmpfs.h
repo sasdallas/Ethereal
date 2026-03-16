@@ -1,68 +1,55 @@
 /**
  * @file hexahedron/include/kernel/fs/tmpfs.h
- * @brief Temporary filesystem manager
+ * @brief Temporary in-memory filesystem
  * 
+ * Slow implementation
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef KERNEL_FS_TMPFS_H
-#define KERNEL_FS_TMPFS_H
+#ifndef KERNEL_FS_TEMPFS_H
+#define KERNEL_FS_TEMPFS_H
 
 /**** INCLUDES ****/
+#include <kernel/fs/vfs_new.h>
 #include <stdint.h>
-#include <stddef.h>
-#include <sys/types.h>
-#include <structs/tree.h>
-#include <kernel/fs/vfs.h>
-#include <kernel/misc/spinlock.h>
-
-/**** DEFINITIONS ****/
-
-/* File types */
-#define TMPFS_FILE          0
-#define TMPFS_DIRECTORY     1
-#define TMPFS_SYMLINK       2
-
-/* Block size */
-#define TMPFS_BLOCK_SIZE        4096
-#define TMPFS_DEFAULT_BLOCKS    16
+#include <structs/hashmap.h>
 
 /**** TYPES ****/
 
-typedef struct tmpfs_file {
-    spinlock_t  *lock;              // Lock for the file
-    fs_node_t   *parent;            // Parent filesystem node
+typedef struct tmpfs_node {
+    struct tmpfs_node *parent;          // Parent
+    mutex_t lck;                        // Lock
+    ino_t ino;                          // Inode number
+    union {
+        struct {
+            uintptr_t *page_list;       // Page array
+            size_t page_count;          // How many pages were allocated for the tmpfs
+        } file;
 
-    // Fragmented blocks
-    uintptr_t   *blocks;            // Block list
-    size_t      blk_size;           // Size of block array
-    size_t      blk_count;          // Amount of blocks allocated for the file
-    size_t      length;             // Length
-} tmpfs_file_t;
+        struct {
+            hashmap_t *children;        // Fast children access
+        } dir;
 
-typedef struct tmpfs_entry {
-    int type;               // Type of the entry
-    tree_t *tree;           // Tree
-    tree_node_t *tnode;     // Tree node
+        struct {
+            char *path;                 // Path of the symlink
+        } symlink;
 
-    // General metadata
-    char    name[256];      // Name
-                            // TODO: Not waste memory on this?
-    int     mask;           // File mask
-    time_t  atime;          // Access time
-    time_t  mtime;          // Modification time
-    time_t  ctime;          // Creation time
-    uid_t uid;              // User ID
-    gid_t gid;              // Group ID
+        struct {
+            struct tmpfs_node *node_link; // Linked node
+        } hardlink; 
+    };
 
-    // Device
-    tmpfs_file_t *file;     // File structure, only present on TMPFS_FILE
-} tmpfs_entry_t;
+    vfs_inode_attr_t attr;              // Inode attributes
+} tmpfs_node_t;
+
+
+
+
 
 #endif

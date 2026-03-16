@@ -59,7 +59,7 @@ typedef struct arp_table_entry {
     uint32_t    address;    // IP address
     int         hwtype;     // Hardware type
     uint8_t     hwmac[6];   // MAC address
-    fs_node_t   *nic;       // NIC
+    nic_t       *nic;       // NIC
     node_t      node;       // Table entry node
 } arp_table_entry_t;
 
@@ -80,7 +80,7 @@ arp_table_entry_t *arp_get_entry(in_addr_t address);
  * @param nic The NIC the entry corresponds to
  * @returns 0 on success
  */
-int arp_add_entry(in_addr_t address, uint8_t *mac, int type, fs_node_t *nic);
+int arp_add_entry(in_addr_t address, uint8_t *mac, int type, nic_t *nic);
 
 /**
  * @brief Remove an entry from the cache table
@@ -98,7 +98,7 @@ int arp_remove_entry(in_addr_t address);
  * 
  * @returns 0 on successful send
  */
-int arp_request(fs_node_t *node, in_addr_t address);
+int arp_request(nic_t *nic, in_addr_t address);
 
 /**
  * @brief Request to search for an IP address (blocking)
@@ -107,7 +107,7 @@ int arp_request(fs_node_t *node, in_addr_t address);
  * 
  * @returns 0 on success. Timeout, by default, is 20s
  */
-int arp_search(fs_node_t *nic, in_addr_t address);
+int arp_search(nic_t *nic, in_addr_t address);
 
 
 #endif

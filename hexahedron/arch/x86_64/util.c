@@ -15,9 +15,9 @@
 #include <kernel/arch/x86_64/hal.h>
 #include <kernel/arch/x86_64/smp.h>
 #include <kernel/drivers/x86/clock.h>
-#include <kernel/fs/kernelfs.h>
+#include <kernel/fs/systemfs.h>
 #include <kernel/arch/arch.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/debug.h>
 #include <ethereal/user.h>
 #include <kernel/init.h>
@@ -33,7 +33,7 @@ extern generic_parameters_t *parameters;
 /**
  * @brief Returns the current CPU active in the system
  */
-int arch_current_cpu() {
+inline int arch_current_cpu() {
     return smp_getCurrentCPU();
 }
 
@@ -92,12 +92,12 @@ void arch_initialize_context(struct thread *thread, uintptr_t entry, uintptr_t s
 }
 
 /**
- * @brief /kernel/cpus/XXX in the kernelfs
+ * @brief /system/cpus/XXX
  */
-static int arch_cpu_kernelfs(struct kernelfs_entry *entry, void *data) {
-	processor_t *cpu = (processor_t*)data;
+static ssize_t arch_cpu_systemfs(systemfs_node_t *n) {
+	processor_t *cpu = (processor_t*)n->priv;
 
-	kernelfs_writeData(entry,
+	return systemfs_printf(n,
 		"CpuId:%d\n"
 		"LapicId:%d\n"
 		"Model:%s\n"
@@ -114,20 +114,18 @@ static int arch_cpu_kernelfs(struct kernelfs_entry *entry, void *data) {
 			cpu->cpu_model_number,
 			cpu->current_context->dir,
 			cpu->current_process ? cpu->current_process->name : "N/A");
-
-	return 0;
 }
 
 /**
- * @brief Mount KernelFS nodes
+ * @brief Mount SystemFS nodes
  */
-int arch_mount_kernelfs() {
-	kernelfs_dir_t *dir = kernelfs_createDirectory(NULL, "cpus", 1);
+int arch_mount_systemfs() {
+	systemfs_node_t *dir = systemfs_createDirectory(systemfs_root, "cpus");
 	for (int i = 0; i < MAX_CPUS; i++) {
 		if (processor_data[i].cpu_id || !i) {
 			char name[128];
 			snprintf(name, 128, "cpu%d", i);
-			kernelfs_createEntry(dir, name, arch_cpu_kernelfs, &processor_data[i]);
+			systemfs_registerSimple(dir, name, arch_cpu_systemfs, NULL,  &processor_data[i]);
 		}
 	}
 	return 0;
@@ -239,4 +237,4 @@ uint64_t arch_tick_count() {
 }
 
 /* Init routines */
-FS_INIT_ROUTINE(arch_kernelfs, INIT_FLAG_DEFAULT, arch_mount_kernelfs, kernelfs);
+FS_INIT_ROUTINE(arch_systemfs, INIT_FLAG_DEFAULT, arch_mount_systemfs, systemfs);

@@ -1,135 +1,114 @@
 /**
  * @file hexahedron/fs/periphfs.c
- * @brief Peripheral filesystem (keyboard + mouse)
+ * @brief Gen2 peripheral filesystem
  * 
- * Translation to scancodes is a driver-side task. The driver will build a packet and then
- * pass it to @c periphfs_packet() with the corresponding packet type. 
- * 
- * The peripheral system creates 3 mounts:
- * - /device/keyboard for receiving @c key_event_t structures
- * - /device/mouse for receiving @c mouse_event_t structures
- * - /device/input for receiving raw characters processed by peripheral filesystem. 
- * Note that reading from /device/stdin will also discard the corresponding key event.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <kernel/arch/arch.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/mm/alloc.h>
-#include <kernel/fs/vfs.h>
-#include <kernel/fs/pipe.h>
+#include <kernel/fs/devfs.h>
 #include <kernel/debug.h>
-#include <structs/circbuf.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/init.h>
 #include <string.h>
+#include <structs/circbuf.h>
 
-/* Filesystem nodes */
-fs_node_t *kbd_node = NULL;
-fs_pipe_t *mouse_pipe = NULL;
-fs_node_t *stdin_node = NULL;
+static ssize_t keyboard_read(devfs_node_t *n, loff_t off, size_t size, char *buffer);
+static int keyboard_poll(devfs_node_t *n, poll_waiter_t *waiter, poll_events_t events);
+static poll_events_t keyboard_poll_events(devfs_node_t *n);
+static poll_events_t keyboard_events();
+
+static ssize_t mouse_read(devfs_node_t *n, loff_t off, size_t size, char *buffer);
+static int mouse_poll(devfs_node_t *n, poll_waiter_t *waiter, poll_events_t events);
+static poll_events_t mouse_events();
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:PERIPHFS", __VA_ARGS__)
 
+static devfs_ops_t kbd_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = keyboard_read,
+    .write = NULL,
+    .ioctl = NULL, // maybe
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll = keyboard_poll,
+    .poll_events = (typeof(kbd_ops.poll_events))keyboard_events,
+};
+
+static devfs_ops_t mouse_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = mouse_read,
+    .write = NULL,
+    .ioctl = NULL, // maybe
+    .lseek = NULL,
+    .mmap = NULL,
+    .mmap_prepare = NULL,
+    .munmap = NULL,
+    .poll = mouse_poll,
+    .poll_events = (typeof(mouse_ops.poll_events))mouse_events,
+};
+
+/* Circular buffers */
+circbuf_t *kbd_buffer = NULL;
+circbuf_t *mouse_buffer = NULL;
+
+/* Keyboard poll event */
+poll_event_t kbd_poll_event;
+poll_event_t mouse_poll_event;
+
 /**
- * @brief Get the last keyboard event (pop from the buffer)
- * @param buf The buffer to get from
- * @param event Event pointer
- * @returns 0 on success, 1 on failure
+ * @brief Keyboard read
  */
-static int periphfs_getKeyboardEvent(key_buffer_t *buf, key_event_t *event) {
-
-    // Get the lock
-    spinlock_acquire(&buf->lock);
-    
-    // Increase and reset head
-    buf->head++;
-    if (buf->head > KBD_QUEUE_EVENTS) buf->head = 0;
-
-    // Get event
-    *event = buf->event[buf->head];
-
-    // Release the lock
-    spinlock_release(&buf->lock);
-
-    return 0;
-} 
-
-/**
- * @brief Keyboard device read
- */
-static ssize_t keyboard_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (!size || !buffer) return 0;
-    
-    // This will cause havoc if allowed
-    if (size % sizeof(key_event_t)) {
-        LOG(WARN, "Read from /device/keyboard denied - size must be multiple of key_event_t\n");
-        return 0;
-    }
-
-    // Get buffer
-    key_buffer_t *buf = (key_buffer_t*)node->dev;
-
-    // TODO: This is really really bad..
-    for (size_t i = 0; i < size; i += sizeof(key_event_t)) {
-        if (!KEY_CONTENT_AVAILABLE(buf)) return i;
-        periphfs_getKeyboardEvent(buf, (key_event_t*)(buffer + i));
-    }
-
-    return size;
+static ssize_t keyboard_read(devfs_node_t *n, loff_t off, size_t size, char *buffer) {
+    if (!circbuf_remaining_read(kbd_buffer)) return 0;
+    return circbuf_read(kbd_buffer, size, (uint8_t*)buffer);
 }
 
 /**
- * @brief Keyboard device ready method
+ * @brief Keyboard poll check
  */
-static int keyboard_ready(fs_node_t *node, int events) {
-    key_buffer_t *buf = (key_buffer_t*)node->dev;
-    return KEY_CONTENT_AVAILABLE(buf) ? events : 0;
+static poll_events_t keyboard_events() {
+    return (circbuf_remaining_read(kbd_buffer) ? POLLIN : 0);
 }
 
 /**
- * @brief Generic stdin device read
+ * @brief Keyboard poll
  */
-static ssize_t stdin_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (!size || !buffer) return 0;
-
-    key_buffer_t *buf = (key_buffer_t*)node->dev;
-
-    // Start reading key events
-    key_event_t event;
-    
-    for (size_t i = 0; i < size; i++) { 
-        // Wait for content
-        while (!KEY_CONTENT_AVAILABLE(buf)) {
-            process_yield(1);
-        } // !!!
-        periphfs_getKeyboardEvent(buf, &event);
-
-        if (event.scancode == '\n') {
-            *buffer = event.scancode;
-            return i+1;
-        }
-
-        *buffer = event.scancode; // !!!: What if scancode is for a special key?
-        buffer++;
-    }
-    
-
-    return size;
+static int keyboard_poll(devfs_node_t *n, poll_waiter_t *waiter, poll_events_t events) {
+    return poll_add(waiter, &kbd_poll_event, events);
 }
 
 /**
- * @brief Generic stdin device ready
+ * @brief Mouse read
  */
-static int stdin_ready(fs_node_t *node, int events) {
-    key_buffer_t *buf = (key_buffer_t*)node->dev;
-    return KEY_CONTENT_AVAILABLE(buf) ? VFS_EVENT_READ : 0;
+static ssize_t mouse_read(devfs_node_t *n, loff_t off, size_t size, char *buffer) {
+    if (!circbuf_remaining_read(mouse_buffer)) return 0;
+    return circbuf_read(mouse_buffer, size, (uint8_t*)buffer);
+}
+
+/**
+ * @brief Mouse poll check
+ */
+static poll_events_t mouse_events() {
+    return (circbuf_remaining_read(mouse_buffer) ? POLLIN : 0);
+}
+
+/**
+ * @brief Mouse poll
+ */
+static int mouse_poll(devfs_node_t *n, poll_waiter_t *waiter, poll_events_t events) {
+    return poll_add(waiter, &mouse_poll_event, events);
 }
 
 
@@ -137,40 +116,17 @@ static int stdin_ready(fs_node_t *node, int events) {
  * @brief Initialize the peripheral filesystem interface
  */
 int periphfs_init() {
-    // Create keyboard circular buffer
-    key_buffer_t *kbdbuf = kzalloc(sizeof(key_buffer_t));
-    key_buffer_t *stdbuf = kzalloc(sizeof(key_buffer_t));
-
-    // Create and mount keyboard node
-    kbd_node = kmalloc(sizeof(fs_node_t));
-    memset(kbd_node, 0, sizeof(fs_node_t));
-    strcpy(kbd_node->name, "keyboard");
-    kbd_node->flags = VFS_CHARDEVICE;
-    kbd_node->mask = 0666;
-    kbd_node->dev = (void*)kbdbuf;
-    kbd_node->read = keyboard_read;
-    kbd_node->ready = keyboard_ready;
-    kbd_node->waiting_nodes = list_create("vfs waiting nodes");
-    vfs_mount(kbd_node, "/device/keyboard");
-
-    // Create and mount stdin node
-    stdin_node = kmalloc(sizeof(fs_node_t));
-    memset(stdin_node, 0, sizeof(fs_node_t));
-    strcpy(stdin_node->name, "stdin");
-    stdin_node->mask = 0666;
-    stdin_node->flags = VFS_CHARDEVICE;
-    stdin_node->dev = (void*)stdbuf;
-    stdin_node->read = stdin_read;
-    stdin_node->ready = stdin_ready;
-    vfs_mount(stdin_node, "/device/stdin");
-
-    // Use pipes for the mouse because why not
-    mouse_pipe = pipe_createPipe();
-    mouse_pipe->read->waiting_nodes = list_create("vfs waiting nodes"); // !!!: SERIOUS HACK
-    vfs_mount(mouse_pipe->read, "/device/mouse");
-
+    POLL_EVENT_INIT(&kbd_poll_event);
+    POLL_EVENT_INIT(&mouse_poll_event);
+    kbd_poll_event.checker = keyboard_events;
+    mouse_poll_event.checker = mouse_events;
+    kbd_buffer = circbuf_create("keyboard buffer", 4096);
+    mouse_buffer = circbuf_create("mouse buffer", 4096);
+    assert(devfs_register(devfs_root, "keyboard", VFS_CHARDEVICE, &kbd_ops, DEVFS_MAJOR_KEYBOARD, 0, NULL));
+    assert(devfs_register(devfs_root, "mouse", VFS_CHARDEVICE, &mouse_ops, DEVFS_MAJOR_MOUSE, 0, NULL));
     return 0;
 }
+
 
 /**
  * @brief Write a new event to the keyboard interface
@@ -179,47 +135,22 @@ int periphfs_init() {
  * @returns 0 on success
  */
 int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
-    key_event_t event = {
+    // TODO: make better
+    key_event_t ev = {
         .event_type = event_type,
         .scancode = scancode
     };
 
-    // Push!
-    key_buffer_t *buffer = (key_buffer_t*)kbd_node->dev;
-    spinlock_acquire(&buffer->lock);
-
-    // Reset tail if needed
-    buffer->tail++;
-    if (buffer->tail > KBD_QUEUE_EVENTS) buffer->tail = 0;
-
-    // Set event
-    buffer->event[buffer->tail] = event;
-
-    // Release
-    spinlock_release(&buffer->lock);
-
-    // Also push on stdin node if push event
-    if (event_type == EVENT_KEY_PRESS) {
-        // Push!
-        buffer = (key_buffer_t*)stdin_node->dev;
-        spinlock_acquire(&buffer->lock);
-
-        // Reset tail if needed
-        buffer->tail++;
-        if (buffer->tail > KBD_QUEUE_EVENTS) buffer->tail = 0;
-
-        // Set event
-        buffer->event[buffer->tail] = event;
-
-        // Release
-        spinlock_release(&buffer->lock);
+    if (circbuf_remaining_write(kbd_buffer) <= (ssize_t)sizeof(key_event_t)) {
+        // when circular buffer rewrite comes we can fix this...
+        LOG(WARN, "Dropping key event as buffer is full\n");
+        return 0;
     }
 
-    // If needed, alert node
-    fs_alert(kbd_node, VFS_EVENT_READ | VFS_EVENT_WRITE);
+    circbuf_write(kbd_buffer, sizeof(key_event_t), (uint8_t*)&ev);
+    poll_signal(&kbd_poll_event, POLLIN);
     return 0;
 }
-
 
 /**
  * @brief Write a new event to the mouse interface
@@ -230,25 +161,22 @@ int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
  * @param scroll Scroll direction
  */
 int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff, uint8_t scroll) {
-    mouse_event_t event = {
+    mouse_event_t ev = {
         .event_type = event_type,
         .buttons = buttons,
         .x_difference = x_diff,
         .y_difference = y_diff,
-        .scroll = scroll,
+        .scroll = scroll
     };
 
-
-    // We MUST flush the buffer before we hit the size! If the pipe contains too many mouse events, we will accidentally put this thread to sleep
-    // Since this function is usually called by IRQ handlers when they receieve mouse events, that's not gonna work.
-    while (pipe_remainingRead(mouse_pipe->read) > 32 * sizeof(mouse_event_t)) {
-        mouse_event_t junk;
-        fs_read(mouse_pipe->read, 0, sizeof(mouse_event_t), (uint8_t*)&junk);
+    if (circbuf_remaining_write(mouse_buffer) <= (ssize_t)sizeof(mouse_event_t)) {
+        LOG(WARN, "Dropping mouse event as buffer is full\n");
+        return 0;
     }
 
-    fs_write(mouse_pipe->write, 0, sizeof(mouse_event_t), (uint8_t*)&event);
-
+    circbuf_write(mouse_buffer, sizeof(mouse_event_t), (uint8_t*)&ev);
+    poll_signal(&mouse_poll_event, POLLIN);
     return 0;
-}
+}   
 
-FS_INIT_ROUTINE(periphfs, INIT_FLAG_DEFAULT, periphfs_init);
+FS_INIT_ROUTINE(periphfs, INIT_FLAG_DEFAULT, periphfs_init, devfs);

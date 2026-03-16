@@ -56,59 +56,6 @@ ACPI_STATUS AcpiWalkForPCICallback(ACPI_HANDLE Object, UINT32 NestingLevel, void
 }
 
 /**
- * @brief Try to initialize IRQ redirections
- */
-int ACPICA_InitializeIRQRedirects() {
-    ACPI_STATUS status;
-
-    void *PCIBusHandle = NULL;
-    status = AcpiGetDevices("PNP0A03", AcpiWalkForPCICallback, NULL, &PCIBusHandle);
-    if (ACPI_FAILURE(status) || PCIBusHandle == NULL) {
-        LOG(ERR, "PCI root bridge not found\n");
-        return 1;
-    }
-
-    // Evalute _PRT
-    ACPI_BUFFER Buffer = { ACPI_ALLOCATE_BUFFER, NULL };
-    status = AcpiEvaluateObject(PCIBusHandle, "_PRT", NULL, &Buffer);
-    if (ACPI_FAILURE(status)) {
-        LOG(ERR, "Error getting _PRT table\n");
-        return 1;
-    }
-
-
-    ACPI_OBJECT *PrtPackage = (ACPI_OBJECT*)Buffer.Pointer;
-    LOG(INFO, "Found _PRT table successfully (elements: %d)\n", PrtPackage->Package.Count);
-
-    for (UINT32 i = 0; i < PrtPackage->Package.Count; i++) {
-        ACPI_OBJECT *Entry = &PrtPackage->Package.Elements[i];
-        
-        // Each entry in the _PRT is structured as:
-        // 1. PCI address
-        // 2. IRQ pin
-        // 3. Source (string or 0)
-        // 4. Source index (if Source is 0, GSI)
-
-        ACPI_OBJECT *Address = &Entry->Package.Elements[0];
-        ACPI_OBJECT *Pin = &Entry->Package.Elements[1];
-        ACPI_OBJECT *Source = &Entry->Package.Elements[2];
-        ACPI_OBJECT *SourceIndex = &Entry->Package.Elements[3];
-
-        UINT32 AddressValue = (UINT32)Address->Integer.Value;
-
-        // Is the source a GSI?
-        if (Source->Integer.Type != ACPI_TYPE_STRING || Source->String.Length == 0) {
-            LOG(DEBUG, "IRQ REMAP: PCI %d.%d.%d PIN %d -> GSI %d\n", PCI_BUS(AddressValue), PCI_SLOT(AddressValue), PCI_FUNCTION(AddressValue), Pin->Integer.Value, SourceIndex->Integer.Value);
-        } else {
-            LOG(DEBUG, "IRQ REMAP: PCI %d.%d.%d PIN %d -> %s %d\n", PCI_BUS(AddressValue), PCI_SLOT(AddressValue), PCI_FUNCTION(AddressValue), Pin->Integer.Value, Source->String.Pointer, SourceIndex->Integer.Value);
-        }
-    }
-
-
-    return 0;
-}
-
-/**
  * @brief Initialize ACPICA
  */
 int ACPICA_Initialize() {
@@ -153,8 +100,6 @@ int ACPICA_Initialize() {
         AcpiTerminate();
         return -1;
     }
-
-    ACPICA_InitializeIRQRedirects();
 
     LOG(INFO, "Initialization completed successfully.\n");
     return 0;

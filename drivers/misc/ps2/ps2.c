@@ -20,7 +20,6 @@
 
 #include "ps2.h"
 #include <kernel/loader/driver.h>
-#include <kernel/fs/vfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>

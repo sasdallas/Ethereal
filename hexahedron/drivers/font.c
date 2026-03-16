@@ -19,7 +19,7 @@
 #include <kernel/misc/backup-font.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/gfx/term.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <string.h>
 #include <limits.h>
 
@@ -183,12 +183,12 @@ int font_getHeight() {
  * @param file The PSF file to load
  * @returns 0 on success
  */
-int font_loadPSF(fs_node_t *file) {
+int font_loadPSF(vfs_file_t *file) {
     if (!file) return 1;
 
     // Look for PSF magic bytes
     uint32_t magic;
-    if (fs_read(file, 0, 4, (uint8_t*)&magic) != 4) {
+    if (vfs_read(file, 0, 4, (char*)&magic) != 4) {
         // Error reading magic bytes
         return 1;
     }
@@ -199,10 +199,11 @@ int font_loadPSF(fs_node_t *file) {
     }
 
     // Read the whole file into buffer
-    uint8_t *buffer = kmalloc(file->length);
+    size_t len = inode_size(file->inode);
+    char *buffer = kmalloc(len);
 
     // TODO: Don't use all of file length? Only read needed glyphs?
-    if (fs_read(file, 0, file->length, (uint8_t*)buffer) != (ssize_t)file->length) {
+    if (vfs_read(file, 0, len, buffer) != (ssize_t)len) {
         // Error reading
         kfree(buffer);
         return 1;
@@ -215,7 +216,7 @@ int font_loadPSF(fs_node_t *file) {
     // Allocate font PSF structure
     font_psf_t *psf = kmalloc(sizeof(font_psf_t));
     memset(psf, 0, sizeof(font_psf_t));
-    psf->psf_data = buffer;
+    psf->psf_data = (uint8_t*)buffer;
 
     // Unload current font
     if (current_font && current_font->data) kfree(current_font->data); // NOTE: Unless we plan on supporting custom fonts in the future this should be fine.

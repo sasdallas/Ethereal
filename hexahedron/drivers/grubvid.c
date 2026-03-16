@@ -17,7 +17,7 @@
 #include <kernel/drivers/grubvid.h>
 #include <kernel/drivers/video.h>
 #include <kernel/mm/vmm.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/args.h>
 #include <kernel/debug.h>
 #include <string.h>
@@ -105,8 +105,6 @@ video_driver_t *grubvid_initialize(generic_parameters_t *parameters) {
     driver->map = grubvid_map;
     driver->update = grubvid_updateScreen;
     driver->unload = grubvid_unload;
-
-    int wc = !kargs_has("--no-write-combine");
 
     // BEFORE WE DO ANYTHING, WE HAVE TO REMAP THE FRAMEBUFFER TO SPECIFIED ADDRESS
     size_t fbsize = (driver->screenHeight * driver->screenPitch);

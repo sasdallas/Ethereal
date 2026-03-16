@@ -17,7 +17,6 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/kernelfs.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
 #include <assert.h>

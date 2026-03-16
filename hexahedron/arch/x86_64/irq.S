@@ -59,8 +59,7 @@
     sidt 10(%rsp)
 
     
-    movq %cr4, %rax
-    pushq %rax
+    pushq $0
     movq %cr3, %rax
     pushq %rax
     movq %cr2, %rax
@@ -171,6 +170,7 @@ halCommonIRQHandler:
         jmp halCommonIRQHandler
 .endm
 
+// this used to be different, i dont care enough to change it.
 .macro LAPIC_IRQ name index
     .global \name
     &name:
@@ -276,6 +276,7 @@ halSystemCallInterrupt:
     jmp halCommonIRQHandler
 
 /* System call entrypoint (for SYSCALL instruction) */
+/* This function is lobotomized because it had a ton of perf overhead. Extended registers is empty! */
 .global halSyscallEntrypoint
 .extern hal_syscallHandler
 halSyscallEntrypoint:
@@ -313,27 +314,24 @@ halSyscallEntrypoint:
     push %r9                        // R9
     push %r8                        // R8
 
-    movw %ds, %ax
+    // DS reloading is too slow
+    // movw %ds, %ax
     pushw %ax
 
     /* This is pushing extended extended registers */
     
     /* Toss the stack to below the idtr (uint16 + uint64 = 10 bytes * 2 = 20 bytes) */
     sub $20, %rsp
-    sgdt (%rsp)
-    sidt 10(%rsp)
+    // skip sgdt and sidt they are slow
 
     // Clear directional flag
     cld
     
-    movq %cr4, %rax
-    pushq %rax
-    movq %cr3, %rax
-    pushq %rax
-    movq %cr2, %rax
-    pushq %rax
-    movq %cr0, %rax
-    pushq %rax
+    // None of these are used by the entry anywys
+    pushq $0
+    pushq $0
+    pushq $0
+    pushq $0
 
     leaq 52(%rsp), %rax             // Load address of registers_t
 

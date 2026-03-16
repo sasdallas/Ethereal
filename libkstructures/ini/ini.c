@@ -17,7 +17,7 @@
 #include <stdlib.h>
 
 #ifdef __LIBKSTRUCTURES
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #endif
 
 /**
@@ -27,17 +27,19 @@
  */
 ini_t *ini_load(char *filename) {
 #ifdef __LIBKSTRUCTURES
-    fs_node_t *node = kopen(filename, 0);
-    if (!node) return NULL;
+    vfs_file_t *file;
+    if (vfs_open(filename, 0, &file) != 0) return NULL;
 
-    char *buffer = malloc(node->length);
-    memset(buffer, 0, node->length);
-    if (fs_read(node, 0, node->length, (uint8_t*)buffer) != (ssize_t)node->length) {
+    size_t len = inode_size(file->inode);
+    char *buffer = malloc(len);
+    if (!buffer) { vfs_close(file); return NULL; }
+    if (vfs_read(file, 0, len, buffer) != (ssize_t)len) {
         free(buffer);
+        vfs_close(file);
         return NULL;
     }
 
-    fs_close(node);
+    vfs_close(file);
 #else
     FILE *f = fopen(filename, "r");
     if (!f) return NULL;

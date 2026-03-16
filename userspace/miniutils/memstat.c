@@ -99,19 +99,35 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    FILE *kmem = fopen("/kernel/memory", "r");
+    FILE *kmem = fopen("/system/memory/pmm", "r");
     if (!kmem) {
-        perror("/kernel/memory");
+        perror("/system/memory/pmm");
         return 1;
     }
 
     unsigned long long total_memory, free_memory, used_memory, kernel_memory;
-    fscanf(kmem, "TotalPhysBlocks:%*lld\nTotalPhysMemory:%lld kB\nUsedPhysMemory:%lld kB\nFreePhysMemory:%lld kB\nKernelMemoryAllocator:%lld", &total_memory, &used_memory, &free_memory, &kernel_memory);
+
+    fscanf(kmem,    
+        "TotalPhysBlocks:%*d\n"
+        "TotalPhysMemory:%zu kB\n"
+        "UsedPhysMemory:%zu kB\n"
+        "FreePhysMemory:%zu kB\n"
+        "PhysMemoryBytes:%*zu\n", &total_memory, &used_memory, &free_memory);
+    fclose(kmem);
+
+    kmem = fopen("/system/memory/alloc", "r");
+    if (!kmem) {
+        perror("/system/memory/alloc");
+        return 1;
+    }
+
+    fscanf(kmem, "KernelMemoryAllocator:%zu kB\n", &kernel_memory);
     fclose(kmem);
 
     total_memory *= 1000;
     free_memory *= 1000;
     used_memory *= 1000;
+    kernel_memory *= 1000;
 
 
     if (used) {

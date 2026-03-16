@@ -15,7 +15,7 @@
 #include <kernel/drivers/net/socket.h>
 #include <sys/un.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
@@ -36,6 +36,34 @@ spinlock_t path_map_lck = { 0 };
 
 /* State */
 #define UNIX_STATE_CHANGE(usock, s) atomic_store(&usock->state, s)
+
+/* Ops */
+static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
+static int unix_listen(sock_t *sock, int backlog);
+static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen);
+static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
+static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
+static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
+static poll_events_t unix_poll_events(sock_t *sock);
+static int unix_close(sock_t *sock);
+
+static sock_ops_t unix_sock_ops = {
+    .accept = unix_accept,
+    .bind = unix_bind,
+    .listen = unix_listen,
+    .connect = unix_connect,
+    .recvmsg = unix_recvmsg,
+    .sendmsg = unix_sendmsg,
+    .poll_events = unix_poll_events,
+    .close = unix_close,
+    .getpeername = NULL,
+    .getsockopt = NULL,
+    .poll = NULL,
+    .setsockopt = NULL,
+};
+
+
+
 
 /**
  * @brief UNIX decrement and free
@@ -67,7 +95,7 @@ void unix_decrementAndFree(unix_sock_t *usock) {
         }
     }
 
-    if (usock->node) fs_close(usock->node);
+    if (usock->node) inode_release(usock->node);
 
     if (usock->is_listener) {
         mutex_destroy(usock->server.m); // No clients should be connected
@@ -91,7 +119,7 @@ void unix_decrementAndFree(unix_sock_t *usock) {
  * @param addr The address to bind to
  * @param addrlen The address length
  */
-int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     unix_sock_t *usock = USOCK(sock);
 
     if (usock->state != UNIX_SOCK_STATE_INIT) {
@@ -103,25 +131,19 @@ int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) 
     if (!(*addr->sun_path)) return -EINVAL;
 
     // Canonicalize the current path
-    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
-    assert(p);
+    // !!!: this is literally a stack buffer overflow in plain sight
+    char p[strlen(current_cpu->current_process->wd_path) + strlen(addr->sun_path) + 1];
+    vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
 
-    // Try to create the node at the location
-    fs_node_t *n = NULL;
-    int r = vfs_creat(&n, p, 0);
-    if (r != 0) {
-        if (r == -EEXIST) return -EADDRINUSE;
+    // TODO: I have no idea what this is supposed to contain
+    vfs_inode_t *i;
+    int r = vfs_create(p, 0755, &i);
+    if (r) {
         return r;
     }
 
-    // Let's configure the socket
-    // TODO: Flush this inode back to disk.. need some more VFS functions!
-    // TODO: Maybe more here?
-    n->flags = VFS_SOCKET;
-    n->read = NULL;
-    n->write = NULL;
-
-    usock->node = n;
+    // TODO: this inode needs to be changed to a socket
+    usock->node = i;
 
     spinlock_acquire(&path_map_lck);
     hashmap_set(unix_path_map, p, sock);
@@ -138,7 +160,7 @@ int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) 
  * @param sock The socket to listen on
  * @param backlog The backlog to use
  */
-int unix_listen(sock_t *sock, int backlog) {
+static int unix_listen(sock_t *sock, int backlog) {
     if (sock->type != SOCK_SEQPACKET && sock->type != SOCK_STREAM) return -EOPNOTSUPP;
 
     unix_sock_t *usock = USOCK(sock); 
@@ -167,7 +189,7 @@ int unix_listen(sock_t *sock, int backlog) {
  * @param sockaddr Output address if required
  * @param addrlen Address length
  */
-int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
+static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     unix_sock_t *u = USOCK(sock);
     if (u->state != UNIX_SOCK_STATE_LISTEN) return -EINVAL;
 
@@ -216,7 +238,7 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
         return -ECONNABORTED;
     }
 
-    sock_t *new_sock = (sock_t*)FD(current_cpu->current_process, sfd)->node->dev;
+    sock_t *new_sock = FD(sfd)->priv;
     unix_sock_t *new_usock = USOCK(new_sock);
 
     refcount_inc(&new_usock->ref);
@@ -258,7 +280,7 @@ int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
  * @param sockaddr The socket address
  * @param addrlen The address length
  */
-int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
+static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET) return -EOPNOTSUPP;
     
     unix_sock_t *usock = USOCK(sock);
@@ -267,12 +289,11 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
 
     // Canonicalize the path...
-    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
-    assert(p);
+    char p[PATH_MAX];
+    vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
 
     // Get server
     sock_t *serv = hashmap_get(unix_path_map, p);
-    kfree(p);
     if (!serv) { return -ENOENT; } // ???
     unix_sock_t *userv = USOCK(serv);
 
@@ -301,7 +322,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
     // Insert us into queue
     queue_node_t *n = queue_node_create(r);
     mutex_acquire(userv->server.m);
-    fs_alert(userv->sock->node, VFS_EVENT_READ);
+    poll_signal(&userv->sock->sock_event, POLLIN);
     sleep_prepare();
     queue_push_node(userv->server.conn, n);
     sleep_wakeupQueue(userv->server.accepters, 1);
@@ -341,7 +362,7 @@ int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrle
  * @param msg The message to receive
  * @param flags Additional flags
  */
-ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
     unix_sock_t *usock = USOCK(sock);
 
@@ -433,7 +454,7 @@ ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @param msg The message to send
  * @param flags Additional flags
  */
-ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
+static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (!msg->msg_iovlen) return 0;
     
     unix_sock_t *usock = USOCK(sock);
@@ -490,7 +511,8 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
 
-        fs_alert(usock->peer->sock->node, VFS_EVENT_READ);
+        // !!!: ah, my geniusness is incomprehensible...
+        poll_signal(&usock->peer->sock->sock_event, POLLIN);
         spinlock_release(&usock->peer->pkt.d->rx_lock);
 
 
@@ -503,36 +525,31 @@ ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 }
 
 /**
- * @brief UNIX socket ready method
- * @param sock The socket
- * @param events Events to check for
+ * @brief UNIX poll events method
  */
-int unix_ready(sock_t *sock, int events) {
+static poll_events_t unix_poll_events(sock_t *sock) {
     unix_sock_t *usock = USOCK(sock);
-
-    // Depending on what this socket is...
     if (usock->state == UNIX_SOCK_STATE_LISTEN) {
-        // Listening
-        return usock->server.conn->size ? VFS_EVENT_READ : 0;
+        return usock->server.conn->size ? POLLIN : 0;
     }
 
     if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
         if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
-            return usock->pkt.d->rx_head ? VFS_EVENT_READ : 0 | VFS_EVENT_WRITE;
+            return (usock->pkt.d->rx_head ? POLLIN : 0) | POLLOUT;
         } else {
-            return (circbuf_remaining_read(usock->stream.cb) ? VFS_EVENT_READ : 0) | (circbuf_remaining_write(usock->peer->stream.cb) ? VFS_EVENT_WRITE : 0);
+            return (circbuf_remaining_read(usock->stream.cb) ? POLLIN : 0) |
+                    (circbuf_remaining_write(usock->stream.cb) ? POLLOUT : 0);
         }
     }
-    
-    // The hell do you want to be ready for
+
     return 0;
 }
 
 /**
- * @brief UNIX close
+ * @brief UNIX destroy
  * @param sock The socket to close
  */
-int unix_close(sock_t *sock) {
+static int unix_close(sock_t *sock) {
     unix_sock_t *usock = USOCK(sock);
     usock->state = UNIX_SOCK_STATE_CLOSED;
 
@@ -562,19 +579,10 @@ sock_t *unix_socket(int type, int protocol) {
     }
 
 
-    sock_t *s = kzalloc(sizeof(sock_t));
+    sock_t *s = socket_allocate(AF_UNIX, type, protocol);
     usock->sock = s;
     s->driver = (void*)usock;
-    s->bind = unix_bind;
-    s->accept = unix_accept;
-    s->connect = unix_connect;
-    s->listen = unix_listen;
-    s->recvmsg = unix_recvmsg;
-    s->sendmsg = unix_sendmsg;
-    s->close = unix_close;
-    s->ready = unix_ready;
-
-
+    s->ops = &unix_sock_ops;
     return s;
 }
 

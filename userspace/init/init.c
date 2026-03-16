@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/mount.h>
 #include <errno.h>
 #include <dirent.h>
 
@@ -89,13 +90,28 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
 
+    // First, mount devices.
+    if (mount("/device", "/device/", "devfs", 0, NULL) < 0) {
+        return 1;
+    }
+
     // Open files
-    open("/device/null", O_RDONLY);
-    open("/device/console", O_RDWR);
-    open("/device/log", O_RDWR);
+    if (open("/device/null", O_RDONLY) < 0) {
+        return 1;
+    }
+
+    if (open("/device/fbcon", O_RDWR) < 0) {
+        return 1;
+    }
+
+    if (open("/device/fbcon", O_RDWR) < 0) {
+        return 1;
+    }
 
     // Setup environment variables
     putenv("PATH=/usr/bin/"); // TEMP
+    putenv("HOME=/root/");
+    putenv("USER=root");
     setbuf(stdout, NULL);
 
     // Hi guys
@@ -104,10 +120,11 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
     run_init_scripts();
 
     // Read kernel command line
-    FILE *f = fopen("/kernel/cmdline", "r");
+    FILE *f = fopen("/system/cmdline", "r");
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
+
 
     char *cmdline = NULL;
     if (size) {

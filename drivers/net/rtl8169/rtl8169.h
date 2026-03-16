@@ -159,7 +159,7 @@ typedef struct rtl8169_desc {
 } __attribute__((packed)) rtl8169_desc_t;
 
 typedef struct rtl8169 {
-    fs_node_t *nic;             // NIC
+    nic_t *n;                   // NIC
     uintptr_t base;             // I/O base address
 
     process_t *recv_proc;       // Receive process

@@ -31,15 +31,12 @@
 #include <kernel/mm/vmm.h>
 
 // VFS
-#include <kernel/fs/vfs.h>
-#include <kernel/fs/tarfs.h>
-#include <kernel/fs/ramdev.h>
-#include <kernel/fs/null.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/fs/periphfs.h>
-#include <kernel/fs/pty.h>
-#include <kernel/fs/tmpfs.h>
-#include <kernel/fs/kernelfs.h>
 #include <kernel/fs/shared.h>
+
+#include <kernel/fs/vfs_new.h>
+#include <kernel/fs/initrd.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
@@ -81,20 +78,24 @@ static unsigned int read_le32(const unsigned char *p)
  */
 void kernel_mountRamdisk(generic_parameters_t *parameters) {
     // Find the initial ramdisk and mount it to RAM.
-    fs_node_t *initrd_ram = NULL;
+    void* ram_start = 0;
+    size_t ram_size = 0;
+    int found_initrd = 0;
     generic_module_desc_t *mod = parameters->module_start;
 
     while (mod) {
         if (mod->cmdline && !strncmp(mod->cmdline, "type=initrd", 9)) {
-            // Found it, mount the ramdev.
-            initrd_ram = ramdev_mount(mod->mod_start, mod->mod_end - mod->mod_start);
+            // Found it
+            ram_start = (void*)mod->mod_start;
+            ram_size = mod->mod_end - mod->mod_start;
+            found_initrd = 1;
             break;
         }
 
         mod = mod->next;
     }
 
-    if (!initrd_ram) {
+    if (!found_initrd) {
         // We didn't find it. Panic.
         LOG(ERR, "Module with type=initrd not found\n");
 
@@ -123,22 +124,27 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
 
         LOG(INFO, "Decompression finished\n");
         
+        ram_start = mem;
+        ram_size = extracted_size;
 
-        initrd_ram = ramdev_mount((uintptr_t)mem, PAGE_ALIGN_UP(extracted_size));
+        printf("\nUnpacking ramdisk...\n");
+        int r = initrd_unpack(mem, extracted_size);
+        if (r) {
+            kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** initrd_unpack failed with %d\n", r);
+        }
+        
+        kfree(mem);
     } else {
-        LOG(INFO, "Ramdisk is not packed, magic is %x %x\n", gz[0], gz[1]);
+        LOG(INFO, "Ramdisk is not packed\n");
+        printf("\nUnpacking ramdisk...\n");
+        int r = initrd_unpack(ram_start, ram_size);
+        if (r) {
+            kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** initrd_unpack failed with %d\n", r);
+        }
+    
+        // pmm reclaiming system will free it at KERN_LATE
     }
 
-    // Now we have to mount tarfs to it.
-    char devpath[64];
-    snprintf(devpath, 64, "/device/%s", initrd_ram->name);
-    if (vfs_mountFilesystemType("tarfs", devpath, "/device/initrd", NULL) != 0 || vfs_mountFilesystemType("tarfs", devpath, "/", NULL) != 0) {
-        // Oops, we couldn't mount it.
-        LOG(ERR, "Failed to mount initial ramdisk (tarfs)\n");
-        kernel_panic(INITIAL_RAMDISK_CORRUPTED, "kernel");
-
-        __builtin_unreachable();
-    }
 
     LOG(INFO, "Mounted initial ramdisk to /device/initrd\n");
     printf("Mounted initial ramdisk successfully\n");
@@ -150,14 +156,16 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
 void kernel_loadDrivers() {
     driver_initialize(); // Initialize the driver system
 
-    fs_node_t *conf_file = kopen(DRIVER_DEFAULT_CONFIG_LOCATION, O_RDONLY);
-    if (!conf_file) {
-        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing driver configuration file (%s)\n", DRIVER_DEFAULT_CONFIG_LOCATION);
+    vfs_file_t *conf_file;
+    int r = vfs_open(DRIVER_DEFAULT_CONFIG_LOCATION, O_RDONLY, &conf_file);
+
+    if (r) {
+        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Error opening driver configuration file %s - code %d\n", DRIVER_DEFAULT_CONFIG_LOCATION, r);
         __builtin_unreachable();
     }
     
     driver_loadConfiguration(conf_file); // Load the configuration
-    fs_close(conf_file);
+    vfs_close(conf_file);
 }
 
 
@@ -177,17 +185,18 @@ void kernel_loadSymbols(ini_t *ini) {
     char *symmap_path = ini_get(ini, "boot", "symmap");
     if (!symmap_path) {
         LOG(WARN, "Boot config file (/boot/conf.ini) does not specify symbol map, assuming default path");
-        symmap_path = "/device/initrd/boot/hexahedron-kernel-symmap.map";
+        symmap_path = "/boot/hexahedron-kernel-symmap.map";
     }
 
-    fs_node_t *symfile = kopen(symmap_path, O_RDONLY);
-    if (!symfile) {
-        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Missing hexahedron-kernel-symmap.map\n");
+    vfs_file_t *f;
+    int r = vfs_open(symmap_path, O_RDONLY, &f);
+    if (r != 0) {
+        kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "kernel", "*** Error opening %s: %d\n", symmap_path, r);
         __builtin_unreachable();
     }
 
-    int symbols = ksym_load(symfile);
-    fs_close(symfile);
+    int symbols = ksym_load(f);
+    vfs_close(f);
 
     LOG(INFO, "Loaded %i symbols from symbol map\n", symbols);
     printf("Loaded kernel symbol map from initial ramdisk successfully\n");
@@ -203,7 +212,10 @@ void kernel_loadFont(ini_t *ini) {
         if (!font_file) {
             LOG(ERR, "No entry for \"kernel_font\" in /boot/conf.ini, cannot load new font\n");
         } else {
-            fs_node_t *new_font = kopen("/device/initrd/usr/share/ter-112n.psf", O_RDONLY);
+
+            vfs_file_t *new_font;
+            int r = vfs_open(font_file, O_RDONLY, &new_font);
+
             if (new_font) {
                 // Load PSF
                 if (!font_loadPSF(new_font)) {
@@ -212,15 +224,31 @@ void kernel_loadFont(ini_t *ini) {
                     arch_say_hello(0);
                     printf("Loaded font from initial ramdisk successfully\n");
                 } else {
-                    LOG(ERR, "Failed to load font file \"/device/initrd/usr/share/ter-112n.psf\".\n");
+                    LOG(ERR, "Failed to load font file \"%s\".\n", font_file);
                 }
                 
-                fs_close(new_font);
+                vfs_close(new_font);
             } else {
-                LOG(ERR, "Could not find new font file \"/device/initrd/usr/share/ter-112n.psf\", using old font\n");
+                LOG(ERR, "Could not find new font file \"%s\" (error %d), using old font\n", font_file, r);
             }
         }
     }
+}
+
+/**
+ * @brief Try running init process
+ */
+void kernel_runInit(char *path, int argc, char **argv) {
+    LOG(DEBUG, "Trying to run \"%s\" as init process...\n", path);
+
+    vfs_file_t *proc;
+    int r = vfs_open(path, O_RDONLY, &proc);
+    if (r) { LOG(ERR, "Error %d while running process\n", r); return; }
+
+    char *environ[] = { NULL };
+
+    r = process_execute(path, proc, argc, argv, environ);
+    LOG(ERR, "Error %d while running process\n", r); 
 }
 
 /**
@@ -235,9 +263,17 @@ void kmain() {
 
     // Now, initialize the VFS.
     vfs_init();
+    vfs2_init();
+
 
     // Run the system phase
     INIT_RUN_PHASE(PHASE_FS);
+
+    LOG(DEBUG, "Mounting tmpfs on root\n");
+    vfs2_filesystem_t *tmpfs = vfs_getFilesystem("tmpfs");
+    assert(tmpfs);
+    vfs_changeGlobalRoot(tmpfs, NULL, 0, NULL);
+    LOG(DEBUG, "tmpfs has been mounted to /\n");
 
     // Networking
     INIT_RUN_PHASE(PHASE_NET);
@@ -262,7 +298,7 @@ void kmain() {
     kernel_mountRamdisk(parameters);
 
     // Load the INI file
-    ini_t *ini = ini_load("/device/initrd/boot/conf.ini");
+    ini_t *ini = ini_load("/boot/conf.ini");
     if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
 
     // Load the font
@@ -300,38 +336,29 @@ void kmain() {
     // Alright, we are done booting, print post-boot stats
     kernel_statistics();
 
-
-    // Run init
-    // !!!: TEMPORARY
-    const char *path = "/device/initrd/usr/bin/init";
-
-    fs_node_t *file;
-    char *argv[] = { "/device/initrd/usr/bin/init", NULL, NULL };
-    int argc = 1;
+    char *possible_inits[] = {
+        "/sbin/init",
+        "/bin/init",
+        "/usr/bin/init",
+        "/init"
+    };
 
     if (kargs_has("exec")) {
-        char *name = kargs_get("exec");
-        file = kopen(name, O_RDONLY);
-        argv[0] = name;
-    } else {
-        LOG(INFO, "Running %s as init process\n", path);
-        file = kopen(path, O_RDONLY);
+        // use exec as init process
+        char *path = kargs_get("exec");
+        char *argv[] = { path, NULL };
+        kernel_runInit(path, 1, argv);
     }
 
-    if (kargs_has("initarg")) {
-        argv[1] = strdup(kargs_get("initarg"));
-        argc++;
-    }
+    for (unsigned i = 0; i < sizeof(possible_inits) / sizeof(const char*); i++) {
+        char *argv[] = { possible_inits[i], NULL };
+        kernel_runInit(possible_inits[i], 1, argv);
+    } 
 
-    if (file) {
-        char *envp[] = { "FOO=bar", NULL };
-        process_execute(argv[0], file, argc, argv, envp);
-    } else {
-        LOG(WARN, "Init process not found, destroying init and switching\n");
-        current_cpu->current_process = NULL;
-        process_switchNextThread();
-    }
-
+    LOG(ERR, "Init process not found\n");
+    current_cpu->current_process = NULL;
+    process_switchNextThread();
+    __builtin_unreachable();
 }
 
 /**

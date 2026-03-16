@@ -24,7 +24,7 @@
 #include <kernel/mm/alloc.h>
 #include <errno.h>
 
-static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, char **envp);
+static int binfmt_shebang(char *path, vfs_file_t *file, int argc, char **argv, char **envp);
 
 
 /* binfmt table */
@@ -41,10 +41,10 @@ int binfmt_last_entry = 2;
 /**
  * @brief Shebang
  */
-static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+static int binfmt_shebang(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     char buf[256];
-    if (fs_read(file, 0, 256, (uint8_t*)buf) <= 0) return -EIO;
-    fs_close(file);
+    if (vfs_read(file, 0, 256, buf) <= 0) return -EIO;
+    vfs_close(file);
 
     char *sb_start = buf + 2;
     while (*sb_start == ' ') sb_start++;
@@ -57,8 +57,9 @@ static int binfmt_shebang(char *path, fs_node_t *file, int argc, char **argv, ch
     char *arg = strchr(sb_start, ' ');
     if (arg) *(arg++) = 0;
 
-    fs_node_t *interp = kopen(sb_start, 0);
-    if (!interp) return -ENOENT;
+    vfs_file_t *interp;
+    int r = vfs_open(sb_start, O_RDONLY, &interp);
+    if (r) return r;
 
     int new_argc = argc + (arg ? 2 : 1);
     char **nargv = kmalloc(sizeof(char*) * (new_argc + 1));
@@ -92,10 +93,10 @@ int binfmt_register(binfmt_entry_t entry) {
  * @param envp The environment variables pointer
  * @returns Error code
  */
-int binfmt_exec(char *path, fs_node_t *file, int argc, char **argv, char **envp) {
+int binfmt_exec(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     // Read bytes of the file
     char bytes[BINFMT_BYTE_MAX];
-    if (fs_read(file, 0, BINFMT_BYTE_MAX, (uint8_t*)bytes) != BINFMT_BYTE_MAX) return -EIO;
+    if (vfs_read(file, 0, BINFMT_BYTE_MAX, bytes) != BINFMT_BYTE_MAX) return -EIO;
 
     // Start comparing
     for (int i = 0; i < binfmt_last_entry; i++) {

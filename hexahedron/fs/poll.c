@@ -14,6 +14,7 @@
 #include <kernel/fs/poll.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/misc/util.h>
+#include <kernel/task/sleep.h>
 #include <kernel/panic.h>
 #include <assert.h>
 #include <errno.h>
@@ -35,7 +36,7 @@ poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
     w->thr = thr;
     w->nevents = nevents;
     w->i = 0;
-    w->events =  kzalloc(sizeof(poll_event_t*) * nevents);
+    w->events =  kmalloc(sizeof(poll_event_t*) * nevents);
     w->dead = false;
     w->result = NULL;
     refcount_init(&w->refs, 1);

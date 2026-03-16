@@ -29,15 +29,8 @@
 /* TODO: This should be replaced with a VFS node */
 static log_putchar_method_t debug_putchar_method = NULL; 
 
-static fs_node_t debug_node = {
-    .name = "kconsole",
-    .flags = VFS_CHARDEVICE,
-    .read = debug_read,
-    .write = debug_write
-};
-
 /* Spinlock */
-static spinlock_t debug_lock = { 0 };
+spinlock_t debug_lock = { 0 };
 
 /* Debug buffer */
 char *debug_buffer = NULL;
@@ -86,42 +79,6 @@ int debug_print(void *user, char ch) {
 
     return debug_putchar_method(NULL, ch);
 }
-
-
-/**
- * @brief Read function for debug console node
- * @param node The node
- * @param offset The offset
- * @param size The size of how much to read
- * @param buffer The buffer
- */
-ssize_t debug_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if (!debug_buffer) return -EINVAL;
-    if (offset > (off_t)debug_buffer_index) return 0;
-    if (offset + size > (size_t)debug_buffer_index) size = debug_buffer_index - (size_t)offset;
-
-    spinlock_acquire(&debug_lock);
-    memcpy(buffer, debug_buffer + offset, size);
-    spinlock_release(&debug_lock);
-
-    return size;
-}
-
-/**
- * @brief Write function for debug console node
- * @param node The node
- * @param offset The offset
- * @param size The size of how much to write
- * @param buffer The buffer
- */
-ssize_t debug_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    spinlock_acquire(&debug_lock);
-    debug_write_buffer(size, (char*)buffer);
-    debug_node.length = debug_buffer_index;
-    spinlock_release(&debug_lock);
-    return size;
-}
-
 
 /**
  * @brief dprintf that accepts va_args instead
@@ -217,26 +174,11 @@ log_putchar_method_t debug_getOutput() {
 }
 
 /**
- * @brief Mount the debug node onto the VFS
- */
-int debug_mount() {
-    // /* Allocate the debug buffer */
-    // if (!kargs_has("--no-store-debug")) {
-    //     debug_buffer = kmalloc(PAGE_SIZE);
-    //     debug_buffer_size = PAGE_SIZE;
-    //     debug_buffer_index = 0;
-    // }
-
-    vfs_mount(&debug_node, DEBUG_CONSOLE_PATH);
-    return 0;
-}
-
-/**
  * @brief Internal. Checks kernel arguments
  * 
  * @todo better...
  */
-static int debug_check() {
+int debug_check() {
     if (kargs_has("--debug")) {
         if (!strcmp(kargs_get("--debug"), "none")) {
             debug_ignore = 1;
@@ -249,4 +191,3 @@ static int debug_check() {
 }
 
 KERN_EARLY_INIT_ROUTINE(debug_args, INIT_FLAG_DEFAULT, debug_check);
-FS_INIT_ROUTINE(debug, INIT_FLAG_DEFAULT, debug_mount);

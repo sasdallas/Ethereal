@@ -17,6 +17,7 @@
 #include <kernel/panic.h>
 #include <kernel/drivers/clock.h>
 #include <sys/time.h>
+#include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "INIT", __VA_ARGS__)

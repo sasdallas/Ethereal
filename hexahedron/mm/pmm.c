@@ -19,6 +19,7 @@
 
 #include <kernel/mm/pmm.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/init.h>
 #include <kernel/debug.h>
 #include <string.h>
 #include <kernel/misc/util.h>
@@ -88,14 +89,84 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
 
     pmm_internal_memory += size;
 
-    if (size > (region->end - region->start)) {
-        LOG(ERR, "Too many bytes are required to represent region so it cannot be added.\n");
-        return NULL;
+    // Map the entire header region (section + mutex + bitmap) contiguously
+    // !!!: Normal section headers are placed at the start of each section but we need to do some
+    // !!!: trickery for module memory. We'll find a section and manually allocate a page from it
+    pmm_section_t *section = NULL;
+    if (region->type == PHYS_MEMORY_AVAILABLE) {
+        if (size > (region->end - region->start)) {
+            LOG(ERR, "Too many bytes are required to represent region so it cannot be added.\n");
+            return NULL;
+        }
+
+        section = (pmm_section_t*)arch_mmu_remap_physical(region->start, size, REMAP_PERMANENT);
+    } else if (region->type == PHYS_MEMORY_MODULE) {
+        // TODO: This works but I don't like it one bit..
+        // First try to allocate from previous sections
+        pmm_section_t *s = zones[zone];
+        while (s) {
+            if (s->nfree >= size / PAGE_SIZE) {
+                // Try to make sure that it's contiguous
+                size_t need_pages = size / PAGE_SIZE;
+                size_t total_pages = s->size / PAGE_SIZE;
+                int found_start = -1;
+
+                for (size_t start = s->ffb * 8; start + need_pages <= total_pages; ++start) {
+                    if (s->bmap[start / 8] & (1 << (start % 8))) continue;
+
+                    size_t k = 1;
+                    for (; k < need_pages; ++k) {
+                        size_t idx = start + k;
+                        if (s->bmap[idx / 8] & (1 << (idx % 8))) break;
+                    }
+
+                    if (k == need_pages) {
+                        found_start = start;
+                        break;
+                    }
+                }
+
+                // try, try again...
+                if (found_start == -1) {
+                    s = s->next;
+                    continue;
+                }
+
+                LOG(DEBUG, "\t- Using page from section %p, starting at index %d\n", s->start, found_start);
+                section = (pmm_section_t*)arch_mmu_remap_physical(s->start + found_start * PAGE_SIZE, size, REMAP_PERMANENT);
+                for (unsigned i = found_start; i <= found_start + (size / PAGE_SIZE); i++) {
+                    s->bmap[i / 8] |= (i % 8); // when page array is created, these will be marked correctly
+                }
+                s->ffb = found_start / 8;
+                s->nfree -= (size / PAGE_SIZE);
+                break;
+            }
+            
+
+            s = s->next;
+        }
+
+        // No previous section can handle our request
+        if (!section) {
+            pmm_region_t *r = region;
+            while (r) {
+                if (r->type == PHYS_MEMORY_AVAILABLE && r->end - r->start > size) {
+                    break;
+                }
+                r = r->next;
+            }
+
+            if (!r) {
+                kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "pmm", "*** No memory to place module section header.\n");
+            }
+
+            // Shift the start of the region up
+            LOG(DEBUG, "\t- Stole page from future section %p - %p\n", r->start, r->end);
+            section = (pmm_section_t*)arch_mmu_remap_physical(r->start, size, REMAP_PERMANENT);
+            r->start += size;
+        }
     }
 
-    // Map the entire header region (section + mutex + bitmap) contiguously
-    pmm_section_t *section = (pmm_section_t*)arch_mmu_remap_physical(region->start, size, REMAP_PERMANENT);
-    
     // Create the mutex and sleep queue
     mutex_t *m = (mutex_t*)((uintptr_t)section + sizeof(pmm_section_t));
     __atomic_store_n(&m->lock, -1, __ATOMIC_SEQ_CST);
@@ -104,15 +175,22 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
 
 
     // Setup the section
-    section->start = region->start + size;
-    section->size = region->end - region->start - size;
+    section->start = (region->type == PHYS_MEMORY_MODULE) ? region->start : region->start + size;
+    section->size = (region->type == PHYS_MEMORY_MODULE) ? region->end - region->start : region->end - region->start - size;
     section->mutex = m;
     section->bmap = (uint8_t*)((uintptr_t)section + sizeof(pmm_section_t) + sizeof(mutex_t));
     section->nfree = section->size / PAGE_SIZE;
     section->next = NULL;
     section->pages = NULL;
     section->ffb = 0;
-    memset(section->bmap, 0, bmap_bytes);
+
+    if (region->type == PHYS_MEMORY_MODULE) {
+        // Module memory is fully in use when it is loaded in, then freed later
+        memset(section->bmap, 0xFF, bmap_bytes);
+        section->nfree = 0;
+    } else {
+        memset(section->bmap, 0, bmap_bytes);
+    }
 
     if (zones[zone] == NULL) {
         zones[zone] = section;
@@ -141,11 +219,11 @@ void pmm_init(pmm_region_t *region) {
 
         r->end = PAGE_ALIGN_DOWN(r->end); // Shouldn't cause any problems...
 
-        if (r->type == PHYS_MEMORY_AVAILABLE) {
+        if (r->type == PHYS_MEMORY_AVAILABLE || r->type == PHYS_MEMORY_MODULE) {
             // Create sections for available regions
             pmm_section_t *s = pmm_insertSection(ZONE_DEFAULT, r);
             memory_size += (r->end - r->start);
-            if (!biggest || (s && (biggest->size) < (r->end - r->start))) biggest = s;
+            if ((!biggest || (s && (biggest->size) < (r->end - r->start))) && r->type == PHYS_MEMORY_AVAILABLE) biggest = s;
         }
 
         r = r->next;
@@ -174,7 +252,9 @@ void pmm_init(pmm_region_t *region) {
 
             // Mark the pages in the page array as free
             for (unsigned idx = 0; idx < pages_in_section; idx++) {
-                s->pages[idx].flags |= PAGE_FLAG_FREE;
+                if ((s->bmap[idx / 8] & (1 << (idx % 8))) == 0) s->pages[idx].flags |= PAGE_FLAG_FREE;
+                else s->pages[idx].refcount = 1; // initialize a reference for them
+                s->pages[idx].sect = s;
             }
 
             // Adjust nfree count to account for pages consumed to hold the page array
@@ -220,7 +300,7 @@ void pmm_init(pmm_region_t *region) {
         s = s->next;
     }
 
-    LOG(INFO, "PMM using %d pages internally\n", pmm_internal_memory / PAGE_SIZE);
+    LOG(INFO, "PMM using %d pages internally (%d kB of memory lost)\n", pmm_internal_memory / PAGE_SIZE, pmm_internal_memory / 1024);
 }
 
 /**
@@ -509,6 +589,14 @@ pmm_page_t *pmm_page(uintptr_t page) {
 }
 
 /**
+ * @brief Get address
+ */
+uintptr_t pmm_address(pmm_page_t *page) {
+    uintptr_t offset = ((uintptr_t)page - (uintptr_t)page->sect->pages) / sizeof(pmm_page_t);
+    return page->sect->start + (offset * PAGE_SIZE); 
+}
+
+/**
  * @brief debug
  */
 void pmm_debug() {
@@ -542,3 +630,29 @@ uintptr_t pmm_getUsedBlocks() {
 uintptr_t pmm_getFreeBlocks() {
     return pmm_total_blocks - pmm_used_blocks;
 }
+
+/**
+ * @brief Reclaim module memory after it has been relocated
+ */
+int pmm_reclaimMemory() {
+    generic_parameters_t *parameters = arch_get_generic_parameters();
+    
+    uintptr_t freed = 0;
+    generic_module_desc_t *mod = parameters->module_start;
+    while (mod) {
+        // modules are aligned on page boundaries
+        assert((mod->mod_start % 4096) == 0);
+
+        for (uintptr_t i = mod->mod_start; i < mod->mod_end; i += PAGE_SIZE) {
+            pmm_freePage(arch_mmu_physical(NULL, i));
+            freed += PAGE_SIZE;
+        }
+
+        mod = mod->next;
+    }
+
+    LOG(DEBUG, "Reclaimed %d kB of physical memory\n", freed / 1024);
+    return 0;
+}
+
+KERN_LATE_INIT_ROUTINE(reclaim, INIT_FLAG_DEFAULT, pmm_reclaimMemory);

@@ -32,6 +32,7 @@ typedef struct shared_object {
     int flags;              // Flags of the shared memory object
     int refcount;           // References
     uintptr_t *blocks;      // Array of PMM blocks that will get mapped into memory
+    vfs_file_t *f;
 } shared_object_t;
 
 /**** FUNCTIONS ****/
@@ -52,7 +53,7 @@ int sharedfs_new(process_t *proc, size_t size, int flags);
  * @param node The node of the shared memory object
  * @returns A key or errno
  */
-key_t sharedfs_key(fs_node_t *node);
+key_t sharedfs_key(vfs_file_t *node);
 
 /**
  * @brief Open an object of shared memory by the key

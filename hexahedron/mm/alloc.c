@@ -19,7 +19,7 @@
 #include <assert.h>
 #include <kernel/panic.h>
 #include <string.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "MM:ALLOC", __VA_ARGS__)
@@ -34,8 +34,9 @@ static size_t __alloc_cache_sizes[ALLOC_CACHES] = {
 /* Allocator caches */
 slab_cache_t *alloc_caches[ALLOC_CACHES] = { 0 };
 
-/* UNCOMMENT TO ENABLE TRACKING */
+/* UNCOMMENT TO ENABLE TRACKING/POISONING */
 #define ENABLE_TRACKING 1
+#define ENABLE_POISON 1 // Slows down
 
 /* Magic values */
 #define ALLOC_MAGIC_ALLOCATED       0xCAFEBABE
@@ -70,12 +71,13 @@ size_t alloc_in_use = 0;
  */
 static int __kmalloc_initializer(slab_cache_t *cache, void *object) {
     alloc_header_t *hdr = (alloc_header_t*)object;
-    hdr->magic = ALLOC_MAGIC_ALLOCATED;
-    hdr->cache_size = cache->slab_object_size;
 
 #ifdef ENABLE_POISON
-    #error "TODO"
+    memset(hdr, 0xCD, cache->slab_object_size);
 #endif
+
+    hdr->magic = ALLOC_MAGIC_ALLOCATED;
+    hdr->cache_size = cache->slab_object_size;
 
     return 0;
 }
@@ -86,11 +88,13 @@ static int __kmalloc_initializer(slab_cache_t *cache, void *object) {
 static int __kmalloc_deinitializer(slab_cache_t *cache, void *object) {
     alloc_header_t *hdr = (alloc_header_t*)object;
     assert(hdr->magic == ALLOC_MAGIC_ALLOCATED);
-    hdr->magic = ALLOC_MAGIC_FREE;
 
 #ifdef ENABLE_POISON
-    #error "TODO"
+    memset(hdr, 0xAB, cache->slab_object_size);
 #endif
+
+    hdr->magic = ALLOC_MAGIC_FREE;
+
     return 0;
 }
 
@@ -181,6 +185,7 @@ inline void *kmalloc(size_t size) {
  * @brief krealloc
  */
 __attribute__((malloc)) void *krealloc(void *ptr, size_t size) {
+    if (!ptr) return kmalloc(size);
     alloc_header_t *old_h = ALLOC_GETHEADER(ptr);
     // assert(old_h->magic == ALLOC_MAGIC_ALLOCATED);
 
@@ -291,7 +296,7 @@ void alloc_init() {
 /**
  * @brief Get allocator bytes in use (cache)
  */
-size_t alloc_used() {
+inline size_t alloc_used() {
     return alloc_in_use;
 }
 
@@ -315,4 +320,11 @@ void alloc_postSMPInit() {
     for (int i = 0; i < ALLOC_CACHES; i++) {
         slab_reinitializeCache(alloc_caches[i]);
     }
+}
+
+/**
+ * @brief Get allocator cache count
+ */
+inline size_t alloc_cacheCount() {
+    return ALLOC_CACHES;
 }

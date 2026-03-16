@@ -14,7 +14,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/arch/x86_64/mmu.h>
 #include <kernel/arch/x86_64/smp.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
 #include <string.h>
@@ -35,13 +35,15 @@ mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE)))
  * @brief MMU page fault handler
  */
 int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs_extended) {
+    if (regs->err_code & ~(0x17)) goto _die;
+
     // Build fault flags
     int loc = (regs->cs == 0x08) ?  VMM_FAULT_FROM_KERNEL : VMM_FAULT_FROM_USER;
 
     int flags = 
-        (regs->err_code & 0x1) ? VMM_FAULT_PRESENT : VMM_FAULT_NONPRESENT |
-        (regs->err_code & 0x2) ? VMM_FAULT_WRITE : VMM_FAULT_READ |
-        (regs->err_code & 0x10) ? VMM_FAULT_EXECUTE : 0;
+        ((regs->err_code & (1 << 0)) ? VMM_FAULT_PRESENT : VMM_FAULT_NONPRESENT) |
+        ((regs->err_code & (1 << 1)) ? VMM_FAULT_WRITE : VMM_FAULT_READ) |
+        ((regs->err_code & (1 << 4)) ? VMM_FAULT_EXECUTE : 0);
     
     vmm_fault_information_t info = {
         .from = loc,
@@ -49,10 +51,13 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
         .address = (uintptr_t)regs_extended->cr2
     };
 
+    // dprintf(DEBUG, "Page fault %p %016llX %x\n", regs_extended->cr2, regs->rip, regs->err_code);
+
     if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
         return 0;
     }
 
+_die:
     dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
     
     if (info.from == VMM_FAULT_FROM_USER) {
@@ -87,7 +92,7 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
     dprintf(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
 
     dprintf(NOHEADER, "CS %04X DS %04X SS %04X\n\n", regs->cs, regs->ds, regs->ss);
-    dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX CR4 %08X\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3, regs_extended->cr4);
+    dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3);
     dprintf(NOHEADER, "GDTR %016llX %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
     dprintf(NOHEADER, "IDTR %016llX %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
 
@@ -148,7 +153,15 @@ void arch_mmu_init() {
 
     // Load directory
     arch_mmu_load((mmu_dir_t*)KERNEL_PHYS(__mmu_kernel_pml));
-    
+
+    // AP
+    arch_mmu_ap();
+}
+
+/**
+ * @brief MMU AP initialize
+ */
+void arch_mmu_ap() {
     // PAT
     asm volatile(
     	"movl $0x277, %%ecx\n"
@@ -163,6 +176,14 @@ void arch_mmu_init() {
         "movq %%cr0, %%rax\n"
         "orq $0x10000, %%rax\n"
         "movq %%rax, %%cr0" ::: "rax");
+    
+    // Enable NXE
+    asm volatile (
+        "movl $0xC0000080, %%ecx\n"
+        "rdmsr\n"
+        "orl $0x800, %%eax\n"
+        "wrmsr" ::: "eax", "ecx", "edx", "memory"
+    );
 }
 
 /**
@@ -320,7 +341,6 @@ static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_
 
         pt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
         memset(pt, 0, PAGE_SIZE);
-
         pd[MMU_PAGEDIR_INDEX(virt)].bits.present = 1;
         pd[MMU_PAGEDIR_INDEX(virt)].bits.rw = 1;
         pd[MMU_PAGEDIR_INDEX(virt)].bits.usermode = 1;
@@ -425,6 +445,7 @@ mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr) {
     MMU_FLAG_CASE(usermode, MMU_FLAG_USER, 0);
     MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, 0);
     MMU_FLAG_CASE(global, MMU_FLAG_GLOBAL, 0);
+    MMU_FLAG_CASE(dirty, MMU_FLAG_DIRTY, 0);
 #undef MMU_FLAG_CASE
 
     int index = 

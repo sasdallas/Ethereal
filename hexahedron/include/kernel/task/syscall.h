@@ -36,10 +36,14 @@
 #include <dirent.h>
 #include <signal.h>
 #include <poll.h>
+#include <kernel/debug.h>
 
 /**** DEFINITIONS ****/
 
 #define SYSCALL_MAX_PARAMETERS      6       // !!!: AT THE CURRENT TIME, ONLY 5 ARE SUPPORTED
+
+/**** MACROS ****/
+#define SYSCALL_LOG(status, fmt, ...) dprintf_module(status, "TASK:SYSCALL", "%s: " fmt, __FUNCTION__, ## __VA_ARGS__ )
 
 /**** TYPES ****/
 
@@ -93,7 +97,8 @@ typedef struct sys_pselect_context {
 /**** MACROS ****/
 
 /* Pointer validation */
-#define SYSCALL_VALIDATE_PTR(ptr) if (!vmm_validate((uintptr_t)(ptr), PAGE_SIZE, VMM_PTR_USER | VMM_PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
+// #define SYSCALL_VALIDATE_PTR(ptr) if (!vmm_validate((uintptr_t)(ptr), PAGE_SIZE, VMM_PTR_USER | VMM_PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
+#define SYSCALL_VALIDATE_PTR(ptr) {}
 
 /* Pointer validation (range) */
 #define SYSCALL_VALIDATE_PTR_SIZE(ptr, size) for (uintptr_t p = (uintptr_t)(ptr); p < (uintptr_t)((ptr) + (size)); p += PAGE_SIZE) { SYSCALL_VALIDATE_PTR(p); }
@@ -141,7 +146,7 @@ ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz);
 long sys_access(const char *path, int amode);
 long sys_chmod(const char *path, mode_t mode);
 long sys_fcntl(int fd, int cmd, int extra);
-long sys_unlink(const char *pathname);
+long sys_unlinkat(int dirfd, const char *path, int flags);
 long sys_ftruncate(int fd, off_t length);
 void *sys_brk(void *addr);
 pid_t sys_fork();
@@ -206,9 +211,10 @@ long sys_yield();
 long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue);
 long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
 long sys_read_entries(int handle, void *buffer, size_t max_size);
-long sys_futex_wait(int *pointer, int expected, const struct timespec *time);
-long sys_futex_wake(int *pointer);
+long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time);
+long sys_futex_wake(uint32_t *pointer);
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode);
+long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags); 
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);

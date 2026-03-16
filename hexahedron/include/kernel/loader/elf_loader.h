@@ -16,7 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 /**** DEFINITIONS ****/
 
@@ -59,7 +59,7 @@ uintptr_t elf_findSymbol(uintptr_t ehdr_address, char *name);
  * @param type The type of file to look for
  * @returns 1 on valid ELF file, 0 on invalid
  */
-int elf_check(fs_node_t *file, int type);
+int elf_check(vfs_file_t *file, int type);
 
 /**
  * @brief Get the entrypoint of an executable file
@@ -82,7 +82,7 @@ uintptr_t elf_loadBuffer(uint8_t *fbuf, int flags);
  * @param flags The flags to use (ELF_KERNEL or ELF_USER)
  * @returns A pointer to the file that can be passed to @c elf_getEntrypoint or @c elf_findSymbol - or NULL if there was an error. 
  */
-uintptr_t elf_load(fs_node_t *node, int flags);
+uintptr_t elf_load(vfs_file_t *node, int flags);
 
 /**
  * @brief Cleanup an ELF file after it has finished executing
@@ -112,7 +112,7 @@ void elf_createImage(uintptr_t elf_address);
  * @returns Interpreter string on success or NULL on failure
  * @note Free this yourself
  */
-char *elf_getInterpreter(fs_node_t *file);
+char *elf_getInterpreter(vfs_file_t *file);
 
 /**
  * @brief Load dynamic ELF file
@@ -120,6 +120,6 @@ char *elf_getInterpreter(fs_node_t *file);
  * @param info Output @c elf_dynamic_info_t
  * @returns 0 on success
  */
-int elf_loadDynamicELF(fs_node_t *file, elf_dynamic_info_t *info);
+int elf_loadDynamicELF(vfs_file_t *file, elf_dynamic_info_t *info);
 
 #endif

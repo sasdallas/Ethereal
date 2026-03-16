@@ -62,6 +62,7 @@ const __signal_handler signal_default_action[] = {
 #define SIGNAL_IS_BLOCKED(thr, signum) (thr->blocked_signals & SIGBIT(signum) && !(signum == SIGKILL) && !(signum == SIGSTOP))
 #define SIGNAL_IS_PENDING(thr, signum) (thr->pending_signals & SIGBIT(signum) && !SIGNAL_IS_BLOCKED(thr, signum))
 #define SIGNAL_ANY_PENDING(thr) (thr->pending_signals & ~thr->blocked_signals)
+#define SIGNAL_IS_IGNORED(sig)
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SIGNAL", __VA_ARGS__)
@@ -74,22 +75,24 @@ const __signal_handler signal_default_action[] = {
  */
 int signal_sendThread(struct thread *thr, int signal) {
     if (signal < 0 || signal >= NSIG) return -EINVAL;
-    LOG(DEBUG, "Sending signal %d to thread\n", signal);
+    LOG(DEBUG, "Sending signal %d to thread (handler = %p)\n", signal, thr->signals[signal].handler);
+
+    proc_signal_t *sig = &THREAD_SIGNAL(thr, signal);
 
     // Are they trying to continue a process?
-    if (THREAD_SIGNAL(thr, signal).handler == SIGNAL_ACTION_CONTINUE && thr->status & THREAD_STATUS_SLEEPING) {
+    if (sig->handler == SIGNAL_ACTION_CONTINUE && thr->status & THREAD_STATUS_SLEEPING) {
         // TODO: Continue
         LOG(ERR, "Cannot continue a process as this is unimplemented\n");
         return -ENOTSUP;
     }
 
     // Is this signal blocked?
-    if (SIGNAL_IS_BLOCKED(thr, signal) && THREAD_SIGNAL(thr, signal).handler == SIGNAL_ACTION_IGNORE) {
+    if (SIGNAL_IS_BLOCKED(thr, signal)) {
         return 0;
     }
 
     // Do we just ignore it? Don't waste time on that
-    if (THREAD_SIGNAL(thr, signal).handler == SIGNAL_ACTION_IGNORE) {
+    if (sig->handler == SIGNAL_ACTION_IGNORE || (sig->handler == SIGNAL_ACTION_DEFAULT && signal_default_action[signal] == SIGNAL_ACTION_IGNORE)) {
         return 0;
     }
 
@@ -210,7 +213,10 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     // !!!: This probably needs to be refactored?
     extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace) {
-        proc->userspace = vmm_map((void*)0x1000, PAGE_SIZE, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
+        size_t sz = PAGE_ALIGN_UP((uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
+
+        // !!! minor hack, signal system shouldn't even be running in interrupt context but whatever.
+        proc->userspace = vmm_map((void*)0x1000, sz, VM_FLAG_ALLOC | VM_FLAG_FAKE_ME_NOT, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
@@ -251,9 +257,10 @@ int signal_handle(struct thread *thr, registers_t *regs) {
     process_t *proc = thr->parent;
     if (!proc) return 0;
 
+    if (!SIGNAL_ANY_PENDING(thr)) goto _done;
+
     // Lock the process' siglock
     spinlock_acquire(&thr->siglock);
-    if (!SIGNAL_ANY_PENDING(thr)) goto _done;
     
     // !!!: RT signals are not supported
     for (int i = 0; i < SIGRTMIN; i++) {

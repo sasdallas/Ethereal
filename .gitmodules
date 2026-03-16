@@ -4,3 +4,6 @@
 [submodule "external/plutosvg/plutosvg"]
 	path = external/plutosvg/plutosvg
 	url = https://github.com/sammycage/plutosvg
+[submodule "external/essence/essence"]
+	path = external/essence/essence
+	url = https://github.com/sasdallas/essence

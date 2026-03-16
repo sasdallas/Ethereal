@@ -12,6 +12,7 @@
  */
 
 #include <kernel/task/syscall.h>
+#include <kernel/task/process.h>
 #include <kernel/task/fd.h>
 #include <kernel/fs/shared.h>
 #include <kernel/arch/arch.h>
@@ -31,12 +32,17 @@
 /**** SHARED MEMORY API ****/
 
 long sys_ethereal_shared_new(size_t size, int flags) {
-    return sharedfs_new(current_cpu->current_process, size, flags);
+    int f = sharedfs_new(current_cpu->current_process, size, flags);
+    if (f >= 0) {
+        LOG(INFO, "New shared memory object created (fd %d): %p\n", f, FD(f));
+    }
+    return f;
 }
 
 key_t sys_ethereal_shared_key(int fd) {
-    if (!FD_VALIDATE(current_cpu->current_process, fd)) return -EBADF;
-    return sharedfs_key(FD(current_cpu->current_process, fd)->node);
+    if (!FD_VALIDATE(fd)) return -EBADF;
+    // assert(0 && "sys_ethereal_shared_new");
+    return sharedfs_key(FD(fd));
 }
 
 long sys_ethereal_shared_open(key_t key) {
@@ -154,12 +160,13 @@ long sys_load_driver(char *filename, int priority, char **argv) {
     if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
 
     // Open
-    fs_node_t *n = kopen_user(filename, O_RDONLY);
-    if (!n) return -ENOENT;
+    vfs_file_t *f;
+    int r = vfs_open(filename, O_RDONLY, &f);
+    if (r) return r;
     
 
     // Load driver
-    int r = driver_load(n, priority, filename, argc, argv);
+    r = driver_load(f, priority, filename, argc, argv);
     return r;
 }
 

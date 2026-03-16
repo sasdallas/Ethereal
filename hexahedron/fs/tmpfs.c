@@ -1,396 +1,672 @@
 /**
- * @file hexahedron/fs/tmpfs.c
- * @brief Provides the temporary filesystem driver
+ * @file hexahedron/fs/tempfs.c
+ * @brief TempFS for temporary in-memory filesystems
  * 
- * For LiveCD boots of Ethereal, this is provided as the root filesystem.
- * The implementation isn't perfect but functions decently alright and can conserve memory.
- * 
- * @todo Perhaps we should avoid putting files as tree nodes - maybe we can separate directories and files sort of similar to how the VFS does it.
- * @todo A bit messy, but luckily abstracted so can be fixed up :D
+ * @todo The existing @c tmpfs_write and @c tmpfs_read will be removed when the page cache is done
  * 
  * @copyright
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * It is released under the terms of the BSD 3-clause license.
+ * Please see the LICENSE file in the main repository for more details.
  * 
- * Review on the @c tmpfs_write and @c tmpfs_read functions are pending as they are similar to ToaruOS.
- * This file is not copyrighted by Hexahedron for the time being, as I attribute it to klange.
+ * Copyright (C) 2025 Samuel Stuart
  */
 
 #include <kernel/fs/tmpfs.h>
-#include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
-#include <kernel/init.h>
 #include <kernel/mm/vmm.h>
-#include <string.h>
+#include <kernel/init.h>
 
-/* Size rounding */
-#define TMPFS_ROUND_SIZE(sz) ((sz % TMPFS_BLOCK_SIZE == 0) ? sz : (sz + TMPFS_BLOCK_SIZE - (sz % TMPFS_BLOCK_SIZE)))
-
-/* Debug output */
+/* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:TMPFS", __VA_ARGS__)
 
-/* Function prototypes */
-int tmpfs_open(fs_node_t *node, unsigned int flags);
-ssize_t tmpfs_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
-ssize_t tmpfs_write(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer);
-int tmpfs_close(fs_node_t *node);
-fs_node_t *tmpfs_finddir(fs_node_t *node, char *path);
-struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index);
-int tmpfs_create(fs_node_t *node, char *path, mode_t mode, fs_node_t **node_out);
-int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode);
+/* Protos */
+static int tmpfs_open(vfs_file_t *file, unsigned long flags);
+static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
+static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
+static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx);
+static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output);
+static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output);
+static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output);
+static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount, char *src, unsigned long flags, void *data);
+static int tmpfs_truncate(vfs_inode_t *inode, size_t size);
+static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_name, vfs_inode_t **ino_output);
+static ssize_t tmpfs_readlink(vfs_inode_t *inode, char *buffer, size_t maxlen);
+static int tmpfs_unlink(vfs_inode_t *inode, vfs_inode_t *child, char *child_name);
+static int tmpfs_destroy(vfs_inode_t *inode);
+static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags);
+static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags);
+static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off);
+static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page);
+
+/* Filesystem */
+static vfs2_filesystem_t tmpfs_filesystem = {
+    .name = "tmpfs",
+    .mount = tmpfs_mount,
+};
+
+/* Inode ops */
+static vfs_inode_ops_t tmpfs_inode_ops = {
+    .create = tmpfs_create,
+    .destroy = tmpfs_destroy,
+    .getattr = NULL,
+    .link = NULL,
+    .lookup = tmpfs_lookup,
+    .mkdir = tmpfs_mkdir,
+    .readlink = tmpfs_readlink,
+    .rmdir = NULL,
+    .setattr = NULL,
+    .symlink = tmpfs_symlink,
+    .truncate = tmpfs_truncate,
+    .unlink = tmpfs_unlink,
+    .rename = tmpfs_rename,
+};
+
+/* File ops */
+static vfs_file_ops_t tmpfs_file_ops = {
+    .open = tmpfs_open,
+    .close = NULL,
+    .read = tmpfs_read,
+    .write = tmpfs_write,
+    .get_entries = tmpfs_get_entries,
+    .ioctl = NULL,
+    .mmap_prepare = NULL,
+    .mmap = tmpfs_mmap,
+    .munmap = tmpfs_munmap,
+    .lseek = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
+};
+
+/* Cache ops */
+static vfs_cache_ops_t tmpfs_cache_ops = {
+    .read_page = tmpfs_read_page,
+    .write_page = tmpfs_write_page,
+};
+
+/* Cache */
+slab_cache_t *tmpfs_node_cache = NULL;
+
 
 /**
- * @brief Convert a temporary filesystem object into a VFS node
- * @param t The temporary filesystem object
+ * @brief tmpfs open
  */
-static fs_node_t *tmpfs_convertVFS(tmpfs_entry_t *t) {
-    fs_node_t *node = kmalloc(sizeof(fs_node_t));
-    memset(node, 0, sizeof(fs_node_t));
-
-    strncpy(node->name, t->name, 256);
-
-    // Get t->type
-    switch (t->type) {
-        case TMPFS_FILE:
-            node->flags = VFS_FILE;
-            break;
-        
-        case TMPFS_DIRECTORY:
-            node->flags = VFS_DIRECTORY;
-            break;
-
-        case TMPFS_SYMLINK:
-            node->flags = VFS_SYMLINK;
-            break;
-
-        default:
-            node->flags = VFS_FILE;
-            break;
-    }
-
-    // Setup other fields
-    node->mask = t->mask;
-    node->uid = t->uid;
-    node->gid = t->gid;
-    node->atime = t->atime;
-    node->mtime = t->mtime;
-    node->ctime = t->ctime;
-    node->dev = (void*)t;
-
-    // Setup methods
-    if (t->type == TMPFS_FILE) {
-        node->length = t->file->length;
-        node->open = tmpfs_open;
-        node->close = tmpfs_close;
-        node->read = tmpfs_read;
-        node->write = tmpfs_write;
-    } else if (t->type == TMPFS_DIRECTORY) {
-        node->create = tmpfs_create;
-        node->readdir = tmpfs_readdir;
-        node->finddir = tmpfs_finddir;
-        node->mkdir = tmpfs_mkdir;
-    }
-
-    return node;
-}
-
-
-/**
- * @brief Create a new tmpfs entry
- * @param parent The parent of the tmpfs entry
- * @param type The type of tmpfs entry to create
- * @param name The name to assign to the entry
- */
-static tmpfs_entry_t *tmpfs_createEntry(tmpfs_entry_t *parent, int type, char *name) {
-    tmpfs_entry_t *entry = kmalloc(sizeof(tmpfs_entry_t));
-    memset(entry, 0, sizeof(tmpfs_entry_t));
-    snprintf(entry->name, 256, "%s", name);
-    entry->type = type;
-    entry->atime = entry->ctime = entry->mtime = now();
-    entry->mask = 0777; // Default mask, can be changed easily
-    
-
-    // If file, allocate file object as well
-    if (type == TMPFS_FILE) {
-        entry->file = kmalloc(sizeof(tmpfs_file_t));
-        memset(entry->file, 0, sizeof(tmpfs_file_t));
-        entry->file->lock = spinlock_create("tmpfs lock");
-        entry->file->blocks = kzalloc(TMPFS_DEFAULT_BLOCKS * sizeof(uintptr_t));
-        entry->file->blk_size = TMPFS_DEFAULT_BLOCKS;
-        entry->file->blk_count = 0;
-    }
-     
-
-    if (parent) {
-        entry->tree = parent->tree;
-        entry->tnode = tree_insert_child(parent->tree, parent->tnode, (void*)entry);
-    } else {
-        entry->tree = tree_create("tmpfs tree");
-        tree_set_parent(entry->tree, (void*)entry);
-        entry->tnode = entry->tree->root;
-    }
-
-    return entry;
-}
-
-/**
- * @brief Temporary filesystem open method
- */
-int tmpfs_open(fs_node_t *node, unsigned int flags) {
+static int tmpfs_open(vfs_file_t *file, unsigned long flags) {
+    file->priv = file->inode->priv;
     return 0;
 }
 
 /**
- * @brief Temporary filesystem close method
+ * @brief tmpfs get entries
  */
-int tmpfs_close(fs_node_t *node) {
-    return 0;
-}
-
-/**
- * @brief Get a block from the block system
- * @param file The file object to get a block for
- * @param blknum The block number to get
- */
-uintptr_t tmpfs_getBlock(tmpfs_file_t *file, size_t blknum) {
-    if (blknum >= file->blk_count) return 0x0;
-    return file->blocks[blknum];
-}
-
-/**
- * @brief Get or allocate a new block
- * @param file The file to get a new block for
- * @param blknum The block number to get
- */
-uintptr_t tmpfs_getNewBlock(tmpfs_file_t *file, size_t blknum) {
-    uintptr_t exist = tmpfs_getBlock(file, blknum);
-    if (exist) return exist;
-
-    // Allocate a new block
-    while (blknum >= file->blk_size) {
-        file->blk_size *= 2;
-        file->blocks = krealloc(file->blocks, file->blk_size * sizeof(uintptr_t));
-    }
-
-    
-    for (uintptr_t i = file->blk_count; i <= blknum; i++) {
-        file->blocks[i] = pmm_allocatePage(ZONE_DEFAULT);
-        file->blk_count++;
-    }
-
-
-    return file->blocks[blknum];
-}
-
-
-/**
- * @brief Temporary filesystem read method
- */
-ssize_t tmpfs_read(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
-    if (!entry->file || !entry->file->blk_count) return 0;
-
-    // First, get a lock on the file
-    spinlock_acquire(entry->file->lock);
-
-    // Do some VFS calculations
-    if (off >= (off_t)node->length) {
-        spinlock_release(entry->file->lock);
+static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
+    tmpfs_node_t *node = (tmpfs_node_t*)file->priv;
+    if (ctx->dirpos == 0) {
+        strncpy(ctx->name, ".", NAME_MAX);
+        ctx->ino = file->inode->attr.ino;
+        ctx->type = DT_DIR;
+        return 0;
+    } else if (ctx->dirpos == 1) {
+        strncpy(ctx->name, "..", NAME_MAX);
+        if (node->parent) ctx->ino = node->parent->ino;
+        else ctx->ino = file->inode->attr.ino;
+        ctx->type = DT_DIR;
         return 0;
     }
+
+    int i = ctx->dirpos - 2;
+    int j = 0;
+    mutex_acquire(&node->lck);
+    list_t *keys = hashmap_keys(node->dir.children);
     
-    if (off+size > node->length) {
-        size = node->length - off;
+    foreach(kn, keys) {
+        tmpfs_node_t *n_child = (tmpfs_node_t*)hashmap_get(node->dir.children, kn->value);
+        assert(n_child);
+        if (i == j) {
+            mutex_release(&node->lck);
+            strncpy(ctx->name, kn->value, NAME_MAX);
+            ctx->ino = n_child->ino;
+            ctx->type = 0; // TODO
+            list_destroy(keys, false);
+            return 0;
+        }  
+
+        j++;
     }
 
-    // Do some math to calculate the starting and ending block
-    uintptr_t start_block = off / TMPFS_BLOCK_SIZE;
-    uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
-    uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
-    if (end_block > entry->file->blk_count) return 0;
+    mutex_release(&node->lck);
+    list_destroy(keys, false);
+    
+    return 1;
+}
 
-    // LOG(DEBUG, "Read from offset %d size %d -> start block %d end block %d overhang %d\n", off, size, start_block, end_block, overhang);
+/**
+ * @brief tmpfs create
+ */
+static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output) {
+    tmpfs_node_t *node = (tmpfs_node_t*)parent->priv;    
+    mutex_acquire(&node->lck);
+    if (hashmap_get(node->dir.children, name)) { mutex_release(&node->lck); return -EEXIST; }
 
-    // If the start block is the same, handle
-    if (start_block == end_block) {
-        // Get a block, read it, you know the drill
-        uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, start_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-        memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), size);
-        arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
-    } else {
-        // Else, enter this freaky math loop.
-        uintptr_t blocks_read = 0;
-        for (uintptr_t i = start_block; i < end_block; i++) {
-            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, i), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-            if (!blocks_read) memcpy(buffer, (const void*)(blk + (off % TMPFS_BLOCK_SIZE)), TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
-            else memcpy(buffer + (blocks_read*TMPFS_BLOCK_SIZE) - (off % TMPFS_BLOCK_SIZE), (const void*)(blk), TMPFS_BLOCK_SIZE);
-            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
+    tmpfs_node_t *new_node = slab_allocate(tmpfs_node_cache);
+    if (!new_node) { mutex_release(&node->lck); return -ENOMEM; }
 
-            blocks_read++;
+    MUTEX_INIT(&new_node->lck);
+    new_node->file.page_list = NULL;
+    new_node->file.page_count = 0;
+    new_node->parent = node;
+
+    memset(&new_node->attr, 0, sizeof(vfs_inode_attr_t));
+
+    new_node->attr.type = VFS_FILE;
+    new_node->attr.ino = vfs_getNextInode();
+    new_node->attr.atime = new_node->attr.mtime = new_node->attr.ctime = VFS_NOW();
+    new_node->attr.mode = mode;
+    new_node->attr.nlink = 1;
+    new_node->attr.size = 0;
+
+    // Create an inode
+    vfs_inode_t *ino = vfs2_inode();
+    if (!ino) { slab_free(tmpfs_node_cache, new_node); mutex_release(&node->lck); return -ENOMEM; }
+    memcpy(&ino->attr, &new_node->attr, sizeof(vfs_inode_attr_t));
+    ino->mount = parent->mount;
+    ino->ops = &tmpfs_inode_ops;
+    ino->f_ops = &tmpfs_file_ops;
+    ino->c_ops = &tmpfs_cache_ops;
+    ino->priv = new_node;
+    new_node->ino = ino->attr.ino;
+
+    hashmap_set(node->dir.children, name, new_node);
+    *ino_output = ino;
+    mutex_release(&node->lck);
+    return 0;
+}
+
+/**
+ * @brief tmpfs destroy
+ */
+static int tmpfs_destroy(vfs_inode_t *inode) {
+    // if the inode hits 0 links
+    if (inode->attr.nlink == 0) {
+        // then we can free all of its pages
+        tmpfs_node_t *n = inode->priv;
+        
+        if (inode->attr.type == VFS_FILE) {
+            if (inode->attr.size) {
+                for (unsigned i = 0; i < n->file.page_count; i++) {
+                    uintptr_t pg = n->file.page_list[i];
+                    pmm_freePage(pg);
+                }
+
+                kfree(n->file.page_list);
+            }
+        } else if (inode->attr.type == VFS_SYMLINK) {
+            kfree(n->symlink.path);
+        } else {
+            LOG(ERR, "Can't unlink VFS type %d as this is unimplemented\n", inode->attr.type);
         }
 
-        // Handle any overhang
-        if (overhang) {
-            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getBlock(entry->file, end_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-            memcpy(buffer + TMPFS_BLOCK_SIZE * blocks_read - (off % TMPFS_BLOCK_SIZE), (const void*)blk, size);
-            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
+        slab_free(tmpfs_node_cache, n);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief tmpfs symlink
+ */
+static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_name, vfs_inode_t **ino_output) {
+    tmpfs_node_t *n = parent->priv;
+
+    // test if exists
+    mutex_acquire(&n->lck);
+    if (hashmap_has(n->dir.children, link_name)) {
+        mutex_release(&n->lck);
+        return -EEXIST;
+    }
+    mutex_release(&n->lck);
+
+    tmpfs_node_t *new_node = slab_allocate(tmpfs_node_cache);
+    if (!new_node) { return -ENOMEM; }
+
+    MUTEX_INIT(&new_node->lck);
+    new_node->file.page_list = NULL;
+    new_node->file.page_count = 0;
+    new_node->parent = n;
+    
+    new_node->attr.type = VFS_SYMLINK;
+    new_node->attr.ino = vfs_getNextInode();
+    new_node->attr.atime = new_node->attr.mtime = new_node->attr.ctime = VFS_NOW();
+    new_node->attr.mode = 0755; // TODO
+    new_node->attr.nlink = 1;
+
+    new_node->symlink.path = strdup(link_contents);
+
+        // Create an inode
+    vfs_inode_t *ino = vfs2_inode();
+    if (!ino) { slab_free(tmpfs_node_cache, new_node);  return -ENOMEM; }
+    memcpy(&ino->attr, &new_node->attr, sizeof(vfs_inode_attr_t));
+    ino->mount = parent->mount;
+    ino->ops = &tmpfs_inode_ops;
+    ino->f_ops = &tmpfs_file_ops;
+    ino->c_ops = &tmpfs_cache_ops;
+    ino->priv = new_node;
+    new_node->ino = ino->attr.ino;
+    
+    mutex_acquire(&n->lck);
+    hashmap_set(n->dir.children, link_name, new_node);
+    mutex_release(&n->lck);
+
+    *ino_output = ino;
+    return 0;
+}
+
+/**
+ * @brief tmpfs readlink
+ */
+static ssize_t tmpfs_readlink(vfs_inode_t *inode, char *buffer, size_t maxlen) {
+    if (inode->attr.type != VFS_SYMLINK) return -EINVAL;
+    tmpfs_node_t *n = inode->priv;
+
+    size_t len = strlen(n->symlink.path);
+    if (maxlen > len) maxlen = len;
+
+    strncpy(buffer, n->symlink.path, maxlen);
+    return maxlen;
+}
+
+/**
+ * @brief tmpfs mkdir
+ */
+static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **ino_output) {
+    tmpfs_node_t *node = parent->priv;
+    mutex_acquire(&node->lck);
+
+    // Check if existing
+    if (hashmap_has(node->dir.children, name)) {
+        mutex_release(&node->lck);
+        return -EEXIST;
+    }
+
+    // If not then create the new node
+    tmpfs_node_t *new = slab_allocate(tmpfs_node_cache);
+    if (!new) { mutex_release(&node->lck); return -ENOMEM; }
+
+    MUTEX_INIT(&new->lck);
+    new->dir.children = hashmap_create("tmpfs dir children", 10);
+    new->parent = node;
+    
+    memset(&new->attr, 0, sizeof(vfs_inode_attr_t));
+    new->attr.type = VFS_DIRECTORY;
+    new->attr.nlink = 2; // . and ..
+    new->attr.mode = mode;
+    new->attr.ino = vfs_getNextInode();
+
+    // Now make the inode
+    vfs_inode_t *i = vfs2_inode();
+    if (!i) { slab_free(tmpfs_node_cache, new); mutex_release(&node->lck); return -ENOMEM; }
+    memcpy(&i->attr, &new->attr, sizeof(vfs_inode_attr_t));
+    i->mount = parent->mount;
+    i->ops = &tmpfs_inode_ops;
+    i->f_ops = &tmpfs_file_ops;
+    i->c_ops = &tmpfs_cache_ops;
+    i->priv = (void*)new;
+    
+    new->ino = i->attr.ino;
+
+    hashmap_set(node->dir.children, name, new);
+    if (ino_output) *ino_output = i;
+    mutex_release(&node->lck);
+
+    return 0;
+}
+
+/**
+ * @brief tmpfs lookup
+ */
+static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
+    tmpfs_node_t *node = inode->priv;
+    mutex_acquire(&node->lck);
+
+    tmpfs_node_t *c = hashmap_get(node->dir.children, name);
+    if (!c) {
+        mutex_release(&node->lck);
+        return -ENOENT;
+    }
+
+    // Lookup the inode's number in the VFS cache
+    vfs_inode_t *i = vfs_iget(inode->mount, c->ino);
+    if (i->state & INODE_STATE_NEW) {
+        // Configure the inode
+        memcpy(&i->attr, &c->attr, sizeof(vfs_inode_attr_t));
+        i->priv = (void*)c;
+        i->mount = inode->mount;
+        i->ops = &tmpfs_inode_ops;
+        i->f_ops = &tmpfs_file_ops;
+        i->c_ops = &tmpfs_cache_ops;
+        vfs_createdInode(i);
+    }
+
+    *output = i;
+
+    mutex_release(&node->lck);
+    return 0;
+}
+
+/**
+ * @brief tmpfs truncate
+ */
+static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
+    // truncate
+    size_t in_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
+    
+    LOG(DEBUG, "tmpfs_truncate size %d in_pages %d\n", size, in_pages);
+
+    tmpfs_node_t *n = inode->priv;
+    mutex_acquire(&n->lck);
+    if (in_pages < n->file.page_count) {
+        // We are shrinking down the file
+        // Go through and free any existing pages
+        for (unsigned i = n->file.page_count; i > in_pages; i++) {
+            pmm_freePage(n->file.page_list[i]);
+        }
+
+        n->file.page_list = krealloc(n->file.page_list, in_pages * sizeof(uintptr_t*));
+    } else if (in_pages > n->file.page_count) {
+        // We are growing the file
+        n->file.page_list = krealloc(n->file.page_list, in_pages * sizeof(uintptr_t*));
+        for (unsigned i = n->file.page_count; i < in_pages; i++) {
+            n->file.page_list[i] = pmm_allocatePage(ZONE_DEFAULT);
         }
     }
 
-    spinlock_release(entry->file->lock);
+    n->file.page_count = in_pages;
+    n->attr.size = size;
+    inode->attr.size = size;
+    mutex_release(&n->lck);
+
+    return 0;
+}
+
+/**
+ * @brief tmpfs read
+ */
+static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
+    tmpfs_node_t *node = file->priv;
+
+    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (node->attr.type != VFS_FILE) return -EINVAL;
+
+    if (off >= file->inode->attr.size) {
+        return 0;
+    }
+
+    if (off + size > (size_t)file->inode->attr.size) {
+        size = file->inode->attr.size - off;
+    }
+
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    uintptr_t *pgl = node->file.page_list;
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t pg_off = off % PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        size_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > remaining) chunk = remaining;
+
+        // map the corresponding page into memory
+        uintptr_t pg_tmp = arch_mmu_remap_physical(pgl[pg_ind], PAGE_SIZE, REMAP_TEMPORARY);
+
+        memcpy(buffer + bpos, (void*)pg_tmp + pg_off, chunk);
+
+    #ifndef __ARCH_X86_64__
+        arch_mmu_unmap_physical(pg_tmp, PAGE_SIZE);
+    #endif
+
+        bpos += chunk;
+        remaining -= chunk;
+        pg_ind++;
+        pg_off = 0;
+    }
+
+    mutex_release(&node->lck);
     return size;
 }
 
 /**
- * @brief Temporary filesystem write method
+ * @brief tmpfs write
  */
-ssize_t tmpfs_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
-    if (!entry->file) return 0;
+static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
+    tmpfs_node_t *n = file->priv;
+    if (n->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (n->attr.type != VFS_FILE) return -EINVAL;
 
-    // First, get a lock on the file
-    spinlock_acquire(entry->file->lock);
-
-    // Now do some calculations to find the starting and ending block
-    uintptr_t start_block = off / TMPFS_BLOCK_SIZE;
-    uintptr_t end_block = (off + size) / TMPFS_BLOCK_SIZE;
-    uintptr_t overhang = (off + size) - end_block * TMPFS_BLOCK_SIZE;
-
-    // LOG(DEBUG, "Write to offset %d size %d -> start block %d end block %d overhang %d\n", off, size, start_block, end_block, overhang);
-
-    // If we have the same start and end block, then just write to it
-    if (start_block == end_block) {
-        uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, start_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-        memcpy((void*)(blk + ((uintptr_t)off % TMPFS_BLOCK_SIZE)), buffer, size);
-        arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
-    } else {
-        // Write normally
-        uintptr_t blocks_written = 0;
-        for (uintptr_t i = start_block; i < end_block; i++) {
-            // Get a new block to write to
-            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, i), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-
-            // Depending on blocks_written, we might need to copy at an offst
-            if (!blocks_written) memcpy((void*)(blk + (off % TMPFS_BLOCK_SIZE)), buffer, TMPFS_BLOCK_SIZE - (off % TMPFS_BLOCK_SIZE));
-            else memcpy((void*)blk, buffer + blocks_written * TMPFS_BLOCK_SIZE, TMPFS_BLOCK_SIZE);
-            blocks_written++;
-
-            // Unmap block
-            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
-        }
-
-        // Handle overhang
-        if (overhang) {
-            uintptr_t blk = arch_mmu_remap_physical(tmpfs_getNewBlock(entry->file, end_block), TMPFS_BLOCK_SIZE, REMAP_TEMPORARY);
-            memcpy((void*)blk, buffer + TMPFS_BLOCK_SIZE * blocks_written - (off % TMPFS_BLOCK_SIZE), overhang);
-            arch_mmu_unmap_physical(blk, TMPFS_BLOCK_SIZE);
-        }
+    if (off + size >= (size_t)file->inode->attr.size) {
+        int r = tmpfs_truncate(file->inode, off+size);
+        if (r) return r;
     }
 
-    entry->file->length = off + size;
-    // LOG(DEBUG, "%s: now using %d blocks (%d bytes)\n", entry->name, entry->file->blk_count, (entry->file->blk_count * TMPFS_BLOCK_SIZE));
-    spinlock_release(entry->file->lock);
+    mutex_acquire(&n->lck);
+    
+     // Well, now we can just write to the pages.
+    uintptr_t *pgl = n->file.page_list;
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t pg_off = off % PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        size_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > remaining) chunk = remaining;
+
+        // map the corresponding page into memory
+        uintptr_t pg_tmp = arch_mmu_remap_physical(pgl[pg_ind], PAGE_SIZE, REMAP_TEMPORARY);
+
+        memcpy((void*)pg_tmp + pg_off, buffer + bpos, chunk);
+
+    #ifndef __ARCH_X86_64__
+        arch_mmu_unmap_physical(pg_tmp, PAGE_SIZE);
+    #endif
+
+        bpos += chunk;
+        remaining -= chunk;
+        pg_ind++;
+        pg_off = 0;
+    }
+    
+    mutex_release(&n->lck);
+
     return size;
 }
 
 /**
- * @brief Temporary filesystem create method
+ * @brief tmpfs unlink
  */
-int tmpfs_create(fs_node_t *node, char *path, mode_t mode, fs_node_t **node_out) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
+static int tmpfs_unlink(vfs_inode_t *inode, vfs_inode_t *child, char *child_name) {
+    tmpfs_node_t *n_parent = inode->priv;
+    mutex_acquire(&n_parent->lck);
+    hashmap_remove(n_parent->dir.children, child_name);
+    mutex_release(&n_parent->lck);
 
-    // Try to make a new tmpfs entry
-    tmpfs_entry_t *new = tmpfs_createEntry(entry, TMPFS_FILE, path);
-    new->file->parent = node;
-
-    // Return node
-    *node_out = tmpfs_convertVFS(new);
+    inode->attr.nlink--; // each create() adds a link to the directory
+    child->attr.nlink--; // once released by all nodes tmpfs_destroy kills the child
     return 0;
 }
 
 /**
- * @brief Temporary filesystem find directory method
+ * @brief tmpfs rename
  */
-fs_node_t *tmpfs_finddir(fs_node_t *node, char *path) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
-    tree_node_t *tnode = entry->tnode;
+static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags) {
+    tmpfs_node_t *new_parent = dest_parent->priv;
+    tmpfs_node_t *old_parent = src_parent->priv;
+    tmpfs_node_t *child_node = child->priv;
+    tmpfs_node_t *dest_node = NULL;
 
-    foreach(child_node, tnode->children) {
-        tmpfs_entry_t *target = (tmpfs_entry_t*)((tree_node_t*)child_node->value)->value;
-        if (!target) continue;
-        if (!strncmp(target->name, path, 256)) {
-            // Match!
-            return tmpfs_convertVFS(target);
-        }
+    // NOTE: the reason we do it this way is because we need to unlink the inode correctly lol
+    vfs_inode_t *t;
+    int r = vfs_lookupat(dest_parent, dest_name, &t, LOOKUP_NO_FOLLOW);
+    if (r != 0 && r != -ENOENT) return r;
+    if (!r)  {
+        dest_node = t->priv;
     }
 
-    return NULL;
-}
+    mutex_acquire(&new_parent->lck);
+    child_node->parent = new_parent;
+    hashmap_set(new_parent->dir.children, dest_name, child_node);
+    mutex_release(&new_parent->lck);
+    
+    // remove it from the old parent's hashmap
+    mutex_acquire(&old_parent->lck);
+    hashmap_remove(old_parent->dir.children, src_name);
+    old_parent->attr.nlink--;
+    mutex_release(&old_parent->lck);
 
-/**
- * @brief Temporary filesystem read directory method
- */
-struct dirent *tmpfs_readdir(fs_node_t *node, unsigned long index) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
-    tree_node_t *tnode = entry->tnode;
-
-    // First, handle . and ..
-    if (index < 2) {
-        struct dirent *out = kmalloc(sizeof(struct dirent));
-        strcpy(out->d_name, (index == 0) ? "." : "..");
-        out->d_ino = 0;
-        return out;
+    // delink the previous one
+    if (dest_node) {
+        // this is difficult as we dont actually have the inode for dest_node.. so just do this trash
+        dest_node->attr.nlink--;
+        t->attr.nlink = dest_node->attr.nlink;
+        inode_release(t);
     }
 
-    index -= 2;
-
-    // Send the index
-    // TODO: ugly..
-    unsigned long i = 0;
-    foreach(child_node, tnode->children) {
-        if (i == index) {
-            tmpfs_entry_t *target = (tmpfs_entry_t*)((tree_node_t*)child_node->value)->value;
-
-            struct dirent *out = kmalloc(sizeof(struct dirent));
-            strncpy(out->d_name, target->name, 256);
-            out->d_ino = index;
-            return out;
-        }
-
-        i++;
-    }
-
-    return NULL;
-}
-
-/**
- * @brief Temporary filesystem make directory method
- */
-int tmpfs_mkdir(fs_node_t *node, char *path, mode_t mode) {
-    tmpfs_entry_t *entry = (tmpfs_entry_t*)node->dev;
-
-    // Try to make a new tmpfs entry
-    tmpfs_createEntry(entry, TMPFS_DIRECTORY, path);
-
-    // Return
     return 0;
 }
 
 /**
- * @brief Mount method for tmpfs
- * @param argp Arguments, aka name ;)
- * @returns The temporary filesystem
+ * @brief tmpfs mmap
  */
-int tmpfs_mount(char *argp, char *mountpoint, fs_node_t **node_out) {
-    tmpfs_entry_t *root = tmpfs_createEntry(NULL, TMPFS_DIRECTORY, argp);
+static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags) {
+    tmpfs_node_t *node = f->priv;
 
-    *node_out = tmpfs_convertVFS(root);
+    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (node->attr.type != VFS_FILE) return -EINVAL;
+
+    if (off >= f->inode->attr.size) {
+        return -ENXIO; // should send a SIGBUS
+    }
+    
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    uintptr_t *pgl = node->file.page_list;
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        // map the corresponding page into memory
+        uintptr_t pg = pgl[pg_ind];
+        pmm_retain(pg);
+        arch_mmu_map(NULL, (uintptr_t)addr + bpos, pg, flags);
+
+        bpos += PAGE_SIZE;
+        remaining -= PAGE_SIZE;
+        pg_ind++;
+    }
+
+    arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
+
+    mutex_release(&node->lck);
     return 0;
 }
 
 /**
- * @brief Initialize the temporary filesystem handler
+ * @brief tmpfs munmap
  */
-int tmpfs_init() {
-    vfs_registerFilesystem("tmpfs", tmpfs_mount);
+static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off) {
+    tmpfs_node_t *node = f->priv;
+    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
+    if (node->attr.type != VFS_FILE) return -EINVAL;
+
+    if (off >= f->inode->attr.size) assert(0); // ???
+
+    if (off + size > (size_t)f->inode->attr.size) {
+        size = f->inode->attr.size - off;
+    }
+
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        // unmap the corresponding page from memory
+        uintptr_t pg = arch_mmu_physical(NULL, (uintptr_t)addr + bpos);
+        pmm_release(pg);
+        arch_mmu_unmap(NULL, (uintptr_t)addr + bpos);
+
+        bpos += PAGE_SIZE;
+        remaining -= PAGE_SIZE;
+        pg_ind++;
+    }
+
+    mutex_release(&node->lck);
+    return size;
+}
+
+/**
+ * @brief tmpfs read page
+ */
+static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
+    tmpfs_node_t *n = f->priv;
+    if (offset > n->attr.size) return -ENXIO;
+    memset((void*)page, 0, PAGE_SIZE);
+    return 0;
+}
+
+/**
+ * @brief tmpfs write page
+ */
+static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
+    return 0;
+}
+
+/**
+ * @brief Mount to tmpfs
+ */
+static int tmpfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data) {
+    // Create the root node
+    tmpfs_node_t *node = slab_allocate(tmpfs_node_cache);
+    if (!node) return -ENOMEM;
+    memset(node, 0, sizeof(tmpfs_node_t));
+    MUTEX_INIT(&node->lck);
+    node->dir.children = hashmap_create("tmpfs node children", 10);
+    node->parent = NULL;
+
+    node->attr.type = VFS_DIRECTORY;
+    node->attr.atime = node->attr.mtime = node->attr.ctime =  VFS_NOW();
+    node->attr.mode = 0755;
+    node->attr.ino = vfs_getNextInode();
+    node->attr.nlink = 2;
+    
+    // Now create the root inode
+    vfs_inode_t *root_inode = vfs2_inode();
+    if (!root_inode) { slab_free(tmpfs_node_cache, node); return -ENOMEM; }
+    root_inode->ops = &tmpfs_inode_ops;
+    root_inode->f_ops = &tmpfs_file_ops;
+    root_inode->c_ops = &tmpfs_cache_ops;
+    memcpy(&root_inode->attr, &node->attr, sizeof(vfs_inode_attr_t));
+    root_inode->mount = mount_dst;
+    root_inode->priv = (void*)node;
+
+    mount_dst->root = root_inode;
+    
+    return 0;
+}
+
+/**
+ * @brief Initialize tmpfs
+ */
+static int tmpfs_init() {
+    tmpfs_node_cache = slab_createCache("tmpfs node cache", SLAB_CACHE_DEFAULT, sizeof(tmpfs_node_t), 0, NULL, NULL);
+    vfs_register(&tmpfs_filesystem);
     return 0;
 }
 

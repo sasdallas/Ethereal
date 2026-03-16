@@ -14,6 +14,7 @@
  */
 
 #include <kernel/drivers/net/socket.h>
+#include <kernel/drivers/net/socket_fs.h>
 #include <kernel/task/syscall.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -40,72 +41,36 @@ int last_socket_id = 0;
 #define SOCKET_CHANGE_FLAG(flag, value) { if (value) { sock->flags |= flag; } else { sock->flags &= ~(flag); } };
 #define SOCKET_GET_FLAG(flag, value, len) { if (sock->flags & flag) { *(int*)value = 1; } else { *(int*)value = 0; }; if (*len > sizeof(int)) *len = sizeof(int); }
 
+/* Socket cache */
+slab_cache_t *socket_cache;
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "NET:SOCKET", __VA_ARGS__)
 
 /**
- * @brief Raw socket sendmsg method
+ * @brief Allocate a socket
+ * @param domain The domain of the socket
+ * @param type The type of the socket
+ * @param protocol The protocol of the socket
  */
-static ssize_t socket_raw_sendmsg(sock_t *sock, struct msghdr *message, int flags) {
-    // Is this socket bound?
-    if (!sock->bound_nic) return -EINVAL;
+sock_t *socket_allocate(int domain, int type, int protocol) {
+    sock_t *r = slab_allocate(socket_cache);
+    if (!r) return NULL;
 
-    // For each iovec...
-    size_t total_sent = 0;
-    LOG(DEBUG, "RAW: Sending message\n");
-    for (unsigned i = 0; i < message->msg_iovlen; i++) {
-        // Try to send some data to the NIC
-        total_sent += fs_write(sock->bound_nic->parent_node, 0, message->msg_iov[i].iov_len, message->msg_iov[i].iov_base);
-    }
+    memset(r, 0, sizeof(sock_t));
 
-    return total_sent;
+    r->domain = domain;
+    r->type = type;
+    r->protocol = protocol;
+
+    return r;
 }
 
 /**
- * @brief Raw socket recvmsg
+ * @brief Free a socket
  */
-static ssize_t socket_raw_recvmsg(sock_t *sock, struct msghdr *message, int flags) {
-    // Is this socket bound?
-    if (!sock->bound_nic) return -EINVAL;
-
-    // For each iovec...
-    ssize_t total_received = 0;
-    LOG(DEBUG, "RAW: Receiving message\n");
-    for (unsigned i = 0; i < message->msg_iovlen; i++) {
-        // Try to get some data
-        sock_recv_packet_t *pkt = socket_get(sock);
-        if (!pkt) return -EINTR;
-
-        // TODO: Handle size mismatch better?
-        if (pkt->size > message->msg_iov[i].iov_len) {
-            // TODO: Set MSG_TRUNC
-            LOG(WARN, "Truncating packet from %d -> %d\n", pkt->size, message->msg_iov[i].iov_len);
-            memcpy(message->msg_iov[i].iov_base, pkt->data, message->msg_iov[i].iov_len);
-            total_received += message->msg_iov[i].iov_len;
-            kfree(pkt);
-            continue;
-        }
-
-        // Copy it and free the packet
-        memcpy(message->msg_iov[i].iov_base, pkt->data, pkt->size);
-        total_received += pkt->size;
-        kfree(pkt);
-    }
-
-    return total_received;
-}
-
-
-/**
- * @brief Raw socket create method
- */
-static sock_t *socket_raw_create(int type, int protocol) {
-    sock_t *sock = kzalloc(sizeof(sock_t));
-
-    sock->sendmsg = socket_raw_sendmsg;
-    sock->recvmsg = socket_raw_recvmsg;
-
-    return sock;
+void socket_free(sock_t *sock) {
+    slab_free(socket_cache, sock);
 }
 
 /**
@@ -124,6 +89,8 @@ int socket_register(int domain, socket_create_t socket_create) {
  * @param msg The message to validate
  */
 static int socket_validateMsg(struct msghdr *message) {
+    return 0;
+
     SYSCALL_VALIDATE_PTR_SIZE(message, sizeof(struct msghdr));
     
     if (message->msg_control) SYSCALL_VALIDATE_PTR_SIZE(message->msg_control, message->msg_controllen);
@@ -149,20 +116,20 @@ static int socket_validateMsg(struct msghdr *message) {
  */
 ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
     
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
 
-    sock_t *sock = (sock_t*)socknode->dev;
-    if (sock->sendmsg) {
-        return sock->sendmsg(sock, message, flags);
+    sock_t *sock = (sock_t*)f->priv;
+    if (sock->ops->sendmsg) {
+        return sock->ops->sendmsg(sock, message, flags);
     } else {
-        return -EINVAL;
+        return -ENODEV;
     }
 }
 
@@ -174,70 +141,21 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
  */
 ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
     
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
     // Validate the full message
     socket_validateMsg(message);
 
-    sock_t *sock = (sock_t*)socknode->dev;
-    if (sock->recvmsg) {
-        return sock->recvmsg(sock, message, flags);
+    sock_t *sock = (sock_t*)f->priv;
+    if (sock->ops->recvmsg) {
+        return sock->ops->recvmsg(sock, message, flags);
     } else {
-        return -EINVAL;
+        return -ENODEV;
     }
-}
-
-/**
- * @brief Socket ioctl method
- * @param node The node to do ioctl() on
- * @param request The requested ioctl()
- * @param argp The argument to ioctl
- */
-int socket_ioctl(fs_node_t *node, unsigned long request, void *argp) {
-    sock_t *sock = (sock_t*)node->dev;
-    switch (request) {
-        case FIONBIO:
-            SYSCALL_VALIDATE_PTR(argp);
-            sock->flags |= (*(int*)argp ? SOCKET_FLAG_NONBLOCKING : 0);
-            return 0;
-        default:
-            return -EINVAL;
-    }
-}
-
-/**
- * @brief Socket read method
- * @param node The node to read
- * @param off Offset
- * @param size Size
- * @param buffer Buffer
- */
-ssize_t socket_read(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
-    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
-    sock_t *sock = (sock_t*)node->dev;
-    if (!sock->recvmsg) return -EINVAL;
-
-    // TODO: Offset?
-    struct iovec iov = {
-        .iov_base = buffer,
-        .iov_len = size
-    };
-
-    struct msghdr msg = {
-        .msg_control = NULL,
-        .msg_controllen = 0,
-        .msg_flags = 0,
-        .msg_name = NULL,
-        .msg_namelen = 0,
-        .msg_iov = &iov,
-        .msg_iovlen = 1,
-    };
-
-    return sock->recvmsg(sock, &msg, 0);
 }
 
 /**
@@ -280,18 +198,7 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
             LOG(ERR, "Send buffer not implemented\n");
             return 0;   // Our receive/send buffers are dynamic
         case SO_BINDTODEVICE:
-            const char *device = option_value;
-            SYSCALL_VALIDATE_PTR(device);
-
-            // Find the NIC
-            nic_t *nic = nic_find((char*)device);
-            if (!nic) return -ENOENT;
-
-            // Bind it
-            sock->bound_nic = nic;
-
-            LOG(DEBUG, "Bound to NIC %s\n", device);
-
+            assert(0 && "SO_BINDTODEVICE");
             return 0;
     }
 
@@ -358,13 +265,13 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
  */
 int socket_setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     // TODO: Replace this with a handler system. This is temporary
     switch (level) {
@@ -385,13 +292,13 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
  */
 int socket_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR(option_len);
     SYSCALL_VALIDATE_PTR_SIZE(option_value, *option_len);
@@ -413,21 +320,21 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
  */
 int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if (f->inode->attr.type != VFS_SOCKET) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
 
-    if (sock->bind) {
-        return sock->bind(sock, addr, addrlen);
+    if (sock->ops->bind) {
+        return sock->ops->bind(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -438,21 +345,21 @@ int socket_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
  */
 int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     SYSCALL_VALIDATE_PTR_SIZE(addr, addrlen);
 
-    if (sock->connect) {
-        return sock->connect(sock, addr, addrlen);
+    if (sock->ops->connect) {
+        return sock->ops->connect(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -462,19 +369,19 @@ int socket_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
  */
 int socket_listen(int socket, int backlog) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
-    if (sock->listen) {
-        return sock->listen(sock, backlog);
+    if (sock->ops->listen) {
+        return sock->ops->listen(sock, backlog);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -485,22 +392,22 @@ int socket_listen(int socket, int backlog) {
  */
 int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
 
     // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->accept) {
-        return sock->accept(sock, addr, addrlen);
+    if (sock->ops->accept) {
+        return sock->ops->accept(sock, addr, addrlen);
     }
 
-    return -EINVAL;
+    return -ENODEV;
 }
 
 /**
@@ -511,23 +418,22 @@ int socket_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
  */
 int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     if (addrlen) SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
-    if (!(*addrlen)) return 0; // TODO: Weird cases in which we can handle this?
+    if (!(*addrlen)) return 0; // TODO: weird case?
 
-    // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->getpeername) {
-        return sock->getpeername(sock, addr, addrlen);
+    if (sock->ops->getpeername) {
+        return sock->ops->getpeername(sock, addr, addrlen);
     }
 
-    return -EOPNOTSUPP;
+    return -ENODEV;
 }
 
 /**
@@ -538,13 +444,13 @@ int socket_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
  */
 int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     // Lookup the file descriptor
-    if (!FD_VALIDATE(current_cpu->current_process, socket)) return -EBADF;
+    if (!FD_VALIDATE(socket)) return -EBADF;
 
     // Is it actually a socket?
-    fs_node_t *socknode = FD(current_cpu->current_process, socket)->node;
-    if ((socknode->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
+    vfs_file_t *f = FD(socket);
+    if ((f->inode->attr.type != VFS_SOCKET)) return -ENOTSOCK;
 
-    sock_t *sock = (sock_t*)socknode->dev;
+    sock_t *sock = (sock_t*)f->priv;
 
     // ???: Can addrlen be NULL?
     SYSCALL_VALIDATE_PTR(addrlen);
@@ -552,82 +458,12 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
     SYSCALL_VALIDATE_PTR_SIZE(addr, (*addrlen));
 
     // !!!: Pointer validation in cases of addrlen = 0?
-    if (sock->getsockname) {
-        return sock->getsockname(sock, addr, addrlen);
+    if (sock->ops->getsockname) {
+        return sock->ops->getsockname(sock, addr, addrlen);
     }
 
     return -EOPNOTSUPP;
 }
-
-
-/**
- * @brief Socket close method
- */
-int socket_close(fs_node_t *node) {
-    sock_t *sock = (sock_t*)node->dev;
-
-    // First, call the socket's dedicated close method
-    if (sock->close) sock->close(sock);
-
-    // Now free memory
-    spinlock_acquire(sock->recv_lock);
-    if (sock->recv_lock) spinlock_destroy(sock->recv_lock);
-    if (sock->recv_queue) list_destroy(sock->recv_queue, true);
-    if (sock->recv_wait_queue) kfree(sock->recv_wait_queue);
-    kfree(sock);
-
-    return 0;
-}
-
-/**
- * @brief Socket node ready method
- * @param node The node to check 
- * @param events The events we are looking for
- */
-int socket_ready(fs_node_t *node, int events) {
-    if ((node->flags & VFS_SOCKET) == 0) return 0;
-
-    sock_t *sock = (sock_t*)node->dev;
-
-    // Does the socket provide its own ready method?
-    if (sock->ready) return sock->ready(sock, events);
-
-    int revents = VFS_EVENT_WRITE;
-    if (sock->recv_queue->length) revents |= VFS_EVENT_READ;
-
-    return revents;
-}
-
-/**
- * @brief Generic socket write method
- * @param node The node to write to
- * @param off The offset to write (ignored?)
- * @param size The size to write
- * @param buffer The buffer to write
- */
-ssize_t socket_write(fs_node_t *node, off_t off, size_t size, uint8_t *buffer) {
-    if ((node->flags & VFS_SOCKET) == 0) return -ENOTSOCK;
-
-    struct iovec iov = {
-        .iov_base = buffer,
-        .iov_len = size
-    };
-
-    struct msghdr msg = {
-        .msg_control = NULL,
-        .msg_controllen = 0,
-        .msg_flags = 0,
-        .msg_iov = &iov,
-        .msg_iovlen = 1,
-        .msg_name = NULL,
-        .msg_namelen = 0
-    };
-
-    sock_t *sock = (sock_t*)node->dev;
-    if (sock->sendmsg) return sock->sendmsg(sock, &msg, 0);
-    return -EINVAL;
-}
-
 
 /**
  * @brief Create a new socket for a given process
@@ -656,21 +492,7 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     if (!sock->recv_wait_queue) sock->recv_wait_queue = sleep_createQueue("receive sleep queue");
     if (!sock->recv_queue) sock->recv_queue = list_create("receive queue");
 
-    // Build a filesystem node
-    if (!sock->node) {
-        fs_node_t *node = kzalloc(sizeof(fs_node_t));
-        strcpy(node->name, "socket");
-        node->flags = VFS_SOCKET;
-        node->atime = node->ctime = node->mtime = now();
-        node->dev = (void*)sock;
-        node->ready = socket_ready;
-        node->close = socket_close;
-        node->read = socket_read;
-        node->write = socket_write;
-        node->ioctl = socket_ioctl;
-        node->refcount = 1;
-        sock->node = node;
-    }
+    sock->inode = socketfs_create(sock);
 
     // Setup other parameters
     sock->domain = domain;
@@ -685,13 +507,18 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     }
 
     // Add as file descriptor
-    fd_t *fd = fd_add(proc, sock->node);
-    
+    vfs_file_t *f;    
+    assert(vfs_openat(sock->inode, NULL, O_RDWR, &f) == 0);
+
+    inode_release(sock->inode); // required after creation so that the last reference can be dropped
+
+    int fd_num;
+    assert(fd_add(f, &fd_num) == 0);
     if (type_original & SOCK_CLOEXEC) {
         LOG(WARN, "SOCK_CLOEXEC is not supported\n");
     }
 
-    return fd->fd_number;
+    return fd_num;
 }
 
 /**
@@ -729,7 +556,7 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     list_append(sock->recv_queue, (void*)pkt);
 
     // Alert
-    fs_alert(sock->node, VFS_EVENT_READ | VFS_EVENT_WRITE);
+    poll_signal(&sock->sock_event, POLLIN);
 
     // Wakeup a thread from the queue
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
@@ -791,6 +618,7 @@ sock_t *socket_fromID(int id) {
 static int socket_init() {
     socket_map = hashmap_create_int("socket map", 4);
     socket_list = list_create("socket list");
+    assert((socket_cache = slab_createCache("socket node cache", SLAB_CACHE_DEFAULT, sizeof(sock_t), 0, NULL, NULL)));
     return 0;
 }
 

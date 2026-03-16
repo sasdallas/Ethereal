@@ -32,6 +32,7 @@ typedef struct queue {
 
 /**** MACROS ****/
 #define QUEUE_NODE_INITIALIZE(n, v)  { ((n))->val = (v); }
+#define QUEUE_INIT(q) { (q)->head = (q)->tail = NULL; (q)->size = 0; }
 
 /**** FUNCTIONS ****/
 

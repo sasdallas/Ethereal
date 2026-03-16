@@ -45,7 +45,7 @@ typedef struct _extended_registers {
     uint64_t cr0;
     uint64_t cr2;
     uint64_t cr3;
-    uint64_t cr4;
+    uint64_t rsvd; // too scared to remove
     descriptor_t gdtr;
     descriptor_t idtr;
 } __attribute__((packed)) extended_registers_t;

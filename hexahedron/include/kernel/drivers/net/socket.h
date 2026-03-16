@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <kernel/task/process.h>
+#include <structs/circbuf.h>
 
 /**** DEFINITIONS ****/
 
@@ -51,41 +52,56 @@ typedef int (*sock_getpeername_t)(struct sock *sock, struct sockaddr *addr, sock
 typedef int (*sock_setsockopt_t)(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
 typedef int (*sock_getsockopt_t)(struct sock *sock, int level, int option_name, void *option_value, socklen_t *option_len);
 
+typedef struct sock_ops {
+    ssize_t (*sendmsg)(struct sock *sock, struct msghdr *message, int flags);
+    ssize_t (*recvmsg)(struct sock *sock, struct msghdr *message, int flags);
+    int (*bind)(struct sock *sock, const struct sockaddr *addr, socklen_t addrlen);
+    int (*connect)(struct sock *sock, const struct sockaddr *addr, socklen_t addrlen);
+    int (*listen)(struct sock *sock, int backlog);
+    int (*accept)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+    int (*close)(struct sock *sock);
+    int (*getsockname)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+    int (*getpeername)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+    int (*getsockopt)(struct sock *sock, int level, int option_name, void *option_value, socklen_t *option_len);
+    int (*setsockopt)(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+    int (*poll)(struct sock *sock, poll_waiter_t *waiter, poll_events_t events);
+    poll_events_t (*poll_events)(struct sock *sock);
+} sock_ops_t;
+
 /**
  * @brief Socket object
  */
 typedef struct sock {
-    fs_node_t *node;                    // Node object
+    vfs_inode_t *inode;                 // Bound inode
     int flags;                          // Flags
     int id;                             // Identifier of the socket (auto-assigned and can be resolved with socket_fromID)
 
-    int domain;                         // Domain of the socket
-    int type;                           // Type of the socket
-    int protocol;                       // Protocol of the socket
+    // Lock
+    mutex_t lock;                       // Socket lock
 
-    // METHODS
-    sock_sendmsg_t sendmsg;             // sendmsg
-    sock_recvmsg_t recvmsg;             // recvmsg
-    sock_bind_t bind;                   // bind
-    sock_connect_t connect;             // connect
-    sock_listen_t listen;               // listen
-    sock_accept_t accept;               // accept
-    sock_close_t close;                 // close
-    sock_ready_t ready;                 // (VFS replacement) ready
-    sock_getsockname_t getsockname;     // getsockname
-    sock_getpeername_t getpeername;     // getpeername
-    sock_getsockopt_t getsockopt;       // getsockopt
-    sock_setsockopt_t setsockopt;       // setsockopt
+    // Identification
+    unsigned char domain;               // Domain of the socket
+    unsigned char type;                 // Type of the socket
+    unsigned char protocol;             // Protocol of the socket
+
+    // Poll
+    poll_event_t sock_event;            // Socket event
+
+    // Operations
+    sock_ops_t *ops;                    // Socket operations
 
     // RECEIVE
     spinlock_t *recv_lock;              // Receive lock
     sleep_queue_t *recv_wait_queue;     // Receive sleep queue
     list_t *recv_queue;                 // Received packet queue
 
+    // RECEIVE 2
+    spinlock_t queue_lock;
+    circbuf_t *queue;
+
     // OTHER
     struct sockaddr *connected_addr;    // Connected socket address
     socklen_t connected_addr_len;       // Connected address length
-    nic_t *bound_nic;                   // Bound NIC
     void *driver;                       // Socket driver specific object
 } sock_t;
 
@@ -109,6 +125,19 @@ typedef struct sock_recv_packet {
 typedef sock_t* (*socket_create_t)(int type, int protocol);
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief Allocate a socket
+ * @param domain The domain of the socket
+ * @param type The type of the socket
+ * @param protocol The protocol of the socket
+ */
+sock_t *socket_allocate(int domain, int type, int protocol);
+
+/**
+ * @brief Free a socket
+ */
+void socket_free(sock_t *sock);
 
 /**
  * @brief Register a new handler for a socket type

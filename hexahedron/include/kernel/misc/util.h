@@ -21,6 +21,7 @@
 #include <time.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
+#include <kernel/refcount.h>
 #include <ctype.h>
 #include <assert.h>
 
@@ -84,16 +85,17 @@
 #define __PREEMPT_DISABLE() int __flags=0; if (current_cpu->current_thread) { __flags = current_cpu->current_thread->flags; __sync_or_and_fetch(&current_cpu->current_thread->flags, THREAD_FLAG_NO_PREEMPT); }
 #define __PREEMPT_ENABLE() if (current_cpu->current_thread) current_cpu->current_thread->flags = __flags;
 
-/* refcount */
-typedef atomic_int refcount_t;
-#define refcount_inc(ref) ({ atomic_fetch_add(ref, 1); })
-#define refcount_dec(ref) ({ atomic_fetch_sub(ref, 1); })
-#define refcount_init(ref, val) ({ atomic_store(ref, val); })
-
 /* stub */
 #define STUB() kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "stub", "%s:%d: \"%s\" is a stub", __FILE__, __LINE__, __func__); __builtin_unreachable();
 
 /* caller */
 #define CALLER __builtin_return_address(0)
+
+/* container_of macro */
+#define CONTAINER_OF(ptr, type, member) ({ \
+    void *__mptr = (void*)(ptr); \
+    ((type *)(__mptr - offsetof(type, member))); \
+})
+
 
 #endif

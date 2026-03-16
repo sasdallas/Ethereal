@@ -15,14 +15,14 @@
 #define DRIVERS_STORAGE_DRIVE_H
 
 /**** INCLUDES ****/
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/devfs.h>
 #include <kernel/drivers/storage/partition.h>
 #include <kernel/drivers/storage/mbr.h>
-#include <kernel/fs/drivefs.h>
 
 /**** DEFINITIONS ****/
 
 // Drive types
+#define DRIVE_TYPE_UNKNOWN      0   // Unknown
 #define DRIVE_TYPE_IDE_HD       1   // IDE harddrive
 #define DRIVE_TYPE_CDROM        2   // CD-ROM (use DRIVE_TYPE_SCSI_CDROM for SCSI CDROMs)
 #define DRIVE_TYPE_SATA         3   // SATA drive
@@ -31,6 +31,17 @@
 #define DRIVE_TYPE_NVME         6   // NVMe drive
 #define DRIVE_TYPE_FLOPPY       7   // Floppy drive
 #define DRIVE_TYPE_MMC          8   // MMC drive
+
+
+#define DRIVE_NAME_IDE_HD       "idehd"
+#define DRIVE_NAME_CDROM        "cdrom"
+#define DRIVE_NAME_SATA         "sata"
+#define DRIVE_NAME_SCSI         "scsi"
+#define DRIVE_NAME_SCSI_CDROM   "scsicd"
+#define DRIVE_NAME_NVME         "nvme"
+#define DRIVE_NAME_FLOPPY       "floppy"
+#define DRIVE_NAME_MMC          "mmc"
+#define DRIVE_NAME_UNKNOWN      "unknown"
 
 /**** TYPES ****/
 
@@ -59,9 +70,8 @@ typedef ssize_t (*drive_write_sectors_t)(struct drive*, uint64_t, size_t, uint8_
 
 
 typedef struct drive {
-    fs_node_t *node;                        // Mounted filesystem node for the drive
-    struct fs_drive *drivefs;               // DriveFS object
-    int type;                               // Drive type
+    devfs_node_t *node;                     // Device filesystem node
+    unsigned char type;                     // Drive type
     size_t sectors;                         // Sectors of the drive
     size_t sector_size;                     // Sector size
 

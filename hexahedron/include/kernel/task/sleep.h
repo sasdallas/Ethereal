@@ -31,6 +31,7 @@
 /**** TYPES ****/
 
 struct thread;
+struct sleep_queue;
 
 /**
  * @brief Sleeper structure
@@ -41,18 +42,24 @@ typedef struct thread_sleep {
     spinlock_t lock;                        // Used to prevent modifications to the thread's sleep state until release
     volatile int wakeup_reason;             // Reason this thread got woken up
     unsigned long seconds, subseconds;      // Seconds and subseconds
+    struct sleep_queue *queue;              // Queue being slept on
 } thread_sleep_t;
 
 /**
  * @brief Sleep queue structure
  * 
- * @note This is just a list object with a lock lmao 
+ * @fnote This is just a list object with a lock lmao 
  */
 typedef struct sleep_queue {
     spinlock_t lock;
     thread_sleep_t *head;                   // Head of the list
 } sleep_queue_t;
 
+
+/**** MACROS ****/
+
+#define SLEEP_QUEUE_INITIALIZER { .lock = SPINLOCK_INITIALIZER, .head = NULL }
+#define SLEEP_QUEUE_INIT(q) ({ SPINLOCK_INIT(&(q)->lock); (q)->head = NULL; })
 
 /**** FUNCTIONS ****/
 

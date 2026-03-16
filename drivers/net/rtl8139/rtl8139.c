@@ -13,11 +13,19 @@
 
 
 #include "rtl8139.h"
+#include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/loader/driver.h>
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
+
+/* NIC ops */
+static ssize_t rtl8139_send(nic_t *n, size_t size, char *buffer);
+static nic_ops_t rtl8139_nic_ops = {
+    .send = rtl8139_send,
+    .ioctl = NULL
+};
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:RTL8139", __VA_ARGS__)
@@ -127,11 +135,11 @@ void rtl8139_thread(void *context) {
         LOG(DEBUG, "Read packet (rx_current=0x%x)\n", nic->rx_current);
         uint16_t *packet = (uint16_t*)(nic->rx_buffer + nic->rx_current);
         uint16_t packet_len = packet[1];
-        ethernet_handle((ethernet_packet_t*)(packet+2), nic->nic, packet_len);
+        ethernet_handle((ethernet_packet_t*)(packet+2), nic->n, packet_len);
 
         // Update counts
-        NIC(nic->nic)->stats.rx_packets++;
-        NIC(nic->nic)->stats.rx_bytes += packet_len;
+        nic->n->stats.rx_packets++;
+        nic->n->stats.rx_bytes += packet_len;
 
         // Update rx_current
         nic->rx_current += (packet_len + 4 + 3) & ~3;
@@ -166,7 +174,7 @@ int rtl8139_handler(void *context) {
 
         if (status & RTL8139_ISR_TER) {
             // Error
-            NIC(nic->nic)->stats.tx_dropped++;
+            nic->n->stats.tx_dropped++;
         }
 
         if (status & RTL8139_ISR_ROK) {
@@ -176,7 +184,7 @@ int rtl8139_handler(void *context) {
 
         if (status & RTL8139_ISR_RER) {
             // Error
-            NIC(nic->nic)->stats.rx_dropped++;
+            nic->n->stats.rx_dropped++;
         }
     }
 
@@ -186,10 +194,10 @@ int rtl8139_handler(void *context) {
 /**
  * @brief Write packet method
  */
-ssize_t rtl8139_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t *buffer) {
+static ssize_t rtl8139_send(nic_t *n, size_t size, char *buffer) {
     // Move the data to a phytsically contiuous block of RAM
     // TODO: Properly do this. Can we have the IRQ handler send a PROPER success message back instead of using this garbage lock system?
-    rtl8139_t *nic = (rtl8139_t*)NIC(node)->driver;
+    rtl8139_t *nic = (rtl8139_t*)n->driver;
     spinlock_acquire(&nic->lock);
 
     // Prepare a block of memory
@@ -215,8 +223,8 @@ ssize_t rtl8139_writePacket(fs_node_t *node, off_t offset, size_t size, uint8_t 
     if (nic->tx_current > 3) nic->tx_current = 0;
     
     // Update counts
-    NIC(nic->nic)->stats.tx_packets++;
-    NIC(nic->nic)->stats.tx_bytes += size;
+    n->stats.tx_packets++;
+    n->stats.tx_bytes += size;
 
     // NOTE: Don't release the lock. The IRQ handler will
     return size;
@@ -309,14 +317,12 @@ int rtl8139_init(pci_device_t *device) {
     RTL8139_WRITE8(RTL8139_REG_CR, RTL8139_CMD_RE | RTL8139_CMD_TE);
 
     // Create NIC
-    nic->nic = nic_create("RTL8139", mac, NIC_TYPE_ETHERNET, (void*)nic);
-    nic->nic->write = rtl8139_writePacket;
-    NIC(nic->nic)->mtu = 1500;
-
-    // Register it
     char name[128];
     snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
-    nic_register(nic->nic, name);
+
+    nic->n = nic_create(name, NIC_TYPE_ETHERNET, &rtl8139_nic_ops, mac, (void*)nic);
+    nic->n->state = NIC_STATE_UP; // TODO
+    nic->n->mtu = 1500;
 
     // Start thread
     nic->receive_proc = process_createKernel("rtl8139 receiver", PROCESS_KERNEL, PRIORITY_MED, rtl8139_thread, (void*)nic);

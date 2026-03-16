@@ -34,7 +34,7 @@
 #include <errno.h>
 
 #include <kernel/mm/vmm.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/devfs.h>
 #include <kernel/task/process.h>
 #include <kernel/task/syscall.h>
 #include <kernel/gfx/video.h>
@@ -49,8 +49,24 @@ static video_driver_t *current_driver = NULL;
 /* Video framebuffer. This will be passed to the driver */
 uint8_t *video_framebuffer = NULL;
 
-/* Video VFS node (TEMPORARY) */
-fs_node_t *video_node = NULL;
+/* TEMPORARY */
+int video_ioctl(devfs_node_t *node, unsigned long request, void *argp);
+static int video_mmap_prepare(devfs_node_t *node, vmm_memory_range_t *range);
+static int video_mmap(devfs_node_t *node, void *addr, size_t len, off_t offset, mmu_flags_t flags);
+static int video_munmap(devfs_node_t *node, void *addr, size_t len, off_t offset);
+devfs_ops_t video_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = NULL,
+    .write = NULL,
+    .ioctl = video_ioctl,
+    .lseek = NULL,
+    .poll = NULL,
+    .poll_events = NULL,
+    .mmap = video_mmap,
+    .mmap_prepare = video_mmap_prepare,
+    .munmap = video_munmap,
+};
 
 /* Kill switch (this disables kernel writes to video memory and is temporary) */
 int video_ks = 0;
@@ -58,7 +74,7 @@ int video_ks = 0;
 /**
  * @brief ioctl method for video node
  */
-int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
+int video_ioctl(devfs_node_t *node, unsigned long request, void *argp) {
     size_t bufsz = (current_driver->screenWidth * 4) + (current_driver->screenHeight * current_driver->screenPitch);
     switch (request) {
         case IO_VIDEO_GET_INFO:
@@ -87,18 +103,23 @@ int video_ioctl(fs_node_t *node, unsigned long request, void *argp) {
 }
 
 /**
+ * @brief mmap prepare for video driver
+ */
+static int video_mmap_prepare(devfs_node_t *node, vmm_memory_range_t *range) {
+    range->vmm_flags |= VM_FLAG_DEVICE;
+    return 0;
+}
+
+/**
  * @brief mmap method for video driver
  * This just calls into the actual driver's video map method.
  */
-int video_mmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
+static int video_mmap(devfs_node_t *node, void *addr, size_t len, off_t offset, mmu_flags_t flags) {
     if (current_driver->map) {
         // Map it
+        // TODO use flags, this is bullshit.
         int r = current_driver->map(current_driver, len, offset, addr);
         if (r != 0) return r;
-
-        // Enable device memory
-        vmm_memory_range_t *range = vmm_getRange(vmm_getSpaceForAddress(addr), (uintptr_t)addr, len);
-        range->vmm_flags |= VM_FLAG_DEVICE;
 
         // Disable kernel video writes
         video_ks = 1;
@@ -112,7 +133,7 @@ int video_mmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
  * @brief munmap method for video driver
  * This just calls into the actual driver's video unmap method.
  */
-int video_munmap(fs_node_t *node, void *addr, size_t len, off_t offset) {
+static int video_munmap(devfs_node_t *node, void *addr, size_t len, off_t offset) {
     size_t bufsz = (current_driver->screenHeight * current_driver->screenPitch);
     len = (len > bufsz) ? bufsz : len;
 
@@ -247,19 +268,8 @@ uint8_t *video_getFramebuffer() {
  * @brief Mount video node
  */
 static int video_mount() {
-    // Create /device/fb0
-    // TODO: scuffed
-    video_node = kmalloc(sizeof(fs_node_t));
-    memset(video_node, 0, sizeof(fs_node_t));
-    strcpy(video_node->name, "fb0");
-    video_node->ioctl = video_ioctl;
-    video_node->flags = VFS_BLOCKDEVICE;
-    video_node->mask = 0660;
-    video_node->mmap = video_mmap;
-    video_node->munmap = video_munmap;
-    vfs_mount(video_node, "/device/fb0");
-    return 0;
+    return !devfs_register(devfs_root, "fb0", VFS_BLOCKDEVICE, &video_ops, DEVFS_MAJOR_VIDEO, 0, NULL);
 }
 
 /* Init routines */
-FS_INIT_ROUTINE(video, INIT_FLAG_DEFAULT, video_mount);
+FS_INIT_ROUTINE(video, INIT_FLAG_DEFAULT, video_mount, devfs);

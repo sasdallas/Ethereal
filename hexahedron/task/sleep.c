@@ -68,7 +68,7 @@ void sleep_callback(uint64_t ticks) {
         }
 
         // Check for expiration
-        if (seconds > n->seconds || (seconds == n->seconds && subseconds > n->subseconds)) {
+        if (n->sl != current_cpu->current_thread && (seconds > n->seconds || (seconds == n->seconds && subseconds > n->subseconds))) {
             // Trigger thread wakeup
             sleep_wakeupReason(n->sl, WAKEUP_TIME);
             prev->next = n->next;
@@ -93,6 +93,7 @@ void sleep_prepare() {
     spinlock_acquire(&current_cpu->current_thread->sleep.lock);
     current_cpu->current_thread->sleep.seconds = 0;
     current_cpu->current_thread->sleep.subseconds = 0;
+    current_cpu->current_thread->sleep.queue = NULL;
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_SLEEPING);
 }
 
@@ -158,7 +159,7 @@ int sleep_wakeupReason(struct thread *thread, int reason) {
  * @param thread The thread to wake up
  * @returns 0 on success
  */
-int sleep_wakeup(struct thread *thread) {
+inline int sleep_wakeup(struct thread *thread) {
     return sleep_wakeupReason(thread, WAKEUP_ANOTHER_THREAD);
 }
 
@@ -189,6 +190,33 @@ int sleep_enter() {
 
     
     process_yield(0);
+    
+    // Remove us from our queue
+
+    // remove thread from queue if needed
+    thread_t *thread = current_cpu->current_thread;
+    if (thread->sleep.queue) {
+        sleep_queue_t *queue = thread->sleep.queue;
+        spinlock_acquire(&queue->lock);
+
+        thread_sleep_t *ents = queue->head;
+        if (ents == &thread->sleep) {
+            queue->head = ents->next;
+        } else {
+            while (ents->next) {
+                if (ents->next == &thread->sleep) {
+                    ents->next = ents->next->next;
+                    break;
+                }
+
+                ents = ents->next;
+            }
+        }
+
+        spinlock_release(&queue->lock);
+
+        thread->sleep.queue = NULL;
+    }
     
     // Clear seconds and subseconds
     current_cpu->current_thread->sleep.seconds = current_cpu->current_thread->sleep.subseconds = 0;
@@ -227,6 +255,7 @@ int sleep_addQueue(sleep_queue_t *queue) {
         queue->head = &current_cpu->current_thread->sleep;
     }
 
+    current_cpu->current_thread->sleep.queue = queue;
     spinlock_release(&queue->lock);
     return 0;
 }
@@ -253,6 +282,7 @@ int sleep_inQueue(sleep_queue_t *queue) {
 
     // Prepare (acquires the thread's sleep lock while still holding queue->lock to keep ordering)
     sleep_prepare();
+    current_cpu->current_thread->sleep.queue = queue;
 
     spinlock_release(&queue->lock);
     return 0;
@@ -267,27 +297,18 @@ int sleep_inQueue(sleep_queue_t *queue) {
 int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     int amnt = 0;
  
+    // !!!: RCU? problem?
     spinlock_acquire(&queue->lock);
     thread_sleep_t *t = queue->head;
     thread_sleep_t *prev = NULL;
     while (t) {
         if (amounts != 0 && amnt >= amounts) break;
-        
+
         thread_sleep_t *next = t->next;
-
-        // Unlink t from the queue
-        if (prev) {
-            prev->next = next;
-        } else {
-            // removing head
-            queue->head = next;
-        }
-
+        
         // Wakeup the thread (outside of list structure)
         sleep_wakeup(t->thread);
-
         amnt++;
-        // prev remains the same because we've removed t from the list
         t = next;
     }
     spinlock_release(&queue->lock);

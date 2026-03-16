@@ -12,7 +12,7 @@
  */
 
 #include <kernel/mm/vmm.h>
-#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/debug.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
@@ -78,6 +78,7 @@ int vmm_initializeContext(slab_cache_t *cache, void *object) {
     sp->end = MMU_USERSPACE_END;
     sp->mut = mutex_create("mut");
     sp->range = NULL;
+    memset(&sp->metrics, 0, sizeof(vmm_metrics_t));
 
     return 0;
 }
@@ -144,7 +145,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_FREE) {
                 // No need to create another range.
-                vmm_freePages(r, start - r->start, size / PAGE_SIZE);
+                vmm_freePages(space, r, start - r->start, size / PAGE_SIZE);
                 if (r->next) r->next->prev = new_range;
                 new_range->next = r->next;
                 new_range->prev = r;
@@ -191,7 +192,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             // Split the regions up
             if (op_type == VM_OP_FREE) {
                 // Don't actually just update this existing range
-                vmm_freePages(r, start - r->start, (r->end - start) / PAGE_SIZE);
+                vmm_freePages(space, r, start - r->start, (r->end - start) / PAGE_SIZE);
                 r->end = start;
                 goto _next_range;
             }
@@ -222,7 +223,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_FREE) {
                 // Don't actually split
-                vmm_freePages(r, 0, (end - r->start) / PAGE_SIZE);
+                vmm_freePages(space, r, 0, (end - r->start) / PAGE_SIZE);
                 r->start = end;
                 goto _next_range;
             }
@@ -255,13 +256,17 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
 /**
  * @brief Update the virtual memory mappings
- * @param space The space to update in
  * @param start The starting address to update
  * @param size The size to update
  * @param op_type VM_OP
  * @param mmu_flags MMU flags
  */
-int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
+    start = (void*)PAGE_ALIGN_DOWN((uintptr_t)start);
+    if (size & 0xfff) size = PAGE_ALIGN_UP(size);
+    vmm_space_t *space = vmm_getSpaceForAddress(start);
+    if (!space) return -EINVAL; 
+
     mutex_acquire(space->mut);
     int err = __vmm_update(space, start, size, op_type, mmu_flags);
     mutex_release(space->mut);
@@ -280,9 +285,6 @@ int vmm_update(vmm_space_t *space, void *start, size_t size, int op_type, mmu_fl
  * @returns The address mapped or NULL on failure.
  */
 void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, ...) {
-    if (size > 4096) {
-        LOG(DEBUG, "$$$$$$$$$$$$$$$$$$$$$ Big mapping of size %d requested by proc %s addr hint %p flags %x ret %p\n", size, current_cpu->current_process ? current_cpu->current_process->name : "(n/a)", addr, vm_flags, __builtin_return_address(0));
-    }
     // Locate the free range
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
     if (size & 0xFFF) size = PAGE_ALIGN_UP(size); // !!!: hope I dont forget about this 
@@ -290,6 +292,9 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     if (addr == NULL && !(vm_flags & VM_FLAG_FIXED)) {
         addr = (void*)MMU_KERNELSPACE_START;
     }
+
+    va_list ap;
+    va_start(ap, prot);
 
     void *r = NULL;
 
@@ -320,9 +325,16 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     // Insert into range
     vmm_insertRange(sp, range);
 
+    if (vm_flags & VM_FLAG_FILE) {
+        sp->metrics.file_usage += size;
+    } else if (vm_flags & VM_FLAG_ALLOC) {
+        sp->metrics.anon_usage += size;
+    }
+
     // We can back these pages if we're in the kernel's context.
     // Otherwise, allocations will be auto-backed by VMM faults.
-    if (vm_flags & VM_FLAG_ALLOC && sp == &__vmm_kernel_space) {
+    if (vm_flags & VM_FLAG_ALLOC && (sp == &__vmm_kernel_space || vm_flags & VM_FLAG_FAKE_ME_NOT) ) {
+        assert((vm_flags & VM_FLAG_FILE) == 0);
         // Back the pages now
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
             uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
@@ -330,12 +342,26 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
         }
 
         arch_mmu_invalidate_range(range->start, range->end);
+        sp->metrics.anon_resident += size;
     }
+
 
     r = (void*)range->start;
 
+    if (range->vmm_flags & VM_FLAG_FILE) {
+        vmm_file_t *f =  va_arg(ap, vmm_file_t*);
+        memcpy(&range->file, f, sizeof(vmm_file_t));
+        file_hold(f->node);
+        int res = file_mmap_prepare(f->node, range);
+        if (res) {
+            // another design flaw
+            LOG(ERR, "ERROR: file_mmap_prepare failed with error %d, no way to return error.\n",  res);
+        }
+    }
+
 _finish:
     mutex_release(sp->mut);
+    va_end(ap);
     return r;
 }
 
