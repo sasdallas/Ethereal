@@ -31,13 +31,13 @@
 #define LOG(status, ...) dprintf_module(status, "NETWORK:TCP", __VA_ARGS__)
 
 /* Log NIC */
-#define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s]    TCP: ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
+#define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s]    TCP: ", nn->name); dprintf(NOHEADER, __VA_ARGS__)
 
 /* Transition TCP port state */
 #define TCP_CHANGE_STATE(s) { tcpsock->state = s; LOG(DEBUG, "Socket bound to port %d transition to state \"%s\"\n", tcpsock->port, tcp_stateToString(tcpsock->state)); }
 
 /* Print packet */
-#define TCP_PRINT_PKT(pkt, nic, ippkt) LOG_NIC(DEBUG, nic->parent_node, "[%s%s%s%s%s] %d -> %d Seq=%d Ack=%d Len=%d Id=%x\n", \
+#define TCP_PRINT_PKT(pkt, nic, ippkt) LOG_NIC(DEBUG, nic, "[%s%s%s%s%s] %d -> %d Seq=%d Ack=%d Len=%d Id=%x\n", \
                                     (ntohs(pkt->flags) & TCP_FLAG_ACK) ? "ACK " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_PSH) ? "PSH " : "", \
                                     (ntohs(pkt->flags) & TCP_FLAG_RST) ? "RST " : "", \
@@ -657,7 +657,7 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             // Off with the packet
             int handled = 0;
             poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
-            poll_add(w, &sock->sock_event, VFS_EVENT_READ);
+            poll_add(w, &sock->sock_event, POLLIN);
             for (int attempts = 0; attempts < 3; attempts++) {
                 tcp_sendPacket(sock, nic, in->sin_addr.s_addr, &pkt, iov.iov_base + sent_bytes, remain);
             
@@ -799,7 +799,7 @@ static int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t 
 
     // Wait for a response
     poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
-    poll_add(w, &sock->sock_event, VFS_EVENT_READ);
+    poll_add(w, &sock->sock_event, POLLIN);
 
     for (int attempt = 0; attempt < 3; attempt++) {
         // Put the current thread to sleep and let it 

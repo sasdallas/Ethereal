@@ -72,8 +72,7 @@ typedef struct sock_ops {
  * @brief Socket object
  */
 typedef struct sock {
-    fs_node_t *node;                    // Node object
-    vfs_inode_t *inode;                // Bound inode
+    vfs_inode_t *inode;                 // Bound inode
     int flags;                          // Flags
     int id;                             // Identifier of the socket (auto-assigned and can be resolved with socket_fromID)
 

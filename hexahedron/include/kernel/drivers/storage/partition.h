@@ -18,7 +18,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
-#include <kernel/fs/vfs.h>
 
 /**** TYPES ****/
 

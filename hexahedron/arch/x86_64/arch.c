@@ -48,9 +48,6 @@
 // Graphics
 #include <kernel/gfx/gfx.h>
 
-// Filesystem
-#include <kernel/fs/vfs.h>
-
 // Loader
 #include <kernel/loader/driver.h>
 

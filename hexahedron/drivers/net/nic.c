@@ -215,24 +215,6 @@ static ssize_t nic_systemfsRead(systemfs_node_t *entry) {
 }
 
 /**
- * @brief Find a NIC device by their node name
- * @param name The name to search for
- * @returns The NIC device on success or NULL on failure
- */
-nic_t *nic_find(char *name) {
-    foreach(nic_node, nic_list) {
-        nic_t *nic = (nic_t*)nic_node->value;
-        if (nic) {
-            if (!strcmp(nic->parent_node->name, name)) {
-                return nic;
-            }
-        }
-    }
-
-    return NULL;
-}
-
-/**
  * @brief Find NIC device with a valid route to this address
  * @param addr The address to search for
  * @returns The NIC device on success or NULL on failure

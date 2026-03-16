@@ -15,7 +15,7 @@
 #include <kernel/drivers/net/socket.h>
 #include <sys/un.h>
 #include <kernel/mm/alloc.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
@@ -289,12 +289,11 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
 
     // Canonicalize the path...
-    char *p = vfs_canonicalizePath(current_cpu->current_process->wd_path, addr->sun_path);
-    assert(p);
+    char p[PATH_MAX];
+    vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
 
     // Get server
     sock_t *serv = hashmap_get(unix_path_map, p);
-    kfree(p);
     if (!serv) { return -ENOENT; } // ???
     unix_sock_t *userv = USOCK(serv);
 

@@ -159,24 +159,6 @@ ssize_t socket_recvmsg(int socket, struct msghdr *message, int flags) {
 }
 
 /**
- * @brief Socket ioctl method
- * @param node The node to do ioctl() on
- * @param request The requested ioctl()
- * @param argp The argument to ioctl
- */
-int socket_ioctl(fs_node_t *node, unsigned long request, void *argp) {
-    sock_t *sock = (sock_t*)node->dev;
-    switch (request) {
-        case FIONBIO:
-            SYSCALL_VALIDATE_PTR(argp);
-            sock->flags |= (*(int*)argp ? SOCKET_FLAG_NONBLOCKING : 0);
-            return 0;
-        default:
-            return -EINVAL;
-    }
-}
-
-/**
  * @brief Setsockopt for the @c SOL_SOCKET type of sockets
  * @param sock The socket to set options for
  * @param option_name The option to set
@@ -510,7 +492,6 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     if (!sock->recv_wait_queue) sock->recv_wait_queue = sleep_createQueue("receive sleep queue");
     if (!sock->recv_queue) sock->recv_queue = list_create("receive queue");
 
-    sock->node = (fs_node_t*)0xdeadbeef;
     sock->inode = socketfs_create(sock);
 
     // Setup other parameters

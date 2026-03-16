@@ -817,6 +817,9 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
  * @returns Amount of bytes read or negative error code
  */
 ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
+#ifndef VFS_ENABLE_PAGE_CACHE
+    return file_read(file, off, size, buffer);
+#else
     if (!VFS_CACHEABLE(file->inode)) {
         return file_read(file, off, size, buffer);
     }
@@ -861,6 +864,7 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     }
 
     return (ssize_t)size;
+#endif
 }
 
 /**
@@ -872,6 +876,9 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
  * @returns Amount of bytes write or negative error code
  */
 ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
+#ifndef VFS_ENABLE_PAGE_CACHE
+    return file_write(file, off, size, buffer);
+#else
     if (!VFS_CACHEABLE(file->inode)) {
         return file_write(file, off, size, buffer);
     }
@@ -913,6 +920,7 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
     }
 
     return (ssize_t)size;
+#endif
 }
 
 /**

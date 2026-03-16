@@ -12,7 +12,7 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include <kernel/fs/tmpfs_new.h>
+#include <kernel/fs/tmpfs.h>
 #include <kernel/debug.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/init.h>
@@ -670,4 +670,4 @@ static int tmpfs_init() {
     return 0;
 }
 
-FS_INIT_ROUTINE(tmpfs_new, INIT_FLAG_DEFAULT, tmpfs_init);
+FS_INIT_ROUTINE(tmpfs, INIT_FLAG_DEFAULT, tmpfs_init);

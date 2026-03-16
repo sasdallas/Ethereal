@@ -348,7 +348,6 @@ static int sys_stat_common(vfs_file_t *f, struct stat *statbuf) {
     if (attr.type == VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
     if (attr.type == VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
     if (attr.type == VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
-    if (attr.type == VFS_MOUNTPOINT)     statbuf->st_dev |= S_IFDIR; // ???
 
     // st_mode is just st_dev with extra steps
     statbuf->st_mode = statbuf->st_dev;

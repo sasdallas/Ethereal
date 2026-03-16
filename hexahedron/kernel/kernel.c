@@ -31,7 +31,7 @@
 #include <kernel/mm/vmm.h>
 
 // VFS
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/fs/shared.h>
 

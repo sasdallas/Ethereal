@@ -16,7 +16,6 @@
 
 /**** INCLUDES ****/
 #include <kernel/drivers/net/nic.h>
-#include <kernel/fs/vfs.h>
 #include <stdint.h>
 #include <stddef.h>
 

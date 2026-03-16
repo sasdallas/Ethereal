@@ -15,7 +15,6 @@
 #define DRIVERS_NET_NIC_H
 
 /**** INCLUDES ****/
-#include <kernel/fs/vfs.h>
 #include <kernel/fs/systemfs.h>
 #include <stdint.h>
 #include <string.h>
@@ -75,7 +74,6 @@ typedef struct nic {
     nic_ops_t *ops;                     // NIC operations
 
     uint8_t mac[6];                     // MAC address of the NIC
-    fs_node_t *parent_node;             // Parent node of the NIC
     void *driver;                       // Driver-defined field
 
     // TODO: Move this to another structure, perhaps?
@@ -116,13 +114,6 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
  * @param nic The NIC to destroy
  */
 int nic_destroy(nic_t *nic);
-
-/**
- * @brief Find a NIC device by their node name
- * @param name The name to search for
- * @returns The NIC device on success or NULL on failure
- */
-nic_t *nic_find(char *name);
 
 /**
  * @brief Find NIC device by their IPv4 address

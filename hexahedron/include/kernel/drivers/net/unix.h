@@ -17,7 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <structs/circbuf.h>
-#include <kernel/fs/vfs.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/misc/spinlock.h>
 #include <kernel/drivers/net/socket.h>

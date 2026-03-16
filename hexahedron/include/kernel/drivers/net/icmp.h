@@ -44,32 +44,11 @@ typedef struct icmp_packet {
 /**** FUNCTIONS ****/
 
 /**
- * @brief Send an ICMP packet
- * @param nic_node The NIC to send the ICMP packet to
- * @param dest_addr Target IP address
- * @param type Type of ICMP packet to send
- * @param code ICMP code to send
- * @param varies What should be put in the 4-byte varies field
- * @param data The data to send
- * @param size Size of packet to send
- * @returns 0 on success
- */
-int icmp_send(fs_node_t *nic_node, in_addr_t dest, uint8_t type, uint8_t code, uint32_t varies, void *data, size_t size);
-
-/**
  * @brief Handle an IPv4 packet
  * @param nic_node The NIC that got the packet 
  * @param frame The frame that was received
  * @param size The size of the packet
  */
 int icmp_handle(nic_t *nic_node, void *frame, size_t size);
-
-/**
- * @brief Ping!
- * @param nic_node The NIC to send the ping request on
- * @param addr The address to send the ping request to
- * @returns 0 on success
- */
-int icmp_ping(fs_node_t *nic_node, in_addr_t addr);
 
 #endif
