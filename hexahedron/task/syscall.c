@@ -290,14 +290,12 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
 ssize_t sys_read(int fd, void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
-    if (!FD_VALIDATE(fd)) {
-        return -EBADF;
-    }
-
-    vfs_file_t *n = FD(fd);
+    vfs_file_t *n = GET_FD_OR_ERROR(fd);
 
     ssize_t i = vfs_read(n, n->pos, count, (char*)buffer);
     if (i >= 0) n->pos += i;
+
+    FD_FINISH(n);
 
     return i;
 }
@@ -305,15 +303,13 @@ ssize_t sys_read(int fd, void *buffer, size_t count) {
 ssize_t sys_write(int fd, const void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
-    if (!FD_VALIDATE(fd)) {
-        return -EBADF;
-    }
+    vfs_file_t *n = GET_FD_OR_ERROR(fd);
 
-    vfs_file_t *n = FD(fd);
     ssize_t i = vfs_write(n, n->pos, count, (const char*)buffer);
     if (i >= 0) n->pos += i;
 
     if (!i) LOG(WARN, "sys_write wrote nothing for size %d\n", count);
+    FD_FINISH(n);
     return i;
 }
 
@@ -876,7 +872,17 @@ long sys_chmod(const char *path, mode_t mode) {
 }
 
 long sys_fcntl(int fd, int cmd, int extra) {
-    SYSCALL_UNIMPLEMENTED("sys_fcntl");
+    vfs_file_t *file = GET_FD_OR_ERROR(fd);
+
+    switch (cmd) {
+        case F_SETFL:
+            file->flags = extra;
+            return 0;
+
+        default:
+            LOG(WARN, "Unimplemented fcntl() command: 0x%x\n", cmd);
+            return -ENOSYS;
+    }
 }
 
 long sys_ftruncate(int fd, off_t length) {
