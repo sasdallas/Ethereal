@@ -35,9 +35,9 @@ typedef poll_event_t event_t;
 
 typedef poll_waiter_t *event_listener_t;
 
-#define EVENT_MAX 12
+#define EVENT_MAX 24
 
-#define EVENT_INIT_LISTENER(l) { *(l) = poll_createWaiter(current_cpu->current_thread, 12); }
+#define EVENT_INIT_LISTENER(l) { *(l) = poll_createWaiter(current_cpu->current_thread, EVENT_MAX); }
 #define EVENT_INIT(e) POLL_EVENT_INIT(e)
 #define EVENT_SIGNAL(e) poll_signal((e), POLLPRI)
 #define EVENT_WAIT(l, t) poll_wait(*(l), (t))
