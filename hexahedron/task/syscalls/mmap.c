@@ -86,10 +86,6 @@ long sys_mmap(sys_mmap_context_t *context) {
     } else {
         r = vmm_map(addr, len, vm_flags, mmu_flags);
     }
-    
-    if (flags & MAP_ANONYMOUS && r) {
-        memset(r, 0, len);
-    }
 
     if (!r) return -ENOMEM;
     return (long)r;
