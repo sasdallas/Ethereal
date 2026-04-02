@@ -42,7 +42,7 @@
 #define MMU_HHDM_SIZE           (uintptr_t)0x0000001000000000
 
 /**** MACROS ****/
-#define PAGE_ALIGN_UP(x) (((x) + PAGE_SIZE) & ~0xFFF)
+#define PAGE_ALIGN_UP(x) (((x) + (PAGE_SIZE-1)) & ~0xFFF)
 #define PAGE_ALIGN_DOWN(x) (((x) & ~0xFFF))
 #define MMU_PML4_INDEX(x) (((x) >> (MMU_SHIFT + 27)) & 0x1FF)
 #define MMU_PDPT_INDEX(x) (((x) >> (MMU_SHIFT + 18)) & 0x1FF)
