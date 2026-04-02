@@ -356,6 +356,10 @@ void smp_disableCores() {
             ap_shutdown_finished = 0;
         }
     }
+
+extern spinlock_t debug_lock;
+    spinlock_release(&debug_lock);
+
 }
 
 
@@ -382,7 +386,7 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
     int expected = 0;
 
     for (int i = 0; i < processor_count; i++) {
-        if (i != smp_getCurrentCPU() && (!is_user_shootdown || processor_data[i].current_context != current_cpu->current_context)) {
+        if (i != smp_getCurrentCPU() && (!is_user_shootdown || processor_data[i].current_context == current_cpu->current_context)) {
             // This CPU needs to be shotdown
             spinlock_acquire(&tlb_shootdown_req[i].shootdown_lck); // astral's idea
             tlb_shootdown_req[i].addr = address;
