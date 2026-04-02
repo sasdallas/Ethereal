@@ -178,8 +178,7 @@ void rtl8169_thread(void *context) {
 
         if (w == WAKEUP_SIGNAL) {
             // Aw HELL nah
-            LOG(ERR, "Thread exiting due to signal\n");  
-            process_exit(current_cpu->current_process, 1); 
+            continue;
         }
 
         // Loop
