@@ -163,13 +163,13 @@ arch_restore_context:
     iretq
 
 __unlock_thread:
-    movq 0x8(%rdi), %rcx
+    movq 0x10(%rdi), %rcx
     and $0x8, %rcx              // THREAD_STATUS_SLEEPING
     jz .no_need
 
     /* unlock thread sleep queue */
     movq %rdi, %rcx 
-    add $0x64, %rcx
+    add $0x6C, %rcx
     movb $0, %al
     lock xchgb %al, (%rcx)
 
@@ -179,11 +179,11 @@ __unlock_thread:
 .global arch_yield
 arch_yield:
     // We have a decent amount of work to do here
-    // thread->status (0x8), thread->sleep (0x48), thread->sleep.lock (0x58), thread->context (0x78)
+    // thread->status (0x10), thread->sleep (0x50), thread->sleep.lock (0x6C), thread->context (0x98)
     // prev in %rdi and dest in %rsi
 
     /* Load destination context */
-    addq $0x90, %rsi
+    addq $0x98, %rsi
     movq 0(%rsi), %rsp
     movq 8(%rsi), %rbp
     movq 16(%rsi), %rbx

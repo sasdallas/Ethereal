@@ -115,7 +115,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
     while (r && r->start < end) {
         if (r->start >= start && r->end <= end) {
             // Range is fully contained within this one
-            LOG(DEBUG, "Range fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+            // LOG(DEBUG, "Range fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
 
             if (op_type == VM_OP_SET_FLAGS) {
                 // Change the MMU flags for the region
@@ -133,7 +133,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
                 assert(0);
             }
         } else if (r->start < start &&  end < r->end) {
-            LOG(DEBUG, "Fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+            // LOG(DEBUG, "Fully contained: %p - %p, request %p - %p\n", r->start, r->end, start, end);
 
             // This range fully contains the request
             // This means we likely have to do a split
@@ -185,7 +185,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             r = new_range;
         } else if (r->start < start && r->end > start && r->end <= end) {
             // Range overlaps the beginning of requested region
-            LOG(DEBUG, "Beginning overlap case: %p - %p, request %p - %p op_type=%d\n", r->start, r->end, start, end,op_type);
+            // LOG(DEBUG, "Beginning overlap case: %p - %p, request %p - %p op_type=%d\n", r->start, r->end, start, end,op_type);
             if (op_type == VM_OP_SET_FLAGS && r->mmu_flags == mmu_flags) goto _next_range;
 
 
@@ -217,7 +217,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             }
         } else if (r->start >= start && r->start < end && r->end > end) {
             // Range overlaps the end of requested region
-            LOG(DEBUG, "End overlap case: %p - %p, request %p - %p\n", r->start, r->end, start, end);
+            // LOG(DEBUG, "End overlap case: %p - %p, request %p - %p\n", r->start, r->end, start, end);
             
             if (op_type == VM_OP_SET_FLAGS && r->mmu_flags == mmu_flags) goto _next_range;
 
@@ -408,8 +408,9 @@ void vmm_dumpContext(vmm_context_t *ctx) {
     vmm_memory_range_t *r = ctx->space->range;
     vmm_memory_range_t *last = NULL;
     while (r) {
-        assert(r->prev == last);
         LOG(INFO, "VMM memory region %p - %p (FLAGS 0x%x MMU_FLAGS 0x%x)\n", r->start, r->end, r->vmm_flags, r->mmu_flags);
+        
+        assert(r->prev == last);
         last = r;
         r = r->next;
     }

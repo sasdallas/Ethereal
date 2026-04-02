@@ -123,11 +123,8 @@ extern void sleep_callback(uint64_t t);
     thread_t *t = current_cpu->idle_process->main_thread;
     if (n) {
         t = n->value;
-        /* We have a local thread, release our lock and continue */
         spinlock_release(current_cpu->sched.lock);
     } else {
-        /* Nothing on our queue — release our lock before attempting to steal
-           to avoid holding two locks at once and potential deadlocks. */
         spinlock_release(current_cpu->sched.lock);
 
         int cpu_to_steal_from = scheduler_findMostLoadedCPU();
@@ -141,18 +138,10 @@ extern void sleep_callback(uint64_t t);
         }
     }
 
-    /* Ensure we always have a valid thread pointer (fallback to idle). */
     if (!t) {
         t = current_cpu->idle_process->main_thread;
     }
 
-    if (t->status & THREAD_STATUS_STOPPING) {
-        LOG(DEBUG, "Killing thread %p since it says its stopping\n", t);
-        thread_destroy(t);
-        return scheduler_get();
-    }
-
-    assert(!(t->status & THREAD_STATUS_STOPPED));
     assert(t);
     return t;
 }

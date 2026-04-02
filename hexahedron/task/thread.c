@@ -21,6 +21,8 @@
 /* Last TID */
 unsigned long long last_tid = 1; // 0 is a kernel reserved TID
 
+slab_cache_t *thread_cache = NULL;
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:THREAD", __VA_ARGS__)
 
@@ -34,7 +36,9 @@ unsigned long long last_tid = 1; // 0 is a kernel reserved TID
  * @note No ticks are set and context will need to be saved
  */
 static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, int status,  int flags) {
-    thread_t *thr = kmalloc(sizeof(thread_t));
+    if (!thread_cache) thread_cache = slab_createCache("thread cache", SLAB_CACHE_DEFAULT, sizeof(thread_t), 0, NULL, NULL);
+
+    thread_t *thr = slab_allocate(thread_cache);
     memset(thr, 0, sizeof(thread_t));
     thr->parent = parent;
     thr->status = status;
@@ -95,16 +99,24 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
  * @param thr The thread to destroy
  */
 int thread_destroy(thread_t *thr) {
-    if (!thr) return 1;
-
     __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPED);
 
     // Free the thread's stack
     if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
-    kfree(thr);
+    slab_free(thread_cache, thr);
 
     LOG(DEBUG, "******************************************** Thread %p destroyed\n", thr);
-
     return 0;
+}
+
+/**
+ * @brief Exit from the current thread, non-returning
+ */
+void thread_exit() {
+    thread_t *t = current_cpu->current_thread;
+    LOG(DEBUG, "thread_exit %p\n", t);
+    __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
+    __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
+    process_switchNextThread();
 }

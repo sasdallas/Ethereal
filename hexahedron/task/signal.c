@@ -165,20 +165,14 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
         proc->flags &= ~(PROCESS_RUNNING);
         proc->flags |= PROCESS_SUSPENDED;
 
-        if (proc->thread_list && proc->thread_list->length) {
+        if (proc->nthreads > 1) {
             LOG(ERR, "SIGNAL_ACTION_STOP with multiple threads is not implemented\n");
         }
 
         // Wakeup any parents that are waiting
         // TODO: Send SIGCHLD and put our other threads to sleep
         if (proc->parent) {
-            if (proc->parent->waitpid_queue && proc->parent->waitpid_queue->length) {
-                // TODO: Locking?
-                foreach(thr_node, proc->parent->waitpid_queue) {
-                    thread_t *thr = (thread_t*)thr_node->value;
-                    sleep_wakeup(thr);
-                }
-            }
+            EVENT_SIGNAL(&proc->parent->wait_event);
         }
 
         // Suspend ourselves

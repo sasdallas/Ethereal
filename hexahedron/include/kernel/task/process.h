@@ -48,6 +48,7 @@
 #define PROCESS_EXIT_SIGNAL                 1           // The process was exited by a signal, and exit_status contains the signal number
 
 #define PROCESS_MMAP_MINIMUM                0x1000
+
 /**** TYPES ****/
 
 /**
@@ -94,11 +95,13 @@ typedef struct process {
     
     // QUEUE INFORMATION
     tree_node_t *node;                  // Node in the process tree
-    list_t *waitpid_queue;              // Wait queue for the process
+    event_t wait_event;                 // Wait event signalled by children
 
     // THREADS
     thread_t *main_thread;              // Main thread in the process  - whatever the ELF entrypoint was
-    list_t  *thread_list;               // List of threads for the process
+    thread_t *thread_list;              // Linked list for all threads in the process, *including the main thread*.
+    size_t nthreads;                    // Number of threads
+    spinlock_t thread_lock;
 
     // FILE INFORMATION
     char *wd_path;                      // Working directory path
@@ -249,6 +252,6 @@ process_t *process_getFromPID(pid_t pid);
  * 
  * If @c tls is 0x0, then the TLS of the current thread will be used.
  */
-pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
+pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 
 #endif

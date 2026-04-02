@@ -44,14 +44,6 @@ uint32_t *pid_bitmap = NULL;
 /* Task switches */
 volatile uint64_t task_switches = 0;
 
-/* Reap queue */
-list_t *reap_queue = NULL;
-spinlock_t reap_queue_lock = { 0 };
-
-/* Helper macro to check if a process is in use */
-/* !!!: Can fail */
-#define PROCESS_IN_USE(proc)    ({ int in_use = 0; for (int i = 0; i < processor_count; i++) { if (processor_data[i].current_process == proc) { in_use = 1; break; } }; in_use; })
-
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:PROCESS", __VA_ARGS__)
 
@@ -129,6 +121,11 @@ void process_yield(uint8_t reschedule) {
     if (current_cpu->current_thread == NULL) {
         // Just switch to next thread
         process_switchNextThread();
+    }
+
+    // Exit the thread if its trying to stop
+    if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
+        return thread_exit();
     }
 
     // Thread no longer has any time to execute. Save FPU registers
@@ -269,8 +266,13 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->gid = process->uid = 0;
     }
 
-    process->pid = process_allocatePID();
+    process->thread_list = NULL;
+    process->nthreads = 0;
+    SPINLOCK_INIT(&process->thread_lock);
 
+    EVENT_INIT(&process->wait_event);
+
+    process->pid = process_allocatePID();
 
     // Create working directory
     if (parent && parent->wd_path) {
@@ -304,31 +306,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         process->ctx = vmm_createContext();
     }
 
-    // // Create file descriptor table
-    // size_t fd_count = (parent) ? parent->fd_table->total : PROCESS_FD_BASE_AMOUNT;
-    // process->fd_table = kmalloc(sizeof(fd_table_t));
-    // memset(process->fd_table, 0, sizeof(fd_table_t));
-    // process->fd_table->total = fd_count;
-    // process->fd_table->amount = (parent) ? parent->fd_table->amount : 0;
-    
-    // process->fd_table->references = 1;
-    // process->fd_table->fds = kmalloc(sizeof(fd_t*) * fd_count);
-
-    // memset(process->fd_table->fds, 0, sizeof(fd_t*) * fd_count);
-
-    // if (parent) {
-    //     for (size_t i = 0; i < parent->fd_table->total; i++) {
-    //         if (parent->fd_table->fds[i]) {
-    //             process->fd_table->fds[i] = kmalloc(sizeof(fd_t));
-    //             process->fd_table->fds[i]->mode = parent->fd_table->fds[i]->mode;
-    //             process->fd_table->fds[i]->fd_number = parent->fd_table->fds[i]->fd_number;
-    //             process->fd_table->fds[i]->path = parent->fd_table->fds[i]->path;
-    //             process->fd_table->fds[i]->node = vfs_duplicate(parent->fd_table->fds[i]->node);
-    //         }
-    //     }
-    // }
-    
-
+    // Create the file descriptor table
     fd_copyTable(parent, process);
 
     process->proc_list_node.value = (void*)process;
@@ -336,6 +314,23 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
 extern systemfs_node_t *systemfs_proc_create(process_t *proc);
     process->proc_sysfs = systemfs_proc_create(process);
     return process;
+}
+
+/**
+ * @brief Create and add a thread to a process
+ * @param proc The process to add the thread to
+ * @param entry The entrypoint of the thread
+ * @param flags The flags of the thread
+ * @returns The new thread object
+ */
+thread_t *process_createThread(process_t *proc, uintptr_t entry, unsigned int flags) {
+    thread_t *t = thread_create(proc, proc->ctx, entry, flags);
+    spinlock_acquire(&proc->thread_lock);
+    t->next = proc->thread_list;
+    proc->thread_list = t;
+    proc->nthreads++;
+    spinlock_release(&proc->thread_lock);
+    return t;
 }
 
 /**
@@ -349,13 +344,14 @@ extern systemfs_node_t *systemfs_proc_create(process_t *proc);
  */
 process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data){
     process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL, priority);
-    proc->main_thread = thread_create(proc, proc->ctx, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
+    proc->main_thread = process_createThread(proc, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
 
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, data);
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, entrypoint);
 
     return proc;
 }
+
 
 /**
  * @brief Idle process function
@@ -392,7 +388,7 @@ process_t *process_spawnIdleTask() {
     // if (process_list) list_delete(process_list, list_find(process_list, (void*)idle));
 
     // Create a new thread
-    idle->main_thread = thread_create(idle, NULL, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
+    idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
 
     return idle;
 }
@@ -400,12 +396,31 @@ process_t *process_spawnIdleTask() {
 /**
  * @brief Totally destroy a process
  * @param proc The process to destroy
- * @warning ONLY USE THIS IF THE PROCESS IS NOT IN USE. OTHERWISE THIS WILL CAUSE CHAOS
  */
 void process_destroy(process_t *proc) {
     if (!proc || !(proc->flags & PROCESS_STOPPED)) return;
 
-    LOG(DEBUG, "Destroying process \"%s\" (%p, by request of %p)...\n", proc->name, proc, __builtin_return_address(0));
+
+    // Wait for all threads in process to die
+    // They should have already been marked as STOPPING by process_exit or the like
+    spinlock_acquire(&proc->thread_lock);
+    thread_t *l = proc->thread_list;
+    proc->thread_list = NULL;
+    spinlock_release(&proc->thread_lock);
+
+    while (l) {
+        while ((l->status & THREAD_STATUS_STOPPED) == 0) {
+            LOG(DEBUG, "Waiting for thread %p/%d to die before destroying process\n", l, l->tid);
+            process_yield(1);
+        }
+
+        thread_t *next = l->next;
+        thread_destroy(l);
+        l = next;
+    }
+
+    assert(proc->nthreads == 0);
+    LOG(DEBUG, "Destroying process \"%s\" (%p)...\n", proc->name, proc);
 
     process_freePID(proc->pid);
     list_delete(process_list, list_find(process_list, (void*)proc));
@@ -438,18 +453,12 @@ void process_destroy(process_t *proc) {
     }
 
     // Destroy everything we can
-    if (proc->waitpid_queue) kfree(proc->waitpid_queue); // waitpid_queue is a special list of just thread->sched_nodes
-    
-    
-    if (proc->thread_list) list_destroy(proc->thread_list, false);
     if (proc->node) {
         tree_remove(process_tree, proc->node);
     }
 
-
 extern void systemfs_proc_destroy(process_t *proc);
     systemfs_proc_destroy(proc);
-
 
     kfree(proc->wd_path);
     kfree(proc->name);
@@ -497,46 +506,48 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
  */
 int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
     // Destroy previous threads
-    if (current_cpu->current_process->main_thread && current_cpu->current_process->main_thread != current_cpu->current_thread) __sync_or_and_fetch(&current_cpu->current_process->main_thread->status, THREAD_STATUS_STOPPING);
-    if (current_cpu->current_process->thread_list) {
-        foreach(thread_node, current_cpu->current_process->thread_list) {
-            thread_t *thr = (thread_t*)thread_node->value;
-            if (thr && thr != current_cpu->current_thread) __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
+    process_t *proc = current_cpu->current_process;
+
+    // Stop all previous threads
+    spinlock_acquire(&proc->thread_lock);
+    thread_t *t = proc->thread_list;
+    while (t) {
+        if (t != current_cpu->current_thread) {
+            __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPING);
+            sleep_wakeup(t);
+
+            while ((t->status & THREAD_STATUS_STOPPED) == 0) {
+                LOG(DEBUG, "process_executeCommon waiting for thread %p to die\n", t);
+                process_yield(1);
+            }
+
+            thread_t *nxt = t->next;
+            thread_destroy(t);
+            t = nxt;
+            continue;
         }
+        t = t->next;
     }
+
+    proc->thread_list = NULL;
+    proc->nthreads = 0;
+    spinlock_release(&proc->thread_lock);
 
     // Switch away from old directory
     vmm_switch(vmm_kernel_context);
 
     // VMM context
-    vmm_context_t *oldctx = current_cpu->current_process->ctx;
-    current_cpu->current_process->ctx = vmm_createContext();
-    vmm_switch(current_cpu->current_process->ctx);
+    vmm_context_t *oldctx = proc->ctx;
+    proc->ctx = vmm_createContext();
+    vmm_switch(proc->ctx);
     if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
 
     // Create a new main thread with a blank entrypoint
-    if (current_cpu->current_thread && 0) {
-        current_cpu->current_process->main_thread = current_cpu->current_thread;
-        current_cpu->current_thread->parent = current_cpu->current_process;
-        current_cpu->current_thread->status |= THREAD_STATUS_RUNNING;
-        current_cpu->current_thread->ctx = current_cpu->current_process->ctx;
-
-        assert(!current_cpu->current_thread->joiners);
-        memset(&current_cpu->current_thread->pending_signals, 0, sizeof(sigset_t));
-        memset(&current_cpu->current_thread->blocked_signals, 0, sizeof(sigset_t));
-        memset(&current_cpu->current_thread->signals, 0, sizeof(proc_signal_t) * NSIG);
-        memset(&current_cpu->current_thread->blocked_signals, 0, sizeof(sigset_t));
-        // TODO: This is some hacky shit.. need to ensure almost ALL fields of the thread are cleared.
-    
-        // Need to also map the thread's stack in
-        assert(vmm_map((void*)(current_cpu->current_thread->stack - THREAD_STACK_SIZE), THREAD_STACK_SIZE + 4096, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_USER | MMU_FLAG_PRESENT));
-    } else {
-        current_cpu->current_process->main_thread = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, 0x0, THREAD_FLAG_DEFAULT);
-        if (current_cpu->current_thread) {
-            // Reuse kernel-stack
-            kfree((void*)(current_cpu->current_process->main_thread->kstack - PROCESS_KSTACK_SIZE));
-            current_cpu->current_process->main_thread->kstack = current_cpu->current_thread->kstack;
-        }
+    proc->main_thread = process_createThread(proc, 0x0, THREAD_FLAG_DEFAULT);
+    if (current_cpu->current_thread) {
+        // Reuse kernel-stack
+        kfree((void*)(proc->main_thread->kstack - PROCESS_KSTACK_SIZE));
+        proc->main_thread->kstack = current_cpu->current_thread->kstack;
     }
 
     // Load file into memory
@@ -551,19 +562,19 @@ int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
     }
 
     // Setup heap location
-    current_cpu->current_process->heap_base = elf_getHeapLocation(elf_binary);
-    current_cpu->current_process->heap = current_cpu->current_process->heap_base;
+    proc->heap_base = elf_getHeapLocation(elf_binary);
+    proc->heap = proc->heap_base;
 
     // Populate image
     elf_createImage(elf_binary);
 
     // Get the entrypoint
     uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
-    arch_initialize_context(current_cpu->current_process->main_thread, process_entrypoint, current_cpu->current_process->main_thread->stack);
+    arch_initialize_context(proc->main_thread, process_entrypoint, proc->main_thread->stack);
 
     // We own this process
     thread_t *old = current_cpu->current_thread;
-    current_cpu->current_thread = current_cpu->current_process->main_thread;
+    current_cpu->current_thread = proc->main_thread;
     if (old) old->kstack = 0;
 
     *entry = process_entrypoint;
@@ -835,32 +846,32 @@ void process_exit(process_t *process, int status_code) {
     
     int is_current_process = (process == current_cpu->current_process);
 
-    // The scheduler itself ignores the process state, so mark it as stopped
-    // __sync_or_and_fetch(&process->flags, PROCESS_STOPPED);
-    process->flags |= PROCESS_STOPPED;
-
     // Now we need to mark all threads of this process as stopping. This will ensure that memory is fully separate
-    if (process->main_thread) __sync_or_and_fetch(&process->main_thread->status, THREAD_STATUS_STOPPING);
+    spinlock_acquire(&process->thread_lock);
+    
+    thread_t *t = process->thread_list;
+    while (t) {
+        __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPING);
+        if ((t->status & THREAD_STATUS_STOPPED) == 0 && t != current_cpu->current_thread) {
+            sleep_wakeup(t);
 
-    if (process->thread_list && process->thread_list->length) {
-        foreach(thread_node, process->thread_list) {
-            if (thread_node->value) {
-                thread_t *thr = (thread_t*)thread_node->value;
-          
-                // If the thread is already stopped, then that means it was waited on before and we can destroy it now
-                if (thr->status & THREAD_STATUS_STOPPED) {
-                    thread_destroy(thr);
-                    continue;
-                }
-
-                // Else, mark the thread as stopping and let the scheduler catch it.
-                __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPING);
+            while ((t->status & THREAD_STATUS_STOPPED) == 0) {
+                // LOG(DEBUG, "process_exit waiting for thread %d to stop\n", t->tid);
+                arch_pause_single();
             }
         }
+
+        t = t->next;
     }
 
+    spinlock_release(&process->thread_lock);
+
+    process->flags |= PROCESS_STOPPED;
+
+    // Now we can mark it as stopped
+
     // TODO: Ugly
-    current_cpu->current_process->exit_status = status_code;
+    process->exit_status = status_code;
 
     // Deparent the children
     if (process->node && process->node->children) {
@@ -869,33 +880,22 @@ void process_exit(process_t *process, int status_code) {
             process_t *child = (process_t*)tnode->value;
             child->parent = (process_t*)process_tree->root->value;
         }
+
+        // Signal init and let it cleanup
+        EVENT_SIGNAL(&((process_t*)process_tree->root->value)->wait_event);
     }
 
-    // Instead of freeing all the memory now, we add ourselves to the reap queue
-    // The reap queue is either destroyed by:
-    //      1. The reaper kernel thread (removed)
-    //      2. The parent process waiting for this process to exit (POSIX - should only happen during waitpid)
-    
+    // The parent process will destroy us
     // If our parent is waiting, wake them up
     if (process->parent) {
         if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
-        if (process->parent && process->parent->waitpid_queue && process->parent->waitpid_queue->length) {
-            // TODO: Locking?
-            foreach(thr_node, process->parent->waitpid_queue) {
-                thread_t *thr = (thread_t*)thr_node->value;
-                sleep_wakeup(thr);
-            }
-
-            // !!!: KNOWN BUG: If a process that is forked off by a shell is not waited on, then it will not exit properly.
-        } 
-
+        EVENT_SIGNAL(&process->parent->wait_event);
     } 
 
     // To the next process we go. Once the scheduler is unlocked we can be caught and destroyed.
     // !!!: This approach seems very finnicky.
     if (process == current_cpu->current_process) {
-        __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-        process_yield(1);
+        thread_exit();
     }
 }
 
@@ -907,7 +907,7 @@ pid_t process_fork() {
     // First we create our child pprocess
     process_t *parent = current_cpu->current_process;   
     process_t *child = process_create(parent, parent->name, parent->flags, parent->priority);
-    child->main_thread = thread_create(child, child->ctx, (uintptr_t)NULL, THREAD_FLAG_CHILD);
+    child->main_thread = process_createThread(child, (uintptr_t)NULL, THREAD_FLAG_CHILD);
 
     // Configure context of child thread
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
@@ -942,107 +942,58 @@ pid_t process_fork() {
  * @brief waitpid equivalent
  */
 long process_waitpid(pid_t pid, int *wstatus, int options) {
-    if (!current_cpu->current_process->node) {
-        // lol
-        return -ECHILD;
-    }
-
-    // Put ourselves in our wait queue
-    if (!current_cpu->current_process->waitpid_queue) current_cpu->current_process->waitpid_queue = list_create("waitpid queue");
-
-    // !!!: memory leak
-    node_t *n = kmalloc(sizeof(node_t));
-    n->value = current_cpu->current_thread;
-    n->prev = n->next = NULL;
+    process_t *proc = current_cpu->current_process;
 
     for (;;) {
-        // list_delete(current_cpu->current_process->waitpid_queue, n);           
-
-        // We need this to stop interferance from other threads also trying to waitpid
-        spinlock_acquire(&reap_queue_lock);
-
-        // Let's look through the list of children to see if we find anything
-        if (!current_cpu->current_process->node->children || !current_cpu->current_process->node->children->length) {
-            // There are no children available
-            spinlock_release(&reap_queue_lock);
+        // todo lock
+        if (!proc->node->children || !proc->node->children->length) {
             return -ECHILD;
         }
-   
-        foreach(child_node, current_cpu->current_process->node->children) {
-            process_t *child = (process_t*)((tree_node_t*)(child_node->value))->value;
-            if (!child) continue;
+        
 
-            // Validate PID matches
-            if (pid < -1) {
-                // Wait for any child process whose group ID is the absolute value of PID
-                if (child->gid != (gid_t)(pid * -1)) continue;
-            } else if (pid == 0) {
-                // Wait for any child process whose group ID is equal to the calling process
-                if (current_cpu->current_process->gid != child->gid) {
-                    continue;
-                }
-            } else if (pid > 0) {
-                // Wait for any child process whose PID is the same as PID
-                if (child->pid != pid) continue;
-            }
-
-            // Look for processes that have exited.
-            // TODO: waitid? we can modify this syscall for that
+        foreach(cnode, proc->node->children) {
+            process_t *child = ((tree_node_t*)cnode->value)->value;
+            
+            if (pid < -1 && child->gid != (gid_t)(-pid)) continue;
+            else if (pid == 0 && child->gid != proc->gid) continue;
+            else if (pid > 0 && child->pid != pid) continue;
+            
             if (child->flags & PROCESS_STOPPED) {
-                // Dead process, nice. This will work.
-                // Make sure child process isn't in use
-                pid_t ret_pid = child->pid;
+                // dead
+                pid_t r = child->pid;
 
-                // Update wstatus
-                if (wstatus) {
+                if (wstatus){
                     if (child->exit_reason == PROCESS_EXIT_NORMAL) {
                         *wstatus = (child->exit_status << 8);
                     } else {
-                        *wstatus = (child->exit_status & 0x7F);
+                        *wstatus = (child->exit_status & 0x7f);
                     }
                 }
 
-                if (!PROCESS_IN_USE(child)) {
-                    process_destroy(child);
-                }
-
-                // Take us out and return
-                // list_delete(current_cpu->current_process->waitpid_queue, n);
-                // kfree(n);
-                spinlock_release(&reap_queue_lock);
-                return ret_pid;
+                process_destroy(child);
+                return r;
             }
 
-            // Is the process stopped?
             if (child->flags & PROCESS_SUSPENDED) {
-                // TODO: Check for WUNTRACED properly? i.e. make sure the signal was generated by a source outside of ptrace
                 if (options & WSTOPPED || (child->ptrace.tracer == NULL && options & WUNTRACED)) {
-                    pid_t ret_pid = child->pid;
-
-                    // Update wstatus
-                    if (wstatus) {
-                        *wstatus = (child->exit_status << 8) | 0x7F;
-                    }
-
-                    spinlock_release(&reap_queue_lock);
-                    return ret_pid;
+                    pid_t r = child->pid;
+                    if (wstatus) *wstatus = (child->exit_status << 8) | 0x7f;
+                    return r;
                 }
             }
 
-            // TODO: Look for continued, interrupted, etc
+            // todo the rest of the garbage
         }
 
-        // There were children available but they didn't seem important
         if (options & WNOHANG) {
-            // Return immediately, we didn't get anything.
-            spinlock_release(&reap_queue_lock);
             return 0;
         } else {
-            // Sleep until we get woken up
-            list_append_node(current_cpu->current_process->waitpid_queue, n);
-            sleep_prepare();    
-            spinlock_release(&reap_queue_lock);
-            if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
+            // TODO make this process less racey
+            event_listener_t l;
+            EVENT_INIT_LISTENER(&l);
+            EVENT_ATTACH(&l, &proc->wait_event);
+            int r = EVENT_WAIT(&l, -1);
+            if (r < 0) return r;
         }
     }
 }
@@ -1057,11 +1008,10 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
  * 
  * If @c tls is 0x0, then the TLS of the current thread will be used.
  */
-pid_t process_createThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
-    if (!current_cpu->current_process->thread_list) current_cpu->current_process->thread_list = list_create("process thread list");
-    thread_t *thr = thread_create(current_cpu->current_process, current_cpu->current_process->ctx, (uintptr_t)entry, THREAD_FLAG_CHILD);
+pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
+    thread_t *thr = process_createThread(current_cpu->current_process, (uintptr_t)entry, THREAD_FLAG_CHILD);
     thr->stack = stack; // Fix stack
-    list_append(current_cpu->current_process->thread_list, thr);
+    LOG(DEBUG, "Thread %p (TID=%d) created for process.\n", thr, thr->tid);
 
     // Boom, we have a thread. That was easy, right?
     // Well, unfortunately we have to steal the hack from fork() and use arch_restore_context

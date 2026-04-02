@@ -25,7 +25,6 @@
 /**** DEFINITIONS ****/
 
 // Thread status flags
-#define THREAD_STATUS_KERNEL        0x01
 #define THREAD_STATUS_STOPPED       0x02
 #define THREAD_STATUS_RUNNING       0x04
 #define THREAD_STATUS_SLEEPING      0x08
@@ -34,7 +33,7 @@
 // Thread flags
 #define THREAD_FLAG_DEFAULT         0x00
 #define THREAD_FLAG_KERNEL          0x01
-#define THREAD_FLAG_NO_PREEMPT      0x02    // This only works on threads with THREAD_FLAG_KERNEL
+#define THREAD_FLAG_NO_PREEMPT      0x02
 #define THREAD_FLAG_CHILD           0x04    // Thread is a child. NOT PRESERVED. Tells thread_create() not to allocate a stack and mess up potential CoW
 
 // Stack size of thread
@@ -51,9 +50,10 @@ struct syscall;
  */
 typedef struct thread {
     // GENERAL VARIABLES
-    struct process *parent;                 // Parent process
-    unsigned int status;                    // Status of this thread
-    unsigned int flags;                     // Flags of the thread
+    struct thread *next;                    // Next thread, only used when this is not the main thread.
+    struct process *parent;
+    unsigned int status;
+    unsigned int flags;
 
     // SCHEDULER VARIABLES
     node_t sched_node;                      // Scheduler node
@@ -69,10 +69,10 @@ typedef struct thread {
     uint8_t fp_regs[512] __attribute__((aligned(16))); // FPU registers (TEMPORARY - should be moved into arch_context?)
 
     // SIGNALS
-    spinlock_t siglock;                     // Signal lock
-    proc_signal_t signals[NSIG];            // Signal list
-    sigset_t pending_signals;               // Pending signals
-    sigset_t blocked_signals;               // Blocked signals
+    spinlock_t siglock;
+    proc_signal_t signals[NSIG];
+    sigset_t pending_signals;
+    sigset_t blocked_signals;
 
     // OTHER
     vmm_context_t *ctx;                     // Context
@@ -120,5 +120,10 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
  * @param thr The thread to destroy
  */
 int thread_destroy(thread_t *thr);
+
+/**
+ * @brief Exit from the current thread, non-returning
+ */
+void thread_exit();
 
 #endif

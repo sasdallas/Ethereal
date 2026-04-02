@@ -59,6 +59,7 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
 
 _die:
     dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
+    dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
     
     if (info.from == VMM_FAULT_FROM_USER) {
         signal_send(current_cpu->current_process, SIGSEGV);
@@ -422,7 +423,7 @@ void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end) {
     }
 
     // TLB shootdown other CPUs, only if conditions are met.
-    if (start >= MMU_KERNELSPACE_START || (end < MMU_USERSPACE_END && current_cpu->current_process && current_cpu->current_process->thread_list && current_cpu->current_process->thread_list->length)) {
+    if (start >= MMU_KERNELSPACE_START || (end < MMU_USERSPACE_END && current_cpu->current_process && current_cpu->current_process->nthreads > 1)) {
         smp_tlbShootdown(start, end-start);
     }
 }

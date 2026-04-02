@@ -395,8 +395,8 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
             lapic_sendIPI(processor_data[i].lapic_id, 124, LAPIC_ICR_DESTINATION_PHYSICAL | (1 << 14) | LAPIC_ICR_EDGE);
             expected++;
         }
-
     }
+
     // dirty TLB hack
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
     while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) __builtin_ia32_pause();

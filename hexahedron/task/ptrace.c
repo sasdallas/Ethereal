@@ -251,13 +251,8 @@ int ptrace_event(int event) {
     process->exit_status = SIGTRAP;
 
     process_t *tracer = process->ptrace.tracer;
-    if (tracer->waitpid_queue && tracer->waitpid_queue->length) {
-        // TODO: Locking?
-        foreach(thr_node, tracer->waitpid_queue) {
-            thread_t *thr = (thread_t*)thr_node->value;
-            sleep_wakeup(thr);
-        }
-    }
+    EVENT_SIGNAL(&tracer->wait_event);
+    
 
     // Night night
     process_yield(0);

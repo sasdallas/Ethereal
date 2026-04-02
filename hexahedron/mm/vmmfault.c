@@ -12,6 +12,8 @@
  */
 
 #include <kernel/mm/vmm.h>
+#include <kernel/processor_data.h>
+#include <kernel/task/process.h>
 #include <kernel/debug.h>
 
 #define LOG(status, ...) dprintf_module(status, "MM:VMM:FAULT", __VA_ARGS__)
@@ -88,7 +90,9 @@ int vmm_fault(vmm_fault_information_t *info) {
             sp->metrics.file_resident += PAGE_SIZE;
         } else {
             // Anonymous memory, map a page
-            arch_mmu_map(NULL, info->address, pmm_allocatePage(ZONE_DEFAULT), r->mmu_flags);
+            uintptr_t pg = pmm_allocatePage(ZONE_DEFAULT);
+            arch_mmu_map(NULL, info->address, pg, r->mmu_flags);
+            arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
             memset((void*)info->address, 0, PAGE_SIZE);
             sp->metrics.anon_resident += PAGE_SIZE;
         }
@@ -119,6 +123,7 @@ int vmm_fault(vmm_fault_information_t *info) {
         }
 
     } else {
+        LOG(ERR, "VMM error: Address %p has flags %x\n", info->address, fl);
         assert(0 && "unimplemented");
     }
 

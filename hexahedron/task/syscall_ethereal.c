@@ -52,7 +52,7 @@ long sys_ethereal_shared_open(key_t key) {
 /**** PTHREAD API ****/
 
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
-    return process_createThread(stack, tls, entry, arg);   
+    return process_createUserThread(stack, tls, entry, arg);   
 }
 
 long sys_exit_thread(void *retval) {
@@ -97,14 +97,18 @@ long sys_join_thread(pid_t tid, void **retval) {
     if (!current_cpu->current_process->thread_list) return -ESRCH; // Can't join the main thread, buddy.
     if (retval) SYSCALL_VALIDATE_PTR(retval);
 
-    thread_t *target = NULL;
-    foreach(t_node, current_cpu->current_process->thread_list) {
-        thread_t *t = (thread_t*)t_node->value;
-        if (t->tid == tid) {
-            target = t;
+    process_t *cur = current_cpu->current_process;
+
+    spinlock_acquire(&cur->thread_lock);
+    thread_t *target = cur->thread_list;
+    while (target) {
+        if (target->tid == tid) {
             break;
         }
+
+        target = target->next;
     }
+    spinlock_release(&cur->thread_lock);
 
     if (!target) return -ESRCH;
     if (target == current_cpu->current_thread) return -EDEADLK; // Nice try wise guy

@@ -172,29 +172,23 @@ void rbtree_insert(rb_tree_t *tree, rb_tree_node_t *node) {
     node->parent = parent;
     node->color = RBTREE_RED;
 
-    // Now, the hard partt.
-    // There are two cases for the node's uncle:
-    // 1. The uncle is red. This means we need to recolor the parent and uncle to black and the grandparent to red, then keep iterating.
-    // 2. Uncle is black. We need to do LR/RR (+ recolor) as appropriate
-    for (;;) {
-        if (RBTREE_COLOR(parent) == RBTREE_BLACK) break; // Finished! No violations detected.
-
-        // Get the current uncle of the node
+    // Now, the rebalancing loop
+    while (node != tree->root && node->parent->color == RBTREE_RED) {
+        rb_tree_node_t *parent = node->parent;
         rb_tree_node_t *grand_parent = parent->parent;
-        assert(grand_parent);
         
-        rb_tree_node_t *uncle = grand_parent->left;
-        if (uncle == parent) uncle = grand_parent->right;
+        // Find the uncle
+        rb_tree_node_t *uncle = (parent == grand_parent->left) ? grand_parent->right : grand_parent->left;
 
-        // Let's see
-        if (RBTREE_COLOR(uncle) == RBTREE_BLACK) {
+        if (RBTREE_COLOR(uncle) == RBTREE_RED) {
+            parent->color = RBTREE_BLACK;
+            uncle->color = RBTREE_BLACK;
+            grand_parent->color = RBTREE_RED;
+            node = grand_parent; 
+        } else {
             rbtree_do_fixing(tree, grand_parent, parent, node);
-            break;
-        }        
-    
-        parent->color = RBTREE_BLACK;
-        uncle->color = RBTREE_BLACK;
-        grand_parent->color = RBTREE_RED;
+            break; 
+        }
     }
 
     // Ensure root is always black
@@ -251,67 +245,66 @@ rb_tree_node_t *rbtree_successor(rb_tree_node_t *n) {
  * This is stupid dumb recursion method
  */
 static void rbtree_fix_double_black(rb_tree_t *tree, rb_tree_node_t *n) {
-    if (n == tree->root) return;
+    while (n != tree->root && RBTREE_COLOR(n) == RBTREE_BLACK) {
+        rb_tree_node_t *parent = n->parent;
+        rb_tree_node_t *sibling;
 
-    rb_tree_node_t *parent = n->parent;
-    rb_tree_node_t *sibling = (parent->left == n ? parent->right : parent->left);
-    if (!sibling) {
-        // Double black pushed up
-        rbtree_fix_double_black(tree, parent);
-    } else {
-        if (sibling->color == RBTREE_RED) {
-            // The sibling is red
-            parent->color = RBTREE_RED;
-            sibling->color = RBTREE_BLACK;
-            
-            if (parent->left == sibling) {
-                rbtree_right_rotate(tree, parent);
-                sibling = parent->left;
-            } else {
+        if (n == parent->left) {
+            sibling = parent->right;
+            if (RBTREE_COLOR(sibling) == RBTREE_RED) {
+                sibling->color = RBTREE_BLACK;
+                parent->color = RBTREE_RED;
                 rbtree_left_rotate(tree, parent);
                 sibling = parent->right;
             }
+
+            if (RBTREE_COLOR(sibling->left) == RBTREE_BLACK && 
+                RBTREE_COLOR(sibling->right) == RBTREE_BLACK) {
+                sibling->color = RBTREE_RED;
+                n = parent;
+            } else {
+                if (RBTREE_COLOR(sibling->right) == RBTREE_BLACK) {
+                    sibling->left->color = RBTREE_BLACK;
+                    sibling->color = RBTREE_RED;
+                    rbtree_right_rotate(tree, sibling);
+                    sibling = parent->right;
+                }
+                sibling->color = parent->color;
+                parent->color = RBTREE_BLACK;
+                sibling->right->color = RBTREE_BLACK;
+                rbtree_left_rotate(tree, parent);
+                n = tree->root;
+            }
         } else {
-            // The sibling is black
-            // Does the sibling have a red child?
-            if (RBTREE_COLOR(sibling->left) == RBTREE_RED || RBTREE_COLOR(sibling->right) == RBTREE_RED) {
-                // Yes it does
-                if (RBTREE_COLOR(sibling->left) == RBTREE_RED) {
-                    // The red sibling is on the left
-                    if (parent->left == sibling) {
-                        rbtree_right_rotate(tree, parent);
-                        sibling->left->color = sibling->color;
-                        sibling->color = parent->color;
-                    } else {
-                        rbtree_right_rotate(tree, sibling);
-                        rbtree_left_rotate(tree, parent);
-                        sibling->left->color = parent->color;
-                    }
-                } else {
-                    // The red sibling is on the right
-                    if (parent->left == sibling) {
-                        rbtree_left_rotate(tree, sibling);
-                        rbtree_right_rotate(tree, parent);
-                        sibling->right->color = parent->color;
-                    } else {
-                        rbtree_left_rotate(tree, parent);
-                        sibling->right->color = sibling->color;
-                        sibling->color = parent->color;
-                    }
+            sibling = parent->left;
+            if (RBTREE_COLOR(sibling) == RBTREE_RED) {
+                sibling->color = RBTREE_BLACK;
+                parent->color = RBTREE_RED;
+                rbtree_right_rotate(tree, parent);
+                sibling = parent->left;
+            }
+
+            if (RBTREE_COLOR(sibling->right) == RBTREE_BLACK && RBTREE_COLOR(sibling->left) == RBTREE_BLACK) {
+                sibling->color = RBTREE_RED;
+                n = parent;
+            } else {
+                if (RBTREE_COLOR(sibling->left) == RBTREE_BLACK) {
+                    sibling->right->color = RBTREE_BLACK;
+                    sibling->color = RBTREE_RED;
+                    rbtree_left_rotate(tree, sibling);
+                    sibling = parent->left;
                 }
 
+                sibling->color = parent->color;
                 parent->color = RBTREE_BLACK;
-            } else {
-                // No, there are 2 black children
-                sibling->color = RBTREE_RED;
-                if (parent->color == RBTREE_BLACK) {
-                    rbtree_fix_double_black(tree, parent);
-                } else {
-                    parent->color = RBTREE_BLACK;
-                }
+                sibling->left->color = RBTREE_BLACK;
+                rbtree_right_rotate(tree, parent);
+                n = tree->root;
             }
         }
     }
+
+    n->color = RBTREE_BLACK;
 }
 
 /**

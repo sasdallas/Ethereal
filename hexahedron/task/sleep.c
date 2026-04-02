@@ -190,36 +190,15 @@ int sleep_enter() {
 
     
     process_yield(0);
-    
-    // Remove us from our queue
 
-    // remove thread from queue if needed
-    thread_t *thread = current_cpu->current_thread;
-    if (thread->sleep.queue) {
-        sleep_queue_t *queue = thread->sleep.queue;
-        spinlock_acquire(&queue->lock);
-
-        thread_sleep_t *ents = queue->head;
-        if (ents == &thread->sleep) {
-            queue->head = ents->next;
-        } else {
-            while (ents->next) {
-                if (ents->next == &thread->sleep) {
-                    ents->next = ents->next->next;
-                    break;
-                }
-
-                ents = ents->next;
-            }
-        }
-
-        spinlock_release(&queue->lock);
-
-        thread->sleep.queue = NULL;
-    }
     
     // Clear seconds and subseconds
     current_cpu->current_thread->sleep.seconds = current_cpu->current_thread->sleep.subseconds = 0;
+
+    if (__atomic_load_n(&current_cpu->current_thread->status, __ATOMIC_SEQ_CST) & THREAD_STATUS_STOPPING) {
+        thread_exit();
+        __builtin_unreachable();
+    }
 
     return __atomic_load_n(&current_cpu->current_thread->sleep.wakeup_reason, __ATOMIC_SEQ_CST);
 }
@@ -303,9 +282,12 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
     thread_sleep_t *prev = NULL;
     while (t) {
         if (amounts != 0 && amnt >= amounts) break;
-
-        thread_sleep_t *next = t->next;
         
+        // Pop the thread
+        thread_sleep_t *next = t->next;
+        if (prev) prev->next = next;
+        else queue->head = next;
+
         // Wakeup the thread (outside of list structure)
         sleep_wakeup(t->thread);
         amnt++;

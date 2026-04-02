@@ -20,8 +20,10 @@
 
 /**** DEFINITIONS ****/
 
-// Sourced from reduceOS 1.x scheduler
+// process flags
 #define PROCESS_KERNEL          0x01    // Process is a kernel-mode process 
+
+// states/flags
 #define PROCESS_STARTED         0x02    // Process started
 #define PROCESS_RUNNING         0x04    // Process running
 #define PROCESS_STOPPED         0x08    // Process stopped

@@ -13,8 +13,12 @@
 
 #include <string.h>
 
+#ifndef __ARCH_X86_64__
+
 void *memset(void *s, int ch, size_t n) {
     unsigned char *p = (unsigned char*)s;
     for (unsigned i = 0; i < n; i++) p[i] = ch;
     return s;
 }
+
+#endif

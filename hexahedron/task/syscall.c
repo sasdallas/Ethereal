@@ -941,7 +941,6 @@ long sys_dup2(int oldfd, int newfd) {
     if (!FD_VALIDATE(oldfd)) {
         return -EBADF;
     }
-    LOG(DEBUG, "sys_dup2 oldfd=%d newfd=%d\n", oldfd, newfd);
 
     int fd_out;
     int err = fd_duplicate(oldfd, newfd, &fd_out);
