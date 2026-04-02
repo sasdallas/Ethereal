@@ -227,6 +227,7 @@ void poll_exit(poll_waiter_t *waiter) {
                 if (n) n->prev = wn->prev;
                 if (wn->prev) wn->prev->next = n;
                 if (wn == event->h) event->h = wn->next;
+                waiter->i--;
                 kfree(wn);
                 refcount_dec(&waiter->refs);
                 
