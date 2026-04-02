@@ -214,6 +214,8 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
  */
 void poll_exit(poll_waiter_t *waiter) {
     __atomic_store_n(&waiter->dead, true, __ATOMIC_SEQ_CST);
+
+    int found = 0;
     for (size_t i = 0; i < waiter->i; i++) {
         // this is to pull the waiter object out of the event object and destroy it
         poll_event_t *event = waiter->events[i];
@@ -227,10 +229,10 @@ void poll_exit(poll_waiter_t *waiter) {
                 if (n) n->prev = wn->prev;
                 if (wn->prev) wn->prev->next = n;
                 if (wn == event->h) event->h = wn->next;
-                waiter->i--;
                 kfree(wn);
                 refcount_dec(&waiter->refs);
                 
+                found++;
                 break;
             }
 
@@ -240,7 +242,8 @@ void poll_exit(poll_waiter_t *waiter) {
         spinlock_release(&event->lock);
     }
 
-    
+    waiter->i -= found;
+    assert(waiter->refs == 1);
 }
 
 /**
