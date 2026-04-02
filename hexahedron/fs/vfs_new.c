@@ -670,6 +670,7 @@ int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) 
     }    
 
     vfs_file_t *f = vfs2_file(output_inode);
+    f->flags = flags;
     inode_release(output_inode); // Since vfs_file locks the inode anyways we can now release the reference
 
     // NOTE: Assuming this is a GCC 12.2.0 bug (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107694)
