@@ -38,7 +38,7 @@ struct sleep_queue;
  */
 typedef struct thread_sleep {
     struct thread *thread;                  // Used for queues only
-    struct thread_sleep *next;              // Used for queues only
+    struct thread_sleep *next, *prev;       // Used for queues only
     spinlock_t lock;                        // Used to prevent modifications to the thread's sleep state until release
     volatile int wakeup_reason;             // Reason this thread got woken up
     unsigned long seconds, subseconds;      // Seconds and subseconds
@@ -70,11 +70,6 @@ typedef struct sleep_queue {
  * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  */
 void sleep_prepare();
-
-/**
- * @brief Check if you are currently ready to sleep
- */
-int sleep_isSleeping();
 
 /**
  * @brief Wakeup another thread for a reason
@@ -120,10 +115,10 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts);
 
 /**
  * @brief Change your mind and unprepare this thread for sleep
- * @param thread The thread to unprepare from sleep
  * @returns 0 on success
+ * @warning Usage of this is not recommended.
  */
-int sleep_exit(struct thread *thr);
+int sleep_exit();
 
 /**
  * @brief Put the currently thread to sleep until a certain delay
@@ -137,11 +132,5 @@ int sleep_exit(struct thread *thr);
  * @param subseconds Subseconds to sleep for
  */
 void sleep_time(unsigned long seconds, unsigned long subseconds);
-
-/**
- * @brief Put yourself in a sleep queue without preparing
- * @param queue The queue to sleep in
- */
-int sleep_addQueue(sleep_queue_t *queue);
 
 #endif

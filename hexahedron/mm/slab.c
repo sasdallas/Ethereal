@@ -441,6 +441,7 @@ int slab_freeFast(slab_cache_t *cache, void *object) {
         return 1;
     }
 
+    spinlock_release(&cpu_cache->lock);
     return 0;
 }
 

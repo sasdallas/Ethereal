@@ -35,17 +35,32 @@ mutex_t *mutex_create(char *name) {
  * @param mutex The mutex to acquire
  */
 void mutex_acquire(mutex_t *mutex) {
+    // TODO: restructure mutex system and redo the locking on this
     pid_t expect = (pid_t)-1;
     pid_t want = (current_cpu->current_thread ? current_cpu->current_thread->tid : 0); // 0 is the kernel reserved TID 
+    
+    assert(current_cpu->current_thread == NULL || (want != __atomic_load_n(&mutex->lock, __ATOMIC_SEQ_CST)));
+
+    bool prepped_for_sleep = false;
     while (!__atomic_compare_exchange_n(&mutex->lock, &expect, want, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
         if (current_cpu->current_thread) {
-            sleep_inQueue(&mutex->queue);
-            sleep_enter();
+            if (!prepped_for_sleep) {
+                sleep_inQueue(&mutex->queue);
+                prepped_for_sleep = true;
+            } else {
+                sleep_enter();
+                prepped_for_sleep = false;
+            }
         } else {
             arch_pause_single();
         }
 
         expect = (pid_t)-1;
+    }
+
+    // If we got out in between sleeping in the queue and entering sleep then exit just in case
+    if (prepped_for_sleep) {
+        sleep_exit();
     }
 }
 

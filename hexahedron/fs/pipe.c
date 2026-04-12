@@ -119,6 +119,12 @@ static int pipe_close(vfs_file_t *file) {
 static ssize_t pipe_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
 
+    if (file->flags & O_NONBLOCK) {
+        if (circbuf_remaining_read(pipe->buf) == 0) {
+            return -EAGAIN;
+        }
+    }
+
     // Start reading from the circular buffer
     // circbuf_stop ensures that we will EOF on no more content
     ssize_t r = circbuf_read(pipe->buf, size, (uint8_t*)buffer);
@@ -140,6 +146,7 @@ static ssize_t pipe_write(vfs_file_t *file, loff_t off, size_t size, const char 
         return -EPIPE; // TODO: track readers and send SIGPIPE
     }
 
+    // TODO: this needs to O_NONBLOCK? system doesn't work without it will fix later
     if (!circbuf_remaining_write(pipe->buf)) return 0;
     ssize_t r = circbuf_write(pipe->buf, size, (uint8_t*)buffer);
     if (r >= 0) poll_signal(&pipe->read_event, POLLIN);

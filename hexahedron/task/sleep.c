@@ -146,6 +146,7 @@ int sleep_wakeupReason(struct thread *thread, int reason) {
     }
 
     // Thread is no longer sleeping
+    thread->sleep.queue = NULL; // Invalidate the current queue
     __sync_and_and_fetch(&thread->status, ~(THREAD_STATUS_SLEEPING));
     __atomic_store_n(&thread->sleep.wakeup_reason, reason, __ATOMIC_SEQ_CST);
 
@@ -216,30 +217,6 @@ sleep_queue_t *sleep_createQueue(char *name) {
 }
 
 /**
- * @brief Put yourself in a sleep queue without preparing
- * @param queue The queue to sleep in
- */
-int sleep_addQueue(sleep_queue_t *queue) {
-    spinlock_acquire(&queue->lock);
-
-    current_cpu->current_thread->sleep.next = NULL;
-    current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
-
-    // Place ourselves in the queue
-    if (queue->head) {
-        thread_sleep_t *s = queue->head;
-        while (s->next) s = s->next;
-        s->next = &(current_cpu->current_thread->sleep);
-    } else {
-        queue->head = &current_cpu->current_thread->sleep;
-    }
-
-    current_cpu->current_thread->sleep.queue = queue;
-    spinlock_release(&queue->lock);
-    return 0;
-}
-
-/**
  * @brief Put yourself in a sleep queue
  * @param queue The queue to sleep in
  * @returns 0 on success. Use sleep_enter to enter your slee
@@ -250,13 +227,15 @@ int sleep_inQueue(sleep_queue_t *queue) {
     current_cpu->current_thread->sleep.next = NULL;
     current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
 
-    // Place ourselves in the queue
+    // Place ourselves in the queue FIFO-style
     if (queue->head) {
         thread_sleep_t *s = queue->head;
         while (s->next) s = s->next;
         s->next = &(current_cpu->current_thread->sleep);
+        current_cpu->current_thread->sleep.prev = s;
     } else {
         queue->head = &current_cpu->current_thread->sleep;
+        current_cpu->current_thread->sleep.prev = NULL;
     }
 
     // Prepare (acquires the thread's sleep lock while still holding queue->lock to keep ordering)
@@ -274,46 +253,44 @@ int sleep_inQueue(sleep_queue_t *queue) {
  * @returns Amount of threads awoken
  */
 int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
-    int amnt = 0;
- 
-    // !!!: RCU? problem?
     spinlock_acquire(&queue->lock);
-    thread_sleep_t *t = queue->head;
-    thread_sleep_t *prev = NULL;
-    while (t) {
-        if (amounts != 0 && amnt >= amounts) break;
-        
-        // Pop the thread
-        thread_sleep_t *next = t->next;
-        if (prev) prev->next = next;
-        else queue->head = next;
+    thread_sleep_t *node = queue->head;
+    int awoken = 0;
+    while (node) {
+        if (amounts != 0 && awoken >= amounts) {
+            break;
+        }
+
+        // Pop from the first
+        queue->head = node->next;
+        if (queue->head) queue->head->prev = NULL;
 
         // Wakeup the thread (outside of list structure)
-        sleep_wakeup(t->thread);
-        amnt++;
-        t = next;
-    }
-    spinlock_release(&queue->lock);
+        // If this check fails then either the thread exited or it was already woken up by another thing
+        // TODO: This could probably be improved, perhaps by releasing the lock before accessing this, but would have to rework sleep_exit
 
-    return amnt;
+        if (node->queue == queue) {
+            awoken += 1;
+            sleep_wakeup(node->thread);
+        } else {
+        }
+
+        node = queue->head;
+    }
+
+    spinlock_release(&queue->lock);
+    return awoken;
 }
 
 /**
  * @brief Change your mind and unprepare this thread for sleep
- * @param thread The thread to unprepare from sleep
  * @returns 0 on success
  * @warning Usage of this is not recommended.
  */
-int sleep_exit(thread_t *thr) {
-    // !!!: Most likely very dangerous...
-    __sync_and_and_fetch(&thr->status, ~(THREAD_STATUS_SLEEPING));
-    spinlock_release(&thr->sleep.lock);
+int sleep_exit() {
+    // Invalidate the current queue, which will have this thread removed on wakeup
+    current_cpu->current_thread->sleep.queue = NULL;
+    __sync_and_and_fetch(&current_cpu->current_thread->status, ~(THREAD_STATUS_SLEEPING));
+    spinlock_release(&current_cpu->current_thread->sleep.lock);
     return 0;
-}
-
-/**
- * @brief Check if you are currently ready to sleep
- */
-int sleep_isSleeping() {
-    STUB(); // shouldn't be using this anyway
 }
