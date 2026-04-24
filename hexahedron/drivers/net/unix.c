@@ -191,7 +191,10 @@ static int unix_listen(sock_t *sock, int backlog) {
  */
 static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     unix_sock_t *u = USOCK(sock);
-    if (u->state != UNIX_SOCK_STATE_LISTEN) return -EINVAL;
+    if (u->state != UNIX_SOCK_STATE_LISTEN) {
+        LOG(ERR, "Socket not in listening state\n");
+        return -EINVAL;
+    }
 
     // Look for available connection requests
     unix_conn_req_t *r = NULL;
@@ -245,8 +248,6 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
     refcount_inc(&tgt->ref);
     UNIX_STATE_CHANGE(tgt, UNIX_SOCK_STATE_CONNECTED);
     UNIX_STATE_CHANGE(new_usock, UNIX_SOCK_STATE_CONNECTED);
-    
-
 
     new_usock->un_path = strdup(u->un_path);
 
@@ -430,7 +431,7 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
             if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
                 spinlock_release(&usock->pkt.d->rx_lock);
                 unix_decrementAndFree(usock->peer);
-                return -ECONNABORTED;
+                return -ECONNRESET;
             }
 
             // Sleep in the queue
@@ -468,7 +469,7 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         
         if (!usock->peer) {
             // We are in CONNECTED state but don't have a peer, peer was closed.
-            return -ECONNABORTED;
+            return -ECONNRESET;
         }
     }
 
