@@ -77,6 +77,12 @@ void prompt_loop() {
         // Read username
         show_prompt();
         
+        struct termios old, new;
+        tcgetattr(STDIN_FILENO, &old);
+        tcgetattr(STDIN_FILENO, &new);
+        new.c_lflag |= (ECHO | ICANON);
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &new);
+
         if (!fgets(username, 512, stdin)) {
             clearerr(stdin);
             fprintf(stderr, "\n");
@@ -90,9 +96,6 @@ void prompt_loop() {
         printf("Password: ");
         fflush(stdout);
         
-        struct termios old, new;
-        tcgetattr(STDIN_FILENO, &old);
-        tcgetattr(STDIN_FILENO, &new);
         new.c_lflag &= ~(ECHO | ICANON);
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &new);
 

@@ -319,8 +319,6 @@ int sys_close(int fd) {
         return -EBADF;
     }
 
-    LOG(DEBUG, "sys_close %d\n", fd);
-
     return fd_remove(fd);
 }
 
