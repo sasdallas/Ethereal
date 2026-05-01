@@ -251,11 +251,7 @@ int smp_init(smp_info_t *info) {
     smp_data = info;
 
     // Map local APIC
-    lapic_remapped = (uintptr_t)vmm_map(NULL, PAGE_SIZE, 0, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_UC);
-    arch_mmu_map(NULL, lapic_remapped, (uintptr_t)smp_data->lapic_address, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_UC);
-
-
-    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    lapic_remapped = arch_mmu_remap_physical((uintptr_t)info->lapic_address, PAGE_SIZE, REMAP_PERMANENT);
 
     // Initialize I/O APIC first
     pic_init(PIC_TYPE_IOAPIC, (void*)info);
@@ -266,8 +262,6 @@ int smp_init(smp_info_t *info) {
         LOG(ERR, "Failed to initialize local APIC");
         return -EIO;
     }
-
-    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 
     // Don't use SMP?
     if (info->processor_count == 1 || kargs_has("--disable-smp")) {
@@ -312,7 +306,7 @@ int smp_init(smp_info_t *info) {
 
 _finish_collection:
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
-    vmm_postSMP();
+    if (processor_count > 1) vmm_postSMP();
 
     return 0;
 }
