@@ -269,7 +269,6 @@ static poll_events_t tty_poll_events(devfs_node_t *n) {
  * @brief tty ioctl internal
  */
 static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
-    pty_t *pty = tty->priv;
     switch (request) {
         case IOCTLTTYIS:
             SYSCALL_VALIDATE_PTR(argp);
@@ -285,8 +284,12 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
             // set the uids
             SYSCALL_VALIDATE_PTR(argp);
             if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
-            pty->slave->node->attr.uid = *(uid_t*)argp;
-            pty->master_node->attr.uid = *(uid_t*)argp;
+            if (tty->is_pty) {
+                pty_t *pty = tty->priv;
+                pty->slave->node->attr.uid = *(uid_t*)argp;
+                pty->master_node->attr.uid = *(uid_t*)argp;
+            }
+
             return 0;
 
         case TIOCGWINSZ:
@@ -453,6 +456,8 @@ tty_t *tty_create(char *name) {
     tty->fill_tios = NULL;
     tty->write = NULL;
 
+    tty->is_pty = false;
+
     if ((tty->node = devfs_register(devfs_root, name, VFS_CHARDEVICE, &tty_ops, DEVFS_MAJOR_TTY, 0, tty)) == NULL) {
         // TODO: destroy TTY
         return NULL;
@@ -478,6 +483,7 @@ int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
     pty->slave = tty_create(tmp);
     pty->slave->write = pty_slave_write;
     pty->slave->priv = pty;
+    pty->slave->is_pty = true;
     pty->out = circbuf_create("pty output buffer", 4096);
 
     // now set parameters

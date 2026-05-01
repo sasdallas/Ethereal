@@ -44,6 +44,7 @@ typedef struct tty {
 
     // Private
     void *priv;
+    bool is_pty;
 
     devfs_node_t *node;
 } tty_t;
