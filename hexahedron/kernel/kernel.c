@@ -11,11 +11,12 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-// libpolyhedron
+// klib
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 // Kernel includes
 #include <kernel/kernel.h>
@@ -257,6 +258,9 @@ void kernel_runInit(char *path, int argc, char **argv) {
 void kmain() {
     LOG(INFO, "Reached kernel main, starting Hexahedron...\n");
     generic_parameters_t *parameters = arch_get_generic_parameters();
+    
+    // Seed random generator
+    srand(time(NULL));
 
     // Run the early phase of init    
     INIT_RUN_PHASE(PHASE_KERN_EARLY);

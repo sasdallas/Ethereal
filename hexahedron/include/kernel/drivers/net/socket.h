@@ -275,6 +275,15 @@ int socket_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen);
 sock_t *socket_fromID(int id);
 
 /**
+ * @brief Insert a new allocated socket object into a process file descriptor
+ * @param sock The socket to do this to
+ * @returns New file descriptor
+ * 
+ * @warning DO NOT USE THIS IN ANYWHERE BUT ACCEPT
+ */
+int socket_insert(sock_t *sock);
+
+/**
  * @brief Returns whether a socket is nonblocking
  */
 static inline int sock_nonblocking(sock_t *sock) {

@@ -15,84 +15,67 @@
 #define DRIVERS_NET_TCP_H
 
 /**** INCLUDES ****/
+
 #include <stdint.h>
 #include <kernel/drivers/net/ipv4.h>
-#include <kernel/task/sleep.h>
-#include <structs/list.h>
+#include <kernel/misc/util.h>
 
 /**** DEFINITIONS ****/
 
-#define TCP_FLAG_FIN        (1 << 0)    // Final packet from sender
-#define TCP_FLAG_SYN        (1 << 1)    // Synchronize
-#define TCP_FLAG_RST        (1 << 2)    // Reset
-#define TCP_FLAG_PSH        (1 << 3)    // Asks to push buffered data to receiving application
-#define TCP_FLAG_ACK        (1 << 4)    // ACKNOWLEDGE!
-#define TCP_FLAG_URG        (1 << 5)    // This data is probably pretty sensitive
-#define TCP_FLAG_ECE        (1 << 6)    // Either ECN capable or a packet with Congestion Experienced was received
-#define TCP_FLAG_CWR        (1 << 7)    // Congestion window reduced
+#define TCP_FIN         0x01
+#define TCP_SYN         0x02
+#define TCP_RST         0x04
+#define TCP_PSH         0x08
+#define TCP_ACK         0x10
+#define TCP_URG         0x20
+#define TCP_ECE         0x40
+#define TCP_CWR         0x80
 
-#define TCP_STATE_DEFAULT       0
-#define TCP_STATE_LISTEN        1
-#define TCP_STATE_SYN_SENT      2
-#define TCP_STATE_SYN_RECV      3
-#define TCP_STATE_ESTABLISHED   4
-#define TCP_STATE_FIN_WAIT1     5
-#define TCP_STATE_FIN_WAIT2     6
-#define TCP_STATE_CLOSE_WAIT    7
-#define TCP_STATE_CLOSING       8
-#define TCP_STATE_LAST_ACK      9
-#define TCP_STATE_CLOSED        10
-
-#define TCP_DEFAULT_WINSZ       65535
-
-#define TCP_HEADER_LENGTH_MASK  0xF000
-#define TCP_HEADER_LENGTH_SHIFT 12
-
-
+#define TCP_OPT_END         0
+#define TCP_OPT_NOP         1
+#define TCP_OPT_MSS         2
+#define TCP_OPT_WS          3
+#define TCP_OPT_SACK_PERMIT 4
+#define TCP_OPT_SACK        5
+#define TCP_OPT_TIMESTAMPS  8
+#define TCP_OPT_FASTOPEN    34
 
 /**** TYPES ****/
 
+typedef enum {
+    TCP_STATE_LISTEN,
+    TCP_STATE_SYN_SENT,
+    TCP_STATE_SYN_RECEIVED,
+    TCP_STATE_ESTABLISHED,
+    TCP_STATE_FIN_WAIT_1,
+    TCP_STATE_FIN_WAIT_2,
+    TCP_STATE_CLOSE_WAIT,
+    TCP_STATE_CLOSING,
+    TCP_STATE_LAST_ACK,
+    TCP_STATE_TIME_WAIT,
+    TCP_STATE_CLOSED
+} tcp_state_t;
+
 typedef struct tcp_packet {
-    uint16_t src_port;                  // Source port
-    uint16_t dest_port;                 // Destination port
-    uint32_t seq;                       // Sequence number
-    uint32_t ack;                       // Acknowledge number
-    uint16_t flags;                     // Flags
-    uint16_t winsz;                     // Window size
-    uint16_t checksum;                  // Checksum
-    uint16_t urgent;                    // Urgent pointer
-    uint8_t payload[];                  // Payload data
-} __attribute__((packed)) tcp_packet_t;
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint32_t seq;
+    uint32_t ack;
+    uint8_t reserved:4;
+    uint8_t data_offset:4;
+    uint8_t flags;
+    uint16_t window_size;
+    uint16_t checksum;
+    uint16_t urgent_pointer;
+    uint8_t options[0];
+} tcp_packet_t;
 
-typedef struct tcp_checksum_header {
-    uint32_t src;                       // Source IPv4
-    uint32_t dest;                      // Destination IPv4
-    uint8_t reserved;                   // Reserved
-    uint8_t protocol;                   // Protocol
-    uint16_t length;                    // Length
-    uint8_t payload[];                  // Payload
-} __attribute__((packed)) tcp_checksum_header_t;
-
-typedef struct tcp_sock {
-    uint16_t port;                      // Port bound to this socket
-    uint8_t state;                      // TCP state
-    uint32_t seq;                       // Sequence number
-    uint32_t ack;                       // Acknowledge number
-
-    uint8_t *buf;                       // The buffer of impending doom
-    size_t buf_size;
-
-    // Pending connections
-    spinlock_t pending_lock;            // Pending connections lock
-    list_t *pending_connections;        // Pending connections
-    sleep_queue_t *accepting_queue;     // Accepting thread queue
-} tcp_sock_t;
-
-/**** FUNCTIONS ****/
-
-/**
- * @brief Handle a TCP packet
- */
-int tcp_handle(nic_t *nic, void *frame, size_t size);
+typedef struct tcp_checksum_psuedo {
+    uint32_t src;
+    uint32_t dst;
+    uint8_t reserved;
+    uint8_t protocol;
+    uint16_t length;
+} tcp_checksum_psuedo_t;
 
 #endif

@@ -522,6 +522,30 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
 }
 
 /**
+ * @brief Insert a new allocated socket object into a process file descriptor
+ * @param sock The socket to do this to
+ * @returns New file descriptor
+ * 
+ * @warning DO NOT USE THIS IN ANYWHERE BUT ACCEPT
+ */
+int socket_insert(sock_t *sock) {
+    sock->inode = socketfs_create(sock);
+    sock->id = last_socket_id++;
+    list_append(socket_list, (void*)sock);
+
+    // Add as file descriptor
+    vfs_file_t *f;    
+    assert(vfs_openat(sock->inode, NULL, O_RDWR, &f) == 0);
+
+    inode_release(sock->inode); // required after creation so that the last reference can be dropped
+
+    int fd_num;
+    assert(fd_add(f, &fd_num) == 0);
+
+    return fd_num;
+}
+
+/**
  * @brief Wait for received content to be available in a socket
  * @param sock The socket to wait on received content for
  * @returns 0 on success, 1 on interrupted
