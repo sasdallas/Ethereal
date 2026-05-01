@@ -216,7 +216,7 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
  */
 void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
     // !!!: Will need to update later, a lot of type support will be needed
-    for (uintptr_t i = range->start + offset; i < range->start + (npages * PAGE_SIZE); i += PAGE_SIZE) {
+    for (uintptr_t i = range->start + offset; i < range->start + offset + (npages * PAGE_SIZE); i += PAGE_SIZE) {
         if (range->vmm_flags & VM_FLAG_FILE) {
             // TODO
             space->metrics.file_resident -= PAGE_SIZE;
@@ -234,6 +234,8 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
 
         arch_mmu_unmap(NULL, i);
     }
+
+    arch_mmu_invalidate_range(range->start + offset, range->start + offset + (npages * PAGE_SIZE));
 }
 
 
