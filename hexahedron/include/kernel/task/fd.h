@@ -27,7 +27,7 @@
 #define PROCESS_FD_BASE_AMOUNT      8
 #define PROCESS_FD_EXPAND_AMOUNT    8
 
-#define PROCESS_MAX_FDS             128
+#define PROCESS_MAX_FDS             256
 
 /**** TYPES ****/
 
@@ -42,7 +42,7 @@ typedef struct fd_table {
 
 /* legacy!!! */
 #define FD(fd) (current_cpu->current_process->fd_table->fds[fd])
-#define FD_VALIDATE(fd) (current_cpu->current_process->fd_table->table_size >= fd && current_cpu->current_process->fd_table->fds[fd])
+#define FD_VALIDATE(fd) (fd >= 0 && current_cpu->current_process->fd_table->table_size >= fd && current_cpu->current_process->fd_table->fds[fd])
 
 #define GET_FD_OR_ERROR(fd) ({ \
                             vfs_file_t *tmp;\
