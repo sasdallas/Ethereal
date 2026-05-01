@@ -1047,3 +1047,21 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
 
     return thr->tid;
 }
+
+
+/**
+ * @brief Create a new kernel-mode thread
+ * @param process The kernel process to append
+ * @param flags Thread flags
+ * @param entry The thread entrypoint
+ * @param arg An argument for the thread
+ * @returns The new thread
+ */
+thread_t *process_createKernelThread(process_t *process, unsigned int flags, void *entry, void *arg) {
+    thread_t *thr = process_createThread(process, (uintptr_t)&arch_enter_kthread, flags | THREAD_FLAG_KERNEL);
+
+    THREAD_PUSH_STACK(SP(thr->context), void*, arg);
+    THREAD_PUSH_STACK(SP(thr->context), void*, entry);
+
+    return thr;
+}

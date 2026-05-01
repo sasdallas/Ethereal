@@ -254,4 +254,14 @@ process_t *process_getFromPID(pid_t pid);
  */
 pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 
+/**
+ * @brief Create a new kernel-mode thread
+ * @param process The kernel process to append
+ * @param flags Thread flags
+ * @param entry The thread entrypoint
+ * @param arg An argument for the thread
+ * @returns The new thread
+ */
+thread_t *process_createKernelThread(process_t *process, unsigned int flags, void *entry, void *arg);
+
 #endif
