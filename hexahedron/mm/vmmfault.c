@@ -44,8 +44,8 @@ int vmm_fault(vmm_fault_information_t *info) {
         // Perhaps this is part of the thread stack?
         if (info->address >= MMU_USERMODE_STACK_REGION && info->address < MMU_USERMODE_STACK_REGION + MMU_USERMODE_STACK_SIZE) {
             // Yes it is, expand the stack
-            assert(vmm_map((void*)PAGE_ALIGN_DOWN(info->address), PAGE_SIZE, VM_FLAG_FIXED | VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_WRITE | MMU_FLAG_PRESENT));
             mutex_release(sp->mut);
+            assert(vmm_map((void*)PAGE_ALIGN_DOWN(info->address), PAGE_SIZE, VM_FLAG_FIXED | VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_WRITE | MMU_FLAG_PRESENT));
             sp->metrics.stack += PAGE_SIZE;
             LOG(DEBUG, "Expanded thread stack!\n");
             return VMM_FAULT_RESOLVED;
