@@ -125,6 +125,8 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
     nic_t *nic = slab_allocate(nic_cache);
     assert(nic);
 
+    memset(nic, 0, sizeof(nic_t));
+
     strncpy(nic->name, name, 128);
     nic->type = type;
     nic->ops = ops;
