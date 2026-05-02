@@ -325,7 +325,15 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         // LOG(DEBUG, "Follow symlink %s\n", path);
 
         vfs_inode_t *out_again_tmp = NULL;
-        res = vfs_lookup(path, &out_again_tmp, flags);
+        
+        if (*path == '/') {
+            // root path, use vfs_lookup
+            res = vfs_lookup(path, &out_again_tmp, flags);
+        } else {
+            // relative path to this inode
+            res = vfs_lookupat(inode, path, &out_again_tmp, flags);
+        }
+        
         if (res) { inode_release(out_tmp); return res; }
         *output = out_again_tmp;
         inode_release(out_tmp);
