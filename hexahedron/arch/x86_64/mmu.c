@@ -386,7 +386,8 @@ void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t fl
 void arch_mmu_unmap(mmu_dir_t *dir, uintptr_t virt) {
     assert(MMU_IS_CANONICAL(virt));
 
-    mmu_page_t *pg = arch_mmu_get_page(dir, virt, true);
+    mmu_page_t *pg = arch_mmu_get_page(dir, virt, false);
+    if (!pg) return;
     pg->data = 0;
 }
 
