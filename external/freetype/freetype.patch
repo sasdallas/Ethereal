@@ -1,11 +1,19 @@
-diff -rupN original/builds/unix/config.sub new/builds/unix/config.sub
---- original/builds/unix/config.sub	2012-03-08 15:09:13.000000000 -0500
-+++ new/builds/unix/config.sub	2012-05-17 11:40:42.308339450 -0400
-@@ -1343,6 +1343,7 @@ case $os in
- 	      | -sym* | -kopensolaris* \
- 	      | -amigaos* | -amigados* | -msdos* | -newsos* | -unicos* | -aof* \
- 	      | -aos* | -aros* \
+diff -rU0 freetype-2.4.9/builds/unix/config.sub freetype-2.4.9-new/builds/unix/config.sub
+--- freetype-2.4.9/builds/unix/config.sub	2012-03-08 14:09:13.000000000 -0600
++++ freetype-2.4.9-new/builds/unix/config.sub	2026-05-02 13:51:30.158796410 -0500
+@@ -1345,0 +1346 @@
 +	      | -ethereal* \
- 	      | -nindy* | -vxsim* | -vxworks* | -ebmon* | -hms* | -mvs* \
- 	      | -clix* | -riscos* | -uniplus* | -iris* | -rtu* | -xenix* \
- 	      | -hiux* | -386bsd* | -knetbsd* | -mirbsd* | -netbsd* \
+Only in freetype-2.4.9-new/builds/unix: config.sub.orig
+diff -rU0 freetype-2.4.9/builds/unix/configure freetype-2.4.9-new/builds/unix/configure
+--- freetype-2.4.9/builds/unix/configure	2012-03-08 14:09:13.000000000 -0600
++++ freetype-2.4.9-new/builds/unix/configure	2026-05-02 13:55:33.953568242 -0500
+@@ -11547,0 +11548,9 @@
++ethereal*)
++  version_type=linux # correct to gnu/linux during the next big refactor
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}$major $libname$shared_ext'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  ;;
++

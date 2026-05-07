@@ -28,7 +28,7 @@ mkdir build-freetype || true
 cd build-freetype
 rm -rf * || true
 chmod +x ../freetype-2.4.9/configure
-../freetype-2.4.9/configure --host=$1-ethereal --prefix=/usr --build=x86_64-linux-gnu --without-zlib
+../freetype-2.4.9/configure --host=$1-ethereal --prefix=/usr --build=x86_64-linux-gnu --without-zlib --enable-shared
 make -j4
 make DESTDIR=$2 install
 cd ..
