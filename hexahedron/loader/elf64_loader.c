@@ -790,8 +790,13 @@ int elf_loadDynamicELF(vfs_file_t *file, elf_dynamic_info_t *info) {
         Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
 
         switch (phdr->p_type) {
-            case PT_LOAD:
-                assert(vmm_map((void*)phdr->p_vaddr, phdr->p_memsz, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
+            case PT_LOAD: {
+                // LOG(DEBUG, "PHDR #%d PT_LOAD: OFFSET 0x%x VADDR %p PADDR %p FILESIZE %d MEMSIZE %d\n", i, phdr->p_offset, phdr->p_vaddr, phdr->p_paddr, phdr->p_filesz, phdr->p_memsz);
+
+                // Fix the case where something like a PT_LOAD segment at 0x863FD8 with FILESIZE 148172 will result in one less page
+                size_t fixed_size = phdr->p_memsz + (phdr->p_vaddr & (PAGE_SIZE-1));
+
+                assert(vmm_map((void*)PAGE_ALIGN_DOWN(phdr->p_vaddr), fixed_size, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER) == (void*)PAGE_ALIGN_DOWN(phdr->p_vaddr));
 
                 memcpy((void*)phdr->p_vaddr, (void*)((uintptr_t)ehdr + phdr->p_offset), phdr->p_filesz);
 
@@ -801,6 +806,7 @@ int elf_loadDynamicELF(vfs_file_t *file, elf_dynamic_info_t *info) {
                 }
 
                 break;
+            }
 
             case PT_PHDR:
                 // Important that we save this
