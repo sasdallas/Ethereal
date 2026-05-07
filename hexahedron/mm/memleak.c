@@ -140,8 +140,8 @@ void memleak_free(void *ptr) {
     rbtree_delete(obj_tree, &obj->node);
     list_delete(obj_list, &obj->lnode);
     assert(list_find(obj_list, obj) == NULL);
-    slab_free(memleak_cache, obj);
     spinlock_release(&memleak_lock);
+    slab_free(memleak_cache, obj);
 }
 
 /**
