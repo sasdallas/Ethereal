@@ -43,7 +43,7 @@ typedef struct rb_tree {
 #define RB_TREE_INIT_NODE(n, k, v) ({ (n)->key = (k); (n)->value = (v); (n)->parent = (n)->left = (n)->right = NULL; (n)->color = RBTREE_BLACK; })
 
 #define RB_TREE_INITIALIZER { .root = NULL, .compare_fn = NULL }
-#define RB_TREE_INIT(t) ({ (t)->root = NULL; })
+#define RB_TREE_INIT(t) ({ (t)->root = NULL; (t)->compare_fn = NULL; })
 
 /**** FUNCTIONS ****/
 
