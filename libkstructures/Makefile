@@ -7,8 +7,8 @@ OUT_OBJ_KERNEL = $(OBJ_OUTPUT_DIRECTORY)/libkstructures
 OUT_OBJ_LIBC = $(OBJ_OUTPUT_DIRECTORY)/libstructures
 
 # SOURCE DIRECTORIES
-SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini gzip avl
-SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip avl
+SOURCE_DIRECTORIES_KERNEL = list tree json hashmap circbuf ini gzip ringbuffer
+SOURCE_DIRECTORIES_LIBC = list tree json hashmap ini gzip ringbuffer
 OUTPUT_DIRECTORIES_KERNEL = $(addprefix $(OUT_OBJ_KERNEL)/,$(SOURCE_DIRECTORIES_KERNEL))
 OUTPUT_DIRECTORIES_LIBC = $(addprefix $(OUT_OBJ_LIBC)/,$(SOURCE_DIRECTORIES_LIBC))
 
@@ -37,6 +37,9 @@ $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a: $(KERNEL_C_OBJECTS)
 $(DESTDIR)$(LIB_DIRECTORY)/libstructures.a: $(LIBC_C_OBJECTS)
 	$(AR) rcs $@ $(LIBC_C_OBJECTS)
 
+$(DESTDIR)$(LIB_DIRECTORY)/libstructures.so: $(LIBC_C_OBJECTS)
+	$(CC) $(CFLAGS) -shared -o $@ $(LIBC_C_OBJECTS)
+
 # Target disabled
 all:
 	@echo "=== TARGET DISABLED ==="
@@ -64,7 +67,7 @@ install-headers:
 	@-mkdir -pv $(DESTDIR)$(LIBDIR)/pkgconfig/
 	cp structures.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a $(DESTDIR)$(LIB_DIRECTORY)/libstructures.a
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a $(DESTDIR)$(LIB_DIRECTORY)/libstructures.a  $(DESTDIR)$(LIB_DIRECTORY)/libstructures.so
 
 clean:
 	@-rm -r $(OUT_OBJ_KERNEL)
