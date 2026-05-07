@@ -58,31 +58,7 @@
 /**** TYPES ****/
 typedef uintptr_t mmu_dir_t;
 
-
-// Copied straight from old memory system
-typedef union mmu_page {
-    // You can manually manipulate these flags
-    struct {
-        uint64_t present:1;         // Present in memory
-        uint64_t rw:1;              // R/W
-        uint64_t usermode:1;        // Usermode
-        uint64_t writethrough:1;    // Writethrough
-        uint64_t cache_disable:1;   // Uncacheable
-        uint64_t accessed:1;        // Accessed
-        uint64_t dirty:1;           // Dirty
-        uint64_t size:1;            // Page size - 4MiB or 4KiB
-                                    // IMPORTANT: This is also the PAT bit for PTEs
-        uint64_t global:1;          // Global
-        uint64_t available2:3;      // Free bits!
-        uint64_t address:28;        // The page data
-        uint64_t reserved:12;       // These should be set to 0
-        uint64_t available3:11;     // Free bits!
-        uint64_t nx:1;              // No execute bit
-    } bits;
-    
-    // Or use the raw flags
-    uint64_t data;
-} mmu_page_t;
+typedef uint64_t mmu_page_t;
 
 /**** FUNCTIONS ****/
 

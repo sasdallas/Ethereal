@@ -31,6 +31,24 @@ mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE)))
 
 #define KERNEL_PHYS(x) (uintptr_t)((uintptr_t)(x) - 0xFFFFF00000000000)
 
+// page flags
+#define MMU_PAGE_FLAG_PRESENT           ((uint64_t)1 << 0)
+#define MMU_PAGE_FLAG_RW                ((uint64_t)1 << 1)
+#define MMU_PAGE_FLAG_USER              ((uint64_t)1 << 2)
+#define MMU_PAGE_FLAG_WT                ((uint64_t)1 << 3)
+#define MMU_PAGE_FLAG_CD                ((uint64_t)1 << 4)
+#define MMU_PAGE_FLAG_ACCESSED          ((uint64_t)1 << 5)
+#define MMU_PAGE_FLAG_DIRTY             ((uint64_t)1 << 6)
+#define MMU_PAGE_FLAG_SIZE              ((uint64_t)1 << 7)
+#define MMU_PAGE_FLAG_GLOBAL            ((uint64_t)1 << 8)
+#define MMU_PAGE_FLAG_NX                ((uint64_t)1 << 63)
+
+// page address
+#define MMU_PAGE_ADDR(pg) ((pg) & (uint64_t)0x000FFFFFFFFFF000ULL)
+
+#define IS_VALID_PHYS(addr) (((pg) & 0x000FFFFFFFFFF000ULL) == 0)
+
+
 /**
  * @brief MMU page fault handler
  */
@@ -133,24 +151,14 @@ extern void arch_panic_traceback(int depth, registers_t *regs);
 void arch_mmu_init() {
     // First build the HHDM structures
     for (int i = 0; i < 128; i++) {
-        __mmu_hhdm_pdpt[i].bits.address = (KERNEL_PHYS(&__mmu_hhdm_pd[i]) >> MMU_SHIFT);
-        __mmu_hhdm_pdpt[i].bits.present = 1;
-        __mmu_hhdm_pdpt[i].bits.rw = 1;
+        __mmu_hhdm_pdpt[i] = (KERNEL_PHYS(&__mmu_hhdm_pd[i])) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
         for (int j = 0; j < 512; j++) {
-            __mmu_hhdm_pd[i][j].bits.present = 1;
-            __mmu_hhdm_pd[i][j].bits.size = 1;
-            __mmu_hhdm_pd[i][j].bits.rw = 1;
-            __mmu_hhdm_pd[i][j].bits.address = ((((uint64_t)i) << 30) + (((uint64_t)j) << 21)) >> MMU_SHIFT;
+            __mmu_hhdm_pd[i][j] = ((((uint64_t)i) << 30) + (((uint64_t)j) << 21)) | MMU_PAGE_FLAG_SIZE | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
         }
     }
 
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_HHDM_REGION)].bits.address = KERNEL_PHYS(__mmu_hhdm_pdpt) >> MMU_SHIFT;
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_HHDM_REGION)].bits.rw = 1;
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_HHDM_REGION)].bits.present = 1;
-
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_KERNEL_REGION)].bits.address = KERNEL_PHYS(__mmu_hhdm_pdpt) >> MMU_SHIFT;
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_KERNEL_REGION)].bits.rw = 1;
-    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_KERNEL_REGION)].bits.present = 1;
+    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_HHDM_REGION)] = (KERNEL_PHYS(__mmu_hhdm_pdpt)) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
+    __mmu_kernel_pml[MMU_PML4_INDEX(MMU_KERNEL_REGION)] = (KERNEL_PHYS(__mmu_hhdm_pdpt)) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
 
     // Load directory
     arch_mmu_load((mmu_dir_t*)KERNEL_PHYS(__mmu_kernel_pml));
@@ -228,39 +236,32 @@ void arch_mmu_finish(pmm_region_t *region) {
     for (unsigned i = 0; i < (kernel_pts+512) / 512; i++) {
         mmu_page_t *pd = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
         memset(pd, 0, PAGE_SIZE);
-        kernel_pdpt[i].bits.present = 1;
-        kernel_pdpt[i].bits.rw = 1;
-        kernel_pdpt[i].bits.address  = FROM_HHDM(pd) >> MMU_SHIFT;
+        kernel_pdpt[i]  = FROM_HHDM(pd) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
         
-        for (unsigned j = 0; j < kernel_pts; j++) {
+        size_t pts_to_map = (kernel_pts - i * 512);
+        if (pts_to_map > 512) pts_to_map = 512;
+        for (unsigned j = 0; j < pts_to_map; j++) {
             mmu_page_t *pt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
             memset(pt, 0, PAGE_SIZE);
-            pd[j].bits.present = 1;
-            pd[j].bits.rw = 1;
-            pd[j].bits.address = FROM_HHDM(pt) >> MMU_SHIFT;
+            pd[j] = FROM_HHDM(pt) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
             
             for (unsigned k = 0; k < 512; k++) {
-                pt[k].bits.present = 1;
-                pt[k].bits.rw = 1;
-                pt[k].bits.address = ((PAGE_SIZE*512) * j + PAGE_SIZE * k) >> MMU_SHIFT;
+                pt[k] = ((PAGE_SIZE*512) * j + PAGE_SIZE * k) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
             }
         }
     }
 
 extern uintptr_t __kernel_start;
-    __mmu_kernel_pml[MMU_PML4_INDEX(((uintptr_t)&__kernel_start))].bits.address = FROM_HHDM(kernel_pdpt) >> MMU_SHIFT;
+    __mmu_kernel_pml[MMU_PML4_INDEX(((uintptr_t)&__kernel_start))] = MMU_PAGE_ADDR(FROM_HHDM(kernel_pdpt)) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
 
     
     // Finally, fill the rest of the kernel PML with blank PDPTs to allow cloning easier
     for (unsigned i = 256; i < 512; i++) {
-        if (!__mmu_kernel_pml[i].bits.present) {
+        if ((__mmu_kernel_pml[i] & MMU_PAGE_FLAG_PRESENT) == 0) {
             uintptr_t fr = TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
             memset((void*)fr, 0, PAGE_SIZE);
             
-            __mmu_kernel_pml[i].bits.present = 1;
-            __mmu_kernel_pml[i].bits.rw = 1;
-            __mmu_kernel_pml[i].bits.usermode = 0;
-            __mmu_kernel_pml[i].bits.address = FROM_HHDM(fr) >> MMU_SHIFT;
+            __mmu_kernel_pml[i] = (FROM_HHDM(fr)) | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
         }
     }
 
@@ -301,53 +302,45 @@ static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_
     // PDPT
     mmu_page_t *pdpt = NULL;
     
-    if (d[MMU_PML4_INDEX(virt)].bits.present == 0) {
+    if ((d[MMU_PML4_INDEX(virt)] & MMU_PAGE_FLAG_PRESENT) == 0) {
         if (!allow_nonpresent) return NULL;
 
         // Create a new entry
         pdpt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
         memset(pdpt, 0, PAGE_SIZE);
 
-        d[MMU_PML4_INDEX(virt)].bits.address = FROM_HHDM(pdpt) >> MMU_SHIFT;
-        d[MMU_PML4_INDEX(virt)].bits.usermode = 1;
-        d[MMU_PML4_INDEX(virt)].bits.rw = 1;
-        d[MMU_PML4_INDEX(virt)].bits.present = 1;
+        d[MMU_PML4_INDEX(virt)] = FROM_HHDM(pdpt) | MMU_PAGE_FLAG_USER | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
     } else {
-        pdpt = (mmu_page_t*)TO_HHDM(d[MMU_PML4_INDEX(virt)].bits.address << MMU_SHIFT);
+        pdpt = (mmu_page_t*)TO_HHDM(MMU_PAGE_ADDR(d[MMU_PML4_INDEX(virt)]));
     }
 
     // PD
     mmu_page_t *pd = NULL;
 
-    if (pdpt[MMU_PDPT_INDEX(virt)].bits.present == 0) {
+    if ((pdpt[MMU_PDPT_INDEX(virt)] & MMU_PAGE_FLAG_PRESENT) == 0) {
         if (!allow_nonpresent) return NULL;
 
         // Create a new entry
         pd = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
         memset(pd, 0, PAGE_SIZE);
 
-        pdpt[MMU_PDPT_INDEX(virt)].bits.address = FROM_HHDM(pd) >> MMU_SHIFT;
-        pdpt[MMU_PDPT_INDEX(virt)].bits.usermode = 1;
-        pdpt[MMU_PDPT_INDEX(virt)].bits.rw = 1;
-        pdpt[MMU_PDPT_INDEX(virt)].bits.present = 1;
+        pdpt[MMU_PDPT_INDEX(virt)] = FROM_HHDM(pd) | MMU_PAGE_FLAG_USER | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
     } else {
-        pd = (mmu_page_t*)TO_HHDM(pdpt[MMU_PDPT_INDEX(virt)].bits.address << MMU_SHIFT);
+        pd = (mmu_page_t*)TO_HHDM(MMU_PAGE_ADDR(pdpt[MMU_PDPT_INDEX(virt)]));
     }
 
     // PT
     mmu_page_t *pt = NULL;
 
-    if (pd[MMU_PAGEDIR_INDEX(virt)].bits.present == 0) {
+    if ((pd[MMU_PAGEDIR_INDEX(virt)] & MMU_PAGE_FLAG_PRESENT) == 0) {
         if (!allow_nonpresent) return NULL;
 
         pt = (mmu_page_t*)TO_HHDM(pmm_allocatePage(ZONE_DEFAULT));
         memset(pt, 0, PAGE_SIZE);
-        pd[MMU_PAGEDIR_INDEX(virt)].bits.present = 1;
-        pd[MMU_PAGEDIR_INDEX(virt)].bits.rw = 1;
-        pd[MMU_PAGEDIR_INDEX(virt)].bits.usermode = 1;
-        pd[MMU_PAGEDIR_INDEX(virt)].bits.address = FROM_HHDM(pt) >> MMU_SHIFT;
+
+        pd[MMU_PAGEDIR_INDEX(virt)] = FROM_HHDM(pt) | MMU_PAGE_FLAG_USER | MMU_PAGE_FLAG_RW | MMU_PAGE_FLAG_PRESENT;
     } else {
-        pt = (mmu_page_t*)TO_HHDM(pd[MMU_PAGEDIR_INDEX(virt)].bits.address << MMU_SHIFT);
+        pt = (mmu_page_t*)TO_HHDM(MMU_PAGE_ADDR(pd[MMU_PAGEDIR_INDEX(virt)]));
     }
 
     return &pt[MMU_PAGETBL_INDEX(virt)];
@@ -364,18 +357,21 @@ void arch_mmu_map(mmu_dir_t *dir, uintptr_t virt, uintptr_t phys, mmu_flags_t fl
     assert(MMU_IS_CANONICAL(virt));
     virt = PAGE_ALIGN_DOWN(virt);
     
-
     // Configure the bits in the entry
     mmu_page_t *page = arch_mmu_get_page(dir, virt, true);
-    page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
-    page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
-    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
-    page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
-    page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
-    page->bits.size = (flags & MMU_FLAG_WC) ? 1 : 0;
-    page->bits.writethrough = (flags & MMU_FLAG_WT) ? 1 : 0;
-    page->bits.cache_disable = (flags & MMU_FLAG_UC) ? 1 : 0;
-    page->bits.address = phys >> MMU_SHIFT;
+
+    (*page) = (MMU_PAGE_ADDR(phys));
+
+#define TRANSLATE_FLAG(flg,flg2) (*page) |= (flags & flg) ? flg2 : 0;
+    TRANSLATE_FLAG(MMU_FLAG_PRESENT, MMU_PAGE_FLAG_PRESENT);
+    TRANSLATE_FLAG(MMU_FLAG_WRITE, MMU_PAGE_FLAG_RW);
+    TRANSLATE_FLAG(MMU_FLAG_USER, MMU_PAGE_FLAG_USER);
+    TRANSLATE_FLAG(MMU_FLAG_NOEXEC, MMU_PAGE_FLAG_NX);
+    TRANSLATE_FLAG(MMU_FLAG_GLOBAL, MMU_PAGE_FLAG_GLOBAL);
+    TRANSLATE_FLAG(MMU_FLAG_WC, MMU_PAGE_FLAG_SIZE);
+    TRANSLATE_FLAG(MMU_FLAG_WT, MMU_PAGE_FLAG_WT);
+    TRANSLATE_FLAG(MMU_FLAG_UC, MMU_PAGE_FLAG_CD);
+#undef TRANSLATE_FLAG
 }
 
 /**
@@ -388,7 +384,8 @@ void arch_mmu_unmap(mmu_dir_t *dir, uintptr_t virt) {
 
     mmu_page_t *pg = arch_mmu_get_page(dir, virt, false);
     if (!pg) return;
-    pg->data = 0;
+    
+    (*pg) = 0;
 }
 
 /**
@@ -404,7 +401,7 @@ uintptr_t arch_mmu_physical(mmu_dir_t *dir, uintptr_t addr) {
     mmu_page_t *page = arch_mmu_get_page(dir, addr, false);
     if (!page) return 0x0;
 
-    return (((uint64_t)(page->bits.address) << MMU_SHIFT)) + off;
+    return ((uint64_t)(MMU_PAGE_ADDR(*page))) + off;
 }
 
 /**
@@ -441,20 +438,19 @@ mmu_flags_t arch_mmu_read_flags(mmu_dir_t *dir, uintptr_t addr) {
 
     uint32_t flags = 0x0;
 
-#define MMU_FLAG_CASE(bit, flag1, flag2) flags |= (pg->bits.bit) ? flag1 : flag2
-    MMU_FLAG_CASE(present, MMU_FLAG_PRESENT, 0);
-    MMU_FLAG_CASE(rw, MMU_FLAG_WRITE, 0);
-    MMU_FLAG_CASE(usermode, MMU_FLAG_USER, 0);
-    MMU_FLAG_CASE(nx, MMU_FLAG_NOEXEC, 0);
-    MMU_FLAG_CASE(global, MMU_FLAG_GLOBAL, 0);
-    MMU_FLAG_CASE(dirty, MMU_FLAG_DIRTY, 0);
+#define MMU_FLAG_CASE(flag1, flag2) flags |= (*(pg) & flag1) ? flag2 : 0
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_PRESENT, MMU_FLAG_PRESENT);
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_RW, MMU_FLAG_WRITE);
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_USER, MMU_FLAG_USER);
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_NX, MMU_FLAG_NOEXEC);
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_GLOBAL, MMU_FLAG_GLOBAL);
+    MMU_FLAG_CASE(MMU_PAGE_FLAG_DIRTY, MMU_FLAG_DIRTY);
 #undef MMU_FLAG_CASE
 
-    int index = 
-        (pg->bits.size << 2) |
-        (pg->bits.cache_disable << 1) |
-        (pg->bits.writethrough);
-
+    int index = 0;
+    if ((*pg) & MMU_PAGE_FLAG_SIZE) index |= (1 << 2);
+    if ((*pg) & MMU_PAGE_FLAG_CD) index |= (1 << 1);
+    if ((*pg) & MMU_PAGE_FLAG_WT) index |= 1;
 
     // !!!: hardcoded PAT
     static int pat_indexes[] = {
@@ -508,26 +504,30 @@ void arch_mmu_destroy(mmu_dir_t *dir) {
     // We should free any associated PMM blocks below kernelspace
     for (int i = 0; i < 256; i++) {
         mmu_page_t *pmle = &((mmu_page_t*)dir)[i];
-        if (pmle->bits.address == 0 || pmle->bits.present == 0) continue;
-        mmu_page_t *pdpt  = (mmu_page_t*)TO_HHDM(pmle->bits.address << 12);
+        if (((*pmle) & MMU_PAGE_FLAG_PRESENT) == 0) continue;
+
+        mmu_page_t *pdpt = (mmu_page_t*)TO_HHDM(MMU_PAGE_ADDR(*pmle));
 
         for (int j = 0; j < 512; j++) {
             mmu_page_t *pdpte = &pdpt[j];
-            if (pdpte->bits.address == 0 || pdpte->bits.present == 0) continue;
-            mmu_page_t *pd = (mmu_page_t*)TO_HHDM(pdpte->bits.address << 12);
+            if (((*pdpte) & MMU_PAGE_FLAG_PRESENT) == 0) continue;
+
+            mmu_page_t *pd = (mmu_page_t*)TO_HHDM(MMU_PAGE_ADDR(*pdpte));
 
             for (int k = 0; k < 512; k++) {
                 mmu_page_t *pde = &pd[k];
-                if (pde->bits.address == 0 || pde->bits.present == 0) continue;
-                pmm_freePage(pde->bits.address << 12);
-                pde->data = 0;
+                if (((*pde) & MMU_PAGE_FLAG_PRESENT) == 0) continue;
+
+                pmm_freePage(MMU_PAGE_ADDR(*pde));
+                *pde = 0;
             }
-            pmm_freePage(pdpte->bits.address << 12);
-            pdpte->data = 0;
+
+            pmm_freePage(MMU_PAGE_ADDR(*pdpte));
+            *pdpte = 0;
         }
 
-        pmm_freePage(pmle->bits.address << 12);
-        pmle->data = 0;
+        pmm_freePage(MMU_PAGE_ADDR(*pmle));
+        *pmle = 0;
     }
 
     pmm_freePage(FROM_HHDM(dir));
@@ -553,14 +553,16 @@ int arch_mmu_setflags(mmu_dir_t *dir, uintptr_t i, mmu_flags_t flags) {
     mmu_page_t *page = arch_mmu_get_page(dir, i, false);
     if (!page) return 1;
 
-    page->bits.present = (flags & MMU_FLAG_PRESENT) ? 1 : 0;
-    page->bits.rw = (flags & MMU_FLAG_WRITE) ? 1 : 0;
-    page->bits.usermode = (flags & MMU_FLAG_USER) ? 1 : 0;
-    page->bits.nx = (flags & MMU_FLAG_NOEXEC) ? 1 : 0;
-    page->bits.global = (flags & MMU_FLAG_GLOBAL) ? 1 : 0;
-    page->bits.size = (flags & MMU_FLAG_WC) ? 1 : 0;
-    page->bits.writethrough = (flags & MMU_FLAG_WT) ? 1 : 0;
-    page->bits.cache_disable = (flags & MMU_FLAG_UC) ? 1 : 0;
+#define TRANSLATE_FLAG(flg,flg2) if (flags & flg) { (*page) |= flg2; } else { (*page) &= ~(flg2); };
+    TRANSLATE_FLAG(MMU_FLAG_PRESENT, MMU_PAGE_FLAG_PRESENT);
+    TRANSLATE_FLAG(MMU_FLAG_WRITE, MMU_PAGE_FLAG_RW);
+    TRANSLATE_FLAG(MMU_FLAG_USER, MMU_PAGE_FLAG_USER);
+    TRANSLATE_FLAG(MMU_FLAG_NOEXEC, MMU_PAGE_FLAG_NX);
+    TRANSLATE_FLAG(MMU_FLAG_GLOBAL, MMU_PAGE_FLAG_GLOBAL);
+    TRANSLATE_FLAG(MMU_FLAG_WC, MMU_PAGE_FLAG_SIZE);
+    TRANSLATE_FLAG(MMU_FLAG_WT, MMU_PAGE_FLAG_WT);
+    TRANSLATE_FLAG(MMU_FLAG_UC, MMU_PAGE_FLAG_CD);
+#undef TRANSLATE_FLAG
 
     return 0;
 }
