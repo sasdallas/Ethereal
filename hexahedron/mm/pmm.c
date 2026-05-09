@@ -7,7 +7,7 @@
  * This PMM is a modified bitmap PMM with support for sectioning (resulting in faster allocations).
  * The beginning of sections are reserved for their bitmap and header data.
  * 
- * Note that this design is fundamentally flawed, requiring a pages array for page_t objects (meaning more allocations).
+ * Note that this design requires a pages array for page_t objects (meaning more allocations).
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
@@ -65,9 +65,9 @@ void pmm_oom(uintptr_t req) {
     kernel_panic_prepare(OUT_OF_MEMORY);
 
     dprintf(NOHEADER, "*** PMM detected OOM condition while allocating %d pages.\n\n", req);
-    dprintf(NOHEADER, "A total of %d pages (%d kB) were reserved by the PMM\n", pmm_internal_memory / PAGE_SIZE, pmm_internal_memory / 1000);
+    dprintf(NOHEADER, "A total of %d pages (%d kB) were reserved by the PMM\n", pmm_internal_memory / PAGE_SIZE, pmm_internal_memory / 1024);
     dprintf(NOHEADER, "The system had a total of %d kB of RAM available\n", pmm_memory_size / 1024);
-    dprintf(NOHEADER, "The PMM used %d blocks (%d kB) out of %d total (%d kB)\n\n", pmm_used_blocks, pmm_used_blocks * 4096 / 1000, pmm_total_blocks, pmm_total_blocks * 4096 / 1000);
+    dprintf(NOHEADER, "The PMM used %d blocks (%d kB) out of %d total (%d kB)\n\n", pmm_used_blocks, pmm_used_blocks * 4096 / 1024, pmm_total_blocks, pmm_total_blocks * 4096 / 1024);
 
     pmm_debug();
     dprintf(NOHEADER, "\n");
@@ -134,8 +134,8 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
 
                 LOG(DEBUG, "\t- Using page from section %p, starting at index %d\n", s->start, found_start);
                 section = (pmm_section_t*)arch_mmu_remap_physical(s->start + found_start * PAGE_SIZE, size, REMAP_PERMANENT);
-                for (unsigned i = found_start; i <= found_start + (size / PAGE_SIZE); i++) {
-                    s->bmap[i / 8] |= (i % 8); // when page array is created, these will be marked correctly
+                for (unsigned i = found_start; i < found_start + (size / PAGE_SIZE); i++) {
+                    s->bmap[i / 8] |= (1 << (i % 8)); // when page array is created, these will be marked correctly
                 }
                 s->ffb = found_start / 8;
                 s->nfree -= (size / PAGE_SIZE);
@@ -318,6 +318,7 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
 
     mutex_acquire(s->mutex);
 
+
     // Use the FFB
     if (s->bmap[s->ffb] == 0xFF) {
         LOG(ERR, "FFB was not calculated correctly by last allocator or has been corrupted.\n");
@@ -356,6 +357,7 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
     while (s->bmap[s->ffb] == 0xFF) s->ffb++;
 
     // Setup page
+    assert(s->pages[blk].flags & PAGE_FLAG_FREE);
     s->pages[blk].flags &= ~(PAGE_FLAG_FREE);
     if (s->pages[blk].refcount != 0) {
         LOG(ERR, "Crash imminent - refcount for page %p: %d\n", s->start + (blk * 4096), s->pages[blk].refcount);
@@ -397,7 +399,7 @@ static uintptr_t __pmm_try_section(pmm_section_t *s, size_t npages) {
 
     while (1) {
         // We should have the lowest possible in s->ffb
-        uint8_t byte = s->ffb;
+        uint64_t byte = s->ffb;
     
         size_t total_pages = s->size / PAGE_SIZE;
         size_t start_byte = (size_t)byte;
