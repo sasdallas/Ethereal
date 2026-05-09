@@ -105,7 +105,6 @@ int signal_sendThread(struct thread *thr, int signal) {
     // TODO: Interrupt system calls
 
     if (thr->status & THREAD_STATUS_SLEEPING) {
-        LOG(INFO, "Wakey wakey, bitch\n");
         sleep_wakeupReason(thr, WAKEUP_SIGNAL);
     }
 
