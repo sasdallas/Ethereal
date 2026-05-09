@@ -99,8 +99,6 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
  * @param thr The thread to destroy
  */
 int thread_destroy(thread_t *thr) {
-    __sync_or_and_fetch(&thr->status, THREAD_STATUS_STOPPED);
-
     // Free the thread's stack
     if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
@@ -110,6 +108,16 @@ int thread_destroy(thread_t *thr) {
     return 0;
 }
 
+
+/**
+ * @brief Safe internal-exit
+ */
+void thread_safeExit(thread_t *arg) {
+    thread_t *t = (thread_t*)arg;
+    __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
+    process_switchNextThread();
+}
+
 /**
  * @brief Exit from the current thread, non-returning
  */
@@ -117,6 +125,13 @@ void thread_exit() {
     thread_t *t = current_cpu->current_thread;
     LOG(DEBUG, "thread_exit %p\n", t);
     __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
-    __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
-    process_switchNextThread();
+
+    if (t->parent->nthreads == 0) {
+        // We are the last thread, convert this process into a zombie.
+        process_destroy(t->parent);
+    }
+
+    // Shitty hack, go!
+    // !!!: TODO Replace this stupid hack with something better. The idea of using a func is fine but using the idle process is silly
+    arch_handle_threadexit(current_cpu->idle_process->main_thread, t);
 }
