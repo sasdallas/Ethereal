@@ -984,7 +984,14 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         if (!proc->node->children || !proc->node->children->length) {
             return -ECHILD;
         }
-        
+
+
+        event_listener_t l = NULL;
+
+        if ((options & WNOHANG) == 0) {
+            EVENT_INIT_LISTENER(&l);
+            EVENT_ATTACH(&l, &proc->wait_event);
+        }
 
         foreach(cnode, proc->node->children) {
             process_t *child = ((tree_node_t*)cnode->value)->value;
@@ -1005,6 +1012,12 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                     }
                 }
 
+
+                if ((options & WNOHANG) == 0) {
+                    EVENT_DETACH(&l);
+                    EVENT_DESTROY_LISTENER(&l);
+                }
+
                 process_destroyZombie(child);
                 return r;
             }
@@ -1013,6 +1026,13 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 if (options & WSTOPPED || (child->ptrace.tracer == NULL && options & WUNTRACED)) {
                     pid_t r = child->pid;
                     if (wstatus) *wstatus = (child->exit_status << 8) | 0x7f;
+                    
+
+                    if ((options & WNOHANG) == 0) {
+                        EVENT_DETACH(&l);
+                        EVENT_DESTROY_LISTENER(&l);
+                    }
+
                     return r;
                 }
             }
@@ -1023,11 +1043,9 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         if (options & WNOHANG) {
             return 0;
         } else {
-            // TODO make this process less racey
-            event_listener_t l;
-            EVENT_INIT_LISTENER(&l);
-            EVENT_ATTACH(&l, &proc->wait_event);
             int r = EVENT_WAIT(&l, -1);
+            EVENT_DETACH(&l);
+            EVENT_DESTROY_LISTENER(&l);
             if (r < 0) return r;
         }
     }
