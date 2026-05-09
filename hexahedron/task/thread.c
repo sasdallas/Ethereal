@@ -15,6 +15,7 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/drivers/clock.h>
+#include <kernel/misc/util.h>
 #include <kernel/debug.h>
 #include <string.h>
 
@@ -123,6 +124,10 @@ void thread_safeExit(thread_t *arg) {
  */
 void thread_exit() {
     thread_t *t = current_cpu->current_thread;
+
+    // process_yield() will kill us
+    __PREEMPT_DISABLE();
+
     LOG(DEBUG, "thread_exit %p\n", t);
     __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
 
