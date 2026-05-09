@@ -53,8 +53,6 @@ mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE)))
  * @brief MMU page fault handler
  */
 int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs_extended) {
-    if (regs->err_code & ~(0x17)) goto _die;
-
     // Build fault flags
     int loc = (regs->cs == 0x08) ?  VMM_FAULT_FROM_KERNEL : VMM_FAULT_FROM_USER;
 
@@ -71,13 +69,17 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
 
     // dprintf(DEBUG, "Page fault %p %016llX %x\n", regs_extended->cr2, regs->rip, regs->err_code);
 
+    if (regs->err_code & ~(0x17)) goto _die;
+
     if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
         return 0;
     }
 
 _die:
     dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
-    dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
+    if (current_cpu->current_thread) {
+        dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
+    }
     
     if (info.from == VMM_FAULT_FROM_USER) {
         signal_send(current_cpu->current_process, SIGSEGV);
