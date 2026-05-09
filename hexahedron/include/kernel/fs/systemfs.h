@@ -65,6 +65,7 @@ typedef struct systemfs_node {
     mutex_t lck;                        // Lock
     char *link_contents;                // Link contents
     systemfs_buffer_t buf;              // SystemFS buffer
+    bool is_simple;                     // Is simple ops
 } systemfs_node_t;
 
 /**** MACROS ****/

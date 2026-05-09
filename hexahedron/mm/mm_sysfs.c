@@ -37,9 +37,9 @@ ssize_t systemfs_memory_pmm(systemfs_node_t *node) {
         "FreePhysMemory:%zu kB\n"
         "PhysMemoryBytes:%zu\n",
             total_blocks,
-            total_blocks * PAGE_SIZE / 1000,
-            used_blocks * PAGE_SIZE / 1000,
-            free_blocks * PAGE_SIZE / 1000,
+            total_blocks * PAGE_SIZE / 1024,
+            used_blocks * PAGE_SIZE / 1024,
+            free_blocks * PAGE_SIZE / 1024,
             used_blocks * PAGE_SIZE
     );
 }
@@ -71,7 +71,7 @@ ssize_t systemfs_memory_slab(systemfs_node_t *node) {
         tot += systemfs_printf(node,
                     "%s %dkB %d %d\n", 
                         i->name,
-                        (i->mem_usage / 1000),
+                        (i->mem_usage / 1024),
                         i->slab_object_size,
                         i->slab_object_alignment);
         i = i->next;
@@ -80,6 +80,17 @@ ssize_t systemfs_memory_slab(systemfs_node_t *node) {
     return tot;
 }
 
+/**
+ * @brief kernel 
+ */
+ssize_t systemfs_memory_kernel(systemfs_node_t *node) {
+    return systemfs_printf(node,
+        "Anon:%zu kB\n"
+        "AnonResident:%zu kB\n",
+        vmm_kernel_context->space->metrics.anon_usage / 1024,
+        vmm_kernel_context->space->metrics.anon_resident / 1024
+    );
+}
 
 /**
  * @brief Initialize mm_sysfs
@@ -89,6 +100,7 @@ int systemfs_memory_init() {
     systemfs_registerSimple(systemfs_memory_dir, "pmm", systemfs_memory_pmm, NULL, NULL);
     systemfs_registerSimple(systemfs_memory_dir, "alloc", systemfs_memory_alloc, NULL, NULL);
     systemfs_registerSimple(systemfs_memory_dir, "slab", systemfs_memory_slab, NULL, NULL);
+    systemfs_registerSimple(systemfs_memory_dir, "kernel", systemfs_memory_kernel, NULL, NULL);
     return 0;
 }
 

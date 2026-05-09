@@ -22,6 +22,7 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <kernel/loader/elf.h>
+#include <kernel/loader/elfv2.h>
 #include <kernel/misc/util.h>
 
 #include <structs/tree.h>
@@ -35,14 +36,11 @@
 tree_t *process_tree = NULL;
 
 /* Global process list */
-/* TODO: not */
 list_t *process_list = NULL;
+spinlock_t process_list_lock = SPINLOCK_INITIALIZER;
 
 /* PID bitmap */
 uint32_t *pid_bitmap = NULL;
-
-/* Task switches */
-volatile uint64_t task_switches = 0;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:PROCESS", __VA_ARGS__)
@@ -103,7 +101,6 @@ void __attribute__((noreturn)) process_switchNextThread() {
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
 
-    task_switches += 1;
     arch_load_context(&current_cpu->current_thread->context); // Didn't bother switching context
     __builtin_unreachable();
 }
@@ -176,7 +173,6 @@ void process_yield(uint8_t reschedule) {
         list_append_node(current_cpu->sched.queue, &prev->sched_node);
     }
 
-    task_switches += 1;
     arch_yield(prev, current_cpu->current_thread);
     __builtin_unreachable();
 }
@@ -226,15 +222,22 @@ void process_freePID(pid_t pid) {
  */
 process_t *process_getFromPID(pid_t pid) {
     // TODO: Gotta be a better way to do this..
-    if (current_cpu->current_process->pid == pid) return current_cpu->current_process;
+    if (current_cpu->current_process->pid == pid) {
+        return current_cpu->current_process;
+    }
 
+    spinlock_acquire(&process_list_lock);
     foreach(proc_node, process_list) {
         process_t *proc = (process_t*)proc_node->value;
         if (proc) {
-            if (proc->pid == pid) return proc;
+            if (proc->pid == pid) {
+                spinlock_release(&process_list_lock);
+                return proc;
+            }
         }
     }
 
+    spinlock_release(&process_list_lock);
     return NULL;
 }
 
@@ -254,6 +257,7 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->name = strdup(name);
     process->flags = flags;
     process->priority = priority;
+    process->state = PROCESS_RUNNING;
 
     if (parent) {
         process->uid = parent->uid;
@@ -310,7 +314,12 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     fd_copyTable(parent, process);
 
     process->proc_list_node.value = (void*)process;
-    if (process_list) list_append_node(process_list, &process->proc_list_node);
+    if (process_list) {
+        spinlock_acquire(&process_list_lock);
+        list_append_node(process_list, &process->proc_list_node);
+        spinlock_release(&process_list_lock);
+    }
+
 extern systemfs_node_t *systemfs_proc_create(process_t *proc);
     process->proc_sysfs = systemfs_proc_create(process);
     return process;
@@ -378,7 +387,7 @@ static void kernel_idle() {
  */
 process_t *process_spawnIdleTask() {
     // Create new process
-    process_t *idle = process_createStructure(NULL, "idle", PROCESS_KERNEL | PROCESS_STARTED | PROCESS_RUNNING, PRIORITY_LOW);
+    process_t *idle = process_createStructure(NULL, "idle", PROCESS_KERNEL, PRIORITY_LOW);
     
     // !!!: Hack
     process_freePID(idle->pid);
@@ -394,12 +403,15 @@ process_t *process_spawnIdleTask() {
 }
 
 /**
- * @brief Totally destroy a process
- * @param proc The process to destroy
+ * @brief Destroy a zombie process
  */
-void process_destroy(process_t *proc) {
-    if (!proc || !(proc->flags & PROCESS_STOPPED)) return;
-
+void process_destroyZombie(process_t *proc) {
+    while (proc->state != PROCESS_ZOMBIE) {
+        LOG(DEBUG, "process_destroyZombie awaiting process threads to exit\n");
+        process_yield(1);
+    }
+    
+    LOG(DEBUG, "Zombie is being destroyed\n");
 
     // Wait for all threads in process to die
     // They should have already been marked as STOPPING by process_exit or the like
@@ -419,11 +431,30 @@ void process_destroy(process_t *proc) {
         l = next;
     }
 
+
+    if (proc->node) {
+        tree_remove(process_tree, proc->node);
+    }
+
+    spinlock_acquire(&process_list_lock);
+    list_delete(process_list, list_find(process_list, (void*)proc));
+    spinlock_release(&process_list_lock);
+
+    process_freePID(proc->pid);
+    kfree(proc->name);
+    kfree(proc);
+}
+
+/**
+ * @brief Totally destroy a process
+ * @param proc The process to destroy
+ * 
+ * Doesn't free the process but turns it into a zombie
+ */
+void process_destroy(process_t *proc) {
     assert(proc->nthreads == 0);
     LOG(DEBUG, "Destroying process \"%s\" (%p)...\n", proc->name, proc);
 
-    process_freePID(proc->pid);
-    list_delete(process_list, list_find(process_list, (void*)proc));
     if (proc->exe_image) vfs_close(proc->exe_image);
     inode_release(proc->wd_node);
 
@@ -431,7 +462,9 @@ void process_destroy(process_t *proc) {
     fd_destroyTable(proc);
 
     // Destroy the remainder of the context
-    if (!(proc->flags & PROCESS_KERNEL)) vmm_destroyContext(proc->ctx);
+    if (proc->ctx && proc->ctx != vmm_kernel_context) {
+        vmm_destroyContext(proc->ctx);
+    }
 
     if (proc->ptrace.tracees) {        
         foreach(tracee, proc->ptrace.tracees)  {
@@ -452,17 +485,19 @@ void process_destroy(process_t *proc) {
         proc->ptrace.tracer = NULL;
     }
 
-    // Destroy everything we can
-    if (proc->node) {
-        tree_remove(process_tree, proc->node);
-    }
-
 extern void systemfs_proc_destroy(process_t *proc);
     systemfs_proc_destroy(proc);
 
     kfree(proc->wd_path);
-    kfree(proc->name);
-    kfree(proc);
+
+    // Now we are a zombie
+    proc->state = PROCESS_ZOMBIE;
+
+    // If our parent is waiting, wake them up
+    if (proc->parent) {
+        signal_send(proc->parent, SIGCHLD);
+        EVENT_SIGNAL(&proc->parent->wait_event);
+    }
 }
 
 /**
@@ -474,7 +509,7 @@ extern void systemfs_proc_destroy(process_t *proc);
  */
 process_t *process_spawnInit() {
     // Create a new process
-    process_t *init = process_createStructure(NULL, "init", PROCESS_STARTED | PROCESS_RUNNING, PRIORITY_HIGH);
+    process_t *init = process_createStructure(NULL, "init", 0, PRIORITY_HIGH);
     init->sid = 1;
     init->pgid = 1;
 
@@ -504,7 +539,7 @@ process_t *process_create(process_t *parent, char *name, int flags, int priority
 /**
  * @brief Common process execute
  */
-int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
+int process_executeCommon(elf_image_t *img) {
     // Destroy previous threads
     process_t *proc = current_cpu->current_process;
 
@@ -540,8 +575,10 @@ int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
     vmm_context_t *oldctx = proc->ctx;
     proc->ctx = vmm_createContext();
     vmm_switch(proc->ctx);
-    if (oldctx && oldctx != vmm_kernel_context) vmm_destroyContext(oldctx);
-
+    if (oldctx && oldctx != vmm_kernel_context) {
+        vmm_destroyContext(oldctx);
+    }
+    
     // Create a new main thread with a blank entrypoint
     proc->main_thread = process_createThread(proc, 0x0, THREAD_FLAG_DEFAULT);
     if (current_cpu->current_thread) {
@@ -550,37 +587,24 @@ int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
         proc->main_thread->kstack = current_cpu->current_thread->kstack;
     }
 
-    // Load file into memory
-    // TODO: This runs check twice (redundant)
-    uintptr_t elf_binary = elf_load(file, ELF_USER);
-
-    // Success?
-    if (elf_binary == 0x0) {
-        // Something happened...
-        LOG(ERR, "ELF binary failed to load properly (but is valid?)\n");
-        return -EINVAL;
+    // Load the ELF image
+    int ret = elf_loadImage(img);
+    if (ret != 0) {
+        return ret;
     }
 
-    // Setup heap location
-    proc->heap_base = elf_getHeapLocation(elf_binary);
-    proc->heap = proc->heap_base;
-
-    // Populate image
-    elf_createImage(elf_binary);
-
-    // Get the entrypoint
-    uintptr_t process_entrypoint = elf_getEntrypoint(elf_binary);
-    arch_initialize_context(proc->main_thread, process_entrypoint, proc->main_thread->stack);
+    arch_initialize_context(proc->main_thread, img->entrypoint, proc->main_thread->stack);
 
     // We own this process
     thread_t *old = current_cpu->current_thread;
     current_cpu->current_thread = proc->main_thread;
-    if (old) old->kstack = 0;
-
-    *entry = process_entrypoint;
+    if (old) {
+        // !!! SEVERE HACK. BY SETTING OLD->KSTACK = 0 THEN IT WONT BE FREED IN THREAD_DESTROY
+        old->kstack = 0;
+        // thread_destroy(old);
+    }
 
     // Done with ELF
-    kfree((void*)elf_binary);
     return 0; // Enough loaded
 }
 
@@ -598,9 +622,17 @@ int process_executeCommon(vfs_file_t *file, uintptr_t *entry) {
 int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     // Execute dynamic loader
     // First, try to open the interpreter that's in PT_INTERP
-    char *interpreter_path = elf_getInterpreter(file);
+    elf_image_t file_img;
+    int r = elf_openImage(file, &file_img);
+    if (r != 0) {
+        return r;
+    }
+    assert(file_img.interp_path);
+
+    // Next, search for the interpreter
+    char *interpreter_path = file_img.interp_path;
     vfs_file_t *interpreter;
-    int r = -1;
+    r = -1;
     if (interpreter_path) {
         // We have an interpreter path
         LOG(INFO, "Trying to execute interpreter: %s\n", interpreter_path);
@@ -621,28 +653,36 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
         return -ENOENT;
     }
 
-    // Setup new name
-    // TODO: This should be a *pointer* to argv[0], not a duplicate.
-    kfree(current_cpu->current_process->name);
-    current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
+    // Initialize an interpreter image
+    elf_image_t interp_img;
+    r = elf_openImage(interpreter, &interp_img);
+    if (r != 0) {
+        return r;
+    }
 
-    // Do common execution
-    uintptr_t entry;
-    assert(!process_executeCommon(interpreter, &entry));
-
-    vfs_close(interpreter);
-
-    // Load the dynamic file
-    elf_dynamic_info_t info;
-    if (elf_loadDynamicELF(file, &info)) {
-        LOG(ERR, "Error loading dynamic ELF file\n");
+    // Verify the interpreter is executable
+    if (elf_checkImage(&interp_img, ELF_EXECUTABLE) == 0) {
+        LOG(WARN, "Interpreter is not executable\n");
+        elf_destroyImage(&file_img);
+        elf_destroyImage(&interp_img);
         return -ENOEXEC;
     }
 
-    current_cpu->current_process->exe_image = file;
+
+    // Setup new name
+    // TODO: This should be a *pointer* to argv[0], not a duplicate.
+    kfree(current_cpu->current_process->name);
+    current_cpu->current_process->name = strdup(argv[0]);
+    current_cpu->current_process->exe_image = file; file_hold(file);
+
+    // Do common execution
+    assert(process_executeCommon(&interp_img) == 0);
+
+    // Load the file's image
+    r = elf_loadImage(&file_img);
+    assert(r == 0); // TODO: error handling
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
-
     // Calculate envc
     // TODO: Maybe accept envc/force accept envc so this dangerous/slow code can be calculated elsewhere
     int envc = 0;
@@ -666,25 +706,23 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Now we can align the stack
     current_cpu->current_thread->stack = ALIGN_DOWN(current_cpu->current_thread->stack, 16);
 
+    // Build an auxiliary vector
+    elf_auxv_t auxv;
+    assert(elf_buildAuxv(&file_img, &auxv) == 0); // TODO: Error handling
+
+
     // Realign the stack if we need to. Everything from now on should JUST be a uintptr_t
-    // The pending amount of bytes: 9 auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
-    uintptr_t bytes = (9 * sizeof(uintptr_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
+    // The pending amount of bytes: Auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
+    uintptr_t bytes = (auxv.entry_count * sizeof(elf_auxv_entry_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
     if (!IS_ALIGNED(current_cpu->current_thread->stack - bytes, 16)) {
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
     }
     
-    // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
-
-    // Create SysV auxiliary vector
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_NULL);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phdr);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHDR);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phnum);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHNUM);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_phent);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_PHENT);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, info.at_entry);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_ENTRY);
+    // Push the auxv
+    for (int i = auxv.entry_count-1; i >= 0; i--) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, auxv.entries[i].value);
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, auxv.entries[i].type);
+    }
     
 
     // Now let's push the envp array
@@ -704,13 +742,20 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, argv_pointers[a-1]);
     }
 
-    
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
 
+    // Cleanup memory before beginning execution
+    uintptr_t interp_entry = interp_img.entrypoint;
+    for (int i = 0; i < argc; i++) kfree(argv[i]);
+    kfree(argv);
+    for (int i = 0; i < envc; i++) kfree(envp[i]);
+    kfree(envp);
+    elf_destroyImage(&interp_img);
+    elf_destroyImage(&file_img);
+
     // Enter
-    LOG(DEBUG, "Launching new ELF process (stack = %p)\n", current_cpu->current_thread->stack);
     arch_prepare_switch(current_cpu->current_thread);
-    arch_start_execution(entry, current_cpu->current_thread->stack);
+    arch_start_execution(interp_entry, current_cpu->current_thread->stack);
     return 0;
 }
 
@@ -729,18 +774,26 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     if (!file) return -EINVAL;
     if (!current_cpu->current_process) return -EINVAL; // TODO: Handle this better
 
-    // First, check if the file is a dynamic object
-    if (elf_check(file, ELF_DYNAMIC)) {
+    // Load the file image
+    elf_image_t img;
+    int r = elf_openImage(file, &img);
+    if (r != 0) {
+        return r;
+    }
+
+    // First, check if the file requires an interpreter
+    if (img.interp_path) {
         // Yes, it is, run the process with ld.so
-        // TODO: Get PT_INTERP value
         LOG(INFO, "Running dynamic executable\n");
+        elf_destroyImage(&img); // !!!
         return process_executeDynamic(path, file, argc, argv, envp);
     }
 
     // Check the ELF binary
-    if (elf_check(file, ELF_EXEC) == 0) {
+    if (elf_checkImage(&img, ELF_EXECUTABLE) == 0) {
         // Not a valid ELF binary
         LOG(ERR, "Invalid ELF binary detected when trying to start execution\n");
+        elf_destroyImage(&img);
         return -EINVAL;
     }
 
@@ -749,13 +802,23 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]); // ??? will this work?
 
-    // Do the inner execution
-    uintptr_t process_entrypoint;
-    assert(!process_executeCommon(file, &process_entrypoint));
+    // Do inner load
+    uintptr_t entry;
+    assert(!process_executeCommon(&img));
     current_cpu->current_process->exe_image = file;
 
-    // Now we need to start pushing argc, argv, and envp onto the thread stack
+    // Build the auxiliary vector
+    elf_auxv_t auxv;
+    assert(!elf_buildAuxv(&img, &auxv));
+    uintptr_t saved_entry = img.entrypoint;
 
+    // Push auxiliary vector
+    for (int i = auxv.entry_count-1; i >= 0; i--) {
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, auxv.entries[i].value);
+        THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, auxv.entries[i].type);
+    }
+
+    // Now we need to start pushing argc, argv, and envp onto the thread stack
     // Calculate envc
     // TODO: Maybe accept envc/force accept envc so this dangerous/slow code can be calculated elsewhere
     int envc = 0;
@@ -780,58 +843,39 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     current_cpu->current_thread->stack = ALIGN_DOWN(current_cpu->current_thread->stack, 16);
 
     // Realign the stack if we need to. Everything from now on should JUST be a uintptr_t
-    // The pending amount of bytes: 9 auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
-    uintptr_t bytes = (9 * sizeof(uintptr_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
+    // The pending amount of bytes: Auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs
+    uintptr_t bytes = (auxv.entry_count * sizeof(elf_auxv_entry_t)) + (argc * sizeof(uintptr_t)) + (envc * sizeof(uintptr_t)) + (3 * sizeof(uintptr_t));
     if (!IS_ALIGNED(current_cpu->current_thread->stack - bytes, 16)) {
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
     }
-    
 
-    // REF: https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
-
-    // Create SysV auxiliary vector
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, AT_NULL);
-    THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, 0x0);
-    
-
-    // Now let's push the envp array
-    // We have to do this backwards to make sure the array is constructured properly
-    // Push NULL first
+    // Push envp/argv pointers on stack
     char **user_envp = NULL;
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, NULL);
     for (int e = envc; e > 0; e--) {
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, envp_pointers[e-1]);
     }
 
-    // Push the argv array
-    // Push NULL first
     char **user_argv = NULL;
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, NULL);
     for (int a = argc; a > 0; a--) {
         THREAD_PUSH_STACK(current_cpu->current_thread->stack, char*, argv_pointers[a-1]);
     }
 
-    
     THREAD_PUSH_STACK(current_cpu->current_thread->stack, uintptr_t, argc);
 
-    // Now free the remainders
-    for (int i = 0; i < envc; i++) {
-        kfree(envp[i]);
-    }
-
+    // Cleanup memory
+    for (int i = 0; i < envc; i++) kfree(envp[i]);
     kfree(envp);
-
-    for (int i = 0; i < argc; i++) {
-        kfree(argv[i]);
-    }
-
+    for (int i = 0; i < argc; i++) kfree(argv[i]);
     kfree(argv);
+    elf_destroyImage(&img);
 
-    // Enter
-    LOG(DEBUG, "Launching new ELF process\n");
+    // Go!
     arch_prepare_switch(current_cpu->current_thread);
-    arch_start_execution(process_entrypoint, current_cpu->current_thread->stack);
-
+    arch_start_execution(img.entrypoint, current_cpu->current_thread->stack);
+    
+    // should not reach
     return 0;
 } 
 
@@ -866,9 +910,8 @@ void process_exit(process_t *process, int status_code) {
 
     spinlock_release(&process->thread_lock);
 
-    process->flags |= PROCESS_STOPPED;
-
-    // Now we can mark it as stopped
+    // Now we can mark it as stopped.
+    process->state = PROCESS_STOPPED;
 
     // TODO: Ugly
     process->exit_status = status_code;
@@ -885,15 +928,7 @@ void process_exit(process_t *process, int status_code) {
         EVENT_SIGNAL(&((process_t*)process_tree->root->value)->wait_event);
     }
 
-    // The parent process will destroy us
-    // If our parent is waiting, wake them up
-    if (process->parent) {
-        if ((process->parent->flags & PROCESS_RUNNING)) signal_send(process->parent, SIGCHLD);
-        EVENT_SIGNAL(&process->parent->wait_event);
-    } 
-
     // To the next process we go. Once the scheduler is unlocked we can be caught and destroyed.
-    // !!!: This approach seems very finnicky.
     if (process == current_cpu->current_process) {
         thread_exit();
     }
@@ -958,8 +993,8 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
             else if (pid == 0 && child->gid != proc->gid) continue;
             else if (pid > 0 && child->pid != pid) continue;
             
-            if (child->flags & PROCESS_STOPPED) {
-                // dead
+            if (child->state == PROCESS_ZOMBIE) {
+                // dead 
                 pid_t r = child->pid;
 
                 if (wstatus){
@@ -970,11 +1005,11 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                     }
                 }
 
-                process_destroy(child);
+                process_destroyZombie(child);
                 return r;
             }
 
-            if (child->flags & PROCESS_SUSPENDED) {
+            if (child->state == PROCESS_SUSPENDED) {
                 if (options & WSTOPPED || (child->ptrace.tracer == NULL && options & WUNTRACED)) {
                     pid_t r = child->pid;
                     if (wstatus) *wstatus = (child->exit_status << 8) | 0x7f;

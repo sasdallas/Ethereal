@@ -22,7 +22,7 @@
 #define LOG(status, ...) dprintf_module(status, "TASK:PTRACE", __VA_ARGS__)
 
 /* Must be in stopped state */
-#define PTRACE_REQUIRE_STOPPED(thr) if (!((thr)->parent->flags & PROCESS_SUSPENDED)) return -ESRCH;
+#define PTRACE_REQUIRE_STOPPED(thr) if ((thr)->parent->state != PROCESS_SUSPENDED) return -ESRCH;
 
 /**
  * @brief Get a process' tracee by its PID
@@ -86,7 +86,7 @@ int ptrace_untrace(process_t *tracee, process_t *tracer) {
     tracee->ptrace.tracer = NULL;
 
     // If tracee is stopped, send it a SIGCONT
-    if (tracee->flags & PROCESS_SUSPENDED) {
+    if (tracee->state == PROCESS_SUSPENDED) {
         signal_send(tracee, SIGCONT);
     }
 
@@ -244,7 +244,7 @@ int ptrace_event(int event) {
     spinlock_release(&process->ptrace.lock);
 
     // We are the tracee, so let's put ourselves together
-    __sync_or_and_fetch(&process->flags, PROCESS_SUSPENDED);
+    process->state = PROCESS_SUSPENDED;
 
     // Wakeup our tracer?
     process->exit_reason = PROCESS_EXIT_SIGNAL;

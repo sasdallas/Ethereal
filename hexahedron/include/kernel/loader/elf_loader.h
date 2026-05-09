@@ -101,12 +101,6 @@ int elf_cleanup(uintptr_t elf_address);
 uintptr_t elf_getHeapLocation(uintptr_t elf_address);
 
 /**
- * @brief Populate a process image object
- * @param elf_address Address given by @c elf_load
- */
-void elf_createImage(uintptr_t elf_address);
-
-/**
  * @brief Detect and find the interpreter for a dynamically linked file
  * @param file The file to get the interpreter for
  * @returns Interpreter string on success or NULL on failure

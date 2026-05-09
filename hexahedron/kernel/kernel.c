@@ -246,9 +246,13 @@ void kernel_runInit(char *path, int argc, char **argv) {
     int r = vfs_open(path, O_RDONLY, &proc);
     if (r) { LOG(ERR, "Error %d while running process\n", r); return; }
 
-    char *environ[] = { NULL };
+    // these have to be allocated, as process_execute will free them if successful
+    char **environ = kmalloc(sizeof(char*));
+    environ[0] = NULL;
 
     r = process_execute(path, proc, argc, argv, environ);
+
+    kfree(environ);
     LOG(ERR, "Error %d while running process\n", r); 
 }
 
@@ -347,17 +351,24 @@ void kmain() {
         "/init"
     };
 
+    // We have to alloc an argv
+    char **argv = kmalloc(2 * sizeof(char*));
+    argv[1] = NULL;
+
     if (kargs_has("exec")) {
         // use exec as init process
         char *path = kargs_get("exec");
-        char *argv[] = { path, NULL };
+        argv[0] = strdup(path);
         kernel_runInit(path, 1, argv);
+        kfree(path);
     }
 
     for (unsigned i = 0; i < sizeof(possible_inits) / sizeof(const char*); i++) {
-        char *argv[] = { possible_inits[i], NULL };
+        argv[0] = strdup(possible_inits[i]);
         kernel_runInit(possible_inits[i], 1, argv);
-    } 
+        kfree(argv[0]);
+    }
+
 
     LOG(ERR, "Init process not found\n");
     current_cpu->current_process = NULL;
@@ -387,14 +398,14 @@ extern int video_ks;
     printf(COLOR_CODE_YELLOW "System is preparing to enter power state: %s\n" COLOR_CODE_RESET, (state == HAL_POWER_SHUTDOWN) ? "SHUTDOWN" : "REBOOT");
     printf("Waiting for all processes to exit\t\t\t\t\t\t\t\t\t\t\t\t\t");
 
-    // Exit all other processes
-extern list_t *process_list;
-    foreach(process, process_list) {
-        if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL) && (((process_t*)process->value)->pid != 0)) {
-            dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
-            process_exit((process_t*)process->value, 0);
-        }
-    }
+//     // Exit all other processes
+// extern list_t *process_list;
+//     foreach(process, process_list) {
+//         if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL) && (((process_t*)process->value)->pid != 0)) {
+//             dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
+//             process_exit((process_t*)process->value, 0);
+//         }
+//     }
 
     printf("[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
 

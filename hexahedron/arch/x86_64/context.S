@@ -212,3 +212,23 @@ arch_yield:
 
     /* Jump to RIP */
     jmpq *64(%rsi)
+
+.global arch_handle_threadexit
+.extern thread_safeExit
+arch_handle_threadexit:
+    // What this does is switch to the idle thread's stack then execute a function off of that.
+    // Idle thread in %rdi, next thread in %rsi
+
+    // Load the kernel stack for the idle thread
+    addq $0xA0, %rdi
+    movq 0(%rdi), %rsp
+    movq 8(%rdi), %rbp
+    movq 16(%rdi), %rbx
+    movq 24(%rdi), %r12
+    movq 32(%rdi), %r13
+    movq 40(%rdi), %r14
+    movq 48(%rdi), %r15
+
+    movq %rsi, %rdi
+    jmp thread_safeExit
+

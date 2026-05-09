@@ -88,6 +88,7 @@ int signal_sendThread(struct thread *thr, int signal) {
 
     // Is this signal blocked?
     if (SIGNAL_IS_BLOCKED(thr, signal)) {
+        LOG(INFO, "Signal is blocked\n");
         return 0;
     }
 
@@ -104,13 +105,14 @@ int signal_sendThread(struct thread *thr, int signal) {
     // TODO: Interrupt system calls
 
     if (thr->status & THREAD_STATUS_SLEEPING) {
+        LOG(INFO, "Wakey wakey, bitch\n");
         sleep_wakeupReason(thr, WAKEUP_SIGNAL);
     }
 
     // Wake them up if they aren't us
-    if (thr != current_cpu->current_thread && (thr->parent->flags & PROCESS_SUSPENDED)) {
+    if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
         // Wakeup bro
-        thr->parent->flags &= ~(PROCESS_SUSPENDED);
+        thr->parent->state = PROCESS_RUNNING;
         scheduler_insertThread(thr);
     }
 
@@ -162,8 +164,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
         proc->exit_reason = PROCESS_EXIT_SIGNAL;
 
         // Stop process
-        proc->flags &= ~(PROCESS_RUNNING);
-        proc->flags |= PROCESS_SUSPENDED;
+        proc->state = PROCESS_SUSPENDED;
 
         if (proc->nthreads > 1) {
             LOG(ERR, "SIGNAL_ACTION_STOP with multiple threads is not implemented\n");
@@ -177,6 +178,12 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
         // Suspend ourselves
         LOG(DEBUG, "Suspending process - received SIGNAL_ACTION_STOP\n");
+
+        // Notify the parent if they want to find us
+        if (proc->parent) {
+            signal_send(proc->parent, SIGCHLD);
+            EVENT_SIGNAL(&proc->parent->wait_event);
+        }
 
         // Now enter a loop forever with no escape!!
         spinlock_release(&thr->siglock);

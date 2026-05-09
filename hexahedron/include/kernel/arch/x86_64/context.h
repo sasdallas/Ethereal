@@ -63,7 +63,7 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context);
 /**
  * @brief Yield
  * 
- * Thank you to @hyenasky for the idea of BOTh unlocks
+ * Thank you to @hyenasky for the idea of BOTH unlocks
  * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
  * After getting off of the previous stack in use, this will unlock the scheduler's queue.
  * It will also unlock the prev sleep queue
@@ -71,8 +71,18 @@ __attribute__((noreturn)) void arch_load_context(struct arch_context *context);
 __attribute__((noreturn)) void arch_yield(struct thread *prev, struct thread *next);
 
 /**
- * @brief Enter kernel thread
+ * @brief Arch handle threadexit
  * 
+ * This is a stupid hack for the process destruction system. It impersonates the idle thread
+ * and then runs @c thread_safeExit on its stack to allow for the thread to be marked as dead.
+ * 
+ * There's a better method to do this, but I'm not in the mood (May 3 2026)
+ */
+__attribute__((noreturn)) void arch_handle_threadexit(struct thread *idle_thread, struct thread *this_thread);
+
+/**
+ * @brief Enter kernel thread
+ *
  * Pop these from the stack in this order:
  * 1. kthread pointer
  * 2. data value

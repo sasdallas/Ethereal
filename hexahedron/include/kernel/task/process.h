@@ -49,22 +49,24 @@
 
 #define PROCESS_MMAP_MINIMUM                0x1000
 
+// process flags
+#define PROCESS_KERNEL          0x01    // Process is a kernel-mode process 
+
 /**** TYPES ****/
+
+typedef enum process_state {
+    PROCESS_RUNNING,
+    PROCESS_SLEEPING,               // TODO
+    PROCESS_SUSPENDED,              
+    PROCESS_STOPPED,
+    PROCESS_ZOMBIE
+} process_state_t;
 
 /**
  * @brief Kernel thread function
  * @param data User-specified data
  */
 typedef void (*kthread_t)(void *data);
-
-/**
- * @brief Image structure for a process
- */
-typedef struct process_image {
-    uintptr_t entry;                    // Process entrypoint
-    uintptr_t tls;                      // TLS location
-    size_t tls_size;                    // TLS size
-} process_image_t;
 
 /**
  * @brief The main process type
@@ -92,7 +94,8 @@ typedef struct process {
     // SCHEDULER INFORMATION
     unsigned int flags;                 // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
     unsigned int priority;              // Scheduler priority, see scheduler.h
-    
+    volatile process_state_t state;     // Process state
+
     // QUEUE INFORMATION
     tree_node_t *node;                  // Node in the process tree
     event_t wait_event;                 // Wait event signalled by children
@@ -114,9 +117,6 @@ typedef struct process {
 
     // SIGNALS
     void *userspace;                    // Userspace allocation (only for sigtramp right now)
-
-    // ELF
-    process_image_t image;              // Image data for the process
 
     // TIMER
     process_timer_t itimers[3];         // setitimer timers
@@ -263,5 +263,13 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
  * @returns The new thread
  */
 thread_t *process_createKernelThread(process_t *process, unsigned int flags, void *entry, void *arg);
+
+/**
+ * @brief Totally destroy a process
+ * @param proc The process to destroy
+ * 
+ * Doesn't free the process but turns it into a zombie
+ */
+void process_destroy(process_t *proc);
 
 #endif
