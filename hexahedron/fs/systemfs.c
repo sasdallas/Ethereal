@@ -268,6 +268,7 @@ systemfs_node_t *systemfs_node() {
     n->attr.mode = 0755;
     n->attr.nlink = 1;
     n->attr.type = VFS_FILE;
+    n->is_simple = false;
     return n;
 }
 
@@ -276,6 +277,7 @@ systemfs_node_t *systemfs_node() {
  * @brief Free SystemFS node
  */
 void systemfs_free(systemfs_node_t *node) {
+    if (node->is_simple) kfree(node->ops); // hack
     slab_free(systemfs_node_cache, node);
 }
 
@@ -390,7 +392,7 @@ int systemfs_unregister(systemfs_node_t *parent, char *name) {
 
     kfree(child->name);
 
-    slab_free(systemfs_node_cache, child);
+    systemfs_free(child);
     return 0;
 }
 
@@ -508,8 +510,11 @@ systemfs_node_t *systemfs_registerSimple(systemfs_node_t *parent, char *name, ss
     o->lookup = NULL;
     o->read_simple = read; // TODO: make this a better hack :(
     o->lseek = systemfs_lseekSimple;
+    
 
-    return systemfs_register(parent, name, VFS_FILE, o, priv);
+    systemfs_node_t *n = systemfs_register(parent, name, VFS_FILE, o, priv);
+    n->is_simple = true;
+    return n;
 }
 
 /**
