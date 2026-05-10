@@ -116,6 +116,12 @@ int thread_destroy(thread_t *thr) {
 void thread_safeExit(thread_t *arg) {
     thread_t *t = (thread_t*)arg;
     __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
+    __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
+
+    if (t->parent->nthreads == 0) {
+        process_destroy(t->parent);
+    }
+
     process_switchNextThread();
 }
 
@@ -126,15 +132,7 @@ void thread_exit() {
     thread_t *t = current_cpu->current_thread;
 
     // process_yield() will kill us
-    __PREEMPT_DISABLE();
-
     LOG(DEBUG, "thread_exit %p\n", t);
-    __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
-
-    if (t->parent->nthreads == 0) {
-        // We are the last thread, convert this process into a zombie.
-        process_destroy(t->parent);
-    }
 
     // Shitty hack, go!
     // !!!: TODO Replace this stupid hack with something better. The idea of using a func is fine but using the idle process is silly
