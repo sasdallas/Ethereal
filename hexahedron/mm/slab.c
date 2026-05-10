@@ -34,6 +34,7 @@ slab_cache_t *slab_cache_list = NULL;
 
 /* UNCOMMENT TO ENABLE SLAB DEBUGGING */
 // #define SLAB_DEBUG 1
+#define SLAB_ENABLE_MAGAZINES 1
 
 /* Magazine macros */
 #define MAGAZINE_POP(mag) mag->rounds[--mag->nrounds]
@@ -294,7 +295,7 @@ void *slab_allocateFlags(slab_cache_t *cache, sa_flags_t flags) {
 
     
 
-    ptr = slab_slowAllocate(cache, flags); // possible sleeping via mutex
+    ptr = slab_slowAllocate(cache, flags); // possible sleeping via mutex, also this calls cache->init for us
 #ifdef KERNEL_ENABLE_MEMORY_LEAK_SCANNER
     if (ptr) {
         if (((flags & SA_UNTRACEABLE) == 0) && ((cache->flags & SLAB_CACHE_NOLEAKTRACE) == 0)) {
@@ -429,20 +430,43 @@ int slab_freeFast(slab_cache_t *cache, void *object) {
     }
 
 
+    spinlock_release(&cpu_cache->lock);
+    
     // Allocate a new magazine
     magazine_t *new = slab_allocate(magazine_cache);
-    if (new) {
-        if (cpu_cache->previous) depot_push(&cache->depot_full, cpu_cache->previous);
+    if (!new) return 0;
 
-        cpu_cache->previous = cpu_cache->loaded;
-        cpu_cache->loaded = new;
+    spinlock_acquire(&cpu_cache->lock);
+
+    // Someone might've beaten us to it
+    if (cpu_cache->loaded && cpu_cache->loaded->nrounds < MAGAZINE_SIZE) {
         MAGAZINE_PUSH(cpu_cache->loaded, object);
         spinlock_release(&cpu_cache->lock);
         return 1;
     }
 
+    if (cpu_cache->previous && !cpu_cache->previous->nrounds) {
+        // Empty previous cache, free to that
+        // Swap caches
+        magazine_t *tmp = cpu_cache->loaded;
+        cpu_cache->loaded = cpu_cache->previous;
+        cpu_cache->previous = tmp;
+
+        MAGAZINE_PUSH(cpu_cache->loaded, object);
+        spinlock_release(&cpu_cache->lock);
+        return 1;
+    }
+
+    // Otherwise, load the next magazine
+    if (cpu_cache->previous) {
+        depot_push(&cache->depot_full, cpu_cache->previous);
+    }
+    
+    cpu_cache->previous = cpu_cache->loaded;
+    cpu_cache->loaded = new;
+    MAGAZINE_PUSH(cpu_cache->loaded, object);
     spinlock_release(&cpu_cache->lock);
-    return 0;
+    return 1;
 }
 
 /**
@@ -514,6 +538,8 @@ int magazine_initializer(slab_cache_t *cache, void *magazine) {
  * @param cache The cache to reinitialize
  */
 void slab_reinitializeCache(slab_cache_t *cache) {
+#ifdef SLAB_ENABLE_MAGAZINES
+
 #ifdef SLAB_DEBUG
     LOG(DEBUG, "Reinitializing cache '%s' for %d CPUs...\n", cache->name, processor_count);
 #endif
@@ -521,6 +547,8 @@ void slab_reinitializeCache(slab_cache_t *cache) {
     cache->per_cpu_cache = slab_allocate(magazine_list_cache);
     assert(cache->per_cpu_cache);
     memset(cache->per_cpu_cache, 0, sizeof(cpu_magazine_cache_t) * processor_count);
+
+#endif
 }
 
 /**
@@ -530,7 +558,9 @@ void slab_reinitializeCache(slab_cache_t *cache) {
  */
 void slab_postSMPInit() {
     // Initialize the magazine cache
+#ifdef SLAB_ENABLE_MAGAZINES
     magazine_cache = slab_createCache("magazine cache", SLAB_CACHE_NOLEAKTRACE, sizeof(magazine_t) + sizeof(void*)*MAGAZINE_SIZE, 0, magazine_initializer, NULL);
     magazine_list_cache = slab_createCache("magazine list cache", SLAB_CACHE_NOLEAKTRACE, sizeof(cpu_magazine_cache_t) * processor_count, 0, NULL, NULL);
     slab_enable_magazines = 1;
+#endif
 }
