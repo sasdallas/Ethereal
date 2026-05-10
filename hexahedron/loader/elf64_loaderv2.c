@@ -274,10 +274,9 @@ int elf_buildAuxv(elf_image_t *image, elf_auxv_t *auxv) {
 
 /**
  * @brief Destroy an ELF image
- * Will also close the associated file
  */
 int elf_destroyImage(elf_image_t *image) {
-    vfs_close(image->file);
     kfree(image->file_base);
+    if (image->interp_path) kfree(image->interp_path);
     return 0;
 }

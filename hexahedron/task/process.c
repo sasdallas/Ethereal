@@ -637,7 +637,6 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
         // We have an interpreter path
         LOG(INFO, "Trying to execute interpreter: %s\n", interpreter_path);
         r = vfs_open(interpreter_path, O_RDONLY, &interpreter);
-        kfree(interpreter_path);
     }
 
     // Strike 2
@@ -656,6 +655,10 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Initialize an interpreter image
     elf_image_t interp_img;
     r = elf_openImage(interpreter, &interp_img);
+    
+    // Interpreter is useless now
+    vfs_close(interpreter);
+    
     if (r != 0) {
         return r;
     }
@@ -665,6 +668,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
         LOG(WARN, "Interpreter is not executable\n");
         elf_destroyImage(&file_img);
         elf_destroyImage(&interp_img);
+        vfs_close(file);
         return -ENOEXEC;
     }
 
@@ -673,7 +677,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // TODO: This should be a *pointer* to argv[0], not a duplicate.
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]);
-    current_cpu->current_process->exe_image = file; file_hold(file);
+    current_cpu->current_process->exe_image = file; // no need to hold an extra reference to file as it will be destroyed on process_destroy
 
     // Do common execution
     assert(process_executeCommon(&interp_img) == 0);
@@ -709,7 +713,6 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Build an auxiliary vector
     elf_auxv_t auxv;
     assert(elf_buildAuxv(&file_img, &auxv) == 0); // TODO: Error handling
-
 
     // Realign the stack if we need to. Everything from now on should JUST be a uintptr_t
     // The pending amount of bytes: Auxiliary vector variables, argc arguments, envc environment variables, plus argc itself and the two NULLs

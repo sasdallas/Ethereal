@@ -30,7 +30,6 @@
 typedef struct elf_image {
     vfs_file_t *file;
     
-    // will be cleaned up on elf_cleanupImage
     void *file_base;
     size_t file_size;
 
@@ -59,6 +58,8 @@ typedef struct elf_auxv {
  * @param file The image to open
  * @param image The image output
  * @returns Status code
+ * 
+ * The file is left open and won't be closed, so make sure you do that.
  */
 int elf_openImage(vfs_file_t *file, elf_image_t *img);
 
@@ -87,7 +88,6 @@ int elf_buildAuxv(elf_image_t *image, elf_auxv_t *auxv);
 
 /**
  * @brief Destroy an ELF image
- * Will also close the associated file
  */
 int elf_destroyImage(elf_image_t *image);
 
