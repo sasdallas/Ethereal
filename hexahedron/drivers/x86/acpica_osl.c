@@ -28,6 +28,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/semaphore.h>
 #include <kernel/misc/mutex.h>
@@ -254,14 +255,13 @@ void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags) {
 
 // Store data & handlers
 ACPI_OSD_HANDLER ACPI_interruptHandlers[MAX_ACPI_INTERRUPT_HANDLERS];
-void *ACPI_interruptContext[MAX_ACPI_INTERRUPT_HANDLERS];
 
-int ACPICA_InterruptHandler(uintptr_t exception_number, uintptr_t int_number, registers_t *registers, extended_registers_t *extended) {
-    if (ACPI_interruptHandlers[int_number]) {
-        ACPI_interruptHandlers[int_number](ACPI_interruptContext[int_number]);
+int ACPICA_InterruptHandler(irq_t *irq, void *context) {
+    if (ACPI_interruptHandlers[irq->num]) {
+        ACPI_interruptHandlers[irq->num](context);
     }
 
-    return 0;
+    return IRQ_HANDLED;
 }
 
 
@@ -279,17 +279,14 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLE
     }
 
     ACPI_interruptHandlers[InterruptLevel] = Handler;
-    ACPI_interruptContext[InterruptLevel] = Context;
 
-    
-    int r = hal_registerInterruptHandlerRegs(InterruptLevel, ACPICA_InterruptHandler);
-    if (r != 0) {
-        // This seems like a kernel fault
-        LOG(ERR, "hal_registerInterruptHandler(%i, 0x%x) returned %i\n", InterruptLevel, ACPICA_InterruptHandler, r);
-        return AE_ERROR;
-    }
+    irq_number_t vect;
+    assert(irq_allocate(global_domain, InterruptLevel, NULL, &vect) == 0);
+    assert(irq_register(vect, ACPICA_InterruptHandler, IRQ_FLAG_SHARED, Context, NULL) == 0);
+
     return AE_OK;
 }
+
 ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER Handler) {
     if (InterruptLevel >= MAX_ACPI_INTERRUPT_HANDLERS || Handler == NULL ) {
         return AE_BAD_PARAMETER;
@@ -301,9 +298,7 @@ ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLER
     }
 
     ACPI_interruptHandlers[InterruptLevel] = NULL;
-    ACPI_interruptContext[InterruptLevel] = NULL;
-    hal_unregisterInterruptHandler(InterruptLevel);
-    
+
     return AE_OK;
 }
 

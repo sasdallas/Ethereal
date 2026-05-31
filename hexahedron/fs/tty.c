@@ -86,7 +86,9 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
         return circbuf_read(tty->read_buf, size, (uint8_t*)buffer);
     } else {
         size_t sz_to_read = size;
-        if (tty->tios.c_cc[VMIN] < sz_to_read) sz_to_read = tty->tios.c_cc[VMIN];
+        if (tty->tios.c_cc[VMIN] < sz_to_read) {
+            sz_to_read = tty->tios.c_cc[VMIN];
+        }
 
         for (size_t i = 0; i < sz_to_read; i++) {
             ssize_t r = circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
@@ -340,6 +342,9 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
             SYSCALL_VALIDATE_PTR(argp);
             struct termios *tios_new = (struct termios *)argp;
 
+            LOG(DEBUG, "TCSETS: From lflag=%x oflag=%x iflag=%x cflag=%x\n", tty->tios.c_lflag, tty->tios.c_oflag, tty->tios.c_iflag, tty->tios.c_cflag);
+            LOG(DEBUG, "TCSETS: To  lflag=%x oflag=%x iflag=%x cflag=%x\n", tios_new->c_lflag, tios_new->c_oflag, tios_new->c_iflag, tios_new->c_cflag);
+
             if (((tios_new->c_lflag & ICANON) == 0) && tty->tios.c_lflag & ICANON) {
                 tty_flush(tty);
             }
@@ -502,6 +507,8 @@ int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
         // TODO: Cleanup pty
         return -ENOMEM;
     }
+
+    pty->master_node->attr.rdev = num;
 
     snprintf(tmp, 64, "/device/.ptmaster%d", num);
     if (master) {

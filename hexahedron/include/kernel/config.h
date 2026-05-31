@@ -22,6 +22,9 @@
 /* Enable profiler */
 #define KERNEL_ENABLE_PROFILER 1
 
+// IMPORTANT: This value controls the maximum amount of CPUs Hexahedron supports
+#define MAX_CPUS            32
+
 /**** EXPOSED ****/
 
 /* This just exposes things exposed in config.c, which is remade every build. */

@@ -157,43 +157,4 @@ extern void halVMMCommunicationException(void);
 extern void halSecurityException(void);
 extern void halReserved2Exception(void);
 
-extern void halLocalAPICTimerInterrupt(void);
-extern void halTLBShootdownInterrupt(void);
-extern void halSystemCallInterrupt(void);
-extern void halSyscallEntrypoint(void);
-
-extern void halIRQ0(void); // Interrupt number 32
-extern void halIRQ1(void); // Interrupt number 33
-extern void halIRQ2(void); // Interrupt number 34
-extern void halIRQ3(void); // Interrupt number 35
-extern void halIRQ4(void); // Interrupt number 36
-extern void halIRQ5(void); // Interrupt number 37
-extern void halIRQ6(void); // Interrupt number 38
-extern void halIRQ7(void); // Interrupt number 39
-extern void halIRQ8(void); // Interrupt number 40
-extern void halIRQ9(void); // Interrupt number 41
-extern void halIRQ10(void); // Interrupt number 42
-extern void halIRQ11(void); // Interrupt number 43
-extern void halIRQ12(void); // Interrupt number 44
-extern void halIRQ13(void); // Interrupt number 45
-extern void halIRQ14(void); // Interrupt number 46
-extern void halIRQ15(void); // Interrupt number 47
-
-extern void halMSI0(void); // Interrupt number 48
-extern void halMSI1(void); // Interrupt number 49
-extern void halMSI2(void); // Interrupt number 50
-extern void halMSI3(void); // Interrupt number 51
-extern void halMSI4(void); // Interrupt number 52
-extern void halMSI5(void); // Interrupt number 53
-extern void halMSI6(void); // Interrupt number 54
-extern void halMSI7(void); // Interrupt number 55
-extern void halMSI8(void); // Interrupt number 56
-extern void halMSI9(void); // Interrupt number 57
-extern void halMSI10(void); // Interrupt number 58
-extern void halMSI11(void); // Interrupt number 59
-extern void halMSI12(void); // Interrupt number 60
-extern void halMSI13(void); // Interrupt number 61
-extern void halMSI14(void); // Interrupt number 62
-extern void halMSI15(void); // Interrupt number 63
-
 #endif

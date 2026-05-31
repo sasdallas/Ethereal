@@ -67,25 +67,10 @@ void pit_setState(int enabled) {
 /**
  * @brief IRQ handler
  */
-int pit_irqHandler(uintptr_t exception_index, uintptr_t int_number, registers_t *regs, extended_registers_t *regs_extended) {
+int pit_irqHandler(irq_t *irq, void *context) {
     pit_ticks++;
     clock_update(clock_readTicks());
-
-    if (!pit_update) return 0; // Done
-
-    // Only if the process is running do we preempt
-    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && current_cpu->current_thread->status & THREAD_STATUS_RUNNING && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
-        // Is it time to switch processes?
-        if (scheduler_update(clock_getTickCount()) == 1) {
-            // End interrupt
-            hal_endInterrupt(int_number);
-
-            // Yes, it is. Switch to next process
-            process_yield(1);
-        }
-    }
-
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -93,7 +78,10 @@ int pit_irqHandler(uintptr_t exception_index, uintptr_t int_number, registers_t 
  */
 void pit_initialize() {
     // Register handler
-    hal_registerInterruptHandlerRegs(PIT_IRQ, pit_irqHandler);
+
+    irq_number_t vect;
+    irq_allocate(global_domain, PIT_IRQ, NULL, &vect);
+    irq_register(vect, pit_irqHandler, IRQ_FLAG_SHARED, NULL, NULL);
 
     // On default use 100 Hz for divisor
     pit_setTimerPhase(100);

@@ -102,4 +102,11 @@ int pic_type();
  */
 uint32_t pic_allocate();
 
+/**
+ * @brief Route a hardware interrupt to a CPU interrupt index
+ * @param irq The index in the IDT
+ * @param hwirq Hardware IRQ
+ */
+int pic_route(uintptr_t irq, uintptr_t hwirq);
+
 #endif

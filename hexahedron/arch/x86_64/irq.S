@@ -209,71 +209,30 @@ ISR_ERRCODE     halVMMCommunicationException,       29
 ISR_ERRCODE     halSecurityException,               30
 ISR_NOERRCODE   halReserved2Exception,              31
 
-IRQ             halIRQ0,    32
-IRQ             halIRQ1,    33
-IRQ             halIRQ2,    34
-IRQ             halIRQ3,    35
-IRQ             halIRQ4,    36
-IRQ             halIRQ5,    37
-IRQ             halIRQ6,    38
-IRQ             halIRQ7,    39
-IRQ             halIRQ8,    40
-IRQ             halIRQ9,    41
-IRQ             halIRQ10,   42
-IRQ             halIRQ11,   43
-IRQ             halIRQ12,   44
-IRQ             halIRQ13,   45
-IRQ             halIRQ14,   46
-IRQ             halIRQ15,   47
+.macro ISR_HANDLER index
+    IRQ halIsrHandler\index, \index + 32
+.endm
 
-LAPIC_IRQ       halMSI0,    48
-LAPIC_IRQ       halMSI1,    49
-LAPIC_IRQ       halMSI2,    50
-LAPIC_IRQ       halMSI3,    51
-LAPIC_IRQ       halMSI4,    52
-LAPIC_IRQ       halMSI5,    53
-LAPIC_IRQ       halMSI6,    54
-LAPIC_IRQ       halMSI7,    55
-LAPIC_IRQ       halMSI8,    56
-LAPIC_IRQ       halMSI9,    57
-LAPIC_IRQ       halMSI10,   58
-LAPIC_IRQ       halMSI11,   59
-LAPIC_IRQ       halMSI12,   60
-LAPIC_IRQ       halMSI13,   61
-LAPIC_IRQ       halMSI14,   62
-LAPIC_IRQ       halMSI15,   63
+.macro ISR_HANDLER_ENTRY index
+    .quad halIsrHandler\index
+.endm
 
+.altmacro
+.set i, 0
+.rept 223
+    ISR_HANDLER %i
+    .set i, i+1
+.endr
 
-/* ISR 123 */
-.global halLocalAPICTimerInterrupt
-halLocalAPICTimerInterrupt:
-    // Try to acknowledge EOI in APIC
-    // Now process
-    pushq $0x00
-    pushq $123
-    jmp halCommonIRQHandler
-
-/* ISR 124 */
-.global halTLBShootdownInterrupt
-halTLBShootdownInterrupt:
-    // Try to acknowledge EOI in APIC
-    pushq %rcx
-    mov (lapic_base)(%rip), %rcx    // RIP-relative addressing
-    add $0xB0, %rcx                 // lapic_base + 0xB0 = EOI register
-    movl $0, (%rcx)
-    popq %rcx
-
-    // Now process
-    pushq $0x00
-    pushq $124
-    jmp halCommonIRQHandler
-
-/* ISR 128 */
-.global halSystemCallInterrupt
-halSystemCallInterrupt:
-    pushq $0x00
-    pushq $128
-    jmp halCommonIRQHandler
+.global halIsrHandlerTable
+halIsrHandlerTable:
+.set i, 0
+.rept 223
+    ISR_HANDLER_ENTRY %i
+    .set i, i+1
+.endr
+.global halIsrHandlerTableEnd
+halIsrHandlerTableEnd:
 
 /* System call entrypoint (for SYSCALL instruction) */
 /* This function is lobotomized because it had a ton of perf overhead. Extended registers is empty! */

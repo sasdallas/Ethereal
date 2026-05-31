@@ -115,6 +115,7 @@ int thread_destroy(thread_t *thr) {
  */
 void thread_safeExit(thread_t *arg) {
     thread_t *t = (thread_t*)arg;
+    __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
     __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
     __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
 

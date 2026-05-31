@@ -129,17 +129,17 @@ void serial_thread(void *context) {
 /**
  * @brief Serial IRQ (A/C)
  */
-int serial_irq_ac(void *context) {
+int serial_irq_ac(irq_t *irq, void *context) {
     sleep_wakeup(serial_thread_ac); // DPC when :(
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
  * @brief Serial IRQ (B/D)
  */
-int serial_irq_bd(void *context) {
+int serial_irq_bd(irq_t *irq, void *context) {
     sleep_wakeup(serial_thread_bd); // DPC when :(
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -310,13 +310,20 @@ static int serial_spawn() {
         process_t *proc = process_createKernel("serial_thread_ac", PROCESS_KERNEL, PRIORITY_MED, serial_thread, (void*)(uintptr_t)0x3f8);
         serial_thread_ac = proc->main_thread;
         scheduler_insertThread(serial_thread_ac);
-        hal_registerInterruptHandler(4, serial_irq_ac, NULL);
+
+        irq_number_t vect;
+        irq_allocate(global_domain, 4, NULL, &vect);
+        irq_register(vect, serial_irq_ac, IRQ_FLAG_SHARED, NULL, NULL);
     }
+    
     if (serial_getPort(2) || serial_getPort(4)) {
         process_t *proc = process_createKernel("serial_thread_bd", PROCESS_KERNEL, PRIORITY_MED, serial_thread, (void*)(uintptr_t)0x2f8);
         serial_thread_bd = proc->main_thread;
         scheduler_insertThread(serial_thread_bd);
-        hal_registerInterruptHandler(3, serial_irq_bd, NULL);
+
+        irq_number_t vect;
+        irq_allocate(global_domain, 3, NULL, &vect);
+        irq_register(vect, serial_irq_bd, IRQ_FLAG_SHARED, NULL, NULL);
     }
 
     return 0;

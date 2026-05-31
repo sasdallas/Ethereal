@@ -24,10 +24,10 @@
 #include <kernel/hal.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
-#include <kernel/debugger.h>
 #include <kernel/gfx/term.h>
 #include <kernel/misc/args.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/subsystems/irq.h>
 
 // Drivers (generic)
 #include <kernel/drivers/serial.h>
@@ -85,11 +85,6 @@ static void hal_init_stage1() {
     // Initialize clock driver
     clock_initialize();
 
-    // Initialize the PIT
-    pit_initialize();
-
-    // Initialize interrupts
-    hal_initializeInterrupts();
     dprintf(INFO, "HAL stage 1 initialization completed\n");
 }
 
@@ -163,6 +158,17 @@ _minacpi: ; // Jumped here if "--no-acpica" was present
  * @brief Stage 2 startup - initializes debugger, ACPI, etc.
  */
 static void hal_init_stage2() {
+    /* Initialize the IRQ subsystem now that memory allocators are ready */
+    irq_init();
+    irq_initCPU();
+    hal_initializeInterrupts();
+
+    // PIT can be initialized here for now
+    pit_initialize();
+
+    // Now we can enable interrupts
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+
     /* VIDEO INITIALIZATION */
 
     if (!kargs_has("--no-video")) {

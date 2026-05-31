@@ -114,6 +114,8 @@ static int serial_init_tty() {
             serial_ttys[i]->write = serial_writeOut;
             serial_ttys[i]->priv = ports[i]; // TODO: tty fill_tios
             serial_reinitializePort(p, &serial_ttys[i]->tios);
+        } else {
+            serial_ttys[i] = NULL;
         }
     }
 

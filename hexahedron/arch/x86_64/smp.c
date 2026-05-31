@@ -114,7 +114,7 @@ static void smp_invalidate(uintptr_t addr, size_t size) {
 /**
  * @brief Handle a TLB shootdown
  */
-int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number, registers_t *regs, extended_registers_t *extended) {
+int smp_handleTLBShootdown(irq_t *irq, void *context) {
     // Acknowledge the request
     struct tlb_shootdown_request *r = &tlb_shootdown_req[smp_getCurrentCPU()];
 
@@ -122,7 +122,7 @@ int smp_handleTLBShootdown(uintptr_t exception_index, uintptr_t interrupt_number
     __atomic_add_fetch(r->pending_completion, 1, __ATOMIC_SEQ_CST);
     spinlock_release(&r->shootdown_lck); // Astral
 
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -170,7 +170,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     hal_gdtInitCore(smp_getCurrentCPU(), _ap_stack_base);
     
     // Install the IDT
-    extern void hal_installIDT();
+extern void hal_installIDT();
     hal_installIDT();
 
     // Initialize SSE
@@ -179,6 +179,13 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     // Set current core's directory
     vmm_switch(vmm_kernel_context);
 
+    // Configure IRQ subsystem
+    irq_initCPU();
+
+    // Map the SMP TLB shootdown event
+    irq_map(percpu_domain, 124, 124, NULL);
+    irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
+    
     // Reinitialize the APIC
     lapic_initialize(lapic_remapped);
 
@@ -298,8 +305,9 @@ int smp_init(smp_info_t *info) {
     arch_mmu_unmap(NULL, SMP_AP_BOOTSTRAP_PAGE);
     pmm_freePage(temp_frame);
 
-    // Register TLB shootdown IRQ
-    hal_registerInterruptHandlerRegs(124 - 32, smp_handleTLBShootdown);
+    // Register TLB shootdown IRQ for BSP
+    irq_map(percpu_domain, 124, 124, NULL);
+    irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
 
     processor_count = smp_data->processor_count;
     arch_get_generic_parameters()->cpu_count = smp_getCPUCount();
@@ -340,7 +348,7 @@ void smp_acknowledgeCoreShutdown() {
  */
 void smp_disableCores() {
     if (smp_data == NULL || processor_count == 1) return;
-    LOG(INFO, "Disabling cores - please wait...\n");
+    // LOG(INFO, "Disabling cores - please wait...\n");
 
     for (int i = 0; i < smp_data->processor_count; i++) {
         if (smp_data->lapic_ids[i] != current_cpu->lapic_id) {

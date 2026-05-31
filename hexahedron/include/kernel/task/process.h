@@ -111,10 +111,6 @@ typedef struct process {
     vfs_inode_t *wd_node;               // Working directory node
     fd_table_t *fd_table;               // File descriptor table
 
-    // MEMORY REGIONS
-    uintptr_t heap;                     // Heap of the process. Positioned after the ELF binary
-    uintptr_t heap_base;                // Base location of the heap
-
     // SIGNALS
     void *userspace;                    // Userspace allocation (only for sigtramp right now)
 

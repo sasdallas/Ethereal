@@ -15,6 +15,7 @@
 
 #include "ps2.h"
 #include <kernel/loader/driver.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -39,17 +40,16 @@ uint8_t ps2_writeKeyboard(uint8_t data) {
 /**
  * @brief PS/2 keyboard IRQ
  */
-int ps2_keyboardIRQ(void *context) {
+int ps2_keyboardIRQ(irq_t *irq, void *context) {
 	// Get character from PS/2
-	uint8_t ch = inportb(PS2_DATA); 
-	hal_endInterrupt(PS2_KEYBOARD_IRQ); // End IRQ so more can come in
+	uint8_t ch = inportb(PS2_DATA);
 
 	int event_type = (ch >= 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;
 
     // Determine the scancode we should print
     key_scancode_t sc = ch;
 	periphfs_sendKeyboardEvent(event_type, sc);
-    return 0;
+    return IRQ_HANDLED;
 }
 
 
@@ -64,5 +64,7 @@ void kbd_init(uint8_t port) {
     ps2_sendDeviceACK(keyboard_port, 2);
 
     // Register IRQ
-    hal_registerInterruptHandler(PS2_KEYBOARD_IRQ, ps2_keyboardIRQ, NULL);
+    irq_number_t vect;
+    irq_allocate(global_domain, PS2_KEYBOARD_IRQ, NULL, &vect);
+    irq_register(vect, ps2_keyboardIRQ, 0, NULL, NULL);
 }

@@ -24,15 +24,8 @@
 #include <kernel/drivers/storage/drive.h>
 #include <string.h>
 #include <errno.h>
-
-// Architecture-specific
-#if defined(__ARCH_I386__)
-#include <kernel/arch/i386/hal.h>
-#include <kernel/arch/i386/registers.h>
-#elif defined(__ARCH_X86_64__)
-#include <kernel/arch/x86_64/hal.h>
-#include <kernel/arch/x86_64/registers.h>
-#endif
+#include <kernel/arch/arch.h>
+#include <kernel/subsystems/irq.h>
 
 #include <arpa/inet.h>
 
@@ -92,8 +85,8 @@ int ata_find(pci_device_t *dev, void *data) {
 /**
  * @brief IDE IRQ handler
  */
-int ide_irqHandler(uintptr_t exception_index, uintptr_t interrupt_no, registers_t *regs, extended_registers_t *extended) {
-    return 0;
+int ide_irqHandler(irq_t *irq, void *context) {
+    return IRQ_HANDLED;
 }
 
 
@@ -829,8 +822,11 @@ int ata_initialize() {
     }
 
     // Register IRQ handlers
-    hal_registerInterruptHandlerRegs(14, ide_irqHandler);
-    hal_registerInterruptHandlerRegs(15, ide_irqHandler);
+    irq_number_t vect;
+    assert(irq_allocate(global_domain, 14, NULL, &vect) == 0);
+    assert(irq_register(vect, ide_irqHandler, IRQ_FLAG_SHARED, NULL, NULL) == 0);
+    assert(irq_allocate(global_domain, 15, NULL, &vect) == 0);
+    assert(irq_register(vect, ide_irqHandler, IRQ_FLAG_SHARED, NULL, NULL) == 0);
 
     // Detect devices
     for (int i = 0; i < 4; i++) {

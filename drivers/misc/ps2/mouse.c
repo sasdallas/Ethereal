@@ -15,6 +15,7 @@
 #include "ps2.h"
 #include <kernel/loader/driver.h>
 #include <kernel/fs/periphfs.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/gfx/term.h>
@@ -51,21 +52,21 @@ int ps2_setMouseSampleRate(uint8_t rate) {
 /**
  * @brief Mouse IRQ handler
  */
-int mouse_irq(void *context) {
-    if (!mouse_enabled) return 0;
+int mouse_irq(irq_t *irq, void *context) {
+    if (!mouse_enabled) return IRQ_HANDLED;
     uint8_t data = inportb(PS2_DATA);
 
     // Get the next byte in the cycle
     ps2_mouse_packet[ps2_mouse_packet_cycle] = data;
     if (!ps2_mouse_packet_cycle && !(ps2_mouse_packet[ps2_mouse_packet_cycle] & 0x08)) {
-        return 0;
+        return IRQ_HANDLED;
     }
     ps2_mouse_packet_cycle++;
     
 
     // TODO: Support for more advanced PS/2 mouse modes?
     if (ps2_mouse_packet_cycle < mouse_packet_size) {
-        return 0;
+        return IRQ_HANDLED;
     }
 
     // Reset packet cycle
@@ -99,10 +100,10 @@ int mouse_irq(void *context) {
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_RIGHTBTN ? MOUSE_BUTTON_RIGHT : 0) | 
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_MIDDLEBTN ? MOUSE_BUTTON_MIDDLE : 0);
 
-    if (buttons == ps2_last_buttons && !x_diff && !y_diff && !scroll) return 0;
+    if (buttons == ps2_last_buttons && !x_diff && !y_diff && !scroll) return IRQ_HANDLED;
     periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, x_diff, y_diff, scroll);
     ps2_last_buttons = buttons;
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -137,7 +138,6 @@ void mouse_init(uint8_t p) {
 
         default:
             LOG(ERR, "Unsupported PS/2 mouse %02x\n", byte);
-            hal_unregisterInterruptHandler(PS2_MOUSE_IRQ);
             break;
     }
 
@@ -146,5 +146,7 @@ void mouse_init(uint8_t p) {
 
 
     // Register IRQ
-    hal_registerInterruptHandler(PS2_MOUSE_IRQ, mouse_irq, NULL);
+    irq_number_t vect;
+    irq_allocate(global_domain, PS2_MOUSE_IRQ, NULL, &vect);
+    irq_register(vect, mouse_irq, 0, NULL, NULL);
 }

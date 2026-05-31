@@ -370,30 +370,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         return;
     }
 
-    // Call any handler registered
-    if (hal_handler_table[int_number] != NULL || hal_handler_context_table[int_number] != NULL) {
-        int return_value = 1;
-
-        // End the interrupt now
-        hal_endInterrupt(int_number);
-
-        // Context specified?
-        if (hal_handler_context_table[int_number] != NULL) {
-            interrupt_handler_context_t handler = (interrupt_handler_context_t)(hal_handler_context_table[int_number]);
-            return_value = handler(hal_interrupt_context_table[int_number]);
-        } else {
-            interrupt_handler_t handler = (interrupt_handler_t)(hal_handler_table[int_number]);
-            return_value = handler(exception_index, int_number, regs, regs_extended);
-        }
-
-        if (return_value != 0) {
-            kernel_panic(IRQ_HANDLER_FAILED, "hal");
-            __builtin_unreachable();
-        }
-    } else {
-        // End the interrupt now
-        hal_endInterrupt(int_number);
-    }
+    irq_handler(regs->int_no, regs);
 
     if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
@@ -536,7 +513,9 @@ int hal_debugTrapHandler(uintptr_t exception_index, registers_t *regs, extended_
     if (regs->cs != 0x08) {
         // Must be from usermode
         current_cpu->current_thread->regs = regs;
-        ptrace_event(PROCESS_TRACE_SINGLE_STEP);
+        if (current_cpu->current_process->ptrace.tracer) {
+            ptrace_event(PROCESS_TRACE_SINGLE_STEP);
+        }
         return 0; // TODO: Send SIGTRAP
     }
 
@@ -549,6 +528,9 @@ int hal_debugTrapHandler(uintptr_t exception_index, registers_t *regs, extended_
  * @brief Initializes the PIC, GDT/IDT, TSS, etc.
  */
 void hal_initializeInterrupts() {
+    // Interrupts must be disabled
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
     // Start the GDT
     hal_gdtInit();
 
@@ -583,46 +565,19 @@ void hal_initializeInterrupts() {
     hal_registerInterruptVector(30, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halSecurityException);
     hal_registerInterruptVector(31, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halReserved2Exception);
 
-    // IRQ vectors
-    hal_registerInterruptVector(32, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ0);
-    hal_registerInterruptVector(33, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ1);
-    hal_registerInterruptVector(34, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ2);
-    hal_registerInterruptVector(35, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ3);
-    hal_registerInterruptVector(36, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ4);
-    hal_registerInterruptVector(37, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ5);
-    hal_registerInterruptVector(38, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ6);
-    hal_registerInterruptVector(39, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ7);
-    hal_registerInterruptVector(40, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ8);
-    hal_registerInterruptVector(41, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ9);
-    hal_registerInterruptVector(42, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ10);
-    hal_registerInterruptVector(43, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ11);
-    hal_registerInterruptVector(44, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ12);
-    hal_registerInterruptVector(45, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ13);
-    hal_registerInterruptVector(46, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ14);
-    hal_registerInterruptVector(47, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halIRQ15);
+    // Register interrupt vectors
+extern uintptr_t halIsrHandlerTable, halIsrHandlerTableEnd;
+    size_t isr_entries = ((uintptr_t)&halIsrHandlerTableEnd - (uintptr_t)&halIsrHandlerTable) / sizeof(void*);
+    uintptr_t *handler_table = &halIsrHandlerTable;
+    dprintf(DEBUG, "%d isr handlers\n", isr_entries);
+    for (unsigned i = 0; i < isr_entries; i++) {
+        hal_registerInterruptVector(i+32, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, handler_table[i]);
+    }
 
-    // MSI vectors
-    hal_registerInterruptVector(48, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI0);
-    hal_registerInterruptVector(49, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI1);
-    hal_registerInterruptVector(50, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI2);
-    hal_registerInterruptVector(51, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI3);
-    hal_registerInterruptVector(52, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI4);
-    hal_registerInterruptVector(53, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI5);
-    hal_registerInterruptVector(54, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI6);
-    hal_registerInterruptVector(55, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI7);
-    hal_registerInterruptVector(56, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI8);
-    hal_registerInterruptVector(57, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI9);
-    hal_registerInterruptVector(58, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI10);
-    hal_registerInterruptVector(59, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI11);
-    hal_registerInterruptVector(60, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI12);
-    hal_registerInterruptVector(61, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI13);
-    hal_registerInterruptVector(62, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI14);
-    hal_registerInterruptVector(63, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMSI15);
-
-
-    hal_registerInterruptVector(123, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halLocalAPICTimerInterrupt);
-    hal_registerInterruptVector(124, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halTLBShootdownInterrupt);
-    hal_registerInterruptVector(128, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32 | X86_64_IDT_DESC_RING3, 0x08, (uint64_t)&halSystemCallInterrupt);
+    // Reserve the exception vectors
+    for (int i = 0; i < 32; i++) {
+        irq_reserveVector(i);
+    }
 
     // Install IDT in BSP
     hal_installIDT();
@@ -633,6 +588,6 @@ void hal_initializeInterrupts() {
     // Register debug interrupt handler
     hal_registerExceptionHandler(1, hal_debugTrapHandler);
 
-    // Enable interrupts
-    asm volatile ("sti");
+    // Leave interrupts disabled for now. They can be re-enabled on this AP after irq_initCPU
+    // This is fine because TLB shootdowns wont occur until all SMP processors have initialized which only happens after irq_initCPU
 }

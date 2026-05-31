@@ -35,6 +35,7 @@
 #define THREAD_FLAG_KERNEL          0x01
 #define THREAD_FLAG_NO_PREEMPT      0x02
 #define THREAD_FLAG_CHILD           0x04    // Thread is a child. NOT PRESERVED. Tells thread_create() not to allocate a stack and mess up potential CoW
+#define THREAD_FLAG_NEEDS_RESCHED   0x08    // Set by the scheduler callback, triggers reschedule on irq_handler
 
 // Stack size of thread
 #define THREAD_STACK_SIZE           PAGE_SIZE * 16

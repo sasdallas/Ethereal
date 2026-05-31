@@ -129,4 +129,11 @@ int ioapic_eoi(uintptr_t interrupt);
  */
 uint32_t ioapic_allocate();
 
+/**
+ * @brief Route an interrupt
+ * @param irq The CPU interrupt
+ * @param hwirq The hardware interrupt
+ */
+int ioapic_route(uintptr_t irq, uintptr_t hwirq);
+
 #endif

@@ -154,28 +154,24 @@ void lapic_sendInit(uint8_t lapic_id) {
  * @brief Local APIC spurious IRQ
  * @note This is the same between x86_64 and i386.
  */
-int lapic_irq(uintptr_t exception_index, uintptr_t irq_number, registers_t *registers, extended_registers_t *extended) {
-    LOG(DEBUG, "Spurious local APIC IRQ\n");
-    return 0;
+int lapic_irq(irq_t *irq, void *context) {
+    LOG(WARN, "Local APIC spurious interrut\n");
+    return IRQ_HANDLED;
 }
 
 /**
  * @brief Local APIC timer IRQ
  */
-int lapic_timer_irq(uintptr_t exception_index, uintptr_t irq_number, registers_t *registers, extended_registers_t *extended) {
+int lapic_timer_irq(irq_t *irq, void *context) {
     // Update clock
     clock_update(clock_readTicks());
     
     // Only if the process is running do we preempt
-    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && current_cpu->current_thread->status & THREAD_STATUS_RUNNING && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
-        // Is it time to switch processes?
-        if (scheduler_update(clock_getTickCount()) == 1) {
-            // Yes, it is. Switch to next process
-            process_yield(1);
-        }
+    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
+        current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
     }
 
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -229,8 +225,10 @@ int lapic_initialize(uintptr_t lapic_address) {
     }
 
     // Register the interrupt handlers
-    hal_registerInterruptHandlerRegs(LAPIC_SPUR_INTNO - 32, lapic_irq); // NOTE: This might fail occasionally (BSP will reinitialize APICs for each core)
-    hal_registerInterruptHandlerRegs(LAPIC_TIMER_IRQ - 32, lapic_timer_irq);
+    irq_map(percpu_domain, LAPIC_SPUR_INTNO, LAPIC_SPUR_INTNO, NULL);
+    irq_map(percpu_domain, LAPIC_TIMER_IRQ, LAPIC_TIMER_IRQ, NULL);
+    irq_register(LAPIC_SPUR_INTNO, lapic_irq, 0, NULL, NULL);
+    irq_register(LAPIC_TIMER_IRQ, lapic_timer_irq, 0, NULL, NULL);
 
     // Disable PIT from updating
     pit_setState(0);

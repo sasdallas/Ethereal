@@ -23,6 +23,8 @@
 #include <stdint.h>
 #include <kernel/arch/arch.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/subsystems/clock.h>
+#include <kernel/subsystems/irq.h>
 
 /**** TYPES ****/
 
@@ -62,7 +64,10 @@ typedef struct _processor {
 #endif
     
     scheduler_cpu_t sched;                  // Scheduler data
+    volatile uint32_t irq_bitmap;           // Per-CPU IRQ bitmap
+    irq_table_t *irq_table;                 // IRQ table (FOR PERCPU INTERRUPTS ONLY!!)
     uint64_t idle_time;                     // Time the processor has spent idling
+    timekeeper_t timekeeper;                // Timekeeper
 } processor_t;
 
 /* External variables defined by architecture */
@@ -77,20 +82,39 @@ extern int processor_count;
  */
 
 #if defined(__ARCH_I386__) || defined(__INTELLISENSE__)
-
 #define current_cpu ((processor_t*)&(processor_data[arch_current_cpu()]))
-
 #elif defined(__ARCH_X86_64__)
-
 static processor_t __seg_gs * const current_cpu = 0;
-
-#elif defined(__ARCH_AARCH64__)
-
-register processor_t * current_cpu asm("x18"); 
-
 #else
 #error "Please define a method of getting processor data"
 #endif
 
+/* IRQ bitmap related */
+
+// The IRQ bitmap is taken from Linux, where a 32-bit bitmap tracks different IRQ states.
+// PREEMPT is used to track whether the current thread is preemptible (1 = non-preemptible, 0 = preemptible)
+// TASKLET is used to track whether the system is currently in a tasklet
+// IRQ is used for hardware interrupts
+#define PREEMPT_SHIFT      0
+#define TASKLET_SHIFT      12
+#define IRQ_SHIFT          20
+#define PREEMPT_BITS       12
+#define TASKLET_BITS       8
+#define IRQ_BITS           8
+#define PREEMPT_MASK       (((1UL << PREEMPT_BITS) - 1) << PREEMPT_SHIFT)
+#define TASKLET_MASK       (((1UL << TASKLET_BITS) - 1) << TASKLET_SHIFT)
+#define IRQ_MASK           (((1UL << IRQ_BITS) - 1) << IRQ_SHIFT)
+
+#define INTERRUPT_MASK (IRQ_MASK | TASKLET_MASK)
+#define IN_INTERRUPT() ((current_cpu->irq_bitmap & INTERRUPT_MASK) != 0)
+#define IN_IRQ() ((current_cpu->irq_bitmap & IRQ_MASK) != 0)
+#define IN_TASKLET() ((current_cpu->irq_bitmap & TASKLET_MASK) != 0)
+#define IS_PREEMPTIBLE() ((current_cpu->irq_bitmap & PREEMPT_MASK) == 0)
+#define IRQ_ENTER() ((current_cpu->irq_bitmap += (1UL << IRQ_SHIFT)))
+#define TASKLET_ENTER() ((current_cpu->irq_bitmap += (1UL << TASKLET_SHIFT)))
+#define PREEMPT_DISABLE() ((current_cpu->irq_bitmap += (1UL << PREEMPT_SHIFT)))
+#define PREEMPT_ENABLE() ((current_cpu->irq_bitmap -= (1UL << PREEMPT_SHIFT)))
+#define TASKLET_EXIT() ((current_cpu->irq_bitmap -= (1UL << TASKLET_SHIFT)))
+#define IRQ_EXIT() ((current_cpu->irq_bitmap -= (1UL << IRQ_SHIFT)))
 
 #endif

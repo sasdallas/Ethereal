@@ -13,8 +13,10 @@
 
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/drivers/x86/io_apic.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/arch/arch.h>
 #include <kernel/debug.h>
+#include <assert.h>
 
 /* Current selected PIC */
 int pic_selected = PIC_TYPE_8259;
@@ -241,4 +243,18 @@ uint32_t pic_allocate() {
     }
 
     return 0xFFFFFFFF;
+}
+
+/**
+ * @brief Route a hardware interrupt to a CPU interrupt index
+ * @param irq The index in the IDT
+ * @param hwirq Hardware IRQ
+ */
+int pic_route(uintptr_t irq, uintptr_t hwirq) {
+    if (pic_selected == PIC_TYPE_8259) {
+        assert(irq == hwirq + 32);
+        return 0;
+    }
+
+    return ioapic_route(irq, hwirq);
 }

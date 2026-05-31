@@ -229,12 +229,5 @@ void arch_single_step(struct thread *thread, int state) {
 	}
 }
 
-/**
- * @brief Read the current system tick count
- */
-uint64_t arch_tick_count() {
-	return clock_readTSC();
-}
-
 /* Init routines */
 FS_INIT_ROUTINE(arch_systemfs, INIT_FLAG_DEFAULT, arch_mount_systemfs, systemfs);

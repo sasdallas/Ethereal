@@ -17,12 +17,10 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <stddef.h>
+#include <kernel/config.h>
 
 
 /**** DEFINITIONS ****/
-
-// IMPORTANT: This value controls the maximum amount of CPUs Hexahedron supports
-#define MAX_CPUS            32
 
 // IMPORTANT: This value controls the maximum amount of supported interrupt overrides
 #define MAX_INT_OVERRIDES   0x100

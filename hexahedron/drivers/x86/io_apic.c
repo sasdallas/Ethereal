@@ -11,9 +11,7 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifdef __ARCH_I386__
-#include <kernel/arch/i386/smp.h>
-#else
+#ifdef __ARCH_X86_64__
 #include <kernel/arch/x86_64/smp.h>
 #endif
 
@@ -168,6 +166,8 @@ int ioapic_init(void *data) {
     gsi = io_apic_irq_overrides[12];
     reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
 
+    // irq_selectChip(&chip);
+
     return io_apic_count ? 0 : 1;
 }
 
@@ -193,9 +193,11 @@ int ioapic_mask(uintptr_t interrupt) {
  * @param interrupt The interrupt to unmask
  */
 int ioapic_unmask(uintptr_t interrupt) {
+
     uint32_t gsi = io_apic_irq_overrides[interrupt];
     reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-    return ioapic_enableIRQ(interrupt);
+    // return ioapic_enableIRQ(interrupt);
+    return 0;;
 }
 
 /**
@@ -239,4 +241,47 @@ uint32_t ioapic_allocate() {
     }
 
     return 0xFFFFFFFF;
+}
+
+/**
+ * @brief Route an interrupt
+ * @param irq The CPU interrupt
+ * @param hwirq The hardware interrupt
+ */
+int ioapic_route(uintptr_t irq, uintptr_t hwirq) {
+    uint8_t gsi = io_apic_irq_overrides[hwirq];
+
+    // Find a corresponding I/O APIC
+    io_apic_t *apic = NULL;
+    for (int i = 0; i < io_apic_count; i++) {
+        io_apic_t *apic_i = io_apic_list[i];
+        
+        if (apic_i->interrupt_base <= gsi && gsi <= apic_i->interrupt_base + apic_i->redir_count) {
+            apic = apic_i;
+            break;
+        }
+    }
+
+    if (!apic) {
+        LOG(WARN, "Mapping IRQ%d failed: No corresponding APIC was found\n", hwirq);
+        return -1;
+    }
+
+    int pin = gsi - apic->interrupt_base;
+
+    LOG(DEBUG, "Mapping an IRQ for Pin %d (GSI: %d, IRQ base: %d) to vector %d\n", pin, gsi, apic->interrupt_base, irq);
+
+    // Get redirection entry already at that address 
+    io_apic_redir_entry_t entry;
+    entry.lo = ioapic_read(apic, 0x10 + (pin * 2));
+    entry.hi = ioapic_read(apic, 0x10 + (pin * 2 + 1));
+
+    // Setup vector, disable mask, and set to BSP APIC ID
+    entry.vector = irq;
+    entry.mask = 0;
+    entry.destination = 0;      // TODO: Verify this is actually the BSP ID
+
+    ioapic_setEntry(apic, pin, &entry);
+
+    return 0;
 }

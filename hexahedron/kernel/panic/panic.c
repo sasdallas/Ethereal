@@ -31,7 +31,6 @@
 #include <kernel/panic.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
-#include <kernel/debugger.h>
 #include <kernel/mm/alloc.h>
 
 #include <stdint.h>
