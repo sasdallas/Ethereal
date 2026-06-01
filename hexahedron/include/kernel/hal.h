@@ -27,29 +27,7 @@
 #define HAL_POWER_REBOOT                2
 #define HAL_POWER_HIBERNATE             3
 
-/**** TYPES ****/
-
-/**
- * @brief Generic interrupt handler
- * @param context The context passed to @c hal_registerInterruptHandler
- */
-typedef int (*hal_interrupt_handler_t)(void *context);
-
 /**** FUNCTIONS ****/
-
-/**
- * @brief Register an interrupt handler
- * @param int_number The interrupt number to register a handler for
- * @param handler The handler to register
- * @param context Optional context that gets passed to the handler
- * @returns 0 on success
- */
-int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t handler, void *context);
-
-/**
- * @brief Unregisters an interrupt handler
- */
-void hal_unregisterInterruptHandler(uintptr_t int_no);
 
 /**
  * @brief Set interrupt state on the current CPU
@@ -74,11 +52,5 @@ int hal_setPowerState(int state);
  * @param state The state
  */
 void hal_prepareForPowerState(int state);
-
-/**
- * @brief Returns whether an interrupt handler is in use
- * @param int_number The interrupt number to check
- */
-int hal_interruptHandlerInUse(uintptr_t int_number);
 
 #endif

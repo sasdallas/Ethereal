@@ -48,17 +48,8 @@ x86_64_gdt_t gdt[MAX_CPUS] __attribute__((used)) = {{
 /* IDT */
 x86_64_interrupt_descriptor_t hal_idt_table[X86_64_MAX_INTERRUPTS];
 
-/* Interrupt handler table - TODO: More than one handler per interrupt? */
-void *hal_handler_table[X86_64_MAX_INTERRUPTS] = { 0 };
-
-/* Interrupt handler with context table */
-hal_interrupt_handler_t hal_handler_context_table[X86_64_MAX_INTERRUPTS] = { 0 };
-
 /* Exception handler table - TODO: More than one handler per exception? */
 exception_handler_t hal_exception_handler_table[X86_64_MAX_EXCEPTIONS] = { 0 };
-
-/* Context table (makes drivers have a better time with interrupts) */
-void *hal_interrupt_context_table[X86_64_MAX_INTERRUPTS] = { 0 };
 
 /* String table for exceptions */
 const char *hal_exception_table[X86_64_MAX_EXCEPTIONS] = {
@@ -342,6 +333,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
     uintptr_t exception_index = regs->int_no;
     uintptr_t int_number = regs->int_no - 32;
 
+    // TODO: Move this to IRQ system
     if (exception_index == ARCH_SYSCALL_NUMBER) {
         // Handle system call
         syscall_t syscall;
@@ -370,43 +362,13 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         return;
     }
 
+    // Call IRQ handler
     irq_handler(regs->int_no, regs);
 
+    // TODO move to IRQ handler probably
     if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
     }
-}
-
-/**
- * @brief Register an interrupt handler
- * @param int_no Interrupt number
- * @param handler A handler. This should return 0 on success, anything else panics.
- *                It will take an exception number, irq number, registers, and extended registers as arguments.
- * @returns 0 on success, -EINVAL if handler is taken
- */
-int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handler) {
-    if (hal_handler_table[int_no] != NULL) {
-        return -EINVAL;
-    }
-
-    // !!!
-    if (int_no < HAL_IRQ_MSI_BASE-HAL_IRQ_BASE) {
-        int umask = pic_unmask(int_no);
-        if (umask) return umask;
-    }
-
-    hal_handler_table[int_no] = handler;
-    hal_interrupt_context_table[int_no] = NULL;
-
-    return 0;
-}
-
-/**
- * @brief Unregisters an interrupt handler
- */
-void hal_unregisterInterruptHandler(uintptr_t int_no) {
-    pic_mask(int_no);
-    hal_handler_table[int_no] = NULL;
 }
 
 /**
@@ -432,41 +394,6 @@ int hal_registerExceptionHandler(uintptr_t int_no, exception_handler_t handler) 
 void hal_unregisterExceptionHandler(uintptr_t int_no) {
     hal_exception_handler_table[int_no] = NULL;
 }
-
-/**
- * @brief Register an interrupt handler
- * @param int_number The interrupt number to register a handler for
- * @param handler The handler to register
- * @param context Optional context that gets passed to the handler
- * @returns 0 on success
- */
-int hal_registerInterruptHandler(uintptr_t int_number, hal_interrupt_handler_t handler, void *context){
-    if (hal_handler_table[int_number] != NULL) {
-        return -EINVAL;
-    }
-
-    // Unmask the IRQ in the PIC, if it's not MSI
-    // !!!
-    if (int_number < HAL_IRQ_MSI_BASE-HAL_IRQ_BASE) {
-        int umask = pic_unmask(int_number);
-        if (umask) return umask;
-    }
-
-    // !!!: i mean, they're the same data type at the core level.. right?
-    hal_handler_context_table[int_number] = handler;
-    hal_interrupt_context_table[int_number] = context;
-
-    return 0;
-}
-
-/**
- * @brief Returns whether an interrupt handler is in use
- * @param int_number The interrupt number to check
- */
-int hal_interruptHandlerInUse(uintptr_t int_number) {
-    return hal_handler_table[int_number] || hal_handler_context_table[int_number];
-}
-
 
 /**
  * @brief Set interrupt state on the current CPU
@@ -537,7 +464,7 @@ void hal_initializeInterrupts() {
     // Clear the IDT table
     memset((void*)hal_idt_table, 0x00, sizeof(hal_idt_table));
 
-    // Install the handlers
+    // Install the exception handlers
     hal_registerInterruptVector(0, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halDivisionException);
     hal_registerInterruptVector(1, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halDebugException);
     hal_registerInterruptVector(2, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halNMIException);
@@ -569,7 +496,6 @@ void hal_initializeInterrupts() {
 extern uintptr_t halIsrHandlerTable, halIsrHandlerTableEnd;
     size_t isr_entries = ((uintptr_t)&halIsrHandlerTableEnd - (uintptr_t)&halIsrHandlerTable) / sizeof(void*);
     uintptr_t *handler_table = &halIsrHandlerTable;
-    dprintf(DEBUG, "%d isr handlers\n", isr_entries);
     for (unsigned i = 0; i < isr_entries; i++) {
         hal_registerInterruptVector(i+32, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, handler_table[i]);
     }

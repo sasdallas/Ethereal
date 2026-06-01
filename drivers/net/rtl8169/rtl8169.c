@@ -21,7 +21,9 @@
 #include <kernel/loader/driver.h>
 #include <kernel/debug.h>
 #include <kernel/drivers/clock.h>
+#include <kernel/task/sleep.h>
 #include <errno.h>
+#include <string.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:RTL8169", __VA_ARGS__)
@@ -42,12 +44,20 @@ static nic_ops_t rtl8169_nic_ops = {
     .ioctl = NULL,
 };
 
+static uint32_t rtl8169_rxDescriptorCommand(int index) {
+    uint32_t command = RTL8169_RX_DESC_BUFSIZE | RTL8169_DESC_CMD_OWN;
+    if (index == RTL8169_RX_DESC_COUNT - 1) command |= RTL8169_DESC_CMD_EOR;
+    return command;
+}
+
 /**
  * @brief Reset an RTL8169 NIC
  * @param nic The NIC to reset
  * @returns 0 on success, 1 on failure
  */
 int rtl8169_reset(rtl8169_t *nic) {
+    RTL8169_WRITE16(RTL8169_REG_IMR, 0x0000);
+    RTL8169_WRITE16(RTL8169_REG_ISR, 0xFFFF);
     RTL8169_WRITE8(RTL8169_REG_CR, RTL8169_CR_RST);
 
     // Timeout
@@ -92,13 +102,13 @@ int rtl8169_initializeRx(rtl8169_t *nic) {
     nic->rx_descriptors = dma_map(RTL8169_RX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     LOG(DEBUG, "Rx buffers allocated to %p, descriptors allocated to %p\n", nic->rx_buffers, nic->rx_descriptors);
+    memset((void*)nic->rx_descriptors, 0, RTL8169_RX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     // Start building each descriptor
     for (int i = 0; i < RTL8169_RX_DESC_COUNT; i++) {
         rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->rx_descriptors + (i * sizeof(rtl8169_desc_t)));
 
-        desc->command = 0x1FF8 | RTL8169_DESC_CMD_OWN;
-        if (i == RTL8169_RX_DESC_COUNT-1) desc->command |= RTL8169_DESC_CMD_EOR;
+        desc->command = rtl8169_rxDescriptorCommand(i);
 
         // Get buffer
         uintptr_t buffer = arch_mmu_physical(NULL, nic->rx_buffers + (i * RTL8169_RX_BUFFER_SIZE));
@@ -135,6 +145,7 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
     nic->tx_descriptors = dma_map(RTL8169_TX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     LOG(DEBUG, "Tx buffers allocated to %p, descriptors allocated to %p\n", nic->tx_buffers, nic->tx_descriptors);
+    memset((void*)nic->tx_descriptors, 0, RTL8169_TX_DESC_COUNT * sizeof(rtl8169_desc_t));
 
     // Start building each descriptor
     for (int i = 0; i < RTL8169_TX_DESC_COUNT; i++) {
@@ -164,6 +175,44 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
     return 0;
 }
 
+static int rtl8169_receivePackets(rtl8169_t *nic) {
+    int packets = 0;
+
+    for (;;) {
+        // Get descriptor
+        rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->rx_descriptors + (nic->rx_current * sizeof(rtl8169_desc_t)));
+        uint32_t command = desc->command;
+            
+        // Only descriptors no longer owned are valid
+        if (command & RTL8169_DESC_CMD_OWN) break;
+        
+        // Figure out packet length
+        uint16_t pkt_length = command & 0x3FFF;
+
+        // Error?
+        if (command & (1 << 21)) {
+            LOG(ERR, "Error in Rx descriptor\n");
+            nic->n->stats.rx_dropped++;
+            goto _next_desc;
+        }
+
+        // Update NIC statistics
+        nic->n->stats.rx_bytes += pkt_length;
+        nic->n->stats.rx_packets++;
+
+        // Pass it on to the Ethernet handler
+        ethernet_handle((ethernet_packet_t*)(nic->rx_buffers + (nic->rx_current * RTL8169_RX_BUFFER_SIZE)), nic->n, pkt_length);
+
+    _next_desc:
+        desc->vlan = 0x00000000;
+        desc->command = rtl8169_rxDescriptorCommand(nic->rx_current);
+        nic->rx_current = (nic->rx_current + 1) % RTL8169_RX_DESC_COUNT;
+        packets++;
+    }
+
+    return packets;
+}
+
 /**
  * @brief RTL8169 receive thread
  * @param context NIC
@@ -172,42 +221,13 @@ void rtl8169_thread(void *context) {
     rtl8169_t *nic = (rtl8169_t*)context;
     
     for (;;) {
-        // Sleep until forever
         sleep_prepare();
-        int w = sleep_enter();
 
-        if (w == WAKEUP_SIGNAL) {
-            // Aw HELL nah
-            continue;
-        }
-
-        // Loop
-        for (;;) {
-            // Get descriptor
-            rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->rx_descriptors + (nic->rx_current * sizeof(rtl8169_desc_t)));
-            
-            // Only descriptors no longer owned are valid
-            if (desc->command & RTL8169_DESC_CMD_OWN) break;
-        
-            // Figure out packet length
-            uint16_t pkt_length = desc->command & 0x3FFF;
-
-            // Error?
-            if (desc->command & (1 << 21)) {
-                LOG(ERR, "Error in Rx descriptor\n");
-                goto _next_desc;
-            }
-
-            // Update NIC statistics
-            nic->n->stats.rx_bytes += pkt_length;
-            nic->n->stats.rx_packets++;
-
-            // Pass it on to the Ethernet handler
-            ethernet_handle((ethernet_packet_t*)(nic->rx_buffers + (nic->rx_current * RTL8169_RX_BUFFER_SIZE)), nic->n, pkt_length);
-
-        _next_desc:
-            nic->rx_current = (nic->rx_current + 1) % RTL8169_RX_DESC_COUNT;
-            desc->command |= RTL8169_DESC_CMD_OWN;
+        if (!rtl8169_receivePackets(nic)) {
+            int w = sleep_enter();
+            if (w == WAKEUP_SIGNAL) continue;
+        } else {
+            sleep_exit();
         }
     }
 }
@@ -216,17 +236,18 @@ void rtl8169_thread(void *context) {
  * @brief RTL8169 IRQ handler
  * @param context NIC
  */
-int rtl8169_irq(void *context) {
+int rtl8169_irq(irq_t *irq, void *context) {
     rtl8169_t *nic = (rtl8169_t*)context;
 
     if (nic) {
-        LOG(DEBUG, "Got IRQ on RTL8169\n");
-
         // Why were we interrupted?
         uint16_t isr = RTL8169_READ16(RTL8169_REG_ISR);
+        if (!isr) return 0;
+
+        LOG(DEBUG, "Got IRQ on RTL8169 (ISR=%04x)\n", isr);
         RTL8169_WRITE16(RTL8169_REG_ISR, isr);
 
-        if (isr & RTL8169_ISR_LINKCHG) {// Update link status
+        if ((isr & RTL8169_ISR_LINKCHG) && nic->n) {// Update link status
             if (RTL8169_READ8(RTL8169_REG_PHYStatus) & RTL8169_PHYStatus_LINKSTS) {
                 nic->n->state = NIC_STATE_UP;
             } else {
@@ -237,11 +258,11 @@ int rtl8169_irq(void *context) {
         }
 
         // Check for errors
-        if (isr & RTL8169_ISR_RER) {
+        if ((isr & (RTL8169_ISR_RER | RTL8169_ISR_RDU | RTL8169_ISR_FOVW)) && nic->n) {
             nic->n->stats.rx_dropped++;
         }
 
-        if (isr & RTL8169_ISR_TER) {
+        if ((isr & (RTL8169_ISR_TER | RTL8169_ISR_TDU)) && nic->n) {
             nic->n->stats.tx_dropped++;
         }
 
@@ -250,13 +271,14 @@ int rtl8169_irq(void *context) {
         }  
 
         // Did we get a packet?
-        if (isr & RTL8169_ISR_ROK) {
+        if ((isr & (RTL8169_ISR_ROK | RTL8169_ISR_RDU | RTL8169_ISR_FOVW)) && nic->recv_proc) {
             // Wake the thread up
             sleep_wakeup(nic->recv_proc->main_thread);
         }
     }
 
-    return 0;
+    // TODO: IRQ_NOT_SOURCE
+    return IRQ_HANDLED;
 }
 
 /**
@@ -288,6 +310,7 @@ char *rtl8169_link(rtl8169_t *nic) {
  */
 static ssize_t rtl8169_send(nic_t *nnic, size_t size, char *buffer) {
     if (!size) return 0;
+    if (size > RTL8169_TX_BUFFER_SIZE) return -EMSGSIZE;
     rtl8169_t *nic = (rtl8169_t*)nnic->driver;
 
     spinlock_acquire(&nic->lock);
@@ -296,25 +319,33 @@ static ssize_t rtl8169_send(nic_t *nnic, size_t size, char *buffer) {
     rtl8169_desc_t *desc = (rtl8169_desc_t*)(nic->tx_descriptors + (nic->tx_current * sizeof(rtl8169_desc_t)));
 
     // Is the descriptor busy?
-    if (desc->command & RTL8169_DESC_CMD_OWN) {
+    while (desc->command & RTL8169_DESC_CMD_OWN) {
         sleep_prepare();
         nic->thr = current_cpu->current_thread;
         spinlock_release(&nic->lock);
         int w = sleep_enter();
-        if (w == WAKEUP_SIGNAL) return -EINTR;
+        if (w == WAKEUP_SIGNAL) {
+            spinlock_acquire(&nic->lock);
+            if (nic->thr == current_cpu->current_thread) nic->thr = NULL;
+            spinlock_release(&nic->lock);
+            return -EINTR;
+        }
         spinlock_acquire(&nic->lock);
+        desc = (rtl8169_desc_t*)(nic->tx_descriptors + (nic->tx_current * sizeof(rtl8169_desc_t)));
     }
+    nic->thr = NULL;
 
     // The descriptor is ready, let's go
     uintptr_t tx_buffer = nic->tx_buffers +  (nic->tx_current * RTL8169_TX_BUFFER_SIZE);
     memcpy((void*)tx_buffer, buffer, size);
 
     // Give ownership
-    desc->command = size | RTL8169_DESC_CMD_OWN | RTL8169_DESC_CMD_LS | RTL8169_DESC_CMD_FS;
+    uint32_t command = size | RTL8169_DESC_CMD_OWN | RTL8169_DESC_CMD_LS | RTL8169_DESC_CMD_FS;
+    if (nic->tx_current == RTL8169_TX_DESC_COUNT - 1) command |= RTL8169_DESC_CMD_EOR;
+    desc->command = command;
 
     // Advance tx_current
     nic->tx_current = (nic->tx_current + 1) % RTL8169_TX_DESC_COUNT;
-    if (nic->tx_current >= RTL8169_TX_DESC_COUNT-1) desc->command |= RTL8169_DESC_CMD_EOR;
 
     // Inform NIC gracefully
     RTL8169_WRITE8(RTL8169_REG_TPPoll, RTL8169_TPPoll_NPQ);
@@ -347,9 +378,14 @@ int rtl8169_init(pci_device_t *device) {
         return 1;
     }
 
+    // uint16_t command = pci_readConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, 2);
+    // command |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_BUS_MASTER;
+    // pci_writeConfigOffset(device->bus, device->slot, device->function, PCI_COMMAND_OFFSET, command, 2);
+
     // Create RTL8169 NIC object
     rtl8169_t *nic = kzalloc(sizeof(rtl8169_t));
     nic->base = (uintptr_t)bar->address;
+    SPINLOCK_INIT(&nic->lock);
     kfree(bar);
 
     // Reset the NIC
@@ -369,25 +405,17 @@ int rtl8169_init(pci_device_t *device) {
 
     LOG(DEBUG, "MAC: " MAC_FMT "\n", MAC(mac));
     
-    // Register IRQ handler
-    uint8_t irq = pci_enableMSI(device->bus, device->slot, device->function);
-    if (irq == 0xFF) {
-        LOG(WARN, "RTL8169 does not support MSI, fallback to pin interrupt\n");
-        irq = pci_getInterrupt(device->bus, device->slot, device->function);
-
-        if (irq == 0xFF) {
-            LOG(ERR, "No IRQ found for RTL8169 (or it needs to allocate one and we don't do that)\n");
-            return 1;       
-        } else if (hal_registerInterruptHandler(irq, rtl8169_irq, (void*)nic)) {
-            LOG(ERR, "Failed to register IRQ%d\n", irq);
-            return 1;
-        }
-    } else {
-        if (hal_registerInterruptHandler(irq, rtl8169_irq, (void*)nic)) {
-            LOG(ERR, "Failed to register IRQ%d\n", irq);
-            return 1;
-        }
+    // Register IRQ handler. The device IMR stays masked until the NIC object and
+    // receive thread are ready, so early interrupts cannot dereference them.
+    int r = pci_allocateInterrupts(device, 1, 1, PCI_IRQ_ALL);
+    if (r < 1) {
+        LOG(ERR, "RTL8169 failed to allocate interrupts\n");
+        return 1;
     }
+
+    pci_irq_t *irq = pci_getInterruptVector(device, 0);
+    irq_register(irq->vector, rtl8169_irq, IRQ_FLAG_DEFAULT, (void*)nic, NULL);
+
 
     LOG(DEBUG, "Registered IRQ%d for NIC\n", irq);
 
@@ -408,18 +436,11 @@ int rtl8169_init(pci_device_t *device) {
         return 1;
     }
 
-    // Enable receive and transmit
-    RTL8169_WRITE8(RTL8169_REG_CR, RTL8169_CR_RE | RTL8169_CR_TE);
-
-    // Enable interrupts
-    RTL8169_WRITE16(RTL8169_REG_IMR, RTL8169_IMR_ROK | RTL8169_IMR_RER | RTL8169_IMR_TOK | RTL8169_IMR_TER | RTL8169_IMR_RDU | RTL8169_IMR_LINKCHG | RTL8169_IMR_FOVW | RTL8169_IMR_TDU);
-    RTL8169_WRITE16(RTL8169_REG_ISR, 0xFFFF);
-
     // Create NIC object
     char name[128];
     snprintf(name, 128, "enp%ds%d", device->bus, device->slot);
     nic->n = nic_create(name, NIC_TYPE_ETHERNET, &rtl8169_nic_ops, mac, (void*)nic);
-    
+
     // Link speed
     LOG(INFO, "Link speed: %s\n", rtl8169_link(nic));
 
@@ -431,11 +452,18 @@ int rtl8169_init(pci_device_t *device) {
     }
 
     // Make receive kernel thread
-    nic->recv_proc = process_createKernel("rtl8169 receiever", PROCESS_KERNEL, PRIORITY_LOW, rtl8169_thread, (void*)nic);
+    nic->recv_proc = process_createKernel("rtl8169 receiver", PROCESS_KERNEL, PRIORITY_LOW, rtl8169_thread, (void*)nic);
     scheduler_insertThread(nic->recv_proc->main_thread);
 
     // Set MTU
     nic->n->mtu = 1500;
+
+    // Enable receive and transmit
+    RTL8169_WRITE8(RTL8169_REG_CR, RTL8169_CR_RE | RTL8169_CR_TE);
+
+    // Clear pending status after setup, then unmask the interrupts we handle.
+    RTL8169_WRITE16(RTL8169_REG_ISR, 0xFFFF);
+    RTL8169_WRITE16(RTL8169_REG_IMR, RTL8169_IMR_ROK | RTL8169_IMR_RER | RTL8169_IMR_TOK | RTL8169_IMR_TER | RTL8169_IMR_RDU | RTL8169_IMR_LINKCHG | RTL8169_IMR_FOVW | RTL8169_IMR_TDU);
 
     return 0;
 }

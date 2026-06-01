@@ -31,6 +31,7 @@
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/io_apic.h>
 #include <kernel/drivers/x86/pic.h>
+#include <kernel/drivers/pci.h>
 #include <kernel/debug.h>
 #include <assert.h>
 
@@ -69,6 +70,7 @@ irq_chip_t __pic_chip = {
     .priv = NULL
 };
 
+/* Per-CPU */
 irq_domain_t __percpu_internal = {
     .domain_name = "percpu",
     .chip = &__lapic_chip,
@@ -79,6 +81,7 @@ irq_domain_t __percpu_internal = {
     .priv = NULL,
 };
 
+/* Global */
 static int global_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev);
 static int global_alloc(irq_domain_t *domain, int hwirq, void *dev, irq_number_t *ret);
 irq_domain_t __global_internal = {
@@ -91,10 +94,34 @@ irq_domain_t __global_internal = {
     .priv = NULL
 };
 
+/* MSI */
+static int msi_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev);
+irq_domain_t __msi_internal = {
+    .domain_name = "msi",
+    .chip = &__lapic_chip,
+    .ops = {
+        .domain_map = msi_map,
+        .domain_alloc = NULL
+    },
+    .priv = NULL
+};
+
+/* MSI-X */
+static int msix_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev);
+irq_domain_t __msix_internal = {
+    .domain_name = "msix",
+    .chip = &__lapic_chip,
+    .ops = {
+        .domain_map = msix_map,
+        .domain_alloc = NULL
+    }
+};
 
 /* All domains */
 irq_domain_t *percpu_domain = &__percpu_internal;
 irq_domain_t *global_domain = &__global_internal;
+irq_domain_t *msi_domain = &__msi_internal;
+irq_domain_t *msix_domain = &__msix_internal;
 
 /* Local APIC callbacks */
 
@@ -149,5 +176,51 @@ static int global_alloc(irq_domain_t *domain, int hwirq, void *dev, irq_number_t
 
     // Otherwise just allocate
     *ret = irq_allocateVector();
+    return 0;
+}
+
+/* MSI */
+static int msi_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
+    pci_device_t *pcidev = (void*)dev;
+
+    // read PCI message control
+    uint16_t ctrl;
+    pci_readConfigWord(pcidev, pcidev->msi_offset + 0x02, &ctrl);
+
+    if (ctrl & (1 << 7)) {
+        // 64-bit supported
+        // !!!! HACK GET ACTUAL APIC BASE
+        uint64_t addr = 0xFEE00000;
+        uint16_t data = irq->num & 0xFFFF;
+        pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x04, (addr & 0xFFFFFFFF));
+        pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x08, ((addr >> 32) & 0xFFFFFFFF));
+        pci_writeConfigWord(pcidev, pcidev->msi_offset + 0x0C, data);
+    } else {
+        // 64-bit not supported
+        // !!!! HACK GET ACTUAL APIC BASE
+        uint32_t addr = 0xFEE00000;
+        uint16_t data = irq->num & 0xFFFF;
+        pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x04, (addr & 0xFFFFFFFF));
+        pci_writeConfigWord(pcidev, pcidev->msi_offset + 0x08, data);
+    }
+
+    return 0;
+}
+
+/* MSI-X */
+/* TODO: Implement MSI-X chip for masking/unmasking */
+static int msix_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
+    // dev points to the start of the table in memory
+    // hwirq is the index within the table
+    pci_msix_entry_t *entry = &((pci_msix_entry_t*)dev)[hwirq];
+    
+    // !!! HACK GET ACTUAL APIC BASE
+    uint64_t addr = 0xFEE00000;
+    uint32_t data = irq->num;
+    entry->msg_addr_low = (uint32_t)(addr & 0xFFFFFFFF);
+    entry->msg_addr_high = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
+    entry->msg_data = data;
+    entry->vector_ctrl = entry->vector_ctrl & ~1u; // clears masked bit
+
     return 0;
 }

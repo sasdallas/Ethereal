@@ -70,15 +70,6 @@ void hal_loadKernelStack(uintptr_t stack);
 void hal_gdtInitCore(int core, uintptr_t rsp);
 
 /**
- * @brief Register an interrupt handler
- * @param int_no Interrupt number (start at 0)
- * @param handler A handler. This should return 0 on success, anything else panics.
- *                It will take registers and extended registers as arguments.
- * @returns 0 on success, -EINVAL if handler is taken
- */
-int hal_registerInterruptHandlerRegs(uintptr_t int_no, interrupt_handler_t handler);
-
-/**
  * @brief Register an exception handler
  * @param int_no Exception number
  * @param handler A handler. This should return 0 on success, anything else panics.

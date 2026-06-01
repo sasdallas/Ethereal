@@ -170,13 +170,14 @@ halCommonIRQHandler:
         jmp halCommonIRQHandler
 .endm
 
-// this used to be different, i dont care enough to change it.
-.macro LAPIC_IRQ name index
-    .global \name
-    &name:
-        pushq $0
-        pushq $\index
-        jmp halCommonIRQHandler
+/* ISR handler macro */
+.macro ISR_HANDLER index
+    IRQ halIsrHandler\index, \index + 32
+.endm
+
+/* ISR handler entry macro */
+.macro ISR_HANDLER_ENTRY index
+    .quad halIsrHandler\index
 .endm
 
 
@@ -209,28 +210,26 @@ ISR_ERRCODE     halVMMCommunicationException,       29
 ISR_ERRCODE     halSecurityException,               30
 ISR_NOERRCODE   halReserved2Exception,              31
 
-.macro ISR_HANDLER index
-    IRQ halIsrHandler\index, \index + 32
-.endm
-
-.macro ISR_HANDLER_ENTRY index
-    .quad halIsrHandler\index
-.endm
-
+/* Define ISR handlers */
 .altmacro
+
 .set i, 0
-.rept 223
+.rept 223 // 256 - 32
     ISR_HANDLER %i
     .set i, i+1
 .endr
 
+/* ISR handler table */
 .global halIsrHandlerTable
 halIsrHandlerTable:
+
 .set i, 0
-.rept 223
+.rept 223 // 256 - 32
     ISR_HANDLER_ENTRY %i
     .set i, i+1
 .endr
+
+/* ISR handler table end */
 .global halIsrHandlerTableEnd
 halIsrHandlerTableEnd:
 

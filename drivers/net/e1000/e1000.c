@@ -406,7 +406,7 @@ static ssize_t e1000_send(nic_t *n, size_t size, char *buffer) {
  * @brief E1000 IRQ handler
  * @param context The NIC
  */
-int e1000_irq(void *context) {
+int e1000_irq(irq_t *irq, void *context) {
     // Get the NIC
     e1000_t *nic = (e1000_t*)context;
 
@@ -422,9 +422,11 @@ int e1000_irq(void *context) {
         } 
 
         E1000_SENDCMD(E1000_REG_ICR, icr);
+        return IRQ_HANDLED;
+    } else {
+        // in chained dispatch handler
+        return IRQ_NOT_SOURCE;
     }
-
-    return 0;
 }
 
 /**
@@ -467,28 +469,16 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     nic->mmio = mmio_map(bar->address, bar->size);
     kfree(bar);
 
-    // Register our IRQ handler
-    uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
-
-    if (irq == 0xFF) {
-        LOG(ERR, "E1000 NIC does not have interrupt number\n");
-        LOG(ERR, "This is an implementation bug, halting system (REPORT THIS)\n");
-        for (;;);
+    // Allocate interrupts
+    int r = pci_allocateInterrupts(dev, 1, 1, PCI_IRQ_ALL);
+    if (r != 1) {
+        LOG(ERR, "E1000 NIC failed to allocate interrupts.\n");
+        goto _cleanup;
     }
 
-    // Register the interrupt handler
-    if (hal_registerInterruptHandler(irq, e1000_irq, (void*)nic)) {
-        LOG(ERR, "Error registering IRQ%d for E1000\n", irq);
-        
-        // Try to enable MSI
-        uint8_t vector = pci_enableMSI(dev->bus, dev->slot, dev->function);
-        if (vector == 0xFF) {
-            LOG(ERR, "MSI configuration failed\n");
-            goto _cleanup;
-        } else {
-            hal_registerInterruptHandler(vector, e1000_irq, (void*)nic);
-        }
-    }
+    // Register the IRQ
+    pci_irq_t *irq = pci_getInterruptVector(dev, 0);
+    irq_register(irq->vector, e1000_irq, IRQ_FLAG_SHARED, (void*)nic, NULL);
 
     // Detect an EEPROM
     nic->eeprom = e1000_detectEEPROM(nic);

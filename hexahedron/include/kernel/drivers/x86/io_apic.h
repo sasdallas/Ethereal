@@ -125,11 +125,6 @@ int ioapic_unmask(uintptr_t interrupt);
 int ioapic_eoi(uintptr_t interrupt);
 
 /**
- * @brief Allocate an IRQ from the I/O APIC
- */
-uint32_t ioapic_allocate();
-
-/**
  * @brief Route an interrupt
  * @param irq The CPU interrupt
  * @param hwirq The hardware interrupt

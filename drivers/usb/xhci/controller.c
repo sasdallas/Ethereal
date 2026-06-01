@@ -249,8 +249,10 @@ int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
  * @brief IRQ handler
  * @param context xHCI
  */
-int xhci_irq(void *context) {
+int xhci_irq(irq_t *irq, void *context) {
     xhci_t *xhci = (xhci_t*)context;
+
+    // TODO: return IRQ_NOT_SOURCE
 
     // Acknowledge
     XHCI_ACKNOWLEDGE(xhci);
@@ -318,6 +320,7 @@ int xhci_irq(void *context) {
                 };
 
                 // TODO: Stall handler? Maybe this is a flag in USBTransferCompletion
+                // TODO: NOT EXECUTE CALLBACK SYNCRONOUSLY IN IRQ CONTEXT!!!!!!!!!!! EXTREMELY EXTREMELY BAD!!!
                 if (pending->callback) {
                     pending->callback(pending->endp, &completion);
                 }
@@ -331,7 +334,7 @@ int xhci_irq(void *context) {
     // Reprogram ERDP without EHB
     xhci->run->irs[0].erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
 
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -339,21 +342,14 @@ int xhci_irq(void *context) {
  * @param xhci The controller
  */
 int xhci_initInterrupt(xhci_t *xhci) {
-    uint8_t irq = pci_enableMSI(xhci->dev->bus, xhci->dev->slot, xhci->dev->function);
-    if (irq == 0xFF) {
-        LOG(INFO, "Using PCI pin interrupts\n");
-        irq = pci_getInterrupt(xhci->dev->bus, xhci->dev->slot, xhci->dev->function);
-
-        if (irq == 0xFF) {
-            LOG(ERR, "xHCI could not find a valid interrupt\n");
-            return 1;
-        }
-    } else {
-        LOG(INFO, "Using MSI interrupt\n");
+    int r = pci_allocateInterrupts(xhci->dev, 1, 1, PCI_IRQ_ALL);
+    if (r != 1) {
+        LOG(ERR, "xHCI failed to allocate interrupts (code %d)\n", r);
+        return 1;
     }
 
-    hal_registerInterruptHandler(irq, xhci_irq, (void*)xhci);
-    LOG(DEBUG, "IRQ%d in use for xHCI controller\n", irq);
+    pci_irq_t *irq = pci_getInterruptVector(xhci->dev, 0);
+    irq_register(irq->vector, xhci_irq, IRQ_FLAG_SHARED, (void*)xhci, NULL);
 
     // Enable IRQs in the PCI device
     return 0;

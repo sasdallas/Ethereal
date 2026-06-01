@@ -78,7 +78,6 @@ int pit_irqHandler(irq_t *irq, void *context) {
  */
 void pit_initialize() {
     // Register handler
-
     irq_number_t vect;
     irq_allocate(global_domain, PIT_IRQ, NULL, &vect);
     irq_register(vect, pit_irqHandler, IRQ_FLAG_SHARED, NULL, NULL);

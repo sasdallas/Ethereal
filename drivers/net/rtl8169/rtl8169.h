@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <kernel/drivers/net/nic.h>
 #include <kernel/task/process.h>
+#include <kernel/misc/spinlock.h>
 
 /**** DEFINITIONS ****/
 
@@ -147,6 +148,7 @@
 #define RTL8169_TX_DESC_COUNT       256
 #define RTL8169_RX_BUFFER_SIZE      8192
 #define RTL8169_TX_BUFFER_SIZE      8192
+#define RTL8169_RX_DESC_BUFSIZE     0x1FF8
 
 
 /**** TYPES ****/

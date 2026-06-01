@@ -100,6 +100,11 @@
 #define PCI_GENERAL_MIN_GRANT_OFFSET        0x3E    // Burst period length in 1/4 microsecond units
 #define PCI_GENERAL_MAX_LATENCY_OFFSET      0x3F    // How often the device needs access to the PCI bus (in 1/4 microsecond units)
 
+// IRQ allocation flags + types
+#define PCI_IRQ_PIN_INTERRUPT               0x01
+#define PCI_IRQ_MSI                         0x02
+#define PCI_IRQ_MSI_X                       0x04
+#define PCI_IRQ_ALL                         (PCI_IRQ_PIN_INTERRUPT | PCI_IRQ_MSI | PCI_IRQ_MSI_X)
 
 // PCI types that are required
 #define PCI_TYPE_BRIDGE                     0x0604  // PCI-to-PCI bridge
@@ -109,6 +114,13 @@
 /* PCI address */
 typedef uint32_t pci_address_t;
 
+/**
+ * @brief PCI IRQ object
+ */
+typedef struct pci_irq {
+    unsigned char type;
+    unsigned int vector;
+} pci_irq_t;
 
 /**
  * @brief PCI device object
@@ -121,20 +133,22 @@ typedef uint32_t pci_address_t;
  * @param pid Product ID of the device
  */
 typedef struct pci_device {
-    uint8_t             bus;                // Bus
-    uint8_t             slot;               // Slot
-    uint8_t             function;           // Function
-    uint8_t             class_code;         // Class code
-    uint8_t             subclass_code;      // Subclass code
-    uint16_t            vid;                // Vendor ID
-    uint16_t            pid;                // Product ID
-    void                *driver;            // Driver-specific field                       
+    uint8_t bus;
+    uint8_t slot;
+    uint8_t function;
+    uint8_t class_code;
+    uint8_t subclass_code;
+    uint16_t vid;
+    uint16_t pid;
+    void *driver;                  
 
-    uint32_t            msi_offset;         // MSI offset in configuration space (or 0xFF if not found)
-    uint32_t            msix_offset;        // MSI-X offset in configuration space (or 0xFF if not found)
+    pci_irq_t *irqs;            // Allocated array of IRQs
+    int nirqs;                  // Number of IRQs allocated
 
-    int                 valid;              // !!!: Valid device hack
-    uint32_t msix_index;                    // MSIX index
+    int msi_offset;             // MSI offset in configuration space (-1 if not found)
+    int msix_offset;            // MSI-X offset in configuration space (-1 if not found)
+ 
+    int valid;                  // !!!: Valid device hack
 } pci_device_t;
 
 /**
@@ -151,20 +165,6 @@ typedef struct pci_bar {
     int prefetchable;   // Whether the BAR is prefetchable (it does not read side effects)
     uint64_t address;   // Address of the BAR. Note that it doesn't take up all of this space.s
 } pci_bar_t;
-
-/**
- * @brief PCI callback function
- * 
- * @param bus The bus of the currently being checked PCI device
- * @param slot The slot of the currently being checked PCI device
- * @param function The function of the currently being checked PCI device
- * @param vendor_id The vendor ID of the device
- * @param device_id The device ID of the device
- * @param data Any additionally specified data by the caller of @c pci_scan
- * 
- * @returns 1 on successfully found, 0 on failed to find
- */
-typedef int (*pci_callback_t)(uint8_t bus, uint8_t slot, uint8_t function, uint16_t vendor_id, uint16_t device_id, void *data);
 
 /**
  * @brief PCI scan callback function
@@ -263,6 +263,66 @@ uint32_t pci_readConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t o
 int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value, int size);
 
 /**
+ * @brief Read config of device
+ * @param dev The device to read the config of
+ * @param offset Offset to read at
+ * @param output Output to store
+ * @param size The size to read in bytes
+ */
+int pci_readConfig(pci_device_t *dev, uint8_t offset, uint32_t *output, int size);
+
+/**
+ * @brief Write config of device
+ * @param dev The device to read the config of
+ * @param offset The offset to write at
+ * @param value The value to write
+ * @param size The size of the value to write
+ */
+int pci_writeConfig(pci_device_t *dev, uint8_t offset, uint32_t value, int size);
+
+/**
+ * @brief Read config byte
+ */
+static inline int pci_readConfigByte(pci_device_t *dev, uint8_t offset, uint8_t *value) {
+    return pci_readConfig(dev, offset, (uint32_t*)value, 1);
+}
+
+/**
+ * @brief Read config word
+ */
+static inline int pci_readConfigWord(pci_device_t *dev, uint8_t offset, uint16_t *value) {
+    return pci_readConfig(dev, offset, (uint32_t*)value, 2);
+}
+
+/**
+ * @brief Read config dword
+ */
+static inline int pci_readConfigDword(pci_device_t *dev, uint8_t offset, uint32_t *value) {
+    return pci_readConfig(dev, offset, (uint32_t*)value, 4);
+}
+
+/**
+ * @brief Write config byte
+ */
+static inline int pci_writeConfigByte(pci_device_t *dev, uint8_t offset, uint8_t value) {
+    return pci_writeConfig(dev, offset, (uint32_t)value, 1);
+}
+
+/**
+ * @brief Write config word
+ */
+static inline int pci_writeConfigWord(pci_device_t *dev, uint8_t offset, uint16_t value) {
+    return pci_writeConfig(dev, offset, (uint32_t)value, 2);
+}
+
+/**
+ * @brief Write config dword
+ */
+static inline int pci_writeConfigDword(pci_device_t *dev, uint8_t offset, uint32_t value) {
+    return pci_writeConfig(dev, offset, (uint32_t)value, 4);
+}
+
+/**
  * @brief Auto-determine a BAR type and read it using the configuration space
  * 
  * Returns a pointer to an ALLOCATED @c pci_bar_t structure. You MUST free this structure
@@ -276,70 +336,6 @@ int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offse
  * @returns A @c pci_bar_t structure or NULL  
  */
 pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar);
-
-/**
- * @brief Read the type of the PCI device (class code + subclass)
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the type
- */
-uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Read the device ID of a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the device ID
- */
-uint16_t pci_readDeviceID(uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Read the vendor ID of a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the vendor ID
- */
-uint16_t pci_readVendorID(uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Read the type of the PCI device (class code + subclass)
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the type
- */
-uint16_t pci_readType(uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Get the interrupt registered to a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the interrupt ID
- */
-uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func);
-
-/**
- * @brief Get MSI interrupts
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * @returns 0xFF or the interrupt ID
- */
-uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func);
 
 /**
  * @brief Initialize and probe for PCI devices
@@ -363,5 +359,30 @@ int pci_scanDevice(pci_scan_callback_t callback, pci_scan_parameters_t *paramete
  * @returns Device object or NULL
  */
 pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function);
+
+/**
+ * @brief Allocate IRQ vectors for a device
+ * @param dev The device to allocate IRQ vectors for
+ * @param min The minimum number of IRQ vectors to allocate
+ * @param max The maximum number of IRQ vectors to allocate
+ * @param allowed Allowed IRQ vector type bitmask
+ * @returns Number of interrupts allocated on success, negative for failure
+ */
+int pci_allocateInterrupts(pci_device_t *dev, int min, int max, unsigned char allowed);
+
+/**
+ * @brief Get an interrupt vector allocated for a device
+ * @param dev The device to get the interrupt vector for
+ * @param idx The index of the allocated interrupt vector
+ * @returns IRQ object
+ */
+pci_irq_t *pci_getInterruptVector(pci_device_t *dev, int idx);
+
+/**
+ * @brief Free interrupt vectors allocated for device
+ * @param dev The device to free the IRQ vectors for
+ */
+int pci_freeInterrupts(pci_device_t *dev);
+
 
 #endif

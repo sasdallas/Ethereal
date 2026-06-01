@@ -13,6 +13,7 @@
  */
 
 #include <kernel/drivers/pci.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
@@ -26,10 +27,6 @@
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/drivers/x86/local_apic.h>
 #endif
-
-/* MSI map array */
-/* TODO: This will be rewritten */
-uint8_t msi_array[HAL_IRQ_MSI_COUNT / 8] = { 0 };
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "PCI", __VA_ARGS__)
@@ -131,6 +128,74 @@ int pci_writeConfigOffset(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offse
     return 0;
 }
 
+/**
+ * @brief Read config of device
+ * @param dev The device to read the config of
+ * @param offset Offset to read at
+ * @param output Output to store
+ * @param size The size to read in bytes
+ */
+int pci_readConfig(pci_device_t *dev, uint8_t offset, uint32_t *output, int size) {
+    // Generate the address
+    uint32_t address = PCI_ADDR(dev->bus, dev->slot, dev->function, offset);
+
+    // Write it to PCI_CONFIG_ADDRESS
+    outportl(PCI_CONFIG_ADDRESS, address);
+
+    // Read what came out
+    uint32_t out = inportl(PCI_CONFIG_DATA);
+
+    // Depending on size, handle it
+    if (size == 1) {
+        *(uint8_t*)output = (out >> ((offset & 3) * 8)) & 0xFF;
+    } else if (size == 2) {
+        *(uint16_t*)output = (out >> ((offset & 2) * 8)) & 0xFFFF;
+    } else {
+        *(uint32_t*)output = out;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Write config of device
+ * @param dev The device to read the config of
+ * @param offset The offset to write at
+ * @param value The value to write
+ * @param size The size of the value to write
+ */
+int pci_writeConfig(pci_device_t *dev, uint8_t offset, uint32_t value, int size) {
+    // Generate the address
+    uint32_t address = PCI_ADDR(dev->bus, dev->slot, dev->function, offset);
+
+    uint32_t value_fixed = value;
+    if (size == 1) {
+        pci_readConfig(dev, offset & ~0x3, &value_fixed, 4);
+        
+        uint32_t b_offset = (offset & 3) * 8;
+        value_fixed &= ~(0xFF << b_offset);
+        value_fixed |= (uint32_t)value << b_offset;
+
+        // Redo address
+        address = PCI_ADDR(dev->bus, dev->slot, dev->function, (offset & ~3));
+    } else if (size == 2) {
+        pci_readConfig(dev, offset & ~0x3, &value_fixed, 4);
+        
+        uint32_t b_offset = (offset & 3) * 8;
+        value_fixed &= ~(0xFFFF << b_offset);
+        value_fixed |= (uint32_t)value << b_offset;
+
+        // Redo address
+        address = PCI_ADDR(dev->bus, dev->slot, dev->function, (offset & ~3));
+    }
+
+    // Write it to PCI_CONFIG_ADDRESS
+    outportl(PCI_CONFIG_ADDRESS, address);
+
+    // Write value
+    outportl(PCI_CONFIG_DATA, value_fixed);
+    return 0;
+}
 
 /**
  * @brief Auto-determine a BAR type and read it using the configuration space
@@ -305,50 +370,6 @@ int pci_disableMSIX(uint8_t bus, uint8_t slot, uint8_t func) {
 }
 
 /**
- * @brief Get the interrupt registered to a PCI device
- * 
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * 
- * @returns PCI_NONE or the interrupt ID
- */
-uint8_t pci_getInterrupt(uint8_t bus, uint8_t slot, uint8_t func) {
-    // Disable MSI and MSI-X
-    pci_disableMSI(bus, slot, func);
-    pci_disableMSIX(bus, slot, func);
-
-    // TODO: Make sure header type is 1?
-#if !defined(__ARCH_I386__) && !defined(__ARCH_X86_64__)
-    return pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
-#else
-
-    // !!!: This is a hack to get Bochs working since it doesn't support setting custom IRQ vectors
-    uint8_t irq_original = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, 1);
-    if (irq_original != 0xFF && !hal_interruptHandlerInUse(irq_original)) {
-        LOG(DEBUG, "PCI using default IRQ%d as it was not in use\n", irq_original);
-        uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
-        pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd & ~(PCI_COMMAND_INTERRUPT_DISABLE), 2);
-        return irq_original;
-    }
-
-    // Allocate an IRQ from the PIC
-    uint32_t irq = pic_allocate();
-    LOG(DEBUG, "PCI allocated IRQ%d\n", irq);
-    if (irq == 0xFFFFFFFF) return 0xFF;
-    
-    // Enable IRQs
-    uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
-    pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd & ~(PCI_COMMAND_INTERRUPT_DISABLE), 2);
-
-    pci_writeConfigOffset(bus, slot, func, PCI_GENERAL_INTERRUPT_OFFSET, irq, 1);
-    
-
-    return irq;    
-#endif
-}
-
-/**
  * @brief Disable pin interrupts
  * @param bus The bus of the PCI device
  * @param slot The slot of the PCI device
@@ -359,180 +380,6 @@ int pci_disablePinInterrupts(uint8_t bus, uint8_t slot, uint8_t func) {
     uint16_t cmd = pci_readConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, 2);
     pci_writeConfigOffset(bus, slot, func, PCI_COMMAND_OFFSET, cmd | (PCI_COMMAND_INTERRUPT_DISABLE), 2);
     return 0;
-}
-
-
-
-/**
- * @brief Enable MSI-X
- */
-static uint8_t pci_enableMSIX(uint8_t bus, uint8_t slot, uint8_t func, uint8_t msi_off) {
-    // Find an available interrupt
-    uint8_t interrupt = 0xFF;
-    for (int i = 0; i < HAL_IRQ_MSI_COUNT; i++) {
-        if (!(msi_array[i / 8] & (1 << (i % 8)))) {
-            interrupt = i;
-            msi_array[i / 8] |= (1 << (i % 8));
-            break;
-        }
-    }
-
-    if (interrupt == 0xFF) {
-        LOG(ERR, "Kernel is out of MSI vectors. This is a bug.\n");
-        return 0xFF;
-    }
-
-    interrupt = HAL_IRQ_MSI_BASE + interrupt;
-    LOG(DEBUG, "MSIX: Get interrupt %x\n", interrupt);
-
-
-    // Set it up
-    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, msi_off + 0x02, 2);
-    ctrl |= (1 << 15);
-    pci_writeConfigOffset(bus, slot, func, msi_off + 0x02, ctrl, 2);
-
-    uint32_t dw = pci_readConfigOffset(bus, slot, func, msi_off + 0x04, 4);
-    uint32_t offset = dw & ~7u;
-    uint8_t bir = (uint8_t)(dw & 7u);
-
-    LOG(DEBUG, "BIR=%02x OFF=%08x\n", bir, offset);
-
-    uint64_t addr = 0xFEE00000;
-
-    // Allocate the BAR region
-    pci_bar_t *bar = pci_readBAR(bus, slot, func, bir);
-    if (!bar || bar->type == PCI_BAR_IO_SPACE || bar->type == PCI_BAR_MEMORY16) {
-        LOG(WARN, "MSI-X device is missing BAR%d or it is invalid\n", bir);
-        return 0xFF;
-    }
-
-    // TODO: FIND A WAY TO CLEAN THIS UP (?)
-    uintptr_t r = mmio_map(bar->address, bar->size);
-
-    pci_msix_entry_t *entry = (pci_msix_entry_t*)&(((pci_msix_entry_t*)(r + offset))[PCI_DEVICE(bus, slot, func)->msix_index]);
-    entry->msg_addr_low = addr & 0xFFFFFFFF;
-    entry->msg_addr_high = addr >> 32;
-    entry->msg_data = (interrupt & 0xFF);
-    entry->vector_ctrl = entry->vector_ctrl & ~1u;
-    
-    PCI_DEVICE(bus, slot, func)->msix_index++;
-
-    // Disable MSI + pin
-    pci_disableMSI(bus, slot, func);
-    pci_disablePinInterrupts(bus, slot, func);
-
-    PCI_DEVICE(bus, slot, func)->msix_offset = msi_off;
-
-    return interrupt - HAL_IRQ_BASE;
-} 
-
-/**
- * @brief Get MSI interrupts
- * @param bus The bus of the PCI device
- * @param slot The slot of the PCI device
- * @param func The function of the PCI device
- * @returns 0xFF or the interrupt ID
- */
-uint8_t pci_enableMSI(uint8_t bus, uint8_t slot, uint8_t func) {
-#if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
-    if (!lapic_initialized()) {
-        LOG(WARN, "MSI enabling failed: Local APIC not initialized. Buggy interrupts may occur\n");
-        return 0xFF;
-    }
-#endif
-
-    // Find the MSI capability
-    uint16_t status = pci_readConfigOffset(bus, slot, func, PCI_STATUS_OFFSET, 2);
-    if (!(status & PCI_STATUS_CAPABILITIES_LIST)) {
-        return 0xFF;
-    }
-
-    // Get a pointer to the capability list
-    uint8_t cap_list_off = pci_readConfigOffset(bus, slot, func, PCI_GENERAL_CAPABILITIES_OFFSET, 1);
-    uint8_t msi_saved = 0x0;
-
-    // Start parsing
-    while (cap_list_off) {
-        uint16_t cap = pci_readConfigOffset(bus, slot, func, cap_list_off, 2);
-        if ((cap & 0xFF) == 0x05) {
-            LOG(DEBUG, "MSI offset found at %x\n", cap_list_off);
-            msi_saved = cap_list_off;
-        }
-
-        if ((cap & 0xFF) == 0x11) {
-            // MSI-X
-            LOG(DEBUG, "MSI-X offset found at %x\n", cap_list_off);
-
-            uint8_t r = pci_enableMSIX(bus, slot, func, cap_list_off);
-            if (r != 0xFF) return r;
-        }
-
-        cap_list_off = (cap >> 8) & 0xFC;
-    }
-
-    // Did we find it?
-    if (!msi_saved) {
-        LOG(ERR, "Device does not support MSI or MSI-X\n");
-        return 0xFF;
-    }
-
-    cap_list_off = msi_saved;
-
-    // Find an available interrupt
-    uint8_t interrupt = 0xFF;
-    for (int i = 0; i < HAL_IRQ_MSI_COUNT; i++) {
-        if (!(msi_array[i / 8] & (1 << (i % 8)))) {
-            interrupt = i;
-            msi_array[i / 8] |= (1 << (i % 8));
-            break;
-        }
-    }
-
-    if (interrupt == 0xFF) {
-        LOG(ERR, "Kernel is out of MSI vectors. This is a bug.\n");
-        return 0xFF;
-    }
-
-    interrupt = HAL_IRQ_MSI_BASE + interrupt;
-
-    LOG(DEBUG, "MSI: Get interrupt %x\n", interrupt);
-
-
-    // Start parsing the MSI information
-    // TODO: Put this into a header file
-    
-    // First enable MSI and only use one interrupt
-    uint16_t ctrl = pci_readConfigOffset(bus, slot, func, cap_list_off + 0x02, 2);
-    ctrl &= ~(0x07 << 4);
-    ctrl |= 1;
-    pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x02, ctrl, 2);
-
-    LOG(DEBUG, "msg_ctrl = %04x (64-bit: %s)\n", ctrl, (ctrl & (1 << 7)) ? "YES" : "NO");
-
-    // Configure message address and data
-    if (ctrl & (1 << 7)) {
-        // 64-bit address supported
-        uint64_t addr = 0xFEE00000;
-        uint32_t data = interrupt & 0xFF;
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, (addr >> 32), 4);
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x0C, data, 2);
-    } else {
-        // Only 32-bit
-        uint32_t addr = 0xFEE00000;
-        uint32_t data = interrupt & 0xFF;
-
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x04, addr & 0xFFFFFFFF, 4);
-        pci_writeConfigOffset(bus, slot, func, cap_list_off + 0x08, data, 2);
-    }
-    
-    // Disable pin interrupts too
-    pci_disableMSIX(bus, slot, func);
-    pci_disablePinInterrupts(bus, slot, func);
-    
-    PCI_DEVICE(bus, slot, func)->msi_offset = cap_list_off;
-
-    return interrupt - 32;
 }
 
 /* Prototype */
@@ -559,8 +406,9 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->class_code = pci_readConfigOffset(bus, slot, function, PCI_CLASSCODE_OFFSET, 1);
     dev->subclass_code = pci_readConfigOffset(bus, slot, function, PCI_SUBCLASS_OFFSET, 1);
     dev->driver = NULL;
-    dev->msi_offset = 0xFF;
-    dev->msix_offset = 0xFF;
+    dev->msi_offset = -1;
+    dev->msix_offset = -1;
+    dev->irqs = NULL;
 
     // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
 
@@ -776,4 +624,268 @@ pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function) {
     pci_device_t *dev = PCI_DEVICE(bus, slot, function);
     if (dev->valid) return dev;
     return NULL;
+}
+
+/**
+ * @brief PCI probe for MSI/MSI-X
+ */
+static void pci_probeCaps(pci_device_t *dev) {
+    uint16_t sts;
+    pci_readConfigWord(dev, PCI_STATUS_OFFSET, &sts);
+    if (((sts & PCI_STATUS_CAPABILITIES_LIST) == 0)) {
+        return;
+    }
+
+    uint8_t cap_list_off;
+    pci_readConfigByte(dev, PCI_GENERAL_CAPABILITIES_OFFSET, &cap_list_off);
+
+    while (cap_list_off) {
+        uint16_t cap;
+        pci_readConfigWord(dev, cap_list_off, &cap);
+
+        if ((cap & 0xFF) == 0x05) {
+            LOG(DEBUG, "Probe: Found MSI offset at 0x%x\n", cap_list_off);
+            dev->msi_offset = cap_list_off;
+        }
+
+        if ((cap & 0xFF) == 0x11) {
+            LOG(DEBUG, "Probe: Found MSI-X offset at 0x%x\n", cap_list_off);
+            dev->msix_offset = cap_list_off;
+        }
+
+        cap_list_off = (cap >> 8) & 0xfc;
+    }
+}
+
+/**
+ * @brief Attempt to allocate MSI interrupt
+ */
+static int pci_allocateInterruptMSI(pci_device_t *dev, int minimum, int maximum) {
+    if (dev->msi_offset == -1) {
+        // Search configuration space for this
+        // TODO: pre-parse this during probe so we dont have to reparse
+        pci_probeCaps(dev);
+        if (dev->msi_offset == -1) return -ENODEV;
+    }
+
+
+    // Read the MSI message control register
+    uint16_t msi_control;
+    pci_readConfigWord(dev, dev->msi_offset + 0x02, &msi_control);
+
+    // Check multi-message capable
+    int messages_capable = (msi_control >> 1) & 0x7;
+    messages_capable = 1 << messages_capable;
+
+    if (messages_capable < minimum) {
+        LOG(WARN, "MSI only supports %d interrupts, need %d\n", messages_capable, minimum);
+        return -EINVAL;
+    }
+    
+    // TODO: MME requires the interrupt vectors to be aligned. We dont support that right now
+    // For now, if the user wanted a max of 1 interrupt (or a minimum of 1 on a device that doesnt support MSI-X)
+    // then we can use MSI.
+    if (!(dev->msix_offset == -1 && minimum <= 1) && maximum != 1) {
+        // !!!: This prevents the case where the user only wants MSI and doesnt want MSI-X in which case call fails.
+        LOG(WARN, "Skipping MSI because user wanted multiple interrupts\n");
+        return -1;
+    }
+
+    // Enable
+    msi_control &= ~(0x07 << 4);
+    msi_control |= 1;
+    pci_writeConfigWord(dev, dev->msi_offset + 0x02, msi_control);
+
+    // Allocate an MSI IRQ
+    pci_irq_t *irqs = kmalloc(sizeof(pci_irq_t) * 1);
+    irqs[0].type = PCI_IRQ_MSI;
+
+    int ret = irq_allocate(msi_domain, 0, (void*)dev, &irqs[0].vector);
+    if (ret != 0) {
+        kfree(irqs);
+        return ret;
+    }
+
+    // IRQs allocated
+    dev->irqs = irqs;
+    dev->nirqs = 1;
+
+    // Turn off MSI-X and pin interrupts
+    pci_disableMSIX(dev->bus, dev->slot, dev->function);
+    pci_disablePinInterrupts(dev->bus, dev->slot, dev->function);
+
+
+    return 1;
+}
+
+/**
+ * @brief Attempt to allocate MSI-X interrupts
+ */
+static int pci_allocateInterruptMSIX(pci_device_t *dev, int min, int max) {
+    if (dev->msix_offset == -1) {
+        // Search configuration space for this
+        // TODO: pre-parse this during probe so we dont have to reparse
+        pci_probeCaps(dev);
+        if (dev->msix_offset == -1) return -ENODEV;
+    }
+
+    // Enable MSI-X
+    // See https://wiki.osdev.org/PCI
+    uint16_t ctrl;
+    pci_readConfigWord(dev, dev->msix_offset + 0x02, &ctrl);
+    ctrl |= (1 << 15);
+    pci_writeConfigWord(dev, dev->msix_offset + 0x02, ctrl);
+
+    // Check the table size
+    uint16_t table_size = ctrl & 0x7FF;
+    if (table_size+1 < min) {
+        LOG(ERR, "Table size is too small (need %d interrupts only have %d).\n", min, table_size);
+        return -EINVAL;
+    }
+
+    // Find the amount of interrupts we want
+    int nirq = (table_size+1 < max) ? table_size+1 : max;
+    LOG(DEBUG, "MSI-X allocating %d IRQs\n", nirq);
+
+    // Get the BIR and table offset
+    uint32_t dw;
+    pci_readConfigDword(dev, dev->msix_offset + 0x04, &dw);
+    uint32_t tb_off = (dw & ~7u);
+    uint8_t bir = (uint8_t)(dw & 7u);
+
+    // Read the BAR
+    pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, bir);
+    if (!bar || (bar->type != PCI_BAR_MEMORY32 && bar->type != PCI_BAR_MEMORY64)) {
+        LOG(ERR, "MSI-X is missing BAR%d or it is invalid\n", bir);
+        return -EINVAL;
+    }
+
+    // Map the BAR and begin allocation
+    uintptr_t b = mmio_map(bar->address, bar->size);
+
+    dev->irqs = kzalloc(sizeof(pci_irq_t) * nirq);
+    int irqs_allocated = 0;
+
+    // TODO: If eventually allocating more interrupts without freeing is supported need to use dev->msix_index
+    for (int i = 0; i < nirq; i++) {
+        int r = irq_allocate(msix_domain, i, (void*)(b + tb_off), &dev->irqs[i].vector);
+        if (r != 0) {
+            // TODO: maybe return error code
+            LOG(WARN, "Failed to allocate IRQ (error %d)\n", r);
+            break;
+        }
+
+        dev->irqs[i].type = PCI_IRQ_MSI_X;
+        irqs_allocated++;
+    }
+
+    // Turn off MSI and pin interrupts if we got any IRQs
+    if (irqs_allocated > 0) {
+        pci_disableMSI(dev->bus, dev->slot, dev->function);
+        pci_disablePinInterrupts(dev->bus, dev->slot, dev->function);
+    }
+    
+    dev->nirqs = irqs_allocated;
+
+    // TODO: cleanup BAR MMIO
+    kfree(bar);
+
+    return irqs_allocated;
+}
+
+/**
+ * @brief Attempt to allocate pin interrupt
+ */
+static int pci_allocatePinInterrupt(pci_device_t *dev, int min, int max) {
+    // Pin interrupt allocation sucks. We dont support reading the GSI bases from
+    // ACPI and we just make some guesses.
+    LOG(WARN, "Trying to allocate pin interrupt. This is going to probably go very poorly.\n");
+    if (min > 1) return -1;
+
+    // Without a _PRT the only thing we can do is assume all GSIs are 0 for PCI devices.
+    // This statement only really holds true for emulators..
+    // !!!: This is REALLY bad and will fail eventually.
+    uint8_t irq_line;
+    pci_readConfigByte(dev, PCI_GENERAL_INTERRUPT_OFFSET, &irq_line);
+
+    LOG(DEBUG, "IRQ%d\n", irq_line);
+    
+    // Lol you'll just get unexpected interrupt if this doesnt work
+    irq_number_t num;
+    int r = irq_allocate(global_domain, irq_line, NULL, &num);
+    if (r != 0) {
+        LOG(ERR, "Failed to register handler for hwirq%d\n", num);
+        return r;
+    }
+
+    // Allocate a single IRQ
+    pci_irq_t *irqs = kmalloc(sizeof(pci_irq_t) * 1);
+    irqs[0].vector = num;
+    irqs[0].type = PCI_IRQ_PIN_INTERRUPT;
+    
+    // IRQs
+    dev->irqs = irqs;
+    dev->nirqs = 1;
+
+    return 1;
+}
+
+/**
+ * @brief Allocate IRQ vectors for a device
+ * @param dev The device to allocate IRQ vectors for
+ * @param min The minimum number of IRQ vectors to allocate
+ * @param max The maximum number of IRQ vectors to allocate
+ * @param allowed Allowed IRQ vector type bitmask
+ * @returns Number of interrupts allocated on success, negative for failure
+ */
+int pci_allocateInterrupts(pci_device_t *dev, int min, int max, unsigned char allowed) {
+    assert(dev->irqs == NULL && "allocating more interrupts without freeing existing not supported yet");
+
+    int ret = 0;
+    if (allowed & PCI_IRQ_MSI_X) {
+        ret = pci_allocateInterruptMSIX(dev, min, max);
+        if (ret > 0) goto finish;
+        LOG(WARN, "MSI-X failed to allocate (%d)\n", ret);
+    }
+
+    if (allowed & PCI_IRQ_MSI) {
+        ret = pci_allocateInterruptMSI(dev, min, max);
+        if (ret > 0) goto finish;
+        LOG(WARN, "MSI failed to allocate (%d)\n", ret);
+    }
+
+    if (allowed & PCI_IRQ_PIN_INTERRUPT) {
+        ret = pci_allocatePinInterrupt(dev, min, max);
+        if (ret > 0) goto finish;
+        LOG(WARN, "Pin interrupt failed to allocate (%d)\n", ret);
+    }
+
+    assert(0 && "No PCI interrupts available");
+
+finish:
+    return ret;
+}
+
+/**
+ * @brief Get an interrupt vector allocated for a device
+ * @param dev The device to get the interrupt vector for
+ * @param idx The index of the allocated interrupt vector
+ * @returns IRQ object
+ */
+pci_irq_t *pci_getInterruptVector(pci_device_t *dev, int idx) {
+    assert(idx < dev->nirqs);
+    return &dev->irqs[idx];
+}
+
+/**
+ * @brief Free interrupt vectors allocated for device
+ * @param dev The device to free the IRQ vectors for
+ */
+int pci_freeInterrupts(pci_device_t *dev) {
+    pci_irq_t *irqs = dev->irqs;
+    dev->nirqs = 0;
+    dev->irqs = NULL;
+
+    kfree(irqs); // TODO: unregister all IRQs
+    return 0;
 }

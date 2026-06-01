@@ -156,7 +156,7 @@ void rtl8139_thread(void *context) {
 /**
  * @brief RTL8139 IRQ handler
  */
-int rtl8139_handler(void *context) {
+int rtl8139_handler(irq_t *irq, void *context) {
     rtl8139_t *nic = (rtl8139_t*)context;
     if (nic) {
         // Update status
@@ -188,7 +188,8 @@ int rtl8139_handler(void *context) {
         }
     }
 
-    return 0;
+    // TODO: IRQ_NOT_SOURCE
+    return IRQ_HANDLED;
 }
 
 /**
@@ -264,18 +265,15 @@ int rtl8139_init(pci_device_t *device) {
 
     LOG(DEBUG, "Communicating with this NIC over %s\n", (nic->io_space ? "I/O" : "MMIO"));
 
-    // Register our IRQ handler
-    uint8_t irq = pci_getInterrupt(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
-
-    if (irq == 0xFF || hal_registerInterruptHandler(irq, rtl8139_handler, (void*)nic)) {
-        // Failed to register IRQ
-        LOG(ERR, "Failed to register IRQ%d - trying MSI\n", irq);
-        uint8_t msi = pci_enableMSI(nic->pci_device->bus, nic->pci_device->slot, nic->pci_device->function);
-        if (msi == 0xFF || hal_registerInterruptHandler(msi, rtl8139_handler, (void*)nic)) {
-            LOG(ERR, "No other configuration methods\n");
-            goto _cleanup;
-        }
+    // Register IRQ handler
+    int r = pci_allocateInterrupts(nic->pci_device, 1, 1, PCI_IRQ_ALL);
+    if (r < 1) {
+        LOG(ERR, "Failed to allocate interrupts for RTL8139 due to error %d\n", r);
+        goto _cleanup;
     }
+
+    pci_irq_t *irq = pci_getInterruptVector(nic->pci_device, 0);
+    irq_register(irq->vector, rtl8139_handler, IRQ_FLAG_DEFAULT, (void*)nic, NULL);
 
     // Read the MAC address
     uint8_t mac[6];

@@ -157,4 +157,6 @@ extern void halVMMCommunicationException(void);
 extern void halSecurityException(void);
 extern void halReserved2Exception(void);
 
+extern void halSyscallEntrypoint(void);
+
 #endif

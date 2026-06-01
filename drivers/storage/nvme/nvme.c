@@ -21,6 +21,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/drivers/storage/drive.h>
 #include <kernel/misc/util.h>
+#include <kernel/subsystems/irq.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
@@ -50,22 +51,30 @@ int nvme_reset(nvme_t *nvme) {
 
 /**
  * @brief NVMe controller global IRQ handler
+ * @param irq IRQ
  * @param context NVMe object
  */
-int nvme_irq(void *context) {
+int nvme_irq(irq_t *irq, void *context) {
     nvme_t *nvme = (nvme_t*)context;
     nvme_irqQueue(nvme->admin_queue);
-    return 0;
+    return IRQ_HANDLED; // TODO: IRQ_NOT_SOURCE for chained dispatch
 }
 
 /**
  * @brief NVMe controller global IRQ handler
+ * @param irq IRQ
  * @param context NVMe object
  */
-int nvme_irqIO(void *context) {
+int nvme_irqIO(irq_t *irq, void *context) {
     nvme_t *nvme = (nvme_t*)context;
+    
+    if (!nvme->io_queue) {
+        LOG(WARN, "nvme->io_queue is not registered?\n");
+        return IRQ_HANDLED;
+    }
+
     nvme_irqQueue(nvme->io_queue);
-    return 0;
+    return IRQ_HANDLED;
 }
 
 /**
@@ -165,10 +174,6 @@ int nvme_createIOQueue(nvme_t *nvme) {
         return 1;
     }
 
-    uint8_t i = pci_enableMSI(nvme->dev->bus, nvme->dev->slot, nvme->dev->function);
-    assert(i != 0xFF);
-
-    hal_registerInterruptHandler(i, nvme_irqIO, nvme);
     return 0;
 }
 
@@ -394,6 +399,11 @@ int nvme_init(pci_device_t *dev) {
     // Let's map the BAR in
     uintptr_t mmio_base = mmio_map(bar->address, bar->size);
 
+    uint16_t cmd;
+    pci_readConfigWord(dev, PCI_COMMAND_OFFSET, &cmd);
+    cmd |= PCI_COMMAND_BUS_MASTER | PCI_COMMAND_MEMORY_SPACE;
+    pci_writeConfigWord(dev, PCI_COMMAND_OFFSET, cmd);
+
     // Create the NVMe structure
     nvme_t *nvme = kzalloc(sizeof(nvme_t));
     nvme->regs = (nvme_registers_t*)mmio_base;
@@ -409,18 +419,18 @@ int nvme_init(pci_device_t *dev) {
         goto _nvme_cleanup;
     }
 
-    // Enable interrupts
-    uint8_t irq = pci_enableMSI(dev->bus, dev->slot, dev->function);
-    if (irq == 0xFF || hal_registerInterruptHandler(irq, nvme_irq, (void*)nvme)) {
-        LOG(DEBUG, "MSI unavailable, fallback to pin interrupt\n");
-        irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
-
-        LOG(DEBUG, "Got IRQ%d\n", irq);
-        if (hal_registerInterruptHandler(irq, nvme_irq, (void*)nvme)) {
-            LOG(ERR, "Error registering IRQs\n");
-            goto _nvme_cleanup;
-        }
+    // Allocate interrupts
+    int ret = pci_allocateInterrupts(dev, 2, 2, PCI_IRQ_ALL);
+    if (ret < 2) {
+        LOG(ERR, "No interrupts available for NVMe device.\n");
+        goto _nvme_cleanup;
     }
+
+    pci_irq_t *irq = pci_getInterruptVector(dev, 0);
+    irq_register(irq->vector, nvme_irq, IRQ_FLAG_DEFAULT, (void*)nvme, NULL);
+
+    irq = pci_getInterruptVector(dev, 1);
+    irq_register(irq->vector, nvme_irqIO, IRQ_FLAG_DEFAULT, (void*)nvme, NULL);
 
     // Create admin queue
     if (nvme_createAdminQueue(nvme)) {
@@ -460,6 +470,7 @@ int nvme_init(pci_device_t *dev) {
     return 0;
 
 _nvme_cleanup:
+    pci_freeInterrupts(dev);
     mmio_unmap((uintptr_t)nvme->regs, bar->size);
     kfree(nvme);
     return 1;

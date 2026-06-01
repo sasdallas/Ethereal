@@ -84,50 +84,6 @@ int ioapic_setEntry(io_apic_t *apic, int pin, io_apic_redir_entry_t *entry) {
 }
 
 /**
- * @brief Enable an IRQ in an I/O APIC
- * @param irq The IRQ to enable
- * @returns 0 on success
- */
-int ioapic_enableIRQ(uintptr_t irq) {
-    // Get corresponding GSI in the IRQ overrides
-    uint8_t gsi = io_apic_irq_overrides[irq];
-
-    // Find a corresponding I/O APIC
-    io_apic_t *apic = NULL;
-    for (int i = 0; i < io_apic_count; i++) {
-        io_apic_t *apic_i = io_apic_list[i];
-        
-        if (apic_i->interrupt_base <= gsi && gsi <= apic_i->interrupt_base + apic_i->redir_count) {
-            apic = apic_i;
-            break;
-        }
-    }
-
-    if (!apic) {
-        LOG(WARN, "Mapping IRQ%d failed: No corresponding APIC was found. (This is probably OK)\n", irq);
-        return 0;
-    }
-
-    int pin = gsi - apic->interrupt_base;
-
-    LOG(DEBUG, "Mapping an IRQ for Pin %d (GSI: %d, IRQ base: %d)\n", pin, gsi, apic->interrupt_base);
-
-    // Get redirection entry already at that address 
-    io_apic_redir_entry_t entry;
-    entry.lo = ioapic_read(apic, 0x10 + (pin * 2));
-    entry.hi = ioapic_read(apic, 0x10 + (pin * 2 + 1));
-
-    // Setup vector, disable mask, and set to BSP APIC ID
-    entry.vector = 32 + irq;
-    entry.mask = 0;
-    entry.destination = 0;      // TODO: Verify this is actually the BSP ID
-
-    ioapic_setEntry(apic, pin, &entry);
-
-    return 0;
-}
-
-/**
  * @brief Initialize the I/O APIC
  * @param data SMP data
  */
@@ -166,8 +122,6 @@ int ioapic_init(void *data) {
     gsi = io_apic_irq_overrides[12];
     reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
 
-    // irq_selectChip(&chip);
-
     return io_apic_count ? 0 : 1;
 }
 
@@ -193,11 +147,9 @@ int ioapic_mask(uintptr_t interrupt) {
  * @param interrupt The interrupt to unmask
  */
 int ioapic_unmask(uintptr_t interrupt) {
-
     uint32_t gsi = io_apic_irq_overrides[interrupt];
     reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-    // return ioapic_enableIRQ(interrupt);
-    return 0;;
+    return 0;
 }
 
 /**
@@ -208,39 +160,6 @@ int ioapic_eoi(uintptr_t interrupt) {
     // Forward this to LAPIC
     lapic_acknowledge();
     return 0;
-}
-
-/**
- * @brief Allocate an IRQ from the I/O APIC
- */
-uint32_t ioapic_allocate() {
-    for (int i = 0; i < HAL_IRQ_MSI_BASE - HAL_IRQ_BASE; i++) {
-        uint8_t gsi = io_apic_irq_overrides[i];
-
-        // Find the I/O APIC with this GSI
-        io_apic_t *apic = NULL;
-        for (int i = 0; i < io_apic_count; i++) {
-            io_apic_t *apic_i = io_apic_list[i];
-            
-            if (apic_i->interrupt_base <= gsi && gsi <= apic_i->interrupt_base + apic_i->redir_count) {
-                apic = apic_i;
-                break;
-            }
-        }
-
-        if (!apic) {
-            continue;
-        }
-
-        // Check if this IRQ is reserved
-        if (!(reserved_gsis[gsi / 8] & (1 << (gsi % 8)))) {
-            LOG(DEBUG, "IRQ%d allocated\n", i);
-            reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-            return i;
-        }
-    }
-
-    return 0xFFFFFFFF;
 }
 
 /**

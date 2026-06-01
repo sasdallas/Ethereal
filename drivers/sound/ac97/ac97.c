@@ -21,6 +21,7 @@
 #include <kernel/arch/arch.h>
 #include <kernel/hal.h>
 #include <kernel/loader/driver.h>
+#include <kernel/subsystems/irq.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/debug.h>
 #include <kernel/mm/alloc.h>
@@ -103,7 +104,7 @@ uint32_t ac97_readRegister(ac97_t *ac, uint16_t reg, int size, int bm) {
 /**
  * @brief AC/97 IRQ handler
  */
-int ac97_irq(void *data) {
+int ac97_irq(irq_t *irq, void *data) {
     ac97_t *ac = (ac97_t*)data;
 
     // Why did we get an IRQ? Check PCM Out
@@ -149,7 +150,8 @@ int ac97_irq(void *data) {
         AC97_WRITE_BM16(AC97_PO_SR, AC97_SR_LBE_INT);
     }
 
-    return 0;
+    // TODO: IRQ_NOT_SOURCE
+    return IRQ_HANDLED;
 }
 
 /**
@@ -237,11 +239,9 @@ int ac97_init(pci_device_t *dev) {
     LOG(DEBUG, "NAMB Base: %08x NAMM Base: %08x (%s)\n", ac->io_base, ac->bm_io_base, ac->io_type ? "I/O" : "MMIO");
 
     // Register an IRQ
-    // TODO: Support MSI?
-    uint8_t irq = pci_getInterrupt(dev->bus, dev->slot, dev->function);
-    if (irq == 0xFF || hal_registerInterruptHandler(irq, ac97_irq, ac) != 0) {
-        LOG(ERR, "AC97 has no IRQ or failed to register it . Cannot continue\n");
-
+    int ret = pci_allocateInterrupts(dev, 1, 1, PCI_IRQ_ALL);
+    if (ret < 1) {
+        LOG(ERR, "AC/97 failed to allocate IRQs (%d)\n", ret);
         if (ac->io_type == 0) {
             mmio_unmap(ac->io_base, nambbar->size);
             mmio_unmap(ac->bm_io_base, nammbar->size);
@@ -253,7 +253,8 @@ int ac97_init(pci_device_t *dev) {
         return 1;
     }
 
-    LOG(DEBUG, "Registered IRQ%d for AC/97 controller\n", irq);
+    pci_irq_t *irq = pci_getInterruptVector(dev, 0);
+    irq_register(irq->vector, ac97_irq, IRQ_FLAG_DEFAULT, (void*)ac, NULL);
 
     // Reset everything to default
     // AC97_WRITE16(AC97_REG_RESET, 0xFFFF);

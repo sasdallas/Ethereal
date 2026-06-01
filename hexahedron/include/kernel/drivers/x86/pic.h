@@ -97,12 +97,6 @@ int pic_eoi(uintptr_t interrupt);
 int pic_type();
 
 /**
- * @brief Allocate an IRQ from the PIC
- * @returns Interrupt or @c 0xFFFFFFFF
- */
-uint32_t pic_allocate();
-
-/**
  * @brief Route a hardware interrupt to a CPU interrupt index
  * @param irq The index in the IDT
  * @param hwirq Hardware IRQ
