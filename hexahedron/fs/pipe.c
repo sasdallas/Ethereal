@@ -43,6 +43,7 @@ static vfs_file_ops_t pipe_file_ops = {
     .mmap           = NULL,
     .mmap_prepare   = NULL,
     .munmap         = NULL,
+    .check_flags    = NULL
 };
 
 
@@ -80,6 +81,8 @@ static int pipe_initializer(slab_cache_t *cache, void *obj) {
     POLL_EVENT_INIT(&p->write_event);
     p->dead = 0;
     p->buf = circbuf_create("pipe buffer", 1000);
+    p->readers = 0;
+    p->writers = 0;
     return 0;
 }
 
@@ -98,6 +101,16 @@ static int pipe_deinitializer(slab_cache_t *cache, void *object) {
 static int pipe_open(vfs_file_t *file, unsigned long flags) {
     // TODO: blocking
     file->priv = file->inode->priv;
+
+    dprintf(DEBUG, "pipe_open\n");
+    fs_pipe_t *pipe = file->priv;
+    
+    if (IS_WRITE(file)) {
+        __atomic_add_fetch(&pipe->writers, 1, __ATOMIC_SEQ_CST);
+    } else {
+        __atomic_add_fetch(&pipe->readers, 1, __ATOMIC_SEQ_CST);
+    }
+
     return 0;
 }
 
@@ -107,8 +120,18 @@ static int pipe_open(vfs_file_t *file, unsigned long flags) {
 static int pipe_close(vfs_file_t *file) {
     // do the actual destruction in pipe_destroy
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
-    poll_signal(&pipe->read_event, POLLHUP);
-    poll_signal(&pipe->write_event, POLLERR);
+    dprintf(DEBUG, "pipe_close\n");
+
+    if (IS_WRITE(file)) {
+        if (__atomic_sub_fetch(&pipe->writers, 1, __ATOMIC_SEQ_CST) == 0) {
+            poll_signal(&pipe->read_event, POLLHUP);
+        }
+    } else {
+        if (__atomic_sub_fetch(&pipe->readers, 1, __ATOMIC_SEQ_CST) == 0) {
+            poll_signal(&pipe->write_event, POLLERR);
+        }
+    }
+
     circbuf_stop(pipe->buf);
     return 0;
 }
@@ -143,6 +166,7 @@ static ssize_t pipe_write(vfs_file_t *file, loff_t off, size_t size, const char 
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
     if (pipe->dead) {
         dprintf(ERR, "Pipe is dead need to send SIGPIPE\n");
+        signal_send(current_cpu->current_process, SIGPIPE);
         return -EPIPE; // TODO: track readers and send SIGPIPE
     }
 

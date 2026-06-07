@@ -33,5 +33,7 @@ long sys_unlinkat(int dirfd, const char *path, int flags) {
     int ret = vfs_unlinkat(at, (char*)path);
     if (at) inode_release(at);
 
+    SYSCALL_LOG(INFO, "unlinkat dirfd=%d path=%s flags=%d\n", dirfd, path, flags);
+
     return ret;
 }

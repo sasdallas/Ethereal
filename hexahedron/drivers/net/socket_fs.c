@@ -23,7 +23,7 @@ static ssize_t socketfs_write(vfs_file_t *file, loff_t off, size_t size, const c
 static int socketfs_poll(vfs_file_t *file, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t socketfs_poll_events(vfs_file_t *file);
 static int socketfs_ioctl(vfs_file_t *f, long request, void *argp);
-
+static int socketfs_check_flags(vfs_file_t *f);
 
 static vfs_file_ops_t socket_file_ops = {
     .open           = socketfs_open,
@@ -37,6 +37,7 @@ static vfs_file_ops_t socket_file_ops = {
     .mmap           = NULL,
     .mmap_prepare   = NULL,
     .munmap         = NULL,
+    .check_flags    = socketfs_check_flags,
 };
 
 
@@ -145,6 +146,19 @@ static poll_events_t socketfs_poll_events(vfs_file_t *file) {
     poll_events_t revents = POLLOUT;
     if (sock->recv_queue->length) revents |= POLLIN;
     return revents;
+}
+
+/**
+ * @brief Check flags
+ * 
+ * Used when O_NONBLOCK is configured
+ */
+static int socketfs_check_flags(vfs_file_t *f) {
+    sock_t *sock = (sock_t*)f->priv;
+    if (f->flags & O_NONBLOCK) {
+        sock->flags |= SOCKET_FLAG_NONBLOCKING;
+    }
+    return 0;
 }
 
 /**

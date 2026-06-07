@@ -232,6 +232,7 @@ halIsrHandlerTable:
 /* ISR handler table end */
 .global halIsrHandlerTableEnd
 halIsrHandlerTableEnd:
+    .quad 0
 
 /* System call entrypoint (for SYSCALL instruction) */
 /* This function is lobotomized because it had a ton of perf overhead. Extended registers is empty! */
@@ -336,4 +337,4 @@ halSyscallEntrypoint:
 
     /* Go! */
     swapgs
-    sysretq 
+    sysretq

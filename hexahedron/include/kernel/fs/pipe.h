@@ -25,6 +25,8 @@ typedef struct fs_pipe {
     poll_event_t read_event;    // Read event
     poll_event_t write_event;   // Write event
     circbuf_t *buf;             // Pipe buffer
+    volatile int readers;
+    volatile int writers;
     volatile char dead;         // Pipe dead
 } fs_pipe_t;
 

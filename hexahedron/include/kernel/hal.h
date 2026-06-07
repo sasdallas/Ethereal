@@ -32,8 +32,9 @@
 /**
  * @brief Set interrupt state on the current CPU
  * @param state The interrupt state to set
+ * @returns Last state
  */
-void hal_setInterruptState(int state);
+int hal_setInterruptState(int state);
 
 /**
  * @brief Get the interrupt state on the current CPU

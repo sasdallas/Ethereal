@@ -186,7 +186,6 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
         #endif
             sleep_wakeup(wn->waiter->thr);
 
-            
             // Remove the waiter
         #ifdef POLL_DEBUG
             LOG(DEBUG, "Result appended for waiter %p\n", wn->waiter);
@@ -254,9 +253,10 @@ void poll_destroyWaiter(poll_waiter_t *waiter) {
     assert(waiter->refs >= 1);
     refcount_dec(&waiter->refs);
     if (!waiter->refs) {
+        
     #ifdef POLL_DEBUG
         LOG(DEBUG, "Destroying waiter %p\n", waiter);
-        #endif
+    #endif
 
         poll_result_t *r = waiter->result;
         while (r) {

@@ -29,7 +29,6 @@
 
 
 static volatile uint64_t pit_ticks = 0; // TODO: Make clock_update conform better so we can remove this variable.
-static int pit_update = 1;
 
 /**
  * @brief Change the PIT timer phase.
@@ -56,15 +55,6 @@ void pit_sleep(uint64_t ms) {
 }
 
 /**
- * @brief Change the PIT state. 
- * 
- * This is used when the LAPIC timer is initialized, to allow the PIT to still operate as a timer without scheduling
- */
-void pit_setState(int enabled) {
-    pit_update = enabled;
-}
-
-/**
  * @brief IRQ handler
  */
 int pit_irqHandler(irq_t *irq, void *context) {
@@ -83,7 +73,7 @@ void pit_initialize() {
     irq_register(vect, pit_irqHandler, IRQ_FLAG_SHARED, NULL, NULL);
 
     // On default use 100 Hz for divisor
-    pit_setTimerPhase(100);
+    // pit_setTimerPhase(100);
 
     dprintf_module(INFO, "X86:PIT", "Programmable interval timer initialized\n");
 }

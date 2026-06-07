@@ -55,7 +55,7 @@ int initrd_unpack(uint8_t *buffer, size_t size) {
         size_t file_size = strtoull(h->size, NULL, 8);
 
         if (!strncmp(full_path, "///", nl)) goto _next_entry; //hack 
-        LOG(DEBUG, "Unpacking: %s\n", full_path);
+        // LOG(DEBUG, "Unpacking: %s\n", full_path);
 
         if (h->type[0] == USTAR_FILE) {
             // Regular file

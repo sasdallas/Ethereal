@@ -166,6 +166,10 @@ static void hal_init_stage2() {
     // PIT can be initialized here for now
     pit_initialize();
 
+    // Initialize tasklet
+extern void tasklet_init();
+    tasklet_init();
+
     // Now we can enable interrupts
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 

@@ -24,7 +24,9 @@
 #include <kernel/arch/arch.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/subsystems/clock.h>
+#include <kernel/subsystems/timer.h>
 #include <kernel/subsystems/irq.h>
+#include <kernel/tasklet.h>
 
 /**** TYPES ****/
 
@@ -63,11 +65,14 @@ typedef struct _processor {
     int cpu_family;
 #endif
     
-    scheduler_cpu_t sched;                  // Scheduler data
+    scheduler_cpu_t sched;                  // Scheduler data (POSITION SENSITIVE!)
+    
     volatile uint32_t irq_bitmap;           // Per-CPU IRQ bitmap
     irq_table_t *irq_table;                 // IRQ table (FOR PERCPU INTERRUPTS ONLY!!)
     uint64_t idle_time;                     // Time the processor has spent idling
     timekeeper_t timekeeper;                // Timekeeper
+    tasklet_cpu_t *tasklet;                 // Tasklet data
+    timer_device_t *timer_dev;              // Selected timer device
 } processor_t;
 
 /* External variables defined by architecture */
@@ -116,5 +121,7 @@ static processor_t __seg_gs * const current_cpu = 0;
 #define PREEMPT_ENABLE() ((current_cpu->irq_bitmap -= (1UL << PREEMPT_SHIFT)))
 #define TASKLET_EXIT() ((current_cpu->irq_bitmap -= (1UL << TASKLET_SHIFT)))
 #define IRQ_EXIT() ((current_cpu->irq_bitmap -= (1UL << IRQ_SHIFT)))
+
+#define TASKLET_PENDING() ((current_cpu->tasklet->pending))
 
 #endif

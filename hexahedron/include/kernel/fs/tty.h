@@ -45,6 +45,7 @@ typedef struct tty {
     // Private
     void *priv;
     bool is_pty;
+    bool is_nonblocking;                // Really wish devfs supported this
 
     devfs_node_t *node;
 } tty_t;
@@ -54,6 +55,7 @@ typedef struct pty {
     circbuf_t *out;                     // TTY output buffer
     poll_event_t out_event;             // Output event
     devfs_node_t *master_node;
+    bool is_nonblocking;                // Is non blocking hack
 } pty_t;
 
 /**** FUNCTIONS ****/

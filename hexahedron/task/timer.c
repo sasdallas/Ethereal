@@ -57,7 +57,7 @@ void timer_kthread(void *ctx) {
                 if (!t->value.tv_sec && !t->value.tv_usec) {
                     LOG(DEBUG, "Removing timer from queue as it has nothing left\n");
                     list_delete(timer_queue, node);
-                    kfree(node);
+                    // kfree(node);
 
                     t->expire_seconds = 0;
                     t->expire_subseconds = 0;

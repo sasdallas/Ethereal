@@ -159,17 +159,19 @@ int lapic_irq(irq_t *irq, void *context) {
     return IRQ_HANDLED;
 }
 
+// reschedule cb
+void reschedule_cb(void *ctx) {
+    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
+        current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
+    }
+}
+
 /**
  * @brief Local APIC timer IRQ
  */
 int lapic_timer_irq(irq_t *irq, void *context) {
-    // Update clock
-    clock_update(clock_readTicks());
-    
-    // Only if the process is running do we preempt
-    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
-        current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
-    }
+    // Trigger timer IRQ
+    timer_irq();
 
     return IRQ_HANDLED;
 }
@@ -206,6 +208,91 @@ void lapic_profilingInit() {
 }
 
 /**
+ * @brief Local APIC timer init
+ */
+void lapic_timerInit(timer_device_t *device) {
+    irq_map(percpu_domain, LAPIC_TIMER_IRQ, LAPIC_TIMER_IRQ, NULL);
+    irq_register(LAPIC_TIMER_IRQ, lapic_timer_irq, 0, NULL, NULL);
+
+    // Register timer IRQ
+    lapic_write(LAPIC_REGISTER_TIMER, LAPIC_TIMER_IRQ);
+
+    // Time the local APIC using the PIT
+    // TODO: clean this up
+    lapic_write(LAPIC_REGISTER_DIVCONF, 0x0B); // to divide by 1
+
+    // PIT frequency 1193182 hz
+    // Time the lapic by using PIT to sleep for 10ms (freq / 100 = 11932)
+    outportb(0x43, 0xb0); // chnl 2 access lo/hi byte mode 3 binary
+    outportb(0x42, (uint8_t)((11932 & 0xff))); // low byte
+    outportb(0x42, (uint8_t)(((11932 >> 8) & 0xff)));
+
+    // start PIT
+    uint8_t sys_ctrl = inportb(0x61);
+    sys_ctrl &= 0xFD; sys_ctrl |= 1;
+    outportb(0x61, sys_ctrl);
+
+    // configure the local APIC to have its maximum init count
+    lapic_write(LAPIC_REGISTER_INITCOUNT, 0xFFFFFFFF);
+
+    // Poll the PIT
+    while ((inportb(0x61) & 0x20) == 0) {
+        __builtin_ia32_pause();
+    }
+
+    outportb(0x61, sys_ctrl & 0xfc);
+    uint64_t ticks = 0xFFFFFFFF - lapic_read(LAPIC_REGISTER_CURCOUNT);
+    uint64_t tick_per_ns = ((ticks << 32) / 10000000) >> 32;
+    LOG(DEBUG, "Calculated %llu ticks per nanosecond (%d ticks pass in 10ms)\n", tick_per_ns, ticks);
+
+    // stop doing that
+    lapic_write(LAPIC_REGISTER_INITCOUNT, 0);
+
+    // used for ns -> ticks so calculate the other way
+    device->freq.shift = 16;
+    uint64_t scaled_hz = (uint64_t)(ticks) << device->freq.shift;
+    device->freq.mult = (uint64_t)(scaled_hz / 10000000ULL);
+}
+
+/**
+ * @brief Local APIC timer deinit
+ */
+void lapic_timerDeinit(timer_device_t *device) {
+    assert(0 && "there is no better timer than me");
+}
+
+/**
+ * @brief local apic set timer
+ */
+void lapic_timerSet(timer_device_t *device, uint64_t ticks) {
+    assert(ticks < UINT32_MAX);
+    lapic_write(LAPIC_REGISTER_INITCOUNT, ticks);
+}
+
+/**
+ * @brief local apic get ticks elapsed
+ */
+uint64_t lapic_getTicksElapsed(timer_device_t *device) {
+    return (uint32_t)lapic_read(LAPIC_REGISTER_INITCOUNT) - lapic_read(LAPIC_REGISTER_CURCOUNT);
+}
+
+
+/**
+ * @brief local apic stop
+ */
+void lapic_timerStop() {
+    lapic_write(LAPIC_REGISTER_INITCOUNT, 0);
+}
+
+timer_ops_t lapic_ops = {
+    .init = lapic_timerInit,
+    .deinit = lapic_timerDeinit,
+    .set_timer = lapic_timerSet,
+    .stop = lapic_timerStop,
+    .get_ticks_elapsed = lapic_getTicksElapsed,
+};
+
+/**
  * @brief Initialize the local APIC
  * @param lapic_address Address of MMIO-mapped space of the APIC
  * @returns 0 on success, anything else is failure
@@ -226,40 +313,23 @@ int lapic_initialize(uintptr_t lapic_address) {
 
     // Register the interrupt handlers
     irq_map(percpu_domain, LAPIC_SPUR_INTNO, LAPIC_SPUR_INTNO, NULL);
-    irq_map(percpu_domain, LAPIC_TIMER_IRQ, LAPIC_TIMER_IRQ, NULL);
     irq_register(LAPIC_SPUR_INTNO, lapic_irq, 0, NULL, NULL);
-    irq_register(LAPIC_TIMER_IRQ, lapic_timer_irq, 0, NULL, NULL);
-
-    // Disable PIT from updating
-    pit_setState(0);
 
     // Enable spurious vector register
     lapic_write(LAPIC_REGISTER_SPURINT, LAPIC_SPUR_INTNO);
     lapic_setEnabled(1);
 
-    // Register timer IRQ and set divconf
-    lapic_write(LAPIC_REGISTER_TIMER, LAPIC_TIMER_IRQ);
-    lapic_write(LAPIC_REGISTER_DIVCONF, 1);
-
-
-    // SOURCE: https://github.com/klange/toaruos/blob/911daaad555e8872a99687121d84197803d9a16c/kernel/arch/x86_64/smp.c
-    // Time local APIC against the TSC
-    uint64_t before = clock_readTSC();
-    lapic_write(LAPIC_REGISTER_INITCOUNT, 1000000);
-    while (lapic_read(LAPIC_REGISTER_CURCOUNT));
-    uint64_t after = clock_readTSC();
-
-    // Calculate target
-    uint64_t ms = (after-before) / clock_getTSCSpeed();
-    uint64_t target = 10000000000UL / ms;
-
-    // Setup initial count register
-    lapic_write(LAPIC_REGISTER_DIVCONF, 1);
-    lapic_write(LAPIC_REGISTER_TIMER, LAPIC_TIMER_IRQ | 0x20000);
-    lapic_write(LAPIC_REGISTER_INITCOUNT, target);
-
     // Enable IRQs in TPR
     lapic_write(LAPIC_REGISTER_TPR, 0);
+
+    // Create the timer device
+    timer_device_t *lapic_device = timer_createDevice("local apic timer", &lapic_ops, 100, NULL); 
+    timer_selectDevice(lapic_device);
+    
+    // Now that's ready
+    timer_event_t *ev = kmalloc(sizeof(timer_event_t));
+    timer_init(ev, reschedule_cb, NULL, 10000000, true, "reschedule");
+    timer_insert(ev);
 
     // Finished!
     return 0;

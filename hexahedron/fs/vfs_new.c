@@ -385,6 +385,11 @@ int vfs_lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t 
     char *save;
     char *pch = strtok_r(path_canon, "/", &save);
     while (pch) {
+        if (cur->attr.type != VFS_DIRECTORY) {
+            inode_release(cur);
+            return -ENOTDIR;
+        }
+
         vfs_inode_t *output_tmp;
 
         int r = __lookupat(cur, pch, &output_tmp, flags);
@@ -1169,6 +1174,17 @@ int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_ev
 
     // no early hit, we will be adding to queue probably
     int res = file_poll(f, waiter, events);
+
+    // Run recheck
+    if (f->ops->poll_events) {
+        poll_events_t ret = f->ops->poll_events(f);
+        if (ret != 0 && (ret & events) != 0) {
+            // early hit
+            *revents = ret & events;
+            return 1;
+        }
+    }
+
     assert((res == 0)); // TODO handle errors gracefully
     return 0;
 }
@@ -1220,6 +1236,7 @@ void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
 void vfs_destroyFile(vfs_file_t *file) {
     // LOG(DEBUG, "Destroying file %p\n", file);
     if (file->ops && file->ops->close) file->ops->close(file);
+    if (file->path != NULL) kfree(file->path);
     inode_release(file->inode);
     slab_free(file_cache, file);
 }

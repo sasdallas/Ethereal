@@ -16,9 +16,9 @@
 #include <unistd.h>
 
 long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags) {
-    SYSCALL_LOG(DEBUG, "sys_renameat\n");
     SYSCALL_VALIDATE_PTR(old_path);
     SYSCALL_VALIDATE_PTR(new_path);
+    SYSCALL_LOG(DEBUG, "sys_renameat %s %s\n", old_path, new_path);
 
     vfs_inode_t *src_inode = NULL;
     vfs_inode_t *dst_inode = NULL;

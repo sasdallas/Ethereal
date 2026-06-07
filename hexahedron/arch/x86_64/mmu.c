@@ -82,6 +82,14 @@ _die:
     }
     
     if (info.from == VMM_FAULT_FROM_USER) {
+        dprintf(ERR, "Process '%s' (PID %d)\n", current_cpu->current_process->name, current_cpu->current_process->pid);
+        dprintf(ERR, "Stack trace:\n");
+        uint64_t *rbp = (uint64_t*)regs->rbp;
+        for (int i = 0; i < 3 && rbp; i++) {
+            uint64_t rip = *(rbp + 1);
+            dprintf(ERR, "  [%d] 0x%016llX\n", i, rip);
+            rbp = (uint64_t*)*rbp;
+        }
         signal_send(current_cpu->current_process, SIGSEGV);
         return 0;
     }
@@ -136,8 +144,6 @@ extern void arch_panic_traceback(int depth, registers_t *regs);
         }
     }
 
-    dprintf(NOHEADER, COLOR_CODE_RED_BOLD "\nVMM DUMP:\n");
-    vmm_dumpContext(current_cpu->current_context);
 
     // Display message
     dprintf(NOHEADER, COLOR_CODE_RED "\nThe kernel will now permanently halt. Connect a debugger for more information.\n");

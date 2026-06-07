@@ -24,10 +24,13 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 
-/* Handler map */
+/* Handler maps */
+mutex_t socket_handler_lck = MUTEX_INITIALIZER;
 hashmap_t *socket_map = NULL;
+hashmap_t *socket_pair_map = NULL;
 
 /* Socket list */
+mutex_t socket_list_lck = MUTEX_INITIALIZER;
 list_t *socket_list = NULL;
 
 /* Last socket ID */
@@ -80,7 +83,24 @@ void socket_free(sock_t *sock) {
  * @returns 0 on success
  */
 int socket_register(int domain, socket_create_t socket_create) {
+    mutex_acquire(&socket_handler_lck);
     hashmap_set(socket_map, (void*)(uintptr_t)domain, (void*)socket_create);
+    mutex_release(&socket_handler_lck);
+
+    return 0;
+}
+
+/**
+ * @brief Register a new handler for @c socket_pair
+ * @param domain The domain of the handler to register
+ * @param socket_pair_create Socket pair creation function
+ * @returns 0 on success
+ */
+int socket_registerPair(int domain, socket_pair_create_t socket_pair_create) {
+    mutex_acquire(&socket_handler_lck);
+    hashmap_set(socket_pair_map, (void*)(uintptr_t)domain, (void*)socket_pair_create);
+    mutex_release(&socket_handler_lck);
+
     return 0;
 }
 
@@ -124,6 +144,7 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
 
     // Validate the full message
     socket_validateMsg(message);
+    assert(message->msg_control == NULL);
 
     sock_t *sock = (sock_t*)f->priv;
     if (sock->ops->sendmsg) {
@@ -239,6 +260,8 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
         case SO_DONTROUTE:
             SOCKET_CHECK_LEN(option_len, int);
             SOCKET_GET_FLAG(SOCKET_FLAG_DONTROUTE, option_value, option_len);
+            return 0;
+        case SO_PEERCRED:
             return 0;
     }
 
@@ -478,7 +501,10 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     type = type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
 
     // Look up the protocol to use
+    mutex_acquire(&socket_handler_lck);
     socket_create_t create = (socket_create_t)hashmap_get(socket_map, (void*)(uintptr_t)domain);
+    mutex_release(&socket_handler_lck);
+
     if (!create) return -EAFNOSUPPORT;
 
     // Create a socket object
@@ -500,7 +526,10 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     sock->protocol = protocol;
 
     sock->id = last_socket_id++;
+
+    mutex_acquire(&socket_list_lck);
     list_append(socket_list, (void*)sock);
+    mutex_release(&socket_list_lck);
 
     if (type_original & SOCK_NONBLOCK) {
         SOCKET_CHANGE_FLAG(SOCKET_FLAG_NONBLOCKING, 1);
@@ -519,6 +548,83 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     }
 
     return fd_num;
+}
+
+/**
+ * @brief Create a pair of sockets
+ * @param domain The domain of the sockets
+ * @param type The type of the sockets
+ * @param protocol The socket protocol
+ * @param pair Pair fd output array
+ */
+int socket_pair(int domain, int type, int protocol, int pair[2]) {
+    int type_original = type;
+    type &= ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+
+    // Look up the handler to use
+    mutex_acquire(&socket_handler_lck);
+    socket_pair_create_t create = (socket_pair_create_t)hashmap_get(socket_pair_map, (void*)(uintptr_t)domain);
+    mutex_release(&socket_handler_lck);
+
+    if (!create) return -EAFNOSUPPORT;
+
+    sock_t *outputs[2];
+    
+    int err = create(type, protocol, outputs);
+    if (err != 0) {
+        return err;
+    }
+
+    // Setup the first socket
+    sock_t *sock1 = outputs[0];
+    if (!sock1->recv_lock) sock1->recv_lock = spinlock_create("receive lock");
+    if (!sock1->recv_wait_queue) sock1->recv_wait_queue = sleep_createQueue("receive sleep queue");
+    if (!sock1->recv_queue) sock1->recv_queue = list_create("receive queue");
+    sock1->inode = socketfs_create(sock1);
+    sock1->domain = domain;
+    sock1->type = type;
+    sock1->protocol = protocol;
+
+    // Setup the second socket
+    sock_t *sock2 = outputs[1];
+    if (!sock2->recv_lock) sock2->recv_lock = spinlock_create("receive lock");
+    if (!sock2->recv_wait_queue) sock2->recv_wait_queue = sleep_createQueue("receive sleep queue");
+    if (!sock2->recv_queue) sock2->recv_queue = list_create("receive queue");
+    sock2->inode = socketfs_create(sock2);
+    sock2->domain = domain;
+    sock2->type = type;
+    sock2->protocol = protocol;
+
+    // Add them to the lists
+    sock1->id = last_socket_id++;
+    sock2->id = last_socket_id++;
+    mutex_acquire(&socket_list_lck);
+    list_append(socket_list, (void*)sock1);
+    list_append(socket_list, (void*)sock2);
+    mutex_release(&socket_list_lck);
+
+    if (type_original & SOCK_NONBLOCK) {
+        sock1->flags |= SOCKET_FLAG_NONBLOCKING;
+        sock2->flags |= SOCKET_FLAG_NONBLOCKING;
+    }
+
+    // Open the files
+    vfs_file_t *f1;    
+    vfs_file_t *f2;
+    assert(vfs_openat(sock1->inode, NULL, O_RDWR, &f1) == 0);
+    assert(vfs_openat(sock2->inode, NULL, O_RDWR, &f2) == 0);
+    inode_release(sock1->inode);
+    inode_release(sock2->inode);
+
+    // Add them as fds
+    assert(fd_add(f1, &pair[0]) == 0);
+    assert(fd_add(f2, &pair[1]) == 0);
+
+    if (type_original & SOCK_CLOEXEC) {
+        dprintf(WARN, "SOCK_CLOEXEC unsupported.\n");
+    }
+
+    return 0;
 }
 
 /**
@@ -625,13 +731,21 @@ sock_recv_packet_t *socket_get(sock_t *sock) {
  */
 sock_t *socket_fromID(int id) {
     // !!!: Slow
+
+    mutex_acquire(&socket_list_lck);
+    
     foreach(sock_node, socket_list) {
         sock_t *sock = (sock_t*)sock_node->value;
         if (sock) {
-            if (sock->id == id) return sock;
+            if (sock->id == id) {
+                mutex_release(&socket_list_lck);
+                return sock;
+            }
         }
     }
-    
+
+    mutex_release(&socket_list_lck);
+
     return NULL;
 }
 
@@ -641,6 +755,7 @@ sock_t *socket_fromID(int id) {
  */
 static int socket_init() {
     socket_map = hashmap_create_int("socket map", 4);
+    socket_pair_map = hashmap_create_int("socket pair map", 4);
     socket_list = list_create("socket list");
     assert((socket_cache = slab_createCache("socket node cache", SLAB_CACHE_DEFAULT, sizeof(sock_t), 0, NULL, NULL)));
     return 0;

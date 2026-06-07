@@ -59,6 +59,7 @@ static vfs_file_ops_t systemfs_file_ops = {
     .mmap           = NULL,
     .mmap_prepare   = NULL,
     .munmap         = NULL,
+    .check_flags    = NULL,
 };
 
 /* Inode operations */

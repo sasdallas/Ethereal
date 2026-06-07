@@ -94,6 +94,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_ACCEPT]            = (syscall_func_t)(uintptr_t)sys_accept,
     [SYS_GETSOCKNAME]       = (syscall_func_t)(uintptr_t)sys_getsockname,
     [SYS_GETPEERNAME]       = (syscall_func_t)(uintptr_t)sys_getpeername,
+    [SYS_SOCKETPAIR]        = (syscall_func_t)(uintptr_t)sys_socketpair,
     [SYS_MOUNT]             = (syscall_func_t)(uintptr_t)sys_mount,
     [SYS_UMOUNT]            = (syscall_func_t)(uintptr_t)sys_umount,
     [SYS_PIPE]              = (syscall_func_t)(uintptr_t)sys_pipe,
@@ -136,7 +137,19 @@ static syscall_func_t syscall_table[] = {
     [SYS_FUTEX_WAIT]        = (syscall_func_t)(uintptr_t)sys_futex_wait,
     [SYS_FUTEX_WAKE]        = (syscall_func_t)(uintptr_t)sys_futex_wake,
     [SYS_OPENAT]            = (syscall_func_t)(uintptr_t)sys_openat,
-    [SYS_RENAMEAT]          = (syscall_func_t)(uintptr_t)sys_renameat
+    [SYS_RENAMEAT]          = (syscall_func_t)(uintptr_t)sys_renameat,
+    [SYS_LINKAT]            = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_SYMLINKAT]         = (syscall_func_t)(uintptr_t)sys_symlinkat,
+    [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_FLOCK]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_UMASK]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_CLOCK_GETTIME]     = (syscall_func_t)(uintptr_t)sys_clock_gettime,
+    [SYS_PREAD]             = (syscall_func_t)(uintptr_t)sys_pread,
+    [SYS_PWRITE]            = (syscall_func_t)(uintptr_t)sys_pwrite,
+    [SYS_GETRLIMIT]         = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_SETRLIMIT]         = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_PAUSE]             = (syscall_func_t)(uintptr_t)sys_pause
 }; 
 
 
@@ -192,13 +205,13 @@ void syscall_handle(syscall_t *syscall) {
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
     if (syscall->syscall_number == 999) {
-        syscall->return_value = 0;
+        syscall->return_value = -EINVAL;
         return;
     }
 
     // Is the system call within bounds?
     if (syscall->syscall_number < 0 || syscall->syscall_number >= (int)(sizeof(syscall_table) / sizeof(*syscall_table))) {
-        LOG(ERR, "Invalid system call %d received\n");
+        LOG(ERR, "Invalid system call %d received\n", syscall->syscall_number);
         syscall->return_value = -EINVAL;
         return;
     }
@@ -217,7 +230,6 @@ void syscall_handle(syscall_t *syscall) {
 }
 
 void sys_exit(int status) {
-    LOG(DEBUG, "process %s sys_exit %d\n", current_cpu->current_process->name, status);
     syscall_finish();
     process_exit(NULL, status);
 }
@@ -268,10 +280,10 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
         return r;
     }
 
-    // !!!
-    // fd->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
-    // vfs_canonicalize(current_cpu->current_process->wd_path, pathname, fd->path);
-    
+    // !!!: very bad
+    file->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);
+
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
         r = vfs_seek(file, 0, SEEK_END);
@@ -400,7 +412,10 @@ long sys_lstat(const char *pathname, struct stat *statbuf) {
     // Try to open the file
     vfs_file_t *f;
     int r = vfs_open((char*)pathname, O_NOFOLLOW | O_PATH, &f);
-    if (r) return r;
+    if (r) {
+        SYSCALL_LOG(DEBUG, "lstat failed for %s error %d\n", pathname, r);
+        return r;
+    }
 
     // Common stat
     r = sys_stat_common(f, statbuf);
@@ -427,50 +442,15 @@ long sys_ioctl(int fd, unsigned long request, void *argp) {
  * @brief Change data segment size
  */
 void *sys_brk(void *addr) {
-    LOG(DEBUG, "sys_brk addr %p (curheap: %p - %p)\n", addr, current_cpu->current_process->heap_base, current_cpu->current_process->heap);
-
-    // Validate pointer is in range
-    if ((uintptr_t)addr < current_cpu->current_process->heap_base) {
-        // brk() syscall should return current program heap location on error
-        return (void*)current_cpu->current_process->heap;
-    }
-
-    // TODO: Validate resource limit
-
-    // If the user wants to shrink the heap, then do it
-    if ((uintptr_t)addr < current_cpu->current_process->heap) {
-        // TODO: Free area in VAS!!!
-        size_t free_size = current_cpu->current_process->heap - (uintptr_t)addr;
-        vmm_unmap(addr, free_size);
-        current_cpu->current_process->heap = (uintptr_t)addr;
-        return addr;
-    } else if ((uintptr_t)addr == current_cpu->current_process->heap) {
-        return addr;
-    }
-
-
-    // Else, "handle"
-    vmm_map((void*)current_cpu->current_process->heap, (uintptr_t)addr - current_cpu->current_process->heap, VM_FLAG_ALLOC | VM_FLAG_FIXED, MMU_FLAG_WRITE | MMU_FLAG_PRESENT | MMU_FLAG_USER);
-    
-    current_cpu->current_process->heap = (uintptr_t)addr;   // Sure.. you can totally have this memory ;)
-                                                            // (page fault handler will map this on a critical failure)
-
-
+    assert(0); // sbrk sucks anyways
     return addr;
 }
 
-/**
- * @brief Fork system call
- */
 pid_t sys_fork() {
     pid_t cpid = process_fork();
     return cpid;
 }
 
-
-/**
- * @brief lseek system call
- */
 off_t sys_lseek(int fd, off_t offset, int whence) {
     if (!FD_VALIDATE(fd)) {
         LOG(ERR, "Bad file descriptor %d\n", fd);
@@ -481,29 +461,18 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
     return vfs_seek(f, offset, whence);
 }
 
-/**
- * @brief Get time of day system call
- * @todo Use struct timezone
- */
 long sys_gettimeofday(struct timeval *tv, void *tz) {
     SYSCALL_VALIDATE_PTR(tv);
     if (tz) SYSCALL_VALIDATE_PTR(tz);
     return gettimeofday(tv, tz);
 }
 
-/**
- * @brief Set time of day system call
- * @todo Use struct timezone
- */
 long sys_settimeofday(struct timeval *tv, void *tz) {
     SYSCALL_VALIDATE_PTR(tv);
     SYSCALL_VALIDATE_PTR(tz);
     return settimeofday(tv, tz);
 }
 
-/**
- * @brief usleep system call
- */
 long sys_usleep(useconds_t usec) {
     sleep_time((usec / 1000000), (usec % 1000000));
     if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
@@ -511,10 +480,6 @@ long sys_usleep(useconds_t usec) {
     return 0;
 }
 
-
-/**
- * @brief execve system call
- */
 long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     // Validate pointers
     SYSCALL_VALIDATE_PTR(pathname);
@@ -567,9 +532,6 @@ long sys_execve(const char *pathname, const char *argv[], const char *envp[]) {
     return binfmt_exec((char*)pathname, f, argc, new_argv, new_envp);
 }
 
-/**
- * @brief wait system call
- */
 long sys_wait(pid_t pid, int *wstatus, int options) {
     if (wstatus) {
         SYSCALL_VALIDATE_PTR(wstatus);
@@ -578,9 +540,6 @@ long sys_wait(pid_t pid, int *wstatus, int options) {
     return process_waitpid(pid, wstatus, options);
 }
 
-/**
- * @brief getcwd system call
- */
 long sys_getcwd(char *buffer, size_t size) {
     if (!size || !buffer) return 0;
     SYSCALL_VALIDATE_PTR(buffer)
@@ -588,52 +547,9 @@ long sys_getcwd(char *buffer, size_t size) {
     // Copy the current working directory to buffer
     size_t wd_len = strlen(current_cpu->current_process->wd_path);
     strncpy(buffer, current_cpu->current_process->wd_path, (wd_len > size) ? size : wd_len);
-    return size;
-}
-
-/**
- * @brief chdir system call
- */
-long sys_chdir(const char *path) {
-    SYSCALL_VALIDATE_PTR(path);
-
-    // !!!: this is bad
-    vfs_inode_t *i;
-    int res = vfs_lookup((char*)path, &i, LOOKUP_DEFAULT);
-    if (res == 0) {
-        if (i->attr.type != VFS_DIRECTORY) {
-            inode_release(i);
-            return -ENOTDIR;
-        }
-
-        char tmp[strlen(current_cpu->current_process->wd_path) + strlen(path) + 1];
-        vfs_canonicalize(current_cpu->current_process->wd_path, (char*)path, tmp);
-
-        kfree(current_cpu->current_process->wd_path);
-        current_cpu->current_process->wd_path = strdup(tmp);
-        
-        vfs_inode_t *old = current_cpu->current_process->wd_node;
-        current_cpu->current_process->wd_node = i; // already locked
-        inode_release(old);
-
-        LOG(DEBUG, "CHDIR: Inode %p Path %s\n", current_cpu->current_process->wd_node, current_cpu->current_process->wd_path);
-        return 0;
-    }
-
-    return res;
-}
-
-/**
- * @brief fchdir system call
- */
-long sys_fchdir(int fd) {
-    SYSCALL_UNIMPLEMENTED("sys_fchdir");
     return 0;
 }
 
-/**
- * @brief readdir system call
- */
 long sys_readdir(struct dirent *ent, int fd, unsigned long index) {
     // SYSCALL_VALIDATE_PTR(ent);
     // if (!FD_VALIDATE(fd)) {
@@ -787,6 +703,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     int w = poll_wait(waiter, timeout);
 
     if (w == -EINTR) {
+        (current_cpu->current_thread->blocked_signals) = old_set;
         poll_exit(waiter);
         poll_destroyWaiter(waiter);
         return -EINTR;
@@ -831,8 +748,11 @@ long sys_pselect(sys_pselect_context_t *ctx) {
 
     (current_cpu->current_thread->blocked_signals) = old_set;
 
-    poll_exit(waiter);
-    poll_destroyWaiter(waiter);
+    if (w != -ETIMEDOUT) {
+        poll_exit(waiter);
+        poll_destroyWaiter(waiter);
+    }
+
     return ret;
 }
 
@@ -867,20 +787,6 @@ long sys_access(const char *path, int amode) {
 
 long sys_chmod(const char *path, mode_t mode) {
     SYSCALL_UNIMPLEMENTED("sys_chmod");
-}
-
-long sys_fcntl(int fd, int cmd, int extra) {
-    vfs_file_t *file = GET_FD_OR_ERROR(fd);
-
-    switch (cmd) {
-        case F_SETFL:
-            file->flags = extra;
-            return 0;
-
-        default:
-            LOG(WARN, "Unimplemented fcntl() command: 0x%x\n", cmd);
-            return -ENOSYS;
-    }
 }
 
 long sys_ftruncate(int fd, off_t length) {
@@ -1021,7 +927,6 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
 
         THREAD_SIGNAL(current_cpu->current_thread, signum).mask = act->sa_mask;
         THREAD_SIGNAL(current_cpu->current_thread, signum).flags = act->sa_flags;
-        LOG(DEBUG, "Changed signal %s (%d) to use handler %p mask 0x%016llx flags 0x%x\n", strsignal(signum), signum, act->sa_handler, act->sa_mask, act->sa_flags);
     }
 
     return 0;
@@ -1203,9 +1108,14 @@ long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *te
     // Make a PTY
     vfs_file_t *master;
     vfs_file_t *slave;
-    int r = pty_create(NULL, &master, &slave);
+    pty_t *pty;
+    int r = pty_create(&pty, &master, &slave);
     if (r) return r;
 
+    if (name) {
+        SYSCALL_VALIDATE_PTR(name);
+        strcpy(name, pty->slave->name);
+    }
 
     r = fd_add(master, amaster);
     if (r < 0) assert(0); // todo

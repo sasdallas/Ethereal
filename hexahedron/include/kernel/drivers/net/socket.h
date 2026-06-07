@@ -124,6 +124,15 @@ typedef struct sock_recv_packet {
  */
 typedef sock_t* (*socket_create_t)(int type, int protocol);
 
+/**
+ * @brief Socket pair creation function
+ * @param type The type of socket
+ * @param protocol The protocol to use while creating the socket
+ * @param output The output socket array for you to place
+ * @returns Error code
+ */
+typedef int (*socket_pair_create_t)(int type, int protocol, sock_t* output[2]);
+
 /**** FUNCTIONS ****/
 
 /**
@@ -146,6 +155,14 @@ void socket_free(sock_t *sock);
  * @returns 0 on success
  */
 int socket_register(int domain, socket_create_t socket_create);
+
+/**
+ * @brief Register a new handler for @c socket_pair
+ * @param domain The domain of the handler to register
+ * @param socket_pair_create Socket pair creation function
+ * @returns 0 on success
+ */
+int socket_registerPair(int domain, socket_pair_create_t socket_pair_create);
 
 /**
  * @brief Create a new socket for a given process
@@ -282,6 +299,15 @@ sock_t *socket_fromID(int id);
  * @warning DO NOT USE THIS IN ANYWHERE BUT ACCEPT
  */
 int socket_insert(sock_t *sock);
+
+/**
+ * @brief Create a pair of sockets
+ * @param domain The domain of the sockets
+ * @param type The type of the sockets
+ * @param protocol The socket protocol
+ * @param pair Pair fd output array
+ */
+int socket_pair(int domain, int type, int protocol, int pair[2]);
 
 /**
  * @brief Returns whether a socket is nonblocking

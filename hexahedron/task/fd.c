@@ -125,7 +125,10 @@ static int fd_allocateFree(fd_table_t *table) {
     if (fd_recalculateFirstFree(table)) {
         // then we need to grow the table
         int r = fd_growTable(table, table->table_size + 8);
-        if (r!=0) return r;    
+        if (r != 0) {
+            LOG(DEBUG, "Error growing table: %d\n", r);
+            return r;    
+        }    
     }
 
     int fd = table->lowest_avl;

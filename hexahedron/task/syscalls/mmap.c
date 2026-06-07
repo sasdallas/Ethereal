@@ -50,10 +50,14 @@ long sys_mmap(sys_mmap_context_t *context) {
     if (!addr) addr = (void*)PROCESS_MMAP_MINIMUM;
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
 
-    if (len & 0xfff) len = PAGE_ALIGN_UP(len);
-    if (off & 0xfff) off = PAGE_ALIGN_UP(off);
+    len = PAGE_ALIGN_UP(len);
+    off = PAGE_ALIGN_UP(off);
 
     // Convert protection flags
+    if (!(prot & PROT_READ)) {
+        // !!!: Hack for wine which probes the address space with PROT_NONE... TO BE REMOVED!
+        prot = PROT_READ | PROT_WRITE;
+    }
 
     mmu_flags_t mmu_flags =     ((prot & PROT_READ) ? MMU_FLAG_PRESENT : 0) |
                                 ((prot & PROT_WRITE) ? MMU_FLAG_WRITE : 0) |
@@ -87,7 +91,14 @@ long sys_mmap(sys_mmap_context_t *context) {
         r = vmm_map(addr, len, vm_flags, mmu_flags);
     }
 
-    if (!r) return -ENOMEM;
+
+    // SYSCALL_LOG(INFO, "mmap(%p, %d, 0x%x, 0x%x, %d, %d) = %p\n", context->addr, context->len, context->prot, context->flags, context->filedes, context->off, r);
+
+    if (!r) {
+        SYSCALL_LOG(ERR, "Out of memory for allocation at address %p length 0x%x\n", addr, len);
+        return -ENOMEM;
+    }
+    
     return (long)r;
 }
 

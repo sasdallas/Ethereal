@@ -38,37 +38,43 @@ static vmm_range_page_t *vmm_ranges_head = NULL;
  * @returns The start of the region or NULL on failure
  */
 uintptr_t vmm_findFree(vmm_space_t *space, uintptr_t address, size_t size) {
-    if (!space->range) return address;
-    if (address ==  0x0) address = space->start;
+    if (!space || size == 0) return 0x0;
 
-    // Space at the beginning?
-    vmm_memory_range_t *r = space->range;
-    if (r->start > address && (r->start - address) >= size) {
-        return address;
+    // Normalize hint
+    if (address == 0x0 || address < space->start) address = space->start;
+    address = PAGE_ALIGN_UP(address);
+    size = PAGE_ALIGN_UP(size);
+
+    // Fast path: no ranges yet
+    if (!space->range) {
+        if (address <= space->end && size <= (space->end - address)) return address;
+        dprintf(WARN, "vmm_findFree could not find a free region\n");
+        return 0x0;
     }
 
-    // Look for holes between the regions
+    uintptr_t cand = address;
+    vmm_memory_range_t *r = space->range;
+
     while (r) {
-        if (!r->next) break;
+        // If the candidate + size fits before this range, use it
+        if (cand <= r->start && size <= (r->start - cand)) {
+            return cand;
+        }
 
-        if (r->end < address) { r = r->next; continue; }
-        if (r->end > address) address = r->end;
-
-        // Calculate hole size
-        size_t hole_size = r->next->start - address;
-        if (hole_size >= size) {
-            // We have enough
-            return address;
+        // If candidate overlaps or is inside this range, move past it
+        if (cand < r->end) {
+            cand = PAGE_ALIGN_UP(r->end);
         }
 
         r = r->next;
     }
 
-    // Space from the end?
-    if (space->end - address >= size) {
-        return address;
+    // Check tail space after the last range
+    if (cand <= space->end && size <= (space->end - cand)) {
+        return cand;
     }
 
+    dprintf(WARN, "vmm_findFree could not find a free region\n");
     return 0x0;
 }
 
@@ -119,6 +125,7 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
         dprintf(ERR, "Error inserting range %p - %p, target range %p - %p does not work\n", range->start, range->end, r->start, r->end);
         assert(0);
     }
+
     r->next = range;
     range->next = NULL;
     range->prev = r;
@@ -226,9 +233,11 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
         } else {
             if (range->vmm_flags & VM_FLAG_ALLOC) {
                 space->metrics.anon_usage -= PAGE_SIZE;
-                space->metrics.anon_resident -= PAGE_SIZE;
                 uintptr_t pg = arch_mmu_physical(NULL, i);
-                if (pg != 0x0) pmm_freePage(pg);
+                if (pg != 0x0) {
+                    space->metrics.anon_resident -= PAGE_SIZE;
+                    pmm_freePage(pg);
+                }
             }
         }
 

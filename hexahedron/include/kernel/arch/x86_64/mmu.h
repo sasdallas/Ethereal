@@ -35,7 +35,7 @@
 #define MMU_KERNELSPACE_END     (uintptr_t)0xFFFFFFFFFFFFF000
 
 #define MMU_USERSPACE_START     (uintptr_t)0x0000000000000000
-#define MMU_USERSPACE_END       (uintptr_t)0x0000700000000000
+#define MMU_USERSPACE_END       (uintptr_t)0x0000800000000000
 
 #define MMU_KERNEL_REGION       (uintptr_t)0xFFFFF00000000000
 #define MMU_HHDM_REGION         (uintptr_t)0xFFFFFF8000000000

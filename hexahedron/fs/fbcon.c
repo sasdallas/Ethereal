@@ -15,8 +15,11 @@
 #include <kernel/init.h>
 #include <kernel/gfx/term.h>
 #include <kernel/debug.h>
+#include <sys/ioctl_ethereal.h>
 
 static ssize_t fbcon_write(devfs_node_t *file, loff_t off, size_t size, const char *buffer);
+
+static int fbcon_ioctl(devfs_node_t *file, unsigned long request, void *arg);
 
 /* fbcon ops */
 static devfs_ops_t fbcon_dev_ops = {
@@ -24,7 +27,7 @@ static devfs_ops_t fbcon_dev_ops = {
     .close = NULL,
     .read = NULL,
     .write = fbcon_write,
-    .ioctl = NULL,
+    .ioctl = fbcon_ioctl,
     .lseek = NULL,
     .mmap = NULL,
     .mmap_prepare = NULL,
@@ -51,6 +54,15 @@ extern int video_ks;
     return size;
 }
 
+
+static int fbcon_ioctl(devfs_node_t *file, unsigned long request, void *arg) {
+    if (request == IOCTLTTYIS) {
+        *(int*)arg = 1; 
+        return 0;
+    }
+
+    return -ENODEV;
+}
 /**
  * @brief fbcon init
  */

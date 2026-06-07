@@ -185,6 +185,7 @@ long sys_listen(int socket, int backlog);
 long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen);
 long sys_getsockname(int socket, struct sockaddr *address, socklen_t *address_len);
 long sys_getpeername(int socket, struct sockaddr *address, socklen_t *address_len);
+long sys_socketpair(int domain, int type, int protocol, int output[2]);
 long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data);
 long sys_umount(const char *mountpoint);
 long sys_pipe(int fildes[2]);
@@ -215,6 +216,11 @@ long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time
 long sys_futex_wake(uint32_t *pointer);
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode);
 long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags); 
+long sys_clock_gettime(int clock, time_t *secs, long *nanos);
+long sys_symlinkat(const char *target_path, int dirfd, const char *link_path);
+long sys_pread(int fd, void *buf, size_t nbyte, off_t offset);
+long sys_pwrite(int fd, void *buf, size_t nbyte, off_t offset);
+long sys_pause();
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);

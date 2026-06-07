@@ -128,6 +128,7 @@ typedef struct vfs_file_ops {
     int (*munmap)(struct vfs_file *file, void *addr, size_t size, off_t offset);
     int (*mmap_prepare)(struct vfs_file *file, struct vmm_memory_range *range); // prepare the range for mapping (yes, it will be a VMM memory range)
     int (*lseek)(struct vfs_file *file, loff_t off, int whence, loff_t *pos); // optional lseek equivalent. pos is a pointer to file->pos. returns 0 on success and sets pos to the new pos.
+    int (*check_flags)(struct vfs_file *file); // called on fcntl(F_SETFL)
 } vfs_file_ops_t;
 
 /* Inode attributes */
@@ -200,6 +201,7 @@ typedef struct vfs_file {
     refcount_t refcount;
     loff_t pos;                 // File position, note that in directories this is used to iterate
     long flags;                 // Opening flags
+    char *path;                 // !!!: Set by open as a hack, on vfs_destroyFile if this is set it'll be automatically freed.
     void *priv;                 // Private data for the file
 } vfs_file_t;
 
@@ -256,6 +258,7 @@ static inline int file_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t 
 static inline int file_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags) { if (f->ops->mmap) { return f->ops->mmap(f, addr, size, off, flags); } else { return -ENOTSUP; }}
 static inline int file_mmap_prepare(vfs_file_t *f, void *range) { if (f->ops->mmap_prepare) { return f->ops->mmap_prepare(f, range); } else { return 0; }}
 static inline int file_munmap(vfs_file_t *f, void *addr, size_t size, off_t offset) { if (f->ops->munmap) { return f->ops->munmap(f, addr, size, offset); } else { return -ENOTSUP; }}
+static inline int file_check_flags(vfs_file_t *f) { if (f->ops->check_flags) { return f->ops->check_flags(f); } else { return 0; } }
 static inline int inode_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **inode_output) { if (parent->ops->create) { return parent->ops->create(parent, name, mode, inode_output); } else { return -ENOTSUP; }} // TODO: maybe EROFS?
 static inline int inode_link(vfs_inode_t *i, vfs_inode_t *parent, char *link_name) { if (i->ops->link) { return i->ops->link(i, parent, link_name); } else { return -ENOTSUP; }}
 static inline int inode_mkdir(vfs_inode_t *i, char *name, mode_t mode, vfs_inode_t **inode_output) { if (i->ops->mkdir) { return i->ops->mkdir(i, name, mode, inode_output); } else { return -ENOTSUP; }}

@@ -154,6 +154,9 @@ void process_yield(uint8_t reschedule) {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
 
+    // Clear resched flag so we dont get preempted in here
+    next_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
+
     // Update CPU variables
     current_cpu->current_thread = next_thread;
     current_cpu->current_process = next_thread->parent;

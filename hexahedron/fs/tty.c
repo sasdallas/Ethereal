@@ -83,6 +83,10 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
     tty_t *tty = file->priv;
 
     if (tty->tios.c_lflag & ICANON || tty->tios.c_cc[VMIN] == 0) {
+        if (tty->is_nonblocking && circbuf_remaining_read(tty->read_buf) == 0) {
+            return -EWOULDBLOCK;
+        }
+        
         return circbuf_read(tty->read_buf, size, (uint8_t*)buffer);
     } else {
         size_t sz_to_read = size;
@@ -91,6 +95,10 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
         }
 
         for (size_t i = 0; i < sz_to_read; i++) {
+            if (tty->is_nonblocking && circbuf_remaining_read(tty->read_buf) == 0) {
+                return -EWOULDBLOCK;
+            }
+        
             ssize_t r = circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
             if (r < 0) return r;
         }
@@ -342,9 +350,6 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
             SYSCALL_VALIDATE_PTR(argp);
             struct termios *tios_new = (struct termios *)argp;
 
-            LOG(DEBUG, "TCSETS: From lflag=%x oflag=%x iflag=%x cflag=%x\n", tty->tios.c_lflag, tty->tios.c_oflag, tty->tios.c_iflag, tty->tios.c_cflag);
-            LOG(DEBUG, "TCSETS: To  lflag=%x oflag=%x iflag=%x cflag=%x\n", tios_new->c_lflag, tios_new->c_oflag, tios_new->c_iflag, tios_new->c_cflag);
-
             if (((tios_new->c_lflag & ICANON) == 0) && tty->tios.c_lflag & ICANON) {
                 tty_flush(tty);
             }
@@ -356,6 +361,16 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
         case TCGETS:
             SYSCALL_VALIDATE_PTR(argp);
             memcpy(argp, &tty->tios, sizeof(struct termios));
+            return 0;
+
+        // TODO: Support F_SETFL nonblocking as well
+        case FIONBIO:
+            SYSCALL_VALIDATE_PTR(argp);
+            if (*(char*)argp) {
+                tty->is_nonblocking = true;
+            } else {
+                tty->is_nonblocking = false;
+            }
             return 0;
 
         default:
@@ -377,6 +392,11 @@ static int tty_ioctl(devfs_node_t *file, unsigned long request, void *argp) {
  */
 static ssize_t pty_master_read(devfs_node_t *file, loff_t off, size_t size, char *buffer) {
     pty_t *pty = file->priv;
+
+    if (pty->is_nonblocking && circbuf_remaining_read(pty->out) == 0) {
+        return -EWOULDBLOCK;
+    }
+
     return circbuf_read(pty->out, size, (uint8_t*)buffer);
 }
 
@@ -397,6 +417,16 @@ static ssize_t pty_master_write(devfs_node_t *file, loff_t off, size_t size, con
  */
 static int pty_master_ioctl(devfs_node_t *file, unsigned long request, void *argp) {
     pty_t *pty = file->priv;
+
+    // TODO: Support F_SETFL O_NONBLOCK (more of a devfs thing though)
+    if (request == FIONBIO) {
+        SYSCALL_VALIDATE_PTR(argp);
+        char a = *(char*)argp;
+
+        pty->is_nonblocking = !!a;
+        return 0;
+    }
+
     return __tty_ioctl(pty->slave, request, argp);
 }
 

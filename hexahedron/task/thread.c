@@ -123,6 +123,7 @@ void thread_safeExit(thread_t *arg) {
         process_destroy(t->parent);
     }
 
+    PREEMPT_ENABLE();
     process_switchNextThread();
 }
 
@@ -137,5 +138,6 @@ void thread_exit() {
 
     // Shitty hack, go!
     // !!!: TODO Replace this stupid hack with something better. The idea of using a func is fine but using the idle process is silly
+    PREEMPT_DISABLE();
     arch_handle_threadexit(current_cpu->idle_process->main_thread, t);
 }

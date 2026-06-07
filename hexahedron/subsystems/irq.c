@@ -23,6 +23,7 @@
 #include <kernel/mm/slab.h>
 #include <kernel/arch/arch.h>
 #include <kernel/task/process.h>
+#include <kernel/tasklet.h>
 #include <kernel/panic.h>
 #include <kernel/debug.h>
 #include <string.h> 
@@ -329,6 +330,11 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
 
     IRQ_EXIT();
 
+    // handle irq exit
+    if (current_cpu->tasklet && TASKLET_PENDING()) {
+        tasklet_process();
+    }
+    
     if (current_cpu->irq_bitmap == 0 && current_cpu->current_thread && (current_cpu->current_thread->flags & THREAD_FLAG_NEEDS_RESCHED)) {
         process_yield(1);
     }

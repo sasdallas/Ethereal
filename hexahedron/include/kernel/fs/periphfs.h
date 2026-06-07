@@ -16,8 +16,6 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <kernel/misc/spinlock.h>
-
 
 /**** DEFINITIONS ****/
 
@@ -91,15 +89,6 @@ typedef struct key_event {
     key_scancode_t scancode;    // Scancode
 } key_event_t;
 
-/**
- * @brief Keyboard queue buffer
- */
-typedef struct key_buffer {
-    spinlock_t lock;
-    key_event_t event[KBD_QUEUE_EVENTS];
-    volatile int head;
-    volatile int tail;
-} key_buffer_t;
 
 /**
  * @brief Mouse event
@@ -112,15 +101,6 @@ typedef struct mouse_event {
     uint8_t scroll;         // Scroll direction
 } mouse_event_t;
 
-/**
- * @brief Mouse queue buffer
- */
-typedef struct mouse_buffer {
-    spinlock_t lock;
-    mouse_event_t event[MOUSE_QUEUE_EVENTS];
-    volatile int head;
-    volatile int tail;
-} mouse_buffer_t;
  
 /**** MACROS ****/
 

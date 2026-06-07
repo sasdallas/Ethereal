@@ -186,6 +186,9 @@ extern void hal_installIDT();
     irq_map(percpu_domain, 124, 124, NULL);
     irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
     
+    // Before the local APIC timer is initialized we must have tasklets
+    tasklet_init();
+
     // Reinitialize the APIC
     lapic_initialize(lapic_remapped);
 
@@ -200,7 +203,6 @@ extern void hal_installIDT();
     ap_startup_finished = 1;
 
     current_cpu->sched.state = SCHEDULER_STATE_INACTIVE;
-
     scheduler_initCPU();
     
     // Switch

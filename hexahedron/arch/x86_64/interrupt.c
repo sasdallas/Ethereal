@@ -398,13 +398,20 @@ void hal_unregisterExceptionHandler(uintptr_t int_no) {
 /**
  * @brief Set interrupt state on the current CPU
  * @param state The interrupt state to set
+ * @returns Last state
  */
-void hal_setInterruptState(int state) {
+int hal_setInterruptState(int state) {
+    uintptr_t flags;
+    asm volatile ("pushf\n"
+                    "pop %0" : "=rm"(flags));
+                    
     if (state == HAL_INTERRUPTS_ENABLED) {
         asm volatile ("sti");
     } else {
         asm volatile ("cli");
     }
+
+    return (flags & (1 << 9)) ? HAL_INTERRUPTS_ENABLED : HAL_INTERRUPTS_DISABLED;
 }
 
 /**

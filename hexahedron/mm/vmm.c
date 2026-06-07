@@ -97,7 +97,10 @@ int vmm_destroyContextObj(slab_cache_t *cache, void *object) {
  * @brief Create a new VMM context
  */
 vmm_context_t *vmm_createContext() {
-    if (!vmm_context_cache) vmm_context_cache = slab_createCache("vmm context cache", SLAB_CACHE_NOLEAKTRACE, sizeof(vmm_context_t) + sizeof(vmm_space_t), 0, vmm_initializeContext, vmm_destroyContextObj);
+    if (!vmm_context_cache) {
+        vmm_context_cache = slab_createCache("vmm context cache", SLAB_CACHE_NOLEAKTRACE, sizeof(vmm_context_t) + sizeof(vmm_space_t), 0, vmm_initializeContext, vmm_destroyContextObj);
+    }
+    
     return slab_allocate(vmm_context_cache);
 }
 
@@ -300,7 +303,11 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
 
     // Find the appropriate space for the address
     vmm_space_t *sp = vmm_getSpaceForAddress(addr);
-    assert(sp);
+
+    if (!sp) {
+        LOG(DEBUG, "No space available for address %p\n", addr);
+        return NULL;
+    }
 
     // Mutex
     mutex_acquire(sp->mut);
