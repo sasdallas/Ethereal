@@ -64,7 +64,8 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
     vmm_fault_information_t info = {
         .from = loc,
         .exception_type = flags,
-        .address = (uintptr_t)regs_extended->cr2
+        .address = (uintptr_t)regs_extended->cr2,
+        .pc = regs->rip
     };
 
     // dprintf(DEBUG, "Page fault %p %016llX %x\n", regs_extended->cr2, regs->rip, regs->err_code);
@@ -429,7 +430,7 @@ void arch_mmu_invalidate_range(uintptr_t start, uintptr_t end) {
     }
 
     // TLB shootdown other CPUs, only if conditions are met.
-    if (start >= MMU_KERNELSPACE_START || (end < MMU_USERSPACE_END && current_cpu->current_process && current_cpu->current_process->nthreads > 1)) {
+    if (start >= MMU_KERNELSPACE_START || (end <= MMU_USERSPACE_END && current_cpu->current_process && current_cpu->current_process->nthreads > 1)) {
         smp_tlbShootdown(start, end-start);
     }
 }
