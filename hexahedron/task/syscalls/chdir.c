@@ -14,6 +14,7 @@
 #include <kernel/task/process.h>
 
 long sys_chdir(const char *path) {
+    if (!path) return -ENOENT;
     SYSCALL_VALIDATE_PTR(path);
 
     // !!!: this is bad and not safe
