@@ -13,6 +13,7 @@
 
 #include <kernel/mm/vmm.h>
 #include <kernel/misc/util.h>
+#include <kernel/processor_data.h>
 
 /* Structure for managing the pages from which ranges can be pulled */
 typedef struct vmm_range_page {
@@ -84,7 +85,7 @@ uintptr_t vmm_findFree(vmm_space_t *space, uintptr_t address, size_t size) {
  * @param range The range to insert into the VMM context
  */
 void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
-    range->end = PAGE_ALIGN_DOWN(range->end);
+    range->end = PAGE_ALIGN_UP(range->end);
     range->start = PAGE_ALIGN_DOWN(range->start);
     assert(range->end > range->start);
     assert(RANGE_IN_RANGE(range->start, range->end, space->start, space->end));
@@ -222,6 +223,7 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
  * @brief Internal function to demark pages
  */
 void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
+    assert(space == current_cpu->current_context->space || space == vmm_kernel_space);
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start + offset; i < range->start + offset + (npages * PAGE_SIZE); i += PAGE_SIZE) {
         if (range->vmm_flags & VM_FLAG_FILE) {

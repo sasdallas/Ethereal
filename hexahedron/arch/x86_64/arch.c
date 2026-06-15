@@ -150,7 +150,6 @@ extern uintptr_t __kernel_start, __kernel_end;
  * moving things around, whatever you need to do
  */
 void arch_panic_prepare() {
-    dprintf(ERR, "Fatal panic state detected - please wait, cleaning up...\n");
     smp_disableCores();
 }
 

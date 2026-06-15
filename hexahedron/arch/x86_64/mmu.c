@@ -64,8 +64,7 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
     vmm_fault_information_t info = {
         .from = loc,
         .exception_type = flags,
-        .address = (uintptr_t)regs_extended->cr2,
-        .pc = regs->rip
+        .address = (uintptr_t)regs_extended->cr2
     };
 
     // dprintf(DEBUG, "Page fault %p %016llX %x\n", regs_extended->cr2, regs->rip, regs->err_code);

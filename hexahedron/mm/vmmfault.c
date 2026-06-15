@@ -93,7 +93,11 @@ int vmm_fault(vmm_fault_information_t *info) {
             uintptr_t pg = pmm_allocatePage(ZONE_DEFAULT);
             arch_mmu_map(NULL, info->address, pg, r->mmu_flags);
             arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
-            memset((void*)info->address, 0, PAGE_SIZE);
+            
+            if (r->mmu_flags & MMU_FLAG_WRITE) {
+                memset((void*)info->address, 0, PAGE_SIZE);
+            }
+
             sp->metrics.anon_resident += PAGE_SIZE;
         }
     } else if (!(fl & MMU_FLAG_WRITE)) {
@@ -123,8 +127,8 @@ int vmm_fault(vmm_fault_information_t *info) {
         }
 
     } else {
-        LOG(ERR, "VMM error: Address %p has flags %x\n", info->address, fl);
-        assert(0 && "unimplemented");
+        // assume that the fault was already resolved
+        LOG(DEBUG, "Fault was already resolved\n");
     }
 
     mutex_release(sp->mut);

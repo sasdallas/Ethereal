@@ -57,9 +57,9 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
                 pmm_retain(phys);
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags); // shared memory
             } else {
-                arch_mmu_map(ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
-                pmm_retain(phys);
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+                pmm_retain(phys);
+                arch_mmu_setflags(ctx->dir, i, nrange->mmu_flags & ~MMU_FLAG_WRITE);
             }
 #else
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
