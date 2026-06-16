@@ -70,7 +70,7 @@ long sys_exit_thread(void *retval) {
     }
 
     // Mark this thread as stopped
-    __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPED);
+    __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
     spinlock_release(&current_cpu->current_thread->joiner_lck);
 
     // Bye thread
