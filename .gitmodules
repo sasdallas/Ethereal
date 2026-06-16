@@ -7,3 +7,4 @@
 [submodule "external/essence/essence"]
 	path = external/essence/essence
 	url = https://github.com/sasdallas/essence
+	branch = main
