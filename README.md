@@ -11,23 +11,20 @@ Currently, the project is developing its usermode stages.
 
 ## Screenshots
 
+![Ethereal Latest](screenshots/1.png)\
+*Ethereal*
+
 <img width="1925" height="1078" alt="image" src="https://github.com/user-attachments/assets/5f5725af-de16-43bf-9217-6db994f9ff2e" />\
 *Modern, 1080p desktop environment*
 
 <img width="1040" height="799" alt="image" src="https://github.com/user-attachments/assets/06835253-90cd-4785-a0f8-9f0042ac3676" />\
 *Ethereal older main desktop environment with DOOM*
 
-![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ygmgdlm3dowe1.png?width=1620&format=png&auto=webp&s=0473ac09024c17cefb294c8570671e415866b915)\
-*Ethereal booting in debug mode*
-
 ![Ethereal but REALLY on IRC](https://github.com/user-attachments/assets/fedac2c5-db99-463f-88d9-44b1a239dcdd)\
 *Ethereal on Libera chat (#ethereal)*
 
 ![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ahe88a85dowe1.png?width=682&format=png&auto=webp&s=b435a1e0d57a91b7d4e0479f9649960b74a22de7)\
 *Ethereal running DOOM*
-
-![fixed](https://github.com/user-attachments/assets/bfdce356-5555-436b-990d-3aad65d22dea)\
-*Ethereal running a neofetch clone made for it (whatarewe)*
 
 ## Features
 
