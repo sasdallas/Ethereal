@@ -158,8 +158,6 @@ wm_window_t *window_new(int sock, int flags, size_t width, size_t height) {
     win->height = height;
     win->x = GFX_WIDTH(WM_GFX) / 2 - (width/2);
     win->y = GFX_HEIGHT(WM_GFX) / 2 - (height/2);
-    win->width = width;
-    win->height = height;
     win->animation = WINDOW_ANIM_NONE;
     win->events = 0x0;
 
@@ -321,6 +319,7 @@ void window_redraw() {
             }
 
 
+            munmap(upd->win->buffer, upd->win->width * upd->win->height * 4);
             close(upd->win->shmfd);
             free(upd->win->sp);
             free(upd->win);

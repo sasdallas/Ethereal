@@ -24,6 +24,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <assert.h>
 
 #include "window.h"
 #include "socket.h"

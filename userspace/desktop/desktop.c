@@ -109,7 +109,7 @@ void reload_signal(int signum) {
 
     fclose(bg_file);
     background_sprite = new;
-    gfx_renderSprite(bg_ctx, background_sprite, 0, 0); // TODO: SCALING!
+    gfx_renderSpriteScaled(bg_ctx, background_sprite, GFX_RECT(0,0,background_window->width, background_window->height));
     gfx_render(bg_ctx);
     celestial_flip(background_window);
     return;
@@ -126,7 +126,6 @@ _fallback:
 void usage() {
     printf("Usage: desktop [-b] [PROGRAM]\n");
     printf("Main Ethereal desktop interface, providing the background, system clock, etc.\n");
-    // printf(" -b, --no-background        Disable the background entirely\n");
     printf(" -h, --help                 Display this help message\n");
     printf(" -v, --version              Display the version of desktop\n");
     exit(1);
@@ -203,7 +202,7 @@ void create_background() {
         exit(1);
     }
 
-    wid_t bgwid = celestial_createWindowUndecorated(0, info->screen_width, info->screen_height);
+    wid_t bgwid = celestial_createWindowUndecorated(CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS, info->screen_width, info->screen_height);
     if (bgwid < 0) {
         perror("celestial_createWindowUndecorated");
         exit(1);
@@ -239,7 +238,7 @@ void create_background() {
     }
 
     fclose(bg_file);
-    gfx_renderSprite(bg_ctx, background_sprite, 0, 0); // TODO: SCALING!
+    gfx_renderSpriteScaled(bg_ctx, background_sprite, GFX_RECT(0,0,background_window->width, background_window->height));
     gfx_render(bg_ctx);
     celestial_flip(background_window);
     return;
@@ -372,22 +371,6 @@ int main(int argc, char *argv[]) {
 
     // Load the widgets
     widgets_load();
-    
-    // Launch toast-server
-    cpid = fork();
-    if (!cpid) {
-        char *start = "toast-server";
-        if (argc-optind) {
-            start = argv[optind];
-        }       
-
-        char *args[] = { start, NULL };
-        execvp(start, args);
-        return 1;
-    }
-
-    // Say hi!
-    system("show-toast --text=\"Welcome to Ethereal!\nThank you for supporting development!\" --title=\"Welcome to Ethereal\"");
 
     while (1) {
         struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};

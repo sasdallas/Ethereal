@@ -358,7 +358,7 @@ void socket_handle(int sock) {
                 list_delete(WM_WINDOW_LIST, list_find(WM_WINDOW_LIST, win));
                 break;
             case CELESTIAL_Z_OVERLAY:
-                list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST, win));
+                list_delete(WM_WINDOW_LIST_OVERLAY, list_find(WM_WINDOW_LIST_OVERLAY, win));
                 break;
         }
 

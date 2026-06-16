@@ -23,6 +23,5 @@ int event_send(wm_window_t *win, void *event) {
     // Check to make sure the event is subscribed to
     celestial_event_header_t *hdr = (celestial_event_header_t*)event;
     CELESTIAL_DEBUG("event: Send event %d\n", hdr->type);
-    if (!((win->events & hdr->type) == hdr->type)) return 0; // Not subscribed
     return socket_send(win->sock, hdr->size, event);
 }

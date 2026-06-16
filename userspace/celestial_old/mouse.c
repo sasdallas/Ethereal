@@ -466,10 +466,6 @@ int mouse_update() {
     if ((size_t)WM_MOUSEX >= GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width-1) WM_MOUSEX = GFX_WIDTH(WM_GFX)-WM_MOUSE_SPRITE->width;
     if ((size_t)WM_MOUSEY >= GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height) WM_MOUSEY = GFX_HEIGHT(WM_GFX)-WM_MOUSE_SPRITE->height;
 
-    if (abs(WM_MOUSEX - last_mouse_x) >= 100 || abs(WM_MOUSEY - last_mouse_y) >= 100) {
-        CELESTIAL_LOG("WARNING: Suspicious mouse event (dx=%d dy=%d)\n", WM_MOUSEX-last_mouse_x, WM_MOUSEY-last_mouse_y);
-    }
-
     // Did things change?
     if (last_mouse_x != WM_MOUSEX || last_mouse_y != WM_MOUSEY || WM_MOUSE_BUTTONS != __celestial_previous_buttons) {
         mouse_events();
