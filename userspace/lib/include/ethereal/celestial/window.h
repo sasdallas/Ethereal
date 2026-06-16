@@ -70,6 +70,16 @@ typedef struct window {
     void *d;                            // Driver object
 } window_t;
 
+/**
+ * @brief Celestial window information
+ */
+typedef struct _window_info {
+    size_t width;
+    size_t height;
+    char name[128];
+    char icon[128];
+} window_info_t;
+
 /**** MACROS ****/
 
 #define CELESTIAL_REAL_WIDTH(win) ((win->info ? win->info->width : win->width))
@@ -218,5 +228,35 @@ int celestial_setWindowVisible(window_t *win, int visible);
  * @param captured Whether or not to capture the mouse
  */
 int celestial_setMouseCapture(window_t *win, int captured);
+
+/**
+ * @brief Announce a window
+ * @param win The window to announce
+ * @param name The name of the window to announce
+ * @param icon A path to the window's icon
+ */
+int celestial_announceWindow(window_t *win, char *name, char *icon);
+
+/**
+ * @brief Bind a key for a specific window globally
+ * @param win The window to bind the key on
+ * @param scancode The scancode to bind
+ * @param modifiers The modifiers to require
+ * @param capture Whether to capture the event and stop it from going through to the child
+ * 
+ * A normal key event will go through after
+ */
+int celestial_bindKey(window_t *win, key_scancode_t scancode, key_modifiers_t modifiers, bool capture);
+
+/**
+ * @brief Set a window as the "root window"
+ * @param win The window to set
+ * 
+ * The root window receives more events than other celestial windows such as the
+ * CELESTIAL_EVENT_WINDOW_CHANGED event. It also is used for minimizing.
+ * 
+ * Only one root window can be set
+ */
+int celestial_setRootWindow(window_t *win);
 
 #endif

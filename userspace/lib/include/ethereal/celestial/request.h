@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <ethereal/celestial/types.h>
+#include <ethereal/keyboard.h>
+#include <stdbool.h>
 
 /**** DEFINITIONS ****/
 
@@ -47,6 +49,11 @@
 #define CELESTIAL_REQ_SET_WINDOW_VISIBLE    0x1010
 #define CELESTIAL_REQ_SET_MOUSE_CAPTURE     0x1011
 #define CELESTIAL_REQ_SET_MOUSE_CURSOR      0x1012
+#define CELESTIAL_REQ_ANNOUNCE_WINDOW       0x1013
+#define CELESTIAL_REQ_QUERY_WINDOW          0x1014
+#define CELESTIAL_REQ_QUERY_WINDOW_IDS      0x1015
+#define CELESTIAL_REQ_BIND_KEY              0x1016
+#define CELESTIAL_REQ_SET_ROOT_WINDOW       0x1017
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -54,10 +61,9 @@
 
 #define CELESTIAL_DEFAULT_SOCKET_NAME       "/comm/wndsrv"
 
-
+/* Mouse types */
 #define CELESTIAL_MOUSE_DEFAULT             0   // Default pointer
 #define CELESTIAL_MOUSE_TEXT                1   // I-Beam for text
-
 
 /**** TYPES ****/
 
@@ -170,6 +176,36 @@ typedef struct celestial_req_set_mouse_cursor {
     uint8_t cursor;                     // Cursor ID
 } celestial_req_set_mouse_cursor_t;
 
+typedef struct celestial_req_announce_window {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;                          // Window ID to announce
+    char name[128];                     // Name of window
+    char icon[128];                     // Name of icon (/usr/share/icons/32/(icon))
+                                        // TODO: allow full icon images to be passed over this
+} celestial_req_announce_window_t;
+
+typedef struct celestial_req_query_window {
+    CELESTIAL_REQ_COMMON
+    wid_t query;                        // Window ID to query
+} celestial_req_query_window_t;
+
+typedef struct celestial_req_query_window_ids {
+    CELESTIAL_REQ_COMMON
+} celestial_req_query_window_ids_t;
+
+typedef struct celestial_req_bind_key {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;                          // Window to bind to
+    key_scancode_t scancode;
+    key_modifiers_t modifiers;
+    bool capture;                       // Whether to stop the key event from going to its rightful window
+} celestial_req_bind_key_t;
+
+typedef struct celestial_req_set_root_window {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;
+} celestial_req_set_root_window_t;
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -214,6 +250,20 @@ typedef struct celestial_resp_resize {
     size_t width;                       // New width
     size_t height;                      // New height
 } celestial_resp_resize_t;
+
+typedef struct celestial_resp_query_window {
+    CELESTIAL_REQ_COMMON                // Common
+    char name[128];
+    char icon[128];
+    size_t width;
+    size_t height;
+} celestial_resp_query_window_t;
+
+typedef struct celestial_resp_query_window_ids {
+    CELESTIAL_REQ_COMMON                // Common
+    size_t nwids;
+    wid_t wids[];
+} celestial_resp_query_window_ids_t;
 
 /**** MACROS ****/
 
@@ -273,5 +323,22 @@ int celestial_getSocketFile();
  * @param cursor_id The ID of the target cursor (CELESTIAL_MOUSE_xxx)
  */
 int celestial_setMouseCursor(int cursor_id);
+
+struct _window_info;
+
+/**
+ * @brief Query a specific window
+ * @param wid The window to query
+ * @param info The output information buffer
+ */
+int celestial_queryWindow(wid_t wid, struct _window_info *output);
+
+/**
+ * @brief Query window IDs
+ * @param nids Pointer to store number of window ids
+ * @param wids A pointer to an allocated list of window IDs along with the number of them
+ * @returns 0 on success
+ */
+int celestial_queryWindowIDs(size_t *nids, wid_t **wids);
 
 #endif

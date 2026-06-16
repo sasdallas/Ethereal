@@ -65,7 +65,7 @@ typedef struct gfx_context {
     size_t pitch;           // Pitch of the buffer
 
     list_t *animations;     // Pending animations
-    pthread_spinlock_t lck; // Lock
+    void *priv;
 } gfx_context_t;
 
 /**** MACROS ****/

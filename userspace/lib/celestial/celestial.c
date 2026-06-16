@@ -48,7 +48,6 @@ celestial_info_t *celestial_getServerInformation() {
     // Wait for a response
     celestial_resp_get_server_info_t *resp = celestial_getResponse(CELESTIAL_REQ_GET_SERVER_INFO);
     if (!resp) {
-        fprintf(stderr, "celestial_lib: Unknown error detected in celestial_getResponse\n");
         return NULL;
     }
     

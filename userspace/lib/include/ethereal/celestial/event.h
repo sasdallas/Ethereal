@@ -28,17 +28,19 @@
 /* Event types */
 #define CELESTIAL_EVENT_MOUSE_ENTER             0x00000001
 #define CELESTIAL_EVENT_MOUSE_MOTION            0x00000002
-#define CELESTIAL_EVENT_MOUSE_BUTTON_DOWN       0x00000004
-#define CELESTIAL_EVENT_MOUSE_BUTTON_UP         0x00000008
-#define CELESTIAL_EVENT_MOUSE_DRAG              0x00000010  // Sent when window server detects that the mouse is moving and holding left
-#define CELESTIAL_EVENT_MOUSE_EXIT              0x00000020
-#define CELESTIAL_EVENT_FOCUSED                 0x00000040
-#define CELESTIAL_EVENT_UNFOCUSED               0x00000080
-#define CELESTIAL_EVENT_KEY_EVENT               0x00000100
-#define CELESTIAL_EVENT_RESIZE                  0x00000200 // Special event. Library automatically resizes
-#define CELESTIAL_EVENT_POSITION_CHANGE         0x00000400
-#define CELESTIAL_EVENT_MOUSE_SCROLL            0x00000800
-#define CELESTIAL_EVENT_MOUSE_MOTION_REL        0x00001000 // Relative mouse motion
+#define CELESTIAL_EVENT_MOUSE_BUTTON_DOWN       0x00000003
+#define CELESTIAL_EVENT_MOUSE_BUTTON_UP         0x00000004
+#define CELESTIAL_EVENT_MOUSE_DRAG              0x00000005  // Sent when window server detects that the mouse is moving and holding left
+#define CELESTIAL_EVENT_MOUSE_EXIT              0x00000006
+#define CELESTIAL_EVENT_FOCUSED                 0x00000007
+#define CELESTIAL_EVENT_UNFOCUSED               0x00000008
+#define CELESTIAL_EVENT_KEY_EVENT               0x00000009
+#define CELESTIAL_EVENT_RESIZE                  0x0000000A // Special event. Library automatically resizes
+#define CELESTIAL_EVENT_POSITION_CHANGE         0x0000000B
+#define CELESTIAL_EVENT_MOUSE_SCROLL            0x0000000C
+#define CELESTIAL_EVENT_MOUSE_MOTION_REL        0x0000000D // Relative mouse motion
+#define CELESTIAL_EVENT_WINDOW_CLOSE            0x0000000E
+#define CELESTIAL_EVENT_WINDOW_CHANGED          0x0000000F // Special event. Sent only to the root window (desktop). Sent on advertise and window close only.
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -53,6 +55,10 @@
 
 #define CELESTIAL_MOUSE_SCROLL_DOWN             0
 #define CELESTIAL_MOUSE_SCROLL_UP               1
+
+/* Window changed events */
+#define CELESTIAL_WINDOW_CHANGE_ADVERTISED      0
+#define CELESTIAL_WINDOW_CHANGE_CLOSING         1
 
 /**** TYPES ****/
 
@@ -135,8 +141,20 @@ typedef struct celestial_event_position_change {
 
 typedef struct celestial_event_mouse_scroll {
     CELESTIAL_EVENT_COMMON
+    int32_t x;                          // Scroll X coordinate
+    int32_t y;                          // Scroll Y coordinate
     int32_t direction;                  // Direction
 } celestial_event_mouse_scroll_t;
+
+typedef struct celestial_event_window_close {
+    CELESTIAL_EVENT_COMMON
+} celestial_event_window_close_t;
+
+typedef struct celestial_event_window_changed {
+    CELESTIAL_EVENT_COMMON
+    wid_t changed_window;               // ID of the changed window, can be passed to CELESTIAL_REQ_QUERY_WINDOW
+    unsigned char changed_event;        // CELESTIAL_WINDOW_CHANGED_...
+} celestial_event_window_changed_t;
 
 /**
  * @brief Celestial event handler

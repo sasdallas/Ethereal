@@ -278,7 +278,7 @@ int celestial_startDragging(window_t *win) {
     celestial_req_drag_start_t req = {
         .magic = CELESTIAL_MAGIC,
         .type = CELESTIAL_REQ_DRAG_START,
-        .size = sizeof(celestial_req_create_window_t),
+        .size = sizeof(celestial_req_drag_start_t),
         .wid = win->wid,
     };
 
@@ -309,7 +309,7 @@ int celestial_stopDragging(window_t *win) {
     celestial_req_drag_stop_t req = {
         .magic = CELESTIAL_MAGIC,
         .type = CELESTIAL_REQ_DRAG_STOP,
-        .size = sizeof(celestial_req_create_window_t),
+        .size = sizeof(celestial_req_drag_stop_t),
         .wid = win->wid,
     };
 
@@ -661,6 +661,107 @@ int celestial_setMouseCapture(window_t *win, int captured) {
 
     // Wait for a resonse
     celestial_resp_resize_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_MOUSE_CAPTURE);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+
+/**
+ * @brief Announce a window
+ * @param win The window to announce
+ * @param name The name of the window to announce
+ * @param icon A path to the window's icon
+ */
+int celestial_announceWindow(window_t *win, char *name, char *icon) {
+    celestial_req_announce_window_t req = {
+        .type = CELESTIAL_REQ_ANNOUNCE_WINDOW,
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_announce_window_t),
+        .wid = win->wid
+    };
+
+    strncpy(req.name, name, 128);
+    strncpy(req.icon, icon, 128);
+
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_ANNOUNCE_WINDOW);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Bind a key for a specific window globally
+ * @param win The window to bind the key on
+ * @param scancode The scancode to bind
+ * @param modifiers The modifiers to require
+ * @param capture Whether to capture the event and stop it from going through to the child
+ * 
+ * A normal key event will go through after
+ */
+int celestial_bindKey(window_t *win, key_scancode_t scancode, key_modifiers_t modifiers, bool capture) {
+    celestial_req_bind_key_t req = {
+        .type = CELESTIAL_REQ_BIND_KEY,
+        .size = sizeof(celestial_req_bind_key_t),
+        .magic = CELESTIAL_MAGIC,
+        .wid = win->wid,
+        .scancode = scancode,
+        .modifiers = modifiers,
+        .capture = capture
+    };
+
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_BIND_KEY);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Set a window as the "root window"
+ * @param win The window to set
+ * 
+ * The root window receives more events than other celestial windows such as the
+ * CELESTIAL_EVENT_WINDOW_CHANGED event. It also is used for minimizing.
+ * 
+ * Only one root window can be set
+ */
+int celestial_setRootWindow(window_t *win) {
+    celestial_req_set_root_window_t req = {
+        .type = CELESTIAL_REQ_SET_ROOT_WINDOW,
+        .size = sizeof(celestial_req_set_root_window_t),
+        .magic = CELESTIAL_MAGIC,
+        .wid = win->wid
+    };
+
+    
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_ROOT_WINDOW);
     if (!resp) return -1;
 
     // Handle error in resp

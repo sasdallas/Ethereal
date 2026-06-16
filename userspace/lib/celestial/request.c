@@ -117,6 +117,7 @@ void *celestial_getResponse(int type) {
         }
         
         // New data available
+        // !!! THIS COULD LOSE DATA
         char data[4096];
         ssize_t r = recv(__celestial_socket, data, 4096, 0);
         if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return NULL;
@@ -127,13 +128,11 @@ void *celestial_getResponse(int type) {
 
         // Is it an event? Process those immediately
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
-            // fprintf(stderr, "Received event from Celestial: %x\n", ((celestial_req_header_t*)m)->type);
             celestial_handleEvent(m);
             continue;
         }
 
         if (((celestial_req_header_t*)data)->type == type || type == -1) {
-            // fprintf(stderr, "celestial: [lib] Received response\n");
             return m;
         }
 
@@ -232,3 +231,59 @@ int celestial_setMouseCursor(int cursor_id) {
     free(e);
     return 0;
 }
+
+/**
+ * @brief Query a specific window
+ * @param wid The window to query
+ * @param info The output information buffer
+ */
+int celestial_queryWindow(wid_t wid, window_info_t *output) {
+    celestial_req_query_window_t req = {
+        .type = CELESTIAL_REQ_QUERY_WINDOW,
+        .size = sizeof(celestial_req_query_window_t),
+        .magic = CELESTIAL_MAGIC,
+        .query = wid
+    };
+
+    celestial_sendRequest(&req, req.size);
+
+    celestial_resp_query_window_t *resp = celestial_getResponse(CELESTIAL_REQ_QUERY_WINDOW);
+    if (!resp) return -1;
+
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    output->width = resp->width;
+    output->height = resp->height;
+    strncpy(output->name, resp->name, 128);
+    strncpy(output->icon, resp->icon, 128);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Query window IDs
+ * @param nids Pointer to store number of window ids
+ * @param wids A pointer to an allocated list of window IDs along with the number of them
+ * @returns 0 on success
+ */
+int celestial_queryWindowIDs(size_t *nids, wid_t **wids) {
+    celestial_req_query_window_ids_t req = {
+        .type = CELESTIAL_REQ_QUERY_WINDOW_IDS,
+        .size = sizeof(celestial_req_query_window_ids_t),
+        .magic = CELESTIAL_MAGIC
+    };
+
+    if (celestial_sendRequest(&req, req.size) < 0) return -1;
+
+    celestial_resp_query_window_ids_t *resp = celestial_getResponse(CELESTIAL_REQ_QUERY_WINDOW_IDS);
+    if (!resp) return -1;
+
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    *(nids) = resp->nwids;
+    *(wids) = malloc(sizeof(wid_t) * resp->nwids);
+    memcpy(*(wids), resp->wids, sizeof(wid_t) * resp->nwids);
+
+    return 0;
+} 
