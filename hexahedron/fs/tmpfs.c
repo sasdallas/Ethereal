@@ -77,6 +77,7 @@ static vfs_file_ops_t tmpfs_file_ops = {
     .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
+    .check_flags = NULL,
 };
 
 /* Cache ops */
@@ -189,6 +190,9 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
 static int tmpfs_destroy(vfs_inode_t *inode) {
     // if the inode hits 0 links
     if (inode->attr.nlink == 0) {
+        LOG(ERR, "DESTROY OFF\n");
+        return 0;
+
         // then we can free all of its pages
         tmpfs_node_t *n = inode->priv;
         
@@ -328,6 +332,7 @@ static int tmpfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t
 static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
     tmpfs_node_t *node = inode->priv;
     mutex_acquire(&node->lck);
+    assert(node->attr.type == VFS_DIRECTORY);
 
     tmpfs_node_t *c = hashmap_get(node->dir.children, name);
     if (!c) {
@@ -361,7 +366,7 @@ static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
     // truncate
     size_t in_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
     
-    LOG(DEBUG, "tmpfs_truncate size %d in_pages %d\n", size, in_pages);
+    // LOG(DEBUG, "tmpfs_truncate size %d in_pages %d\n", size, in_pages);
 
     tmpfs_node_t *n = inode->priv;
     mutex_acquire(&n->lck);

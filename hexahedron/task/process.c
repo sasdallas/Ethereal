@@ -88,9 +88,19 @@ void __attribute__((noreturn)) process_switchNextThread() {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
 
+    // Idle exit
+    if (current_cpu->current_process == current_cpu->idle_process) {
+        timemonitor_updateIdleExit();
+    }
+
     // Update CPU variables
     current_cpu->current_thread = next_thread;
     current_cpu->current_process = next_thread->parent;
+    
+    // Idle enter
+    if (current_cpu->current_process == current_cpu->idle_process) {
+        timemonitor_updateIdleEntry();
+    }
 
     // Setup page directory
     vmm_switch(current_cpu->current_process->ctx);
@@ -114,10 +124,19 @@ void __attribute__((noreturn)) process_switchNextThread() {
  * @param reschedule Whether to readd the process back to the queue, meaning it can return whenever and isn't waiting on something
  */
 void process_yield(uint8_t reschedule) {
+    // Calculate times on context switch
+    timemonitor_updateContextSwitch();
+
+    // If the idle process is being rescheduled handle that
+    if (current_cpu->current_process == current_cpu->idle_process) {
+        current_cpu->current_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
+        return process_switchNextThread();
+    }
+
     // Do we even have a thread?
     if (current_cpu->current_thread == NULL) {
         // Just switch to next thread
-        process_switchNextThread();
+        return process_switchNextThread();
     }
 
     // Exit the thread if its trying to stop
@@ -127,6 +146,7 @@ void process_yield(uint8_t reschedule) {
 
     // Thread no longer has any time to execute. Save FPU registers
     // TODO: DESPERATELY move this to context structure.
+    // TODO: Lazy FPU
 #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
     asm volatile ("fxsave (%0)" :: "r"(current_cpu->current_thread->fp_regs));
 #endif
@@ -142,15 +162,12 @@ void process_yield(uint8_t reschedule) {
         return;
     }
     
-    // NOTE: Normally we would call process_switchNextThread but that will cause a critical error. See reschedule part of this function
-
     // Get current thread
     thread_t *prev = current_cpu->current_thread;
 
     // Get next thread in queue
     thread_t *next_thread = scheduler_get();
     if (!next_thread) {
-        // next_thread = current_cpu->idle_process->main_thread;
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
 
@@ -161,6 +178,11 @@ void process_yield(uint8_t reschedule) {
     current_cpu->current_thread = next_thread;
     current_cpu->current_process = next_thread->parent;
 
+    // Entering idle process
+    if (current_cpu->current_process == current_cpu->idle_process) {
+        timemonitor_updateIdleEntry();
+    }
+
     // Setup page directory
     vmm_switch(current_cpu->current_thread->ctx);
 
@@ -169,7 +191,7 @@ void process_yield(uint8_t reschedule) {
 
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
-    
+
     // Acquire the lock - arch_yield will release the lock
     spinlock_acquire(current_cpu->sched.lock);
     if (prev && reschedule && !(prev->status & THREAD_STATUS_SLEEPING)) {
@@ -369,13 +391,7 @@ process_t *process_createKernel(char *name, unsigned int flags, unsigned int pri
  * @brief Idle process function
  */
 static void kernel_idle() {
-    arch_pause();
-
-    // For the kidle process, this can serve as total "cycles"
-    current_cpu->current_thread->total_ticks++; 
-    current_cpu->idle_time++;
-
-    process_switchNextThread();
+    for (;;) arch_pause();
 }
 
 /**
@@ -402,6 +418,7 @@ process_t *process_spawnIdleTask() {
     // Create a new thread
     idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
 
+    timemonitor_updateProcessStart(idle->main_thread);
     return idle;
 }
 
@@ -413,8 +430,6 @@ void process_destroyZombie(process_t *proc) {
         LOG(DEBUG, "process_destroyZombie awaiting process threads to exit\n");
         process_yield(1);
     }
-    
-    LOG(DEBUG, "Zombie is being destroyed\n");
 
     // Wait for all threads in process to die
     // They should have already been marked as STOPPING by process_exit or the like
@@ -428,6 +443,10 @@ void process_destroyZombie(process_t *proc) {
             LOG(DEBUG, "Waiting for thread %p/%d to die before destroying process\n", l, l->tid);
             process_yield(1);
         }
+
+        // accumulate l time into current process time
+        current_cpu->current_process->proc_times.cutime += l->times.utime;
+        current_cpu->current_process->proc_times.cstime += l->times.stime;
 
         thread_t *next = l->next;
         thread_destroy(l);
@@ -759,6 +778,9 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     elf_destroyImage(&interp_img);
     elf_destroyImage(&file_img);
 
+    // Before entering the process we need to get its current time
+    timemonitor_updateProcessStart(current_cpu->current_thread);
+
     // Enter
     arch_prepare_switch(current_cpu->current_thread);
     arch_start_execution(interp_entry, current_cpu->current_thread->stack);
@@ -877,6 +899,9 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     kfree(argv);
     elf_destroyImage(&img);
 
+    // Before entering the process we need to get its current time
+    timemonitor_updateProcessStart(current_cpu->current_thread);
+
     // Go!
     arch_prepare_switch(current_cpu->current_thread);
     arch_start_execution(img.entrypoint, current_cpu->current_thread->stack);
@@ -974,6 +999,7 @@ pid_t process_fork() {
     THREAD_PUSH_STACK(SP(child->main_thread->context), struct _registers, r);
 
     // Insert new thread
+    timemonitor_updateProcessStart(child->main_thread);
     scheduler_insertThread(child->main_thread);
 
     return child->pid;
@@ -1102,6 +1128,7 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
 
     THREAD_PUSH_STACK(SP(thr->context), struct _registers, r);
 
+    timemonitor_updateProcessStart(thr);
     scheduler_insertThread(thr);
 
     return thr->tid;

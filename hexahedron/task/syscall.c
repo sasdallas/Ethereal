@@ -191,8 +191,9 @@ void syscall_pointerValidateFailed(void *ptr) {
 /**
  * @brief Finish a system call after setting registers
  */
-inline void syscall_finish() {
+void syscall_finish() {
     ptrace_event(PROCESS_TRACE_SYSCALL); // Can only ptrace after we've configured exit registers
+    timemonitor_updateSyscallExit();
 }
 
 /**
@@ -202,6 +203,7 @@ inline void syscall_finish() {
  */
 void syscall_handle(syscall_t *syscall) {
     // Enter
+    timemonitor_updateSyscallEntry();
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
     if (syscall->syscall_number == 999) {
@@ -836,7 +838,25 @@ long sys_msync(void *addr, size_t len, int flush) {
 /* TIMES */
 
 clock_t sys_times(struct tms *buf) {
-    return -ENOSYS;
+    // sum up all process times
+    process_t *p = current_cpu->current_process;
+
+    buf->tms_stime = 0;
+    buf->tms_utime = 0;
+    spinlock_acquire(&p->thread_lock);
+    thread_t *iter = p->thread_list;
+    while (iter) {
+        buf->tms_stime += iter->times.stime;
+        buf->tms_utime += iter->times.utime;
+        iter = iter->next;
+    }
+    spinlock_release(&p->thread_lock);
+
+    buf->tms_cstime = p->proc_times.cstime;
+    buf->tms_cutime = p->proc_times.cutime;
+
+extern uint64_t timemonitor_getNanoseconds();
+    return (clock_t)timemonitor_getNanoseconds();
 }
 
 /* DUP */

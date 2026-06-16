@@ -189,9 +189,10 @@ int sleep_enter() {
         spinlock_release(&time_lock);
     }
 
-    
+    // Enter sleep
+    timemonitor_updateSleepEnter();    
     process_yield(0);
-
+    timemonitor_updateSleepExit();
     
     // Clear seconds and subseconds
     current_cpu->current_thread->sleep.seconds = current_cpu->current_thread->sleep.subseconds = 0;

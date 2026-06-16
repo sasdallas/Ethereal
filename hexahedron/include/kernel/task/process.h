@@ -124,6 +124,11 @@ typedef struct process {
     vmm_context_t *ctx;                 // VMM context
     node_t proc_list_node;              // Process list node
     systemfs_node_t *proc_sysfs;        // Process SystemFS
+
+    struct {
+        uint64_t cutime;
+        uint64_t cstime;
+    } proc_times;
 } process_t;
 
 /**** MACROS ****/

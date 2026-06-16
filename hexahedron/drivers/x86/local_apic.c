@@ -161,7 +161,7 @@ int lapic_irq(irq_t *irq, void *context) {
 
 // reschedule cb
 void reschedule_cb(void *ctx) {
-    if (current_cpu->current_thread && current_cpu->current_process != current_cpu->idle_process && (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
+    if (current_cpu->current_thread && (current_cpu->current_thread->status & THREAD_STATUS_RUNNING) && !(current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT)) {
         current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
     }
 }

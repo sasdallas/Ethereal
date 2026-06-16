@@ -26,6 +26,7 @@
 #include <kernel/subsystems/clock.h>
 #include <kernel/subsystems/timer.h>
 #include <kernel/subsystems/irq.h>
+#include <kernel/subsystems/timemonitor.h>
 #include <kernel/tasklet.h>
 
 /**** TYPES ****/
@@ -73,6 +74,7 @@ typedef struct _processor {
     timekeeper_t timekeeper;                // Timekeeper
     tasklet_cpu_t *tasklet;                 // Tasklet data
     timer_device_t *timer_dev;              // Selected timer device
+    cpu_times_t times;                      // CPU times
 } processor_t;
 
 /* External variables defined by architecture */

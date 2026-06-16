@@ -223,7 +223,7 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
  * @brief Internal function to demark pages
  */
 void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
-    assert(space == current_cpu->current_context->space || space == vmm_kernel_space);
+    // assert(space == current_cpu->current_context->space || space == vmm_kernel_space);
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start + offset; i < range->start + offset + (npages * PAGE_SIZE); i += PAGE_SIZE) {
         if (range->vmm_flags & VM_FLAG_FILE) {

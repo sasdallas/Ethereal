@@ -73,7 +73,7 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
     // Allocate a kstack for the thread
     thr->kstack = (uintptr_t)kzalloc(PROCESS_KSTACK_SIZE) + PROCESS_KSTACK_SIZE;
 
-    if (!(flags & THREAD_FLAG_KERNEL) ) {
+    if (!(flags & THREAD_FLAG_KERNEL)) {
         // Allocate user mode stack 
         thr->stack = (MMU_USERMODE_STACK_REGION + MMU_USERMODE_STACK_SIZE);
         if (!(flags & THREAD_FLAG_CHILD)) {
@@ -83,7 +83,7 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
         }
     } else {
         // Don't bother, use the parent's kernel stack
-        thr->stack = thr->kstack; 
+        thr->stack = thr->kstack;
     }
 
     // Initialize thread context
@@ -132,6 +132,7 @@ void thread_safeExit(thread_t *arg) {
  */
 void thread_exit() {
     thread_t *t = current_cpu->current_thread;
+    timemonitor_updateThreadExit();
 
     // process_yield() will kill us
     LOG(DEBUG, "thread_exit %p\n", t);

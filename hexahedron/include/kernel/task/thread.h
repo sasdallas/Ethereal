@@ -20,6 +20,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>
+#include <kernel/subsystems/timemonitor.h>
 #include <sys/types.h>
 
 /**** DEFINITIONS ****/
@@ -81,7 +82,8 @@ typedef struct thread {
     uintptr_t stack;                        // Thread stack (kernel will load kstack in TSS)
     uintptr_t kstack;                       // Kernel stack
     struct syscall *syscall;                // The current system call of the thread
-    
+    thread_times_t times;                   // Thread times
+
     // PTHREAD RELATED
     pid_t tid;                              // Thread ID
     list_t *joiners;                        // List of joiners

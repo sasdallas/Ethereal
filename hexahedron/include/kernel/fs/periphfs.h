@@ -101,13 +101,6 @@ typedef struct mouse_event {
     uint8_t scroll;         // Scroll direction
 } mouse_event_t;
 
- 
-/**** MACROS ****/
-
-#define KEY_CONTENT_AVAILABLE(buffer) ((buffer)->head != (buffer)->tail)
-#define MOUSE_CONTENT_AVAILABLE KEY_CONTENT_AVAILABLE
-
-
 /**** FUNCTIONS ****/
 
 /**
