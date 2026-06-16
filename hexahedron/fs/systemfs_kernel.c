@@ -102,6 +102,26 @@ ssize_t systemfs_proc_status(systemfs_node_t *n) {
 }
 
 /**
+ * @brief Times
+ */
+ssize_t systemfs_proc_times(systemfs_node_t *n) {
+    process_t *p = n->priv;
+
+    ssize_t ret = 0;
+    ret += systemfs_printf(n, "#thr_id,time_usr,time_sys\n");
+
+    spinlock_acquire(&p->thread_lock);
+    thread_t *iter = p->thread_list;
+    while (iter) {
+        ret += systemfs_printf(n, "%-5d %lld %lld\n", iter->tid, iter->times.utime, iter->times.stime);
+        iter = iter->next;
+    }
+    spinlock_release(&p->thread_lock);
+    
+    return ret;
+}
+
+/**
  * @brief Create process systemfs node
  * @param proc The process to creat eit for
  */
@@ -118,6 +138,7 @@ extern slab_cache_t *systemfs_node_cache;
     systemfs_registerSimple(n, "status", systemfs_proc_status, NULL, proc);
     systemfs_registerSimple(n, "maps", systemfs_proc_maps, NULL, proc);
     systemfs_registerSimple(n, "mem_usage", systemfs_proc_mem_usage, NULL, proc);
+    systemfs_registerSimple(n, "times", systemfs_proc_times, NULL, proc);
     return n;
 }
 
@@ -128,6 +149,7 @@ void systemfs_proc_destroy(process_t *proc) {
     systemfs_node_t *n = proc->proc_sysfs;
     systemfs_unregister(n, "status");
     systemfs_unregister(n, "maps");
+    systemfs_unregister(n, "times");
     systemfs_unregister(n, "mem_usage");
     systemfs_free(n);
 }
@@ -203,11 +225,28 @@ ssize_t systemfs_kernel_uptime(systemfs_node_t *node) {
 }
 
 /**
+ * @brief kernel times read
+ */
+ssize_t systemfs_kernel_times(systemfs_node_t *node) {
+    ssize_t ret = 0;
+    ret += systemfs_printf(node, "# cpu,user,idle,sys,irq\n");
+
+    // TODO: locking, this can be out of date
+    for (int i = 0; i < processor_count; i++) {
+        processor_t *proc = &processor_data[i];
+        ret += systemfs_printf(node, "cpu%d %llu %llu %llu %llu\n", i, proc->times.times[CPU_TIME_USER], proc->times.times[CPU_TIME_IDLE], proc->times.times[CPU_TIME_SYS], proc->times.times[CPU_TIME_IRQ]);
+    }
+
+    return ret;
+}
+
+/**
  * @brief systemfs_kernel_init
  */
 static int systemfs_kernel_init() {
     systemfs_registerSimple(systemfs_root, "cmdline", systemfs_kernel_cmdline, NULL, NULL);
     systemfs_registerSimple(systemfs_root, "uptime", systemfs_kernel_uptime, NULL, NULL);
+    systemfs_registerSimple(systemfs_root, "times", systemfs_kernel_times, NULL, NULL);
     systemfs_register(systemfs_root, "processes", VFS_DIRECTORY, &systemfs_proc_dir_ops, NULL);
 
     return 0;
