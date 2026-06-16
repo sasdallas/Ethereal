@@ -246,6 +246,14 @@ int irq_map(irq_domain_t *domain, irq_number_t vector, int hwirq, void *context)
     SPINLOCK_INIT(&irq->lck);
     irq->next = NULL;
 
+    // Set it in the table
+    // !!!: HACK HACK HACK!!!
+    if (domain == percpu_domain) {
+        current_cpu->irq_table->irqs[vector] = irq;
+    } else {
+        __atomic_store_n(&irq_table.irqs[vector], irq, __ATOMIC_RELAXED);
+    }
+
     // Map
     if (domain->ops.domain_map) {
         int r = domain->ops.domain_map(domain, irq, hwirq, context);
@@ -253,14 +261,6 @@ int irq_map(irq_domain_t *domain, irq_number_t vector, int hwirq, void *context)
             irq_freeEntry(irq);
             return r;
         }
-    }
-
-    // Set it in the table
-    // !!!: HACK HACK HACK!!!
-    if (domain == percpu_domain) {
-        current_cpu->irq_table->irqs[vector] = irq;
-    } else {
-        __atomic_store_n(&irq_table.irqs[vector], irq, __ATOMIC_RELAXED);
     }
 
     return 0;
@@ -296,6 +296,7 @@ inline irq_t *irq_get(irq_number_t num) {
  * @param regs Frame regs
  */
 void irq_handler(irq_number_t vector, registers_t *regs) {
+    timemonitor_updateIrqEntry();
     IRQ_ENTER();
 
     irq_t *i = irq_get(vector);
@@ -316,7 +317,10 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
             }
         }
 
-        if (!i) goto _unhandled;
+        if (!i) {
+            kernel_panic_extended(IRQ_HANDLER_FAILED, "irq", "*** Chained interrupt 0x%x has no available source\n", vector);
+            __builtin_unreachable();
+        }
     } else {
         int stat = i->handler(i, (i->flags & IRQ_FLAG_REGISTERS) ? regs : i->context);
         if (stat == IRQ_ERROR) {
@@ -329,6 +333,7 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     i->domain->chip->ops.irq_eoi(i);
 
     IRQ_EXIT();
+    timemonitor_updateIrqExit();
 
     // handle irq exit
     if (current_cpu->tasklet && TASKLET_PENDING()) {
@@ -342,6 +347,19 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     return;
 
 _unhandled:
-    kernel_panic_extended(IRQ_HANDLER_FAILED, "irq", "*** Unhandled interrupt 0x%x\n", vector);
-    __builtin_unreachable();
+    percpu_domain->chip->ops.irq_eoi(NULL);
+    LOG(WARN, "IRQ vector %d no handler!!\n", vector);
+    // kernel_panic_prepare(IRQ_HANDLER_FAILED);
+    // dprintf(NOHEADER, "*** Interrupt vector 0x%x has no handler.\n\n", vector);
+
+    // dprintf(NOHEADER, "\033[1;31mFAULT REGISTERS:\n\033[0;31m");
+    // dprintf(NOHEADER, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
+    // dprintf(NOHEADER, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
+    // dprintf(NOHEADER, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
+    // dprintf(NOHEADER, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
+    // dprintf(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
+
+    // kernel_panic_finalize();
+    // kernel_panic_extended(IRQ_HANDLER_FAILED, "irq", "*** Unhandled interrupt 0x%x\n", vector);
+    // __builtin_unreachable();
 }
