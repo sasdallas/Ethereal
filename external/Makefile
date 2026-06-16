@@ -2,7 +2,7 @@ include ../make.config
 
 ifeq ($(HOSTARCH), x86_64)
 # Required for x86_64
-PROJECTS := freetype plutosvg essence
+PROJECTS := freetype essence
 
 # ACPICA
 ifeq ($(USE_ACPICA), 1)
