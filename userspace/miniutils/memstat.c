@@ -39,7 +39,7 @@ void pretty_print(int pretty, unsigned long long memory, char *prefix) {
     if (pretty) {
         char *unit = "bytes";
         if (memory > 1000) {
-            unit = "kB";
+            unit = "KB";
             memory /= 1000;
 
             if (memory > 1000) {
@@ -124,10 +124,10 @@ int main(int argc, char *argv[]) {
     fscanf(kmem, "KernelMemoryAllocator:%zu kB\n", &kernel_memory);
     fclose(kmem);
 
-    total_memory *= 1000;
-    free_memory *= 1000;
-    used_memory *= 1000;
-    kernel_memory *= 1000;
+    total_memory *= 1024;
+    free_memory *= 1024;
+    used_memory *= 1024;
+    kernel_memory *= 1024;
 
 
     if (used) {
