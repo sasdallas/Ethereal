@@ -186,6 +186,7 @@ static ssize_t nic_systemfsRead(systemfs_node_t *entry) {
                                 "Type:%s\n"
                                 "MAC:" MAC_FMT "\n"
                                 "MTU:%d\n"
+                                "State:%s\n"
                                 "Ipv4Address:%s\n"
                                 "Ipv4Subnet:%s\n"
                                 "Ipv4Gateway:%s\n"
@@ -199,6 +200,7 @@ static ssize_t nic_systemfsRead(systemfs_node_t *entry) {
                                     nic->type == NIC_TYPE_ETHERNET ? "EthernetCard" : "WifiCard",
                                     MAC(nic->mac),
                                     nic->mtu,
+                                    nic->state == NIC_STATE_UP ? "up" : "down",
                                     ipv4_addr,
                                     ipv4_subnet,
                                     ipv4_gateway,
