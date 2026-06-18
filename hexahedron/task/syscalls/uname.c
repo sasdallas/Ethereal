@@ -13,7 +13,7 @@
 
 #include <kernel/task/process.h>
 
-extern char *__hostname;
+extern char __hostname[];
 
 long sys_uname(struct utsname *buf) {
     SYSCALL_VALIDATE_PTR(buf);

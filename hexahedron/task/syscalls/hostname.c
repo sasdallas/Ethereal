@@ -13,8 +13,8 @@
 
 #include <kernel/task/process.h>
 
-extern char *__hostname;
-extern size_t __hostnamelen;
+char __hostname[256] = { 0 };
+size_t __hostnamelen = 0;
 
 long sys_gethostname(char *name, size_t size) {
     SYSCALL_VALIDATE_PTR_SIZE(name, size);

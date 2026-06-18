@@ -159,11 +159,6 @@ static syscall_func_t syscall_table[] = {
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL", __VA_ARGS__)
 
-/* Hostname */
-/* TODO: Maybe move */
-char __hostname[256] = { 0 };
-size_t __hostnamelen = 0;
-
 /**
  * @brief Pointer validation failed
  * @param ptr The pointer that failed to validate
