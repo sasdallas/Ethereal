@@ -46,7 +46,8 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
 static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
 static poll_events_t unix_poll_events(sock_t *sock);
 static int unix_close(sock_t *sock);
-
+static int unix_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *address_len);
+static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len);
 static sock_ops_t unix_sock_ops = {
     .accept = unix_accept,
     .bind = unix_bind,
@@ -56,7 +57,8 @@ static sock_ops_t unix_sock_ops = {
     .sendmsg = unix_sendmsg,
     .poll_events = unix_poll_events,
     .close = unix_close,
-    .getpeername = NULL,
+    .getpeername = unix_getpeername,
+    .getsockname = unix_getsockname,
     .getsockopt = NULL,
     .poll = NULL,
     .setsockopt = NULL,
@@ -75,12 +77,14 @@ void unix_decrementAndFree(unix_sock_t *usock) {
     // Destroy the socket
     LOG(INFO, "Need to destroy UNIX socket\n");
     if (usock->peer) usock->peer->peer = NULL;
-    if (usock->un_path) kfree(usock->un_path);
-    
+    if (usock->un_path) {
+        kfree(usock->un_path);
+    }
+
 
     if (usock->sock->type == SOCK_STREAM) {
         // TODO
-        assert(0 && "unix_decrementAndFree needs implementation for SOCK_STREAM");
+        // circbuf_destroy(usock->stream.cb);
     } else {
         // DGRAM/SEQPACKET, destroy
         kfree(usock->pkt.d->rx_wait_queue);
@@ -123,12 +127,20 @@ static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t ad
     unix_sock_t *usock = USOCK(sock);
 
     if (usock->state != UNIX_SOCK_STATE_INIT) {
+        dprintf(ERR, "UNIX socket is not in UNIX_SOCK_STATE_INIT\n");
         return -EINVAL; // Bound already
     }
 
-    if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
+    // if (addrlen != sizeof(struct sockaddr_un)) {
+    //     dprintf(ERR, "Invalid address size %d\n", addrlen);
+    //     return -EINVAL;
+    // }
+
     struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
-    if (!(*addr->sun_path)) return -EINVAL;
+    if (!(*addr->sun_path)) {
+        dprintf(ERR, "Provide a sun_path");
+        return -EINVAL;
+    }
 
     // Canonicalize the current path
     // !!!: this is literally a stack buffer overflow in plain sight
@@ -149,7 +161,7 @@ static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t ad
     hashmap_set(unix_path_map, p, sock);
     spinlock_release(&path_map_lck);
 
-    usock->un_path = p;
+    usock->un_path = strdup(p);
     UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_BOUND);
 
     return 0;
@@ -283,7 +295,7 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
  */
 static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET) return -EOPNOTSUPP;
-    
+
     unix_sock_t *usock = USOCK(sock);
 
     if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
@@ -293,6 +305,8 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     char p[PATH_MAX];
     vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
 
+    LOG(DEBUG, "UNIX_CONNECT: %s\n", p);
+    
     // Get server
     sock_t *serv = hashmap_get(unix_path_map, p);
     if (!serv) { return -ENOENT; } // ???
@@ -390,7 +404,24 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     if (sock->type == SOCK_DGRAM) {
         assert(0 && "SOCK_DGRAM not implemented yet");
     } else if (sock->type == SOCK_STREAM) {
-        assert(0 && "SOCK_STREAM not implemented yet");
+        spinlock_acquire(&usock->stream.lck);
+        if (!circbuf_remaining_read(usock->stream.cb) && sock_nonblocking(sock)) {
+            spinlock_release(&usock->stream.lck);
+            return -EWOULDBLOCK;
+        }
+
+        msg->msg_flags = 0;
+
+        bytes_received = circbuf_read(usock->stream.cb, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+
+        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+            spinlock_release(&usock->stream.lck);
+            unix_decrementAndFree(usock->peer);
+            return -ECONNRESET;
+        }
+
+        if (bytes_received) poll_signal(&usock->peer->sock->sock_event, POLLOUT);
+        spinlock_release(&usock->stream.lck);
     } else if (sock->type == SOCK_SEQPACKET) {
         // SEQPACKET socket
         // Acquire Rx lock and try to get a packet
@@ -481,7 +512,22 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         assert(!msg->msg_name && "msg->msg_name support not yet implemented");
         assert(0 && "SOCK_DGRAM not implemented yet");
     } else if (sock->type == SOCK_STREAM) {
-        assert(0 && "SOCK_STREAM not implemented yet");
+        spinlock_acquire(&usock->peer->stream.lck);
+        if (!circbuf_remaining_write(usock->peer->stream.cb) && sock_nonblocking(sock)) {
+            spinlock_release(&usock->peer->stream.lck);
+            return -EWOULDBLOCK;
+        }
+
+        total_sent = circbuf_write(usock->peer->stream.cb, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+
+        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+            unix_decrementAndFree(usock->peer);
+            spinlock_release(&usock->peer->stream.lck);
+            return -ECONNRESET;
+        }
+
+        poll_signal(&usock->peer->sock->sock_event, POLLIN);
+        spinlock_release(&usock->peer->stream.lck);
     } else if (sock->type == SOCK_SEQPACKET) {
         // TODO: tx_wait_queue usage, we need to not overwhelm the socket with information
 
@@ -534,16 +580,32 @@ static poll_events_t unix_poll_events(sock_t *sock) {
         return usock->server.conn->size ? POLLIN : 0;
     }
 
+    poll_events_t ret = 0;
+
     if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
         if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
-            return (usock->pkt.d->rx_head ? POLLIN : 0) | POLLOUT;
+            ret = (usock->pkt.d->rx_head ? POLLIN : 0) | POLLOUT;
         } else {
-            return (circbuf_remaining_read(usock->stream.cb) ? POLLIN : 0) |
-                    (circbuf_remaining_write(usock->stream.cb) ? POLLOUT : 0);
+            // !!! contention high
+            spinlock_acquire(&usock->stream.lck);
+            if (circbuf_remaining_read(usock->stream.cb)) {
+                ret |= POLLIN;
+            }
+            spinlock_release(&usock->stream.lck);
+
+            spinlock_acquire(&usock->peer->stream.lck);
+            if (circbuf_remaining_write(usock->peer->stream.cb)) {
+                ret |= POLLOUT;
+            }
+            spinlock_release(&usock->peer->stream.lck);
+        }
+
+        if (usock->peer && usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+            ret |= POLLHUP;
         }
     }
 
-    return 0;
+    return ret;
 }
 
 /**
@@ -554,8 +616,33 @@ static int unix_close(sock_t *sock) {
     unix_sock_t *usock = USOCK(sock);
     usock->state = UNIX_SOCK_STATE_CLOSED;
 
+    if (usock->peer) {
+        poll_signal(&usock->peer->sock->sock_event, POLLHUP);
+    }
+
     unix_decrementAndFree(usock);
 
+    return 0;
+}
+
+/**
+ * @brief unix getpeername
+ */
+static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
+    struct sockaddr_un *un = (struct sockaddr_un*)addr;
+    un->sun_path[0] = 0;
+    return 0;
+}
+
+/**
+ * @brief unix getsockname
+ */
+static int unix_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
+    unix_sock_t *usock = USOCK(sock);
+    
+    struct sockaddr_un *un = (struct sockaddr_un*)addr;
+    un->sun_family = AF_UNIX;
+    strncpy(un->sun_path, usock->un_path, 108);
     return 0;
 }
 
@@ -588,11 +675,36 @@ sock_t *unix_socket(int type, int protocol) {
 }
 
 /**
+ * @brief Create a new UNIX socket pair
+ */
+int unix_socketpair(int type, int protocol, sock_t *output[2]) {
+    sock_t *sck1 = unix_socket(type, protocol);
+    if (!sck1) return -EINVAL;
+    sock_t *sck2 = unix_socket(type, protocol);
+    if (!sck2) return -EINVAL;
+
+    unix_sock_t *usock1 = USOCK(sck1);
+    unix_sock_t *usock2 = USOCK(sck2);
+    
+    UNIX_STATE_CHANGE(usock1, UNIX_SOCK_STATE_CONNECTED);
+    UNIX_STATE_CHANGE(usock2, UNIX_SOCK_STATE_CONNECTED);
+    usock1->peer = usock2;
+    usock2->peer = usock1;
+
+    output[0] = sck1;
+    output[1] = sck2;
+    
+    return 0;
+}
+
+/**
  * @brief Initialize UNIX sockets
  */
 static int unix_init() {
     unix_path_map = hashmap_create("unix path map", 10);
-    return socket_register(AF_UNIX, unix_socket);
+    socket_register(AF_UNIX, unix_socket);
+    socket_registerPair(AF_UNIX, unix_socketpair);
+    return 0;
 }
 
 NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init, socket);

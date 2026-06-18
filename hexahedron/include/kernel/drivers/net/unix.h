@@ -76,6 +76,7 @@ typedef struct unix_sock {
         } pkt;
 
         struct {
+            spinlock_t lck;         // Cb lock
             circbuf_t *cb;          // Circular buffer
         } stream; // STREAM 
 
