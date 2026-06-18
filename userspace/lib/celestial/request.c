@@ -137,7 +137,10 @@ void *celestial_getResponse(int type) {
         }
 
         // Put it in the queue
-        if (!celestial_resp_queue) celestial_resp_queue = list_create("celestial resp queue");
+        if (!celestial_resp_queue) {
+            celestial_resp_queue = list_create("celestial resp queue");
+        }
+        
         list_append(celestial_resp_queue, m);
     }
 }
@@ -149,15 +152,17 @@ void *celestial_getResponse(int type) {
 void celestial_poll() {
     // Anything in queue?
     if (celestial_resp_queue && celestial_resp_queue->length) {
-        foreach(resp_node, celestial_resp_queue) {
-            celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
-            list_delete(celestial_resp_queue, resp_node);
-            free(resp_node);
+        node_t *n = list_popleft(celestial_resp_queue);
+        while (n) {
+            celestial_req_header_t *h = (celestial_req_header_t*)n->value;
+            free(n);
 
             if (h->magic == CELESTIAL_MAGIC_EVENT) {
                 celestial_handleEvent(h);
                 return;
             }
+
+            n = list_popleft(celestial_resp_queue);
         }
     }
 
