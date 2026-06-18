@@ -166,23 +166,18 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file) {
  * @param y Y coordinate of the sprite
  */
 int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rect, int x, int y) {
+#pragma GCC diagnostic ignored "-Wsign-compare"
     // Calculate bounds of sprite
-    uint32_t _left = GFX_MAX(x, 0);
-    uint32_t _top = GFX_MAX(y, 0);
-    uint32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
-    uint32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
+    int32_t _left = GFX_MAX(x, 0);
+    int32_t _top = GFX_MAX(y, 0);
+    int32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
+    int32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
 
     // Solid alpha?
     if (sprite->alpha == SPRITE_ALPHA_SOLID) {
         // Render normally like plebeians
-        // uint8_t *tgt = (uint8_t*)&GFX_PIXEL(ctx, rect->x + x, y + rect->y);
-        // uint8_t *src = (uint8_t*)&SPRITE_PIXEL(sprite, rect->x, rect->y);
         for (uint32_t _y = rect->y; _y < rect->y + rect->height; _y++) {
             memcpy(&GFX_PIXEL(ctx, rect->x + x, y + _y), &SPRITE_PIXEL(sprite, rect->x, _y), rect->width * 4);
-
-            // memcpy(tgt, src, rect->width*4);
-            // tgt += ctx->pitch;
-            // src += sprite->width;
         }
 
         return 0;
@@ -277,31 +272,102 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
  * @param y The Y to render at
  * @param alpha The alpha vector to use
  */
-int gfx_renderSpriteAlpha(struct gfx_context *ctx, sprite_t *sprite, int x, int y, uint8_t alpha) {
+int gfx_renderSpriteAlpha(gfx_context_t *ctx, sprite_t *sprite, int x, int y, uint8_t alpha) {
     gfx_rect_t full_rect = { .x = 0, .y = 0, .width = sprite->width, .height = sprite->height };
 
-
-    uint32_t _left = GFX_MAX(x, 0);
     uint32_t _top = GFX_MAX(y, 0);
     uint32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
     uint32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
 
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE)
+    __m128i mask00ff = _mm_set1_epi16(0x00FF);
+    __m128i mask0080 = _mm_set1_epi16(0x0080);
+    __m128i mask0101 = _mm_set1_epi16(0x0101);
+    __m128i alpha16 = _mm_set1_epi16((short)alpha);
+
+    for (uint32_t _y = 0; _y < full_rect.height; _y++) {
+        if (y + _y < _top) continue;
+        if (y + _y > _bottom) break;
+
+        uint32_t _x = 0;
+        
+        for (; _x < full_rect.width && _x + x <= _right; _x++) {
+            uint32_t *pix = &GFX_PIXEL(ctx, _x + x, _y + y);
+            if (!((uintptr_t)pix & 15)) break;
+            uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
+
+            uint8_t a_src = GFX_RGB_A(src_pixel);
+            uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
+        }
+
+        for (; _x < full_rect.width - 3 && _x + x + 3 <= _right; _x += 4) {
+            __m128i d = _mm_loadu_si128((void*)&GFX_PIXEL(ctx, x + _x, y + _y));
+            __m128i s = _mm_loadu_si128((void*)&SPRITE_PIXEL(sprite, _x, _y));
+
+            __m128i d_l, d_h;
+            __m128i s_l, s_h;
+
+            d_l = _mm_unpacklo_epi8(d, _mm_setzero_si128());
+            d_h = _mm_unpackhi_epi8(d, _mm_setzero_si128());
+
+            s_l = _mm_unpacklo_epi8(s, _mm_setzero_si128());
+            s_h = _mm_unpackhi_epi8(s, _mm_setzero_si128());
+
+            s_l = _mm_mulhi_epu16(_mm_adds_epu16(_mm_mullo_epi16(s_l, alpha16), mask0080), mask0101);
+            s_h = _mm_mulhi_epu16(_mm_adds_epu16(_mm_mullo_epi16(s_h, alpha16), mask0080), mask0101);
+
+            __m128i a_l, a_h;
+            __m128i t_l, t_h;
+
+            a_l = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_l, _MM_SHUFFLE(3,3,3,3)), _MM_SHUFFLE(3,3,3,3));
+            a_h = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_h, _MM_SHUFFLE(3,3,3,3)), _MM_SHUFFLE(3,3,3,3));
+
+            t_l = _mm_xor_si128(a_l, mask00ff);
+            t_h = _mm_xor_si128(a_h, mask00ff);
+
+            d_l = _mm_mulhi_epu16(_mm_adds_epu16(_mm_mullo_epi16(d_l, t_l), mask0080), mask0101);
+            d_h = _mm_mulhi_epu16(_mm_adds_epu16(_mm_mullo_epi16(d_h, t_h), mask0080), mask0101);
+
+            d_l = _mm_adds_epu8(s_l, d_l);
+            d_h = _mm_adds_epu8(s_h, d_h);
+
+            _mm_storeu_si128((void*)&GFX_PIXEL(ctx, x + _x, y + _y), _mm_packus_epi16(d_l, d_h));
+        }
+
+        for (; _x < full_rect.width && _x + x <= _right; _x++) {
+            uint32_t *pix = &GFX_PIXEL(ctx, _x + x, _y + y);
+            uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
+
+            uint8_t a_src = GFX_RGB_A(src_pixel);
+            uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
+        }
+    }
+
+#else
     for (uint32_t _y = 0; _y < full_rect.height; _y++) {
         for (uint32_t _x = 0; _x < full_rect.width; _x++) {
             if (x + _x < _left || x + _x > _right || y + _y < _top || y + _y > _bottom) continue;
             uint32_t *pix = &GFX_PIXEL(ctx, x + _x, y + _y);
             uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
 
-            // Apply alpha blending
-            // TODO: Maybe add some SSE code?
-            uint8_t r = __gfx_premultiply_add_alpha_channel(src_pixel, R, alpha);
-            uint8_t g = __gfx_premultiply_add_alpha_channel(src_pixel, G, alpha);
-            uint8_t b = __gfx_premultiply_add_alpha_channel(src_pixel, B, alpha);
-            uint8_t a = __gfx_premultiply_add_alpha_channel(src_pixel, A, alpha);
+            uint8_t a_src = GFX_RGB_A(src_pixel);
+            uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
 
-            *pix = gfx_alphaBlend(GFX_RGBA(r,g,b,a), *pix);
+            *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
         }
     }
+#endif
 
     return 0;
 }
