@@ -37,8 +37,8 @@ static int tmpfs_destroy(vfs_inode_t *inode);
 static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags);
 static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags);
 static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off);
-static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page);
-static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_read_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_write_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
 
 /* Filesystem */
 static vfs2_filesystem_t tmpfs_filesystem = {
@@ -177,6 +177,9 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     ino->c_ops = &tmpfs_cache_ops;
     ino->priv = new_node;
     new_node->ino = ino->attr.ino;
+
+    // increase dir links 
+    node->attr.nlink++;
 
     hashmap_set(node->dir.children, name, new_node);
     *ino_output = ino;
@@ -364,12 +367,14 @@ static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
  */
 static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
     // truncate
-    size_t in_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
     
     // LOG(DEBUG, "tmpfs_truncate size %d in_pages %d\n", size, in_pages);
 
     tmpfs_node_t *n = inode->priv;
     mutex_acquire(&n->lck);
+
+#ifndef KERNEL_ENABLE_PAGE_CACHE
+    size_t in_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
     if (in_pages < n->file.page_count) {
         // We are shrinking down the file
         // Go through and free any existing pages
@@ -387,6 +392,8 @@ static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
     }
 
     n->file.page_count = in_pages;
+#endif
+
     n->attr.size = size;
     inode->attr.size = size;
     mutex_release(&n->lck);
@@ -398,6 +405,9 @@ static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
  * @brief tmpfs read
  */
 static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
+#ifdef KERNEL_ENABLE_PAGE_CACHE
+    assert(0);
+#else
     tmpfs_node_t *node = file->priv;
 
     if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
@@ -441,13 +451,18 @@ static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffe
 
     mutex_release(&node->lck);
     return size;
+#endif
 }
 
 /**
  * @brief tmpfs write
  */
 static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
+#ifdef KERNEL_ENABLE_PAGE_CACHE
+    assert(0);
+#else
     tmpfs_node_t *n = file->priv;
+
     if (n->attr.type == VFS_DIRECTORY) return -EISDIR;
     if (n->attr.type != VFS_FILE) return -EINVAL;
 
@@ -487,6 +502,7 @@ static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char
     mutex_release(&n->lck);
 
     return size;
+#endif
 }
 
 /**
@@ -619,17 +635,21 @@ static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off) {
 /**
  * @brief tmpfs read page
  */
-static int tmpfs_read_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
-    tmpfs_node_t *n = f->priv;
+static int tmpfs_read_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
+    tmpfs_node_t *n = i->priv;
     if (offset > n->attr.size) return -ENXIO;
     memset((void*)page, 0, PAGE_SIZE);
+   
+    // pin the page
+    pmm_page_t *pg = pmm_page(arch_mmu_physical(NULL, page));
+    pg->flags |= PAGE_FLAG_PERMANENT;
     return 0;
 }
 
 /**
  * @brief tmpfs write page
  */
-static int tmpfs_write_page(vfs_file_t *f, loff_t offset, uintptr_t page) {
+static int tmpfs_write_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
     return 0;
 }
 

@@ -82,9 +82,9 @@ static ssize_t full_write(devfs_node_t *n, loff_t off, size_t size, const char *
  * @brief psuedo devices init
  */
 int psuedo_init() {
-    assert(devfs_register(devfs_root, "null", VFS_BLOCKDEVICE, &null_dev_ops, DEVFS_MAJOR_NULL, 0, NULL));
-    assert(devfs_register(devfs_root, "zero", VFS_BLOCKDEVICE, &zero_dev_ops, DEVFS_MAJOR_ZERO, 0, NULL));
-    assert(devfs_register(devfs_root, "full", VFS_BLOCKDEVICE, &full_dev_ops, DEVFS_MAJOR_FULL, 0, NULL));
+    assert(devfs_register(devfs_root, "null", VFS_CHARDEVICE, &null_dev_ops, DEVFS_MAJOR_NULL, 0, NULL));
+    assert(devfs_register(devfs_root, "zero", VFS_CHARDEVICE, &zero_dev_ops, DEVFS_MAJOR_ZERO, 0, NULL));
+    assert(devfs_register(devfs_root, "full", VFS_CHARDEVICE, &full_dev_ops, DEVFS_MAJOR_FULL, 0, NULL));
     return 0;
 }
 

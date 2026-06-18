@@ -38,6 +38,7 @@
 /**** INCLUDES ****/
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <dirent.h>
@@ -52,6 +53,7 @@
 #include <kernel/debug.h>
 #include <limits.h>
 #include <structs/hashmap.h>
+#include <kernel/config.h>
 
 /**** DEFINITIONS ****/
 
@@ -107,10 +109,26 @@ typedef struct vfs_dir_context {
     unsigned int type;          // d_type
 } vfs_dir_context_t;
 
+/* struct statvfs equivalent */
+typedef struct {
+    unsigned long fs_blksize;
+    unsigned long fs_fragsize;
+    fsblkcnt_t fs_blocks;
+    fsblkcnt_t fs_blocks_free;
+    fsblkcnt_t fs_blocks_free_unpriv;
+    fsfilcnt_t fs_file_count;
+    fsfilcnt_t fs_inodes_free;
+    fsfilcnt_t fs_inodes_free_unpriv;
+    unsigned long fs_id;
+    unsigned long fs_flag;
+    unsigned long fs_namemax;
+} vfs_mount_info_t;
+
 /* Mount operations */
 typedef struct vfs_mount_ops {
     int (*unmount)(struct vfs_mount *mount);
     int (*write_inode)(struct vfs_inode *inode);
+    int (*statvfs)(struct vfs_mount *mount, vfs_mount_info_t *info);
 } vfs_mount_ops_t;
 
 /* File operations */
@@ -168,8 +186,8 @@ typedef struct vfs_inode_ops {
 
 /* VFS page cache operations */
 typedef struct vfs_cache_ops {
-    int (*read_page)(struct vfs_file *file, loff_t offset, uintptr_t page);
-    int (*write_page)(struct vfs_file *file, loff_t offset, uintptr_t page);
+    int (*read_page)(struct vfs_inode *file, loff_t offset, uintptr_t page);
+    int (*write_page)(struct vfs_inode *file, loff_t offset, uintptr_t page);
 } vfs_cache_ops_t;
 
 typedef struct vfs_icache_entry {
@@ -213,6 +231,7 @@ typedef struct vfs_mount {
     struct vfs_filesystem *fs;  // Filesystem
     vfs_mount_ops_t *ops;
     vfs_inode_t *root;          // Root inode
+    void *priv;                 // Private field
 } vfs_mount_t;
 
 /* VFS filesystem */
@@ -284,7 +303,7 @@ static inline size_t inode_size(vfs_inode_t *i) { return i->attr.size; }; // TOD
 
 /* Now */
 #define VFS_NOW() ({ struct timeval tv; gettimeofday(&tv, NULL); tv.tv_sec; })
-#define VFS_CACHEABLE(i) ((i)->attr.type == VFS_FILE && (((i)->flags & INODE_FLAG_NOT_CACHEABLE) == 0) && (i)->c_ops)
+#define VFS_CACHEABLE(i) (((i)->attr.type == VFS_FILE || (i)->attr.type == VFS_BLOCKDEVICE) && (((i)->flags & INODE_FLAG_NOT_CACHEABLE) == 0) && (i)->c_ops)
 
 /**** FUNCTIONS ****/
 
@@ -458,9 +477,7 @@ static inline int vfs_close(vfs_file_t *file) {
  * @param inode The inode to truncate
  * @param size The size to truncate to
  */
-static inline int vfs_truncate(vfs_inode_t *inode, size_t size) {
-    return inode_truncate(inode, size);
-} 
+int vfs_truncate(vfs_inode_t *inode, size_t size); 
 
 /**
  * @brief Get attribute VFS
@@ -643,6 +660,14 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path);
  * @param flags Flags for the rename operation
  */
 int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, unsigned int flags);
+
+/**
+ * @brief VFS get information on mountpoint
+ * @param mount The mountpoint to get information for
+ * @param info Output structure
+ * @returns 0 on success or error code
+ */
+int vfs_statvfs(vfs_mount_t *mount, vfs_mount_info_t *info);
 
 
 #endif

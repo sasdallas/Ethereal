@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <assert.h>
 #include <kernel/misc/mutex.h>
+#include <kernel/misc/util.h>
 
 /**** DEFINITIONS ****/
 
@@ -40,6 +41,8 @@
 #define PAGE_FLAG_READY                 0x4     // The page is ready to be used
 #define PAGE_FLAG_LOADING               0x8     // The page is currently being loaded from the disk
 #define PAGE_FLAG_ERROR                 0x10    // The page is fucked
+#define PAGE_FLAG_PERMANENT             0x20    // The page is permanent and cannot be removed UNLESS the cache is truncated
+#define PAGE_FLAG_TRUNCATED             0x40    // The page was truncated and is dead
 
 /**** TYPES ****/
 
@@ -52,11 +55,14 @@ typedef struct pmm_region {
 
 typedef int pmm_zone_t;
 
+struct page_entry;
+
 typedef struct pmm_page {
     struct pmm_section *sect;   // The section this belongs to
     struct vfs_inode *inode;    // Backed inode
     loff_t offset;              // Offset in the file
     volatile uint8_t flags;     // Page flags
+    struct page_entry *ent;     // Parent page entry
     uintptr_t refcount;
 } pmm_page_t;
 
@@ -117,12 +123,26 @@ void pmm_freePages(uintptr_t page_base, size_t npages);
 void pmm_retain(uintptr_t page);
 
 /**
+ * @brief Hold a page
+ * @param page The page to hold
+ * 
+ * Increments the page refcount to prevent it from being freed.
+ */
+void pmm_retainPage(pmm_page_t *page);
+
+/**
  * @brief Release a page
  * @param page The page to release
  * 
  * Decrements the page refcount
  */
 void pmm_release(uintptr_t page);
+
+/**
+ * @brief Release a page
+ * @param page The page to release
+ */
+void pmm_releasePage(pmm_page_t *page);
 
 /**
  * @brief Get page

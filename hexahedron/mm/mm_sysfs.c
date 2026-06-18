@@ -93,6 +93,16 @@ ssize_t systemfs_memory_kernel(systemfs_node_t *node) {
 }
 
 /**
+ * @brief cache
+ */
+ssize_t systemfs_memory_cache(systemfs_node_t *node) {
+    return systemfs_printf(node,
+        "%lld\n",
+        cache_active()
+    );
+}
+
+/**
  * @brief Initialize mm_sysfs
  */
 int systemfs_memory_init() {
@@ -101,6 +111,7 @@ int systemfs_memory_init() {
     systemfs_registerSimple(systemfs_memory_dir, "alloc", systemfs_memory_alloc, NULL, NULL);
     systemfs_registerSimple(systemfs_memory_dir, "slab", systemfs_memory_slab, NULL, NULL);
     systemfs_registerSimple(systemfs_memory_dir, "kernel", systemfs_memory_kernel, NULL, NULL);
+    systemfs_registerSimple(systemfs_memory_dir, "cache", systemfs_memory_cache, NULL, NULL);
     return 0;
 }
 

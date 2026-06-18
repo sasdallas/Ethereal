@@ -43,6 +43,9 @@ static int devfs_write_inode(vfs_inode_t *inode);
 static int devfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
 static int devfs_unimplemented();
 
+static int devfs_read_page(vfs_inode_t *file, loff_t offset, uintptr_t page);
+static int devfs_write_page(vfs_inode_t *file, loff_t offset, uintptr_t page);
+
 /* File operations */
 static vfs_file_ops_t devfs_file_ops = {
     .open           = devfs_open,
@@ -73,6 +76,11 @@ static vfs_inode_ops_t devfs_inode_ops = {
     .symlink    = devfs_unimplemented,
     .truncate   = devfs_unimplemented,
     .unlink     = devfs_unimplemented
+};
+
+static vfs_cache_ops_t devfs_cache_ops = {
+    .read_page = devfs_read_page,
+    .write_page = devfs_write_page,
 };
 
 /* Mount operations */
@@ -301,6 +309,7 @@ static int devfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **inode_dst)
         memcpy(&ret->attr, &child->attr, sizeof(vfs_inode_attr_t));
         ret->ops = &devfs_inode_ops;
         ret->f_ops = &devfs_file_ops;
+        ret->c_ops = &devfs_cache_ops;
         ret->mount = inode->mount;
         ret->priv = (void*)child;
         if (!child->ops || !child->ops->mmap) ret->flags |= INODE_FLAG_MMAP_UNSUPPORTED; // Kinda a hack
@@ -360,6 +369,34 @@ static int devfs_munmap(vfs_file_t *file, void *addr, size_t size, off_t offset)
     } else {
         return -ENODEV;
     }
+}
+
+/**
+ * @brief devfs read page
+ */
+static int devfs_read_page(vfs_inode_t *inode, loff_t offset, uintptr_t page) {
+    assert(inode->attr.type == VFS_BLOCKDEVICE);
+    devfs_node_t *n = inode->priv;
+    int r = 0;
+    
+    if (n->ops->read) {
+        r = (int)n->ops->read(n, offset, PAGE_SIZE, (char*)page);
+    }
+    
+    if (r < 0) return r;
+    return 0;
+}
+
+/**
+ * @brief devfs write page
+ */
+static int devfs_write_page(vfs_inode_t *inode, loff_t offset, uintptr_t page) {
+    assert(inode->attr.type == VFS_BLOCKDEVICE);
+    devfs_node_t *n = inode->priv;
+    int r = 0;
+    if (n->ops->write) r = (int)n->ops->write(n, offset, PAGE_SIZE, (const char*)page);
+    if (r < 0) return r;
+    return 0;
 }
 
 /**
@@ -521,6 +558,7 @@ static int devfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, ch
 
     root_inode->ops = &devfs_inode_ops;
     root_inode->f_ops = &devfs_file_ops;
+    root_inode->c_ops = &devfs_cache_ops;
     memcpy(&root_inode->attr, &devfs_root->attr, sizeof(vfs_inode_attr_t));
     root_inode->priv = (void*)devfs_root;
     root_inode->mount = mount_dst;

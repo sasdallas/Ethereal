@@ -20,7 +20,10 @@
 // #define KERNEL_ENABLE_MEMORY_LEAK_SCANNER 1
 
 /* Enable profiler */
-#define KERNEL_ENABLE_PROFILER 1
+// #define KERNEL_ENABLE_PROFILER 1
+
+/* Enable the page cache */
+#define KERNEL_ENABLE_PAGE_CACHE 1
 
 // IMPORTANT: This value controls the maximum amount of CPUs Hexahedron supports
 #define MAX_CPUS            32

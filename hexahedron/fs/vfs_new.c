@@ -658,6 +658,22 @@ int vfs_unmount(char *path) {
 //     return -EINVAL; // Not a mountpoint
 }
 
+
+/**
+ * @brief VFS get information on mountpoint
+ * @param mount The mountpoint to get information for
+ * @param info Output structure
+ * @returns 0 on success or error code
+ */
+int vfs_statvfs(vfs_mount_t *mount, vfs_mount_info_t *info) {
+    if (mount->ops && mount->ops->statvfs) {
+        int r = mount->ops->statvfs(mount, info);
+        return r;
+    } else {
+        return -ENOTSUP;
+    }
+}
+
 /**
  * @brief Open at
  * @param inode The inode to open at (must be locked)
@@ -769,10 +785,6 @@ int vfs_createat(vfs_inode_t *inode, char *path, mode_t mode, vfs_inode_t **inod
     }
 
     if (r == 0) {
-        // Now, release the inode again. This drops the initial reference when it was made by vfs_inode().
-        // TODO: Add caching to store the inode
-        // inode_release(tmp);
-
         // Cache the inode
         vfs_cacheInsertInode(tmp->mount, tmp->attr.ino, tmp);
     }
@@ -831,7 +843,7 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
  * @returns Amount of bytes read or negative error code
  */
 ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
-#ifndef VFS_ENABLE_PAGE_CACHE
+#ifndef KERNEL_ENABLE_PAGE_CACHE
     return file_read(file, off, size, buffer);
 #else
     if (!VFS_CACHEABLE(file->inode)) {
@@ -840,7 +852,6 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
 
     if (file->inode->cache == NULL) {
         file->inode->cache = cache_create();
-        inode_hold(file->inode);
     }
 
     if (off > file->inode->attr.size) {
@@ -862,7 +873,7 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
         if (chunk > remaining) chunk = remaining;
 
         pmm_page_t *output;
-        int r = cache_getPage(file, pg_ind * PAGE_SIZE, &output);
+        int r = cache_getPage(file->inode, pg_ind * PAGE_SIZE, &output);
         if (r) { return r; }
 
         uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
@@ -890,7 +901,7 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
  * @returns Amount of bytes write or negative error code
  */
 ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
-#ifndef VFS_ENABLE_PAGE_CACHE
+#ifndef KERNEL_ENABLE_PAGE_CACHE
     return file_write(file, off, size, buffer);
 #else
     if (!VFS_CACHEABLE(file->inode)) {
@@ -899,11 +910,10 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
 
     if (!file->inode->cache) {
         file->inode->cache = cache_create();
-        inode_hold(file->inode);
     }
 
     if ((size_t)file->inode->attr.size < off+size) {
-        int r = inode_truncate(file->inode, off+size);
+        int r = vfs_truncate(file->inode, off+size);
         if (r < 0) return r;
     }
 
@@ -917,7 +927,7 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
         if (chunk > remaining) chunk = remaining;
 
         pmm_page_t *output;
-        int r = cache_getPage(file, pg_ind * PAGE_SIZE, &output);
+        int r = cache_getPage(file->inode, pg_ind * PAGE_SIZE, &output);
         if (r) { return r; }
 
         uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
@@ -949,6 +959,28 @@ int vfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr) {
         memcpy(attr, &inode->attr, sizeof(vfs_inode_attr_t));
         return 0;
     }
+}
+
+/**
+ * @brief Truncate inode
+ * @param inode The inode to truncate
+ * @param size The size to truncate to
+ */
+int vfs_truncate(vfs_inode_t *inode, size_t size) {
+#ifndef KERNEL_ENABLE_PAGE_CACHE
+    return inode_truncate(inode, size);
+#else
+    if (!VFS_CACHEABLE(inode)) {
+        return inode_truncate(inode, size);
+    }
+
+    // First truncate page cache
+    if (inode->cache) {
+        cache_truncate(inode, size);
+    }
+
+    return inode_truncate(inode, size);
+#endif
 }
 
 /**
@@ -1011,6 +1043,13 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path) {
     vfs_pathLast(path, &last);
 
     r = inode_unlink(parent, child, last);
+
+    if (r == 0) {
+        // The cache holds an initial reference to this inode, so we can lose it now
+        // !!! Need to have some sort of cache pruning system
+        inode_release(child);
+    }
+
     inode_release(parent);
     inode_release(child);
     return r;
@@ -1222,6 +1261,7 @@ ino_t vfs_getNextInode() {
  */
 void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
     // LOG(DEBUG, "Destroying inode %p, by %s\n", inode, fn);
+    cache_destroy(inode);
     if (inode->ops->destroy) inode->ops->destroy(inode);
     vfs_cacheRemoveInode(inode->mount, inode);
     slab_free(inode_cache, inode);

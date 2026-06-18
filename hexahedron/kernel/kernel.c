@@ -360,7 +360,7 @@ void kmain() {
         char *path = kargs_get("exec");
         argv[0] = strdup(path);
         kernel_runInit(path, 1, argv);
-        kfree(path);
+        kfree(argv[0]);;
     }
 
     for (unsigned i = 0; i < sizeof(possible_inits) / sizeof(const char*); i++) {

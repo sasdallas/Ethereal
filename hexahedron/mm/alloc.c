@@ -144,8 +144,7 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
         #endif
         h->alloc_size = size - sizeof(alloc_header_t);
 
-        alloc_in_use += h->alloc_size;
-
+        __atomic_add_fetch(&alloc_in_use, h->alloc_size, __ATOMIC_SEQ_CST);
         return (void*)((uintptr_t)m + sizeof(alloc_header_t));
     } else {
         if (kmaflags & KMA_FAST) {
@@ -167,7 +166,7 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
         h->function = (uintptr_t)__builtin_return_address(0);
     #endif
 
-        alloc_in_use += h->alloc_size;
+        __atomic_add_fetch(&alloc_in_use, h->alloc_size, __ATOMIC_SEQ_CST);
         return (void*)((uintptr_t)m + sizeof(alloc_header_t));
     }
 
@@ -262,8 +261,12 @@ __attribute__((malloc)) void *kcalloc(size_t nobj, size_t size) {
 void kfree(void *ptr) {
     // Get the allocation header
     alloc_header_t *h = ALLOC_GETHEADER(ptr);
-    assert(h->magic == ALLOC_MAGIC_ALLOCATED);
-    alloc_in_use -= h->alloc_size;
+    
+    if (h->magic != ALLOC_MAGIC_ALLOCATED) {
+        kernel_panic_extended(MEMORY_MANAGEMENT_ERROR, "alloc", "*** Invalid magic 0x%x on kfree.\n", h->magic);
+    }
+
+    __atomic_sub_fetch(&alloc_in_use, h->alloc_size, __ATOMIC_SEQ_CST);
     
 #ifdef ENABLE_TRACKING
     h->function = (uintptr_t)__builtin_return_address(0);

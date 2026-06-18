@@ -26,11 +26,15 @@
 
 typedef struct page_entry {
     struct page_entry *next;
+    struct page_entry *dirty_next;
     volatile char period;
+    bool being_evicted; // used by syncer thread
     pmm_page_t *page;
 } page_entry_t;
 
 typedef struct page_cache {
+    struct page_cache *next;
+    struct page_cache *prev;
     mutex_t lck;
     page_entry_t *page_map[PAGE_CACHE_MAP_ENTS];
 
@@ -52,12 +56,12 @@ page_cache_t* cache_create() ;
 
 /**
  * @brief Get a page from the page cache
- * @param node The VFS node to retrieve
+ * @param inode The VFS inode to retrieve
  * @param offset The offset in the file to retrieve a page (page-aligned)
  * @param output The output page address
  * @returns 0 on success
  */
-int cache_getPage(struct vfs_file *node, loff_t offset, pmm_page_t **output);
+int cache_getPage(struct vfs_inode *inode, loff_t offset, pmm_page_t **output);
 
 /**
  * @brief Mark a page as dirty (mappings with mmap will always mark as dirty)
@@ -70,5 +74,22 @@ void cache_markDirty(pmm_page_t *page);
  * @param page The page to evict from the cache
  */
 void cache_evict(pmm_page_t *page);
+
+/**
+ * @brief Truncate a cache for an inode
+ * @param inode The inode cache to truncate
+ * @param new_size The new size of the cache
+ */
+void cache_truncate(struct vfs_inode *inode, loff_t new_size);
+
+/**
+ * @brief Destroy and free an inode cache
+ */
+void cache_destroy(vfs_inode_t *inode);
+
+/**
+ * @brief Get active pages
+ */
+int cache_active();
 
 #endif
