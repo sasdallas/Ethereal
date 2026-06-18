@@ -44,6 +44,9 @@
 #define SGR                     'm'     // Set graphics mode
 #define IL                      'L'     // Insert lines
 #define DL                      'M'     // Delete lines
-
+#define HIDE                    'l'     // Hide cursor
+#define SHOW                    'h'     // Show cursor
+#define REP                     'b'     // Repeat
+#define VPA                     'd'     // Vertical position absolute
 
 #endif

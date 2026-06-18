@@ -66,7 +66,7 @@ ansi_t *ansi_create() {
 
     a->ansi_pallete = ansi_default_pallete;
     a->ansi_fg = 9;
-    a->ansi_bg = 9;
+    a->ansi_bg = 0;
     return a;
 }
 
@@ -119,10 +119,14 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
         // Make sure that ch was a number
         if (ch == '[') {
             // Discard these characters
+            ansi->next_state = ANSI_STATE_FUNCTION;
             ansi->state = ANSI_STATE_ARG_COLLECT;
         } else if (ch >= 'A' && ch <= 'z') {
             // Looks like we found a function
             ansi->state = ANSI_STATE_FUNCTION;
+        } else if (ch == '(') {
+            ansi->next_state = ANSI_STATE_CHARSET;
+            ansi->state = ANSI_STATE_ARG_COLLECT;
         } else {
             ansi->state = ANSI_STATE_NONE;
             ansi->write('\033');
@@ -132,7 +136,7 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
     } else if (ansi->state == ANSI_STATE_ARG_COLLECT) {
         if (ch >= 'A' && ch <= 'z') {
             // Looks like we found a function
-            ansi->state = ANSI_STATE_FUNCTION;
+            ansi->state = ansi->next_state;
         } else { 
             // Nothing of note
             ANSI_PUSH(ch);
@@ -164,6 +168,13 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             // Erase display
             if (ansi->clear) ansi->clear();
         } else if (ch == SGR) {
+            if (!argc) {
+                // Reset 
+                ansi->ansi_fg = 15; // TODO: Customize
+                ansi->ansi_bg = 0;
+                ansi->flags = 0;
+            }
+            
             for (int i = 0; i < argc; i++) {
                 int arg = strtol(argv[i], NULL, 10);
 
@@ -199,7 +210,10 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
                         ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_BLINKING);
                     }
                 } else if (arg == 7 || arg == 27) {
-                    ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_INVERSE);
+                    // invert
+                    int fg = ansi->ansi_fg;
+                    ansi->ansi_fg = ansi->ansi_bg;
+                    ansi->ansi_bg = fg;
                 } else if (arg == 8 || arg == 28) {
                     ANSI_SET_OR_CLEAR(arg, ANSI_FLAG_HIDDEN);
                 } else if (arg == 9 || arg == 29) {
@@ -207,7 +221,25 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
                 }
                 
                 // Color code parsing
-                if (arg >= 30 && arg < 39) {
+                if (arg == 38 || arg == 48) {
+                    bool fg = (arg == 38);
+
+                    if (i + 2 < argc) {
+                        int mode = atoi(argv[i + 1]);
+
+                        if (mode == 5) {
+                            /* CSI 38;5;n */
+                            int idx = atoi(argv[i + 2]);
+
+                            if (fg)
+                                ansi->ansi_fg = idx;
+                            else
+                                ansi->ansi_bg = idx;
+
+                            i += 2;
+                        }
+                    }
+                } else if (arg >= 30 && arg < 39) {
                     // Set foreground color code
                     ansi->ansi_fg = arg - 30;
                 } else if (arg >= 40 && arg < 49) {
@@ -263,23 +295,67 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             ansi->scroll(lines);
         } else if (ch == CHA) {
             // Cursor horizontal absolute
-            int i = cx;
-            if (argc) {
-                i = strtol(argv[0], NULL, 10);
-            }
-
-            ansi->move_cursor(ANSI_CLAMPX(cx - i), cy);
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+            ansi->move_cursor(ANSI_CLAMPX(i)-1, cy);
         } else if (ch == CUP) {
-            if (argc < 2) {
-                ansi->move_cursor(0,0);
-            } else {
-                ansi->move_cursor(ANSI_CLAMPX((size_t)strtol(argv[1], NULL, 10))-1, ANSI_CLAMPY((size_t)strtol(argv[0], NULL, 10))-1);
+            size_t x = 0;
+            size_t y = 0;
+
+            if (argc >= 1) x = (size_t)strtol(argv[0], NULL, 10) - 1;
+            if (argc >= 2) y = (size_t)strtol(argv[0], NULL, 10) - 1;
+            
+            ansi->move_cursor(ANSI_CLAMPX(x), ANSI_CLAMPY(y));
+        } else if (ch == CUU) {
+            // Cursor up
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+            if (i <= cy) {
+                ansi->move_cursor(cx, ANSI_CLAMPY((size_t)(cy - i)));
             }
-        }else {
-            fprintf(stderr, "ANSI: Unrecognized function '%c'\n", ch);
+        } else if (ch == CUD) {
+            // Cursor down
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+            ansi->move_cursor(cx, ANSI_CLAMPY((size_t)(cy + i)));
+        } else if (ch == CUB) {
+            // Cursor backwards
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+
+            if (i <= cx) {
+                ansi->move_cursor(ANSI_CLAMPX((size_t)(cx - i)), cy);
+            }
+        } else if (ch == CUF) {
+            // Cursor forward
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+            ansi->move_cursor(ANSI_CLAMPX((size_t)(cx + i)), cy);
+        } else if (ch == HIDE) {
+            ansi->set_cursor(false);
+        } else if (ch == SHOW) {
+            ansi->set_cursor(true);
+        } else if (ch == REP) {
+            fprintf(stderr, "ANSI: Partially implemented REP\n");
+            int i = 1;
+            if (argc) i = strtol(argv[0], NULL, 10);
+            while (i--) ansi->write(' ');
+        } else if (ch == VPA) {
+            int i = 0;
+            if (argc) i = strtol(argv[0], NULL, 10) - 1;
+            int16_t x, y;
+            ansi->get_cursor(&x, &y);
+            y = i;
+            ansi->move_cursor(x,y);
+        } else {
+            fprintf(stderr, "ANSI: Unrecognized function '%c' argc=%d\n", ch, argc);
         }
         
 
+        ansi->bufidx = 0;
+        ansi->state = ANSI_STATE_NONE;
+    } else if (ansi->state == ANSI_STATE_CHARSET) {
+        // do nothing just consume the characters
         ansi->bufidx = 0;
         ansi->state = ANSI_STATE_NONE;
     }

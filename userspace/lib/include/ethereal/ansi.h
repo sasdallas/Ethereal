@@ -25,6 +25,7 @@
 #define ANSI_STATE_ESCAPE       1   // \x1b
 #define ANSI_STATE_ARG_COLLECT  2   // ESC[
 #define ANSI_STATE_FUNCTION     3   // Function
+#define ANSI_STATE_CHARSET      4   // ESC(
 
 /* Flags */
 #define ANSI_FLAG_BOLD          0x01
@@ -32,9 +33,8 @@
 #define ANSI_FLAG_ITALIC        0x04
 #define ANSI_FLAG_UNDERLINE     0x08
 #define ANSI_FLAG_BLINKING      0x10
-#define ANSI_FLAG_INVERSE       0x20
-#define ANSI_FLAG_HIDDEN        0x40
-#define ANSI_FLAG_STRIKETHROUGH 0x80
+#define ANSI_FLAG_HIDDEN        0x20
+#define ANSI_FLAG_STRIKETHROUGH 0x40
 
 /**** TYPES ****/
 
@@ -88,8 +88,15 @@ typedef void (*ansi_set_cell_t)(int16_t x, int16_t y, char ch);
  */
 typedef void (*ansi_scroll_t)(int lines);
 
+/**
+ * @brief Set cursor enabled
+ */
+typedef void (*ansi_set_cursor_t)(bool enabled);
+
 typedef struct ansi {
-    int state;                          // Current state of the ANSI state machine
+    unsigned char state;                // Current state of the ANSI state machine
+    unsigned char next_state;           // Next state
+
     int flags;                          // ANSI flags
 
     char *buf;                          // ANSI buffer
@@ -113,6 +120,7 @@ typedef struct ansi {
     ansi_set_cell_t set_cell;           // Set cell
     ansi_scroll_t scroll;               // Scroll
     ansi_clear_t clear;                 // Clear screen
+    ansi_set_cursor_t set_cursor;       // Set cursor enabled
 } ansi_t;
 
 /**** FUNCTIONS ****/
