@@ -912,7 +912,7 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
         file->inode->cache = cache_create();
     }
 
-    if ((size_t)file->inode->attr.size < off+size) {
+    if (file->inode->attr.type == VFS_FILE && (size_t)file->inode->attr.size != off+size) {
         int r = vfs_truncate(file->inode, off+size);
         if (r < 0) return r;
     }

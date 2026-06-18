@@ -342,11 +342,6 @@ static void cache_evictLocked(pmm_page_t *page) {
 
     // release the page
     pmm_releasePage(page);
-
-    if (page->flags & PAGE_FLAG_PERMANENT) {
-        LOG(DEBUG, "Deleting permanent page!\n");
-        pmm_releasePage(page);
-    }
 }
 
 /**
@@ -366,9 +361,7 @@ void cache_evict(pmm_page_t *page) {
  * @param new_size The new size of the cache
  */
 void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
-    LOG(DEBUG, "cache_truncate %d\n", new_size);
-
-    if (new_size >= inode->attr.size || (new_size-inode->attr.size) < PAGE_SIZE) {
+    if (new_size >= inode->attr.size || (inode->attr.size-new_size) < PAGE_SIZE) {
         return; // we only care when pages are lost
     }
 
@@ -376,7 +369,7 @@ void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
     mutex_acquire(&c->lck);
 
     loff_t start_loss = PAGE_ALIGN_UP(new_size);
-    for (int i = (start_loss/4096) % PAGE_CACHE_MAP_ENTS; i < PAGE_CACHE_MAP_ENTS; i++) {
+    for (int i = (start_loss/PAGE_SIZE) % PAGE_CACHE_MAP_ENTS; i < PAGE_CACHE_MAP_ENTS; i++) {
         page_entry_t *ent = c->page_map[i];
         while (ent) {
             page_entry_t *nxt = ent->next;
