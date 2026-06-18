@@ -236,71 +236,6 @@ void sys_exit(int status) {
     process_exit(NULL, status);
 }
 
-int __sys_open_internal(char *pathname, int flags, mode_t mode) {
-    // Try and get it open
-    vfs_file_t *file;
-    int r = vfs_open(pathname, flags, &file);
-
-    // Did we find the node and they DIDN'T want us to create it?
-    if (r == 0 && (flags & O_CREAT) && (flags & O_EXCL)) {
-        vfs_close(file);
-        return -EEXIST;
-    }
-
-    // Did we find it and did they want to create it?
-    if ((r != 0) && (flags & O_CREAT)) {
-        // Ok, make the file using some garbage hacks
-        vfs_inode_t *ino_output;
-        r = vfs_create(pathname, mode, &ino_output);
-        if (r < 0) {
-            return r;
-        }
-
-        // HACK: Open the node
-        r = vfs_openat(ino_output, NULL, flags, &file);
-        if (r != 0) {
-            return r;
-        }
-    }
-
-    // Did they want a directory?
-    if ((r == 0) && !(file->inode->attr.type == VFS_DIRECTORY) && (flags & O_DIRECTORY)) {
-        vfs_close(file);
-        return -ENOTDIR;
-    }
-
-    // Did we find it and they want it?
-    if (r) {
-        return r;
-    }
-
-    // Create the file descriptor and return
-    int fd_out;
-    r = fd_add(file, &fd_out);
-    if (r < 0) {
-        vfs_close(file);
-        return r;
-    }
-
-    // !!!: very bad
-    file->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
-    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);
-
-    // Are they trying to append? If so modify length to be equal to node length
-    if (flags & O_APPEND) {
-        r = vfs_seek(file, 0, SEEK_END);
-        if (r < 0) return r;
-    }
-
-    return fd_out;
-}
-
-int sys_open(const char *pathname, int flags, mode_t mode) {
-    SYSCALL_VALIDATE_PTR(pathname);
-    int r = __sys_open_internal((char*)pathname, flags, mode);
-    return r;
-}
-
 ssize_t sys_read(int fd, void *buffer, size_t count) {
     SYSCALL_VALIDATE_PTR_SIZE(buffer, count);
 
@@ -363,10 +298,10 @@ static int sys_stat_common(vfs_file_t *f, struct stat *statbuf) {
     // Setup other fields
     statbuf->st_ino = attr.ino; // Inode number
     statbuf->st_mode |= attr.mode; // File mode - TODO: Make sure that file mode is properly set with vaild mask bits
-    statbuf->st_nlink = 0; // TODO
+    statbuf->st_nlink = attr.nlink;
     statbuf->st_uid = attr.uid;
     statbuf->st_gid = attr.gid;
-    statbuf->st_rdev = 0; // TODO
+    statbuf->st_rdev = attr.rdev;
     statbuf->st_size = attr.size;
     statbuf->st_blksize = 512; // TODO: This would prove useful for file I/O
     statbuf->st_blocks = 0; // TODO
@@ -1371,28 +1306,4 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
     }  
 
     return read;
-}
-
-long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
-    // SYSCALL_VALIDATE_PTR(pathname);
-
-    // if (dirfd == AT_FDCWD || pathname[0] == '/') {
-    //     // Easy enough
-    //     return sys_open(pathname, flags, mode);
-    // }
-
-    // if (!FD_VALIDATE(dirfd) || FD(dirfd)->path == NULL) {
-    //     return -EBADF;
-    // }
-
-    // fd_t *f = FD(dirfd);
-    // if (!(f->node->inode->attr.type == VFS_DIRECTORY)) {
-    //     return -ENOTDIR;
-    // }
-
-    // char *p = vfs_canonicalizePath(f->path, (char*)pathname);
-    // long r = __sys_open_internal(p, flags, mode);
-    // kfree(p);
-    // return r;
-    assert(0);
 }
