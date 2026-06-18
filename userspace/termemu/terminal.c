@@ -25,6 +25,8 @@
 #include <getopt.h>
 #include <ethereal/celestial.h>
 #include <sys/ioctl.h>
+#include <structs/queue.h>
+#include <assert.h>
 
 /* Graphics context */
 static gfx_context_t *ctx = NULL;
@@ -42,9 +44,11 @@ static int16_t terminal_height = 0;
 /* Cursor data */
 static int16_t cursor_x = 0;
 static int16_t cursor_y = 0;
+static int cursor_hold = 0; // set when cursor reaches EOL.. next character will go to 0 X
+static bool cursor_enabled = true;
 
 /* Terminal cell array */
-term_cell_t **cell_array = NULL;
+term_cell_t *cell_array = NULL;
 
 /* Scrollback array */
 list_t *scrollback_up = NULL;
@@ -72,12 +76,28 @@ uint16_t drag_start_x, drag_start_y = 0;
 uint16_t drag_last_x, drag_last_y = 0;
 int is_dragging = 0;
 
+/* Writer queue */
+queue_t writer_queue;
+pthread_t writer;
+pthread_cond_t writer_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
+struct writer_data { char data[256]; size_t size; };
+
+/* Last redraw */
+#define NOW() ({ struct timeval tv; gettimeofday(&tv, NULL); ((uint64_t)tv.tv_sec * 1000000 + (uint64_t)tv.tv_usec); })
+#define INTERVAL 33330
+static uint64_t last_redraw = 0;
+
 /* Cell macro */
-#define CELL(x, y) (&(cell_array[(y)][(x)]))
+#define CELL(x, y) (&(cell_array[((y) * terminal_width) + (x)]))
 #define CURSOR CELL(cursor_x, cursor_y)
 
+#define HIGHLIGHT_CURSOR() if (cursor_enabled) HIGHLIGHT(CURSOR)
+#define UNHIGHLIGHT_CURSOR() if (cursor_enabled) UNHIGHLIGHT(CURSOR)
+
+
 /* Flush macro */
-#define FLUSH() { gfx_render(ctx); gfx_resetClips(ctx); if (win) { celestial_flip(win); }}
+#define FLUSH()
 
 static void draw_cell(uint16_t x, uint16_t y);
 
@@ -110,16 +130,14 @@ void version() {
 void terminal_setCursor(int16_t x, int16_t y) {
     if (y < 0) y = 0;
     if (x < 0) x = 0;
-    if (y > terminal_height) y = terminal_height;
-    if (x > terminal_width) x = terminal_width;
+    if (y >= terminal_height) y = terminal_height-1;
+    if (x >= terminal_width) x = terminal_width-1;
 
-    UNHIGHLIGHT(CURSOR);
-    draw_cell(cursor_x, cursor_y);
+    UNHIGHLIGHT_CURSOR();
     cursor_x = x;
     cursor_y = y;
-    HIGHLIGHT(CURSOR);
-    draw_cell(cursor_x, cursor_y);
-    FLUSH();
+    cursor_hold = 0;
+    HIGHLIGHT_CURSOR();
 }
 
 /**
@@ -133,21 +151,40 @@ void terminal_getCursor(int16_t *x, int16_t *y) {
 }
 
 /**
+ * @brief Render cell
+ * @param cell The cell to draw
+ * @param x X to render the cell at
+ * @param y Y to render the cell at
+ */
+void render_cell(term_cell_t *cell, int x, int y) {
+    gfx_color_t fg = (cell->highlighted ? CELL_FG_HIGHLIGHTED : cell->fg);
+    gfx_color_t bg = (cell->highlighted ? CELL_BG_HIGHLIGHTED : cell->bg);
+    gfx_font_t *f = (cell->bold ? terminal_font_bold : terminal_font);
+    gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
+    gfx_drawRectangleFilled(ctx, &r, bg);
+    gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y+13, fg);
+}
+
+/**
+ * @brief Re-render the terminal
+ */
+void terminal_render() {
+    for (int y = 0; y < terminal_height; y++) {
+        for (int x = 0; x < terminal_width; x++) {
+            render_cell(&cell_array[y*terminal_width+x], x, y);
+        }
+    }
+
+    gfx_render(ctx);
+    if (win) celestial_flip(win);
+}
+
+/**
  * @brief Redraw a cell 
  * @param x The X coordinate of the cell
  * @param y The Y coordinate of the cell
  */
-static void draw_cell(uint16_t x, uint16_t y) {
-    term_cell_t *cell = CELL(x,y);
-
-    gfx_color_t fg = (cell->highlighted ? CELL_FG_HIGHLIGHTED : cell->fg);
-    gfx_color_t bg = (cell->highlighted ? CELL_BG_HIGHLIGHTED : cell->bg);
-    
-    gfx_font_t *f = cell->bold ? terminal_font_bold : terminal_font;
-
-    gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
-    gfx_drawRectangleFilled(ctx, &r, bg);
-    gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y + 13, fg);
+static inline void draw_cell(uint16_t x, uint16_t y) {
 }
 
 /**
@@ -168,12 +205,10 @@ void terminal_setbg(gfx_color_t bg) { terminal_bg = bg; }
 static void terminal_backspace() {
     if (cursor_x == 0) return;
 
-    UNHIGHLIGHT(CURSOR);
-    draw_cell(cursor_x, cursor_y);
+    UNHIGHLIGHT_CURSOR();
     cursor_x--;
-
-    HIGHLIGHT(CURSOR);
-    draw_cell(cursor_x, cursor_y);
+    cursor_hold = 0;
+    HIGHLIGHT_CURSOR();
 }
 
 /**
@@ -181,7 +216,7 @@ static void terminal_backspace() {
  */
 term_cell_t *terminal_duplicateRow(int y) {
     term_cell_t *out = malloc(sizeof(term_cell_t) * terminal_width);
-    memcpy(out, cell_array[y], sizeof(term_cell_t) * terminal_width);
+    memcpy(out, CELL(0, y), sizeof(term_cell_t) * terminal_width);
     return out;
 }
 
@@ -192,13 +227,8 @@ void terminal_scrollOne() {
     sb_row_count_total++;
 
     // Starting from here to terminal_height-1, we must adjust contents
-    for (int y = 0; y < terminal_height - 1; y++) {
-        memcpy(cell_array[y], cell_array[y+1], sizeof(term_cell_t) * terminal_width);
-    }
-
-    // vmem
-    memcpy(ctx->backbuffer, ctx->backbuffer + GFX_PITCH(ctx) * CELL_HEIGHT, (GFX_HEIGHT(ctx) - CELL_HEIGHT) * GFX_PITCH(ctx));
-
+    memmove(&cell_array[0], &cell_array[terminal_width], sizeof(term_cell_t) * terminal_width * (terminal_height-1));
+    
     // If we need to go down all of them, do that.
     node_t *n = list_pop(scrollback_down);
 
@@ -207,11 +237,11 @@ void terminal_scrollOne() {
         term_cell_t *down_row = (term_cell_t*)n->value;
         free(n);
 
-        // memcpy(CELL(0, terminal_height-1), down_row, sizeof(term_cell_t) * terminal_width);
-        for (int x = 0; x < terminal_width; x++) {
-            memcpy(CELL(x, terminal_height-1), &down_row[x], sizeof(term_cell_t));
-            draw_cell(x, terminal_height-1);
-        }
+        memcpy(CELL(0, terminal_height-1), down_row, sizeof(term_cell_t) * terminal_width);
+        // for (int x = 0; x < terminal_width; x++) {
+        //     memcpy(CELL(x, terminal_height-1), &down_row[x], sizeof(term_cell_t));
+        //     draw_cell(x, terminal_height-1);
+        // }
 
         free(down_row);
     } else  {
@@ -220,15 +250,8 @@ void terminal_scrollOne() {
             CELL(x, terminal_height-1)->highlighted = 0;
             CELL(x, terminal_height-1)->fg = terminal_fg;
             CELL(x, terminal_height-1)->bg = terminal_bg;
-
-            draw_cell(x, terminal_height-1);
         }
     }
-
-    // Flush
-    gfx_resetClips(ctx);
-    gfx_render(ctx);
-    if (win) celestial_flip(win);
 }
 
 /**
@@ -269,7 +292,7 @@ void terminal_scrollUpOne() {
 
     // Shift everything
     for (int y = terminal_height - 2; y >= 0; y--) {
-        memcpy(cell_array[y+1], cell_array[y], sizeof(term_cell_t) * terminal_width);
+        memcpy(&cell_array[(y+1)*terminal_width], &cell_array[y*terminal_width], sizeof(term_cell_t) * terminal_width);
     }
 
     for (int x = 0; x < terminal_width; x++) {
@@ -307,23 +330,19 @@ static void terminal_write(char ch) {
     if (is_dragging) {
         is_dragging = 0;
         mark_drag(drag_last_x, drag_last_y, 0);
-        HIGHLIGHT(CURSOR);
+        HIGHLIGHT_CURSOR();
         draw_cell(cursor_x, cursor_y);
     }
 
     terminal_scroll(-1, 0);
-    UNHIGHLIGHT(CURSOR);
+    UNHIGHLIGHT_CURSOR();
 
     // Handle special characters
     if (ch == '\n') {
-        CURSOR->ch = ' ';
-        CURSOR->fg = terminal_fg;
-        CURSOR->bg = terminal_bg;
-        draw_cell(cursor_x, cursor_y);
-
         // Reset Y and X
         cursor_y++;
         cursor_x = 0;
+        cursor_hold = 0;
 
         // Update cursor
         goto _update_cursor;
@@ -337,7 +356,23 @@ static void terminal_write(char ch) {
         
         goto _update_cursor;
     } else if (ch == '\r') {
+        cursor_hold = 0;
+        cursor_x = 0;
         return;
+    }
+
+
+    if (cursor_hold) {
+        cursor_x = 0;
+        cursor_y++;
+        cursor_hold = 0;
+
+        // make sure it hasn't overflowed yet
+        if (cursor_y >= terminal_height) {
+            terminal_scroll(1, 0);
+            cursor_y--;
+            cursor_x = 0;
+        }
     }
 
     // Draw the new character
@@ -352,9 +387,10 @@ static void terminal_write(char ch) {
 
 _update_cursor:
 
-    if (cursor_x >= terminal_width) {
-        cursor_x = 0;
-        cursor_y++;
+    if (cursor_x >= terminal_width && (ch != '\t')) {
+        // clamp
+        cursor_x = terminal_width-1;
+        cursor_hold = 1;
     }
 
     if (cursor_y >= terminal_height) {
@@ -365,7 +401,7 @@ _update_cursor:
     }
 
     if (cursor_x < terminal_width && cursor_y < terminal_height) {
-        HIGHLIGHT(CURSOR);
+        HIGHLIGHT_CURSOR();
         draw_cell(cursor_x, cursor_y);
     }
 }
@@ -416,7 +452,15 @@ void terminal_createPTY(char *startup_program) {
  * @param input The input to send
  */
 static void terminal_sendInput(char *input) {
-    write(pty_master, input, strlen(input));
+    struct writer_data *data = malloc(sizeof(struct writer_data));
+    strncpy(data->data, input, 256);
+    data->size = strlen(input);
+    assert(data->size < 256);
+
+    pthread_mutex_lock(&writer_mutex);
+    queue_push(&writer_queue, data);
+    pthread_cond_signal(&writer_cond);
+    pthread_mutex_unlock(&writer_mutex);
 }
 
 /**
@@ -488,8 +532,9 @@ static void terminal_process(keyboard_event_t *event) {
 
         default:
             if (!event->ascii) return;
-            char b[] = {event->ascii};
-            write(pty_master, b, 1);
+            char b[] = {event->ascii, 0};
+
+            terminal_sendInput(b);
             break;
     }
 }
@@ -508,6 +553,8 @@ void kbd_handler(window_t *win, uint32_t event_type, void *event) {
         if (ev->ascii == '\b') ev->ascii = 0x7F;
         terminal_process(ev);
     }
+    
+    free(ev);
 }
 
 /**
@@ -520,6 +567,11 @@ void mouse_cursor_set(window_t *win, uint32_t event_type, void *event) {
     if (event_type == CELESTIAL_EVENT_MOUSE_ENTER) {
         celestial_setMouseCursor(CELESTIAL_MOUSE_TEXT);
     } else {
+        if (event_type == CELESTIAL_EVENT_MOUSE_EXIT) {
+            // hack
+            is_dragging = 2;
+        }
+
         celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
     }
 }
@@ -566,15 +618,14 @@ void mark_drag(uint16_t end_x, uint16_t end_y, int highlight) {
         draw_cell(cx, cy);
 
         if (direction) {
+            cx++;
             if (cx >= terminal_width) {
                 cx = 0;
                 cy++;
-            } else {
-                cx++;
             }
         } else {
             if (cx == 0) {
-                cx = terminal_width;
+                cx = terminal_width-1;
                 cy--;
             } else {
                 cx--;
@@ -594,7 +645,7 @@ void mouse_drag_handler(window_t *win, uint32_t event_type, void *event) {
     if (is_dragging == 2) {
         is_dragging = 0;
         mark_drag(drag_last_x, drag_last_y, 0);
-        HIGHLIGHT(CURSOR);
+        HIGHLIGHT_CURSOR();
         draw_cell(cursor_x, cursor_y);
         FLUSH();
     }
@@ -639,12 +690,10 @@ void terminal_clear() {
         for (int32_t x = 0; x < terminal_width; x++) {
             CELL(x, y)->ch = ' ';
             CELL(x, y)->highlighted = 0;
+            CELL(x, y)->bg = terminal_bg;
+            CELL(x, y)->fg = terminal_fg;
         }
     }
-
-    // Clear framebuffer
-    gfx_resetClips(ctx);
-    gfx_clear(ctx, GFX_RGB(0,0,0));
 
     // Redraw cursor
     CURSOR->highlighted = 1;
@@ -655,9 +704,6 @@ void terminal_clear() {
     list_destroy(scrollback_down, true);
     scrollback_up = list_create("term scrollback up");
     scrollback_down = list_create("term scrollback down");
-
-    gfx_render(ctx);
-    if (win) celestial_flip(win);
 }
 
 /**
@@ -680,6 +726,34 @@ void terminal_setCell(int16_t x, int16_t y, char ch) {
  */
 void terminal_scrollAnsi(int lines) {
     fprintf(stderr, "termemu: Cannot scroll lines as this is not implemented\n");
+}
+
+/**
+ * @brief Set cursor
+ */
+void terminal_setCursorEnabled(bool enabled) {
+    cursor_enabled = enabled;
+    if (cursor_enabled) HIGHLIGHT(CURSOR);
+    if (!cursor_enabled) UNHIGHLIGHT(CURSOR);
+}
+
+/**
+ * @brief input thread
+ */
+void *input_thread(void *p) {
+    pthread_mutex_lock(&writer_mutex);
+    while (1) {
+        while (!queue_empty(&writer_queue)) {
+            struct writer_data *dat = queue_pop(&writer_queue);
+            if (dat) {
+                pthread_mutex_unlock(&writer_mutex);
+                write(pty_master, dat->data, dat->size);
+                pthread_mutex_lock(&writer_mutex);
+                free(dat);
+            }
+        }
+        pthread_cond_wait(&writer_cond, &writer_mutex);
+    }
 }
 
 /**
@@ -716,6 +790,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Initialize
+    QUEUE_INIT(&writer_queue);
 
     if (fullscreen) {
         // Initialize the graphics context
@@ -724,7 +800,6 @@ int main(int argc, char *argv[]) {
         // Initialize the graphics context for celestial
         wid_t wid = celestial_createWindow(0, 640, 476);
         win = celestial_getWindow(wid);
-        celestial_subscribe(win, CELESTIAL_EVENT_KEY_EVENT | CELESTIAL_EVENT_MOUSE_SCROLL | CELESTIAL_EVENT_MOUSE_ENTER | CELESTIAL_EVENT_MOUSE_EXIT);
         celestial_setTitle(win, "Terminal");
         celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_SCROLL, scroll_handler);
@@ -763,21 +838,19 @@ int main(int argc, char *argv[]) {
     terminal_ansi->clear = terminal_clear;
     terminal_ansi->set_cell = terminal_setCell;
     terminal_ansi->scroll = terminal_scrollAnsi;
+    terminal_ansi->set_cursor = terminal_setCursorEnabled;
     terminal_ansi->screen_width = terminal_width;
     terminal_ansi->screen_height = terminal_height;
 
 
     // Create cell array
-    cell_array = malloc(terminal_height * sizeof(term_cell_t*));
+    cell_array = malloc(terminal_height * terminal_width * sizeof(term_cell_t));
     for (int i = 0; i < terminal_height; i++) {
-        cell_array[i] = malloc(sizeof(term_cell_t) * terminal_width);
-        memset(cell_array[i], 0, sizeof(term_cell_t) * terminal_width);
-
-        // Build the initial cell system
         for (int x = 0; x < terminal_width; x++) {
-            cell_array[i][x].fg = terminal_fg;
-            cell_array[i][x].bg = terminal_bg;
-            cell_array[i][x].ch = ' ';
+            term_cell_t *cell = CELL(x, i);
+            cell->fg = terminal_fg;
+            cell->bg = terminal_bg;
+            cell->ch = ' ';
         }
     }
 
@@ -786,33 +859,43 @@ int main(int argc, char *argv[]) {
     scrollback_down = list_create("term scrollback down");
 
     // Draw cursor
-    HIGHLIGHT(CURSOR);
+    HIGHLIGHT_CURSOR();
     draw_cell(cursor_x, cursor_y);
 
     // Create keyboard fd
-    keyboard_fd = open("/device/keyboard", O_RDONLY);
-
-    if (keyboard_fd < 0) {
-        perror("open");
-        return 1;
+    if (fullscreen) {
+        keyboard_fd = open("/device/keyboard", O_RDONLY);
+        if (keyboard_fd < 0) {
+            perror("open");
+            return 1;
+        }
     }
-
     // Create keyboard object
     kbd = keyboard_create();
 
     // Create the PTY
     terminal_createPTY("essence");
 
-    // dup2(pty_master, STDIN_FILENO);
-    // dup2(pty_master, STDOUT_FILENO);
-
+    // Spawn input thread
+    pthread_create(&writer, NULL, input_thread, NULL);
+    
     // Enter main loop
+    // The idea for this mechanism of redraw came from my research of ToaruOS
+    int tty_last = 0;
+    int flip_now = 0;
     for (;;) {
+        flip_now = 0;
+
         // Get events
-        struct pollfd fds[] = { { .fd = keyboard_fd, .events = POLLIN }, { .fd = pty_master, .events = POLLIN }, { .fd = celestial_getSocketFile(), .events = POLLIN }};
-        int p = poll(fds, 3, -1);
+        int p;
+        struct pollfd fds[] = {
+            { .fd = fullscreen ? keyboard_fd : celestial_getSocketFile(), .events = POLLIN, .revents = 0 },
+            { .fd = pty_master, .events = POLLIN, .revents = 0 }
+        };
+
+        p = poll(fds, 2, tty_last ? 10 : 300);
         if (p < 0) return 1;
-        if (!p) continue;
+
 
         // Keyboard events?
         if (fds[0].revents & POLLIN && fullscreen) {
@@ -828,6 +911,8 @@ int main(int argc, char *argv[]) {
             }
                 
             free(ev);
+        } else if (fds[0].revents & POLLIN) {
+            celestial_poll();
         }
 
         if (fds[1].revents & POLLIN) {
@@ -836,20 +921,24 @@ int main(int argc, char *argv[]) {
             ssize_t r = read(pty_master, buf, 4096);
             if (r) {
                 buf[r] = 0;
-
+                
                 for (int i = 0; i < r; i++) {
                     ansi_parse(terminal_ansi, buf[i]);
                 }
-
-                FLUSH();
             }
+
+            tty_last = 1;
+        } else {
+            if (tty_last) flip_now = 1;
+            tty_last = 0;
         }
 
-        if (fds[2].revents & POLLIN) {
-            celestial_poll();
+        uint64_t ticks = NOW();
+        if (ticks > last_redraw + INTERVAL || flip_now) {
+            last_redraw = ticks;
+            terminal_render();
         }
     }
-
 
     return 0;
 }
