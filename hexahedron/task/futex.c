@@ -32,6 +32,9 @@ slab_cache_t *futex_cache = NULL;
 hashmap_t *futex_map = NULL;
 mutex_t *futex_mutex = NULL;
 
+#define FUTEX_LOCK() mutex_acquire(futex_mutex);
+#define FUTEX_UNLOCK() mutex_release(futex_mutex);
+
 /**
  * @brief Futex object initializer
  */
@@ -46,54 +49,71 @@ static int futex_initializer(slab_cache_t *cache, void *obj) {
 /**
  * @brief Wait on a futex
  * @param pointer Pointer to the futex variable
- * @param value The vaue to look for
+ * @param value The value to look for
  * @param time Time to wait on
  */
 int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
+    FUTEX_LOCK();
+
     if (__atomic_load_n(pointer, memory_order_seq_cst) != val) {
+        FUTEX_UNLOCK();
         return -EAGAIN;
     }
 
     uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
-
-    mutex_acquire(futex_mutex);
+    assert(phys);
 
     futex_t *f = hashmap_get(futex_map, (void*)phys);
     if (!f) {
         f = slab_allocate(futex_cache);
-        if (!f) { mutex_release(futex_mutex); return -ENOMEM; }
+        if (!f) { FUTEX_UNLOCK(); return -ENOMEM; }
         hashmap_set(futex_map, (void*)phys, f);    
     }
 
     event_listener_t listener;
     EVENT_INIT_LISTENER(&listener);
 
-    
     while (1) {
+        if (__atomic_load_n(pointer, memory_order_seq_cst) != val) {
+            EVENT_DESTROY_LISTENER(&listener);
+            if (f->waiters == 0) {
+                hashmap_remove(futex_map, (void*)phys);
+                slab_free(futex_cache, f);
+            }
+            FUTEX_UNLOCK();
+            return -EAGAIN;
+        }
+
         EVENT_ATTACH(&listener, &f->futex_event);        
         f->waiters++;
         
-        mutex_release(futex_mutex);
+        FUTEX_UNLOCK();
 
         int ret;
         if (time) {
-            ret = EVENT_WAIT(&listener, time->tv_sec * 1000 + (time->tv_nsec / 1000));
+            ret = EVENT_WAIT(&listener, time->tv_sec * 1000 + ((time->tv_nsec + 999999) / 1000000));
         } else {
             ret = EVENT_WAIT(&listener, -1);
         }
 
-        mutex_acquire(futex_mutex);
+        FUTEX_LOCK();
 
         EVENT_DETACH(&listener);
 
         if (ret < 0) {
             EVENT_DESTROY_LISTENER(&listener);
             f->waiters--;
-            mutex_release(futex_mutex);
+            if (f->wakers > f->waiters) f->wakers = f->waiters;
+            if (f->waiters == 0) {
+                hashmap_remove(futex_map, (void*)phys);
+                slab_free(futex_cache, f);
+            }
+            FUTEX_UNLOCK();
             return ret;
         }
 
-        if (__atomic_load_n(pointer, memory_order_seq_cst) == val || f->wakers == 0) {
+        if (f->wakers == 0) {
+            f->waiters--;
             continue;
         }
 
@@ -108,7 +128,7 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
         slab_free(futex_cache, f);
     }
 
-    mutex_release(futex_mutex);
+    FUTEX_UNLOCK();
     return 0;
 }
 
@@ -118,24 +138,25 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
  * @param val How many waiters to wakeup
  */
 int futex_wakeup(uint32_t *pointer, uint32_t val) {
-    mutex_acquire(futex_mutex);
+    FUTEX_LOCK();
 
     uintptr_t ptr_phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
 
     if (!hashmap_has(futex_map, (void*)ptr_phys)) {
-        mutex_release(futex_mutex);
+        FUTEX_UNLOCK();
         return 0;
     }
 
     futex_t *f = (futex_t*)hashmap_get(futex_map, (void*)ptr_phys);
     
-    int to_wakeup = min(f->waiters - f->wakers, val);
+    size_t available = (f->waiters > f->wakers) ? (f->waiters - f->wakers) : 0;
+    size_t to_wakeup = min(available, (size_t)val);
 
     f->wakers += to_wakeup;
-    
-    EVENT_SIGNAL(&f->futex_event);
-    mutex_release(futex_mutex);
-    return 0;
+
+    if (to_wakeup) EVENT_SIGNAL(&f->futex_event);
+    FUTEX_UNLOCK();
+    return to_wakeup;
 }
 
 /**
