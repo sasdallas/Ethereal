@@ -20,7 +20,7 @@
 
 /**** DEFINITIONS ****/
 
-#define PAGE_CACHE_MAP_ENTS             10  // Default map entries per hashmap
+#define PAGE_CACHE_MAP_ENTS             32  // Default map entries per hashmap
 
 /**** TYPES ****/
 
