@@ -30,7 +30,9 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         }
 
         // Does the file descriptor have available contents right now?
-        int ready = vfs_poll(FD(fds[i].fd), waiter, fds[i].events, (poll_events_t*)&fds[i].revents);
+        poll_events_t revents = 0;
+        int ready = vfs_poll(FD(fds[i].fd), waiter, fds[i].events, &revents);
+        fds[i].revents = (short)revents;
 
         if (ready == 1) {
             // Oh, we already have a hit! :D
