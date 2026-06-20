@@ -59,9 +59,9 @@ const __signal_handler signal_default_action[] = {
 #define SIGBIT(signum) (1 << signum)
 #define SIGNAL_MARK_PENDING(thr, signum) (thr->pending_signals) |= SIGBIT(signum)
 #define SIGNAL_UNMARK_PENDING(thr, signum) (thr->pending_signals) &= ~(SIGBIT(signum))
-#define SIGNAL_IS_BLOCKED(thr, signum) (thr->blocked_signals & SIGBIT(signum) && !(signum == SIGKILL) && !(signum == SIGSTOP))
+#define SIGNAL_IS_BLOCKED(thr, signum) ((thr->blocked_signals & SIGBIT(signum)) && !(signum == SIGKILL) && !(signum == SIGSTOP))
 #define SIGNAL_IS_PENDING(thr, signum) (thr->pending_signals & SIGBIT(signum) && !SIGNAL_IS_BLOCKED(thr, signum))
-#define SIGNAL_ANY_PENDING(thr) (thr->pending_signals & ~thr->blocked_signals)
+#define SIGNAL_ANY_PENDING(thr) ((thr)->pending_signals & ~(thr)->blocked_signals)
 #define SIGNAL_IS_IGNORED(sig)
 
 /* Log method */
@@ -125,7 +125,6 @@ int signal_sendThread(struct thread *thr, int signal) {
  * @returns 0 on success, otherwise error code
  */
 int signal_send(struct process *proc, int signal) {
-    LOG(DEBUG, "Sending signal %d to process pid %d\n", signal, proc->pid);
     if (signal < 0 || signal >= NSIG) return -EINVAL;
 
     return signal_sendThread(proc->main_thread, signal);
@@ -291,6 +290,7 @@ _done:
 int signal_sendGroup(pid_t pgid, int signal) {
     // TODO: Stupidity
 
+    // !!! UNSAFE WALK!!
 extern list_t *process_list;
     foreach(node, process_list) {
         process_t *proc = node->value;

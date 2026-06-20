@@ -269,7 +269,7 @@ long sys_dup2(int oldfd, int newfd) {
     }
 
     int fd_out;
-    int err = fd_duplicate(oldfd, newfd, &fd_out);
+    int err = fd_duplicate(oldfd, newfd, &fd_out, true);
     if (err != 0) return err;
     return fd_out;
 }

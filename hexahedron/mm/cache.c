@@ -136,6 +136,7 @@ static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
         mutex_release(&cache->lck);
         int r = EVENT_WAIT(&l, -1);
         mutex_acquire(&cache->lck);
+        EVENT_DETACH(&l);
         EVENT_DESTROY_LISTENER(&l);
         if (r < 0) return r;
         spinlock_acquire(&cache->ready_event_lock);
@@ -464,6 +465,7 @@ void cache_syncer(void *arg) {
         }
     
         EVENT_WAIT(&l, -1);
+        EVENT_DETACH(&l);
         EVENT_DESTROY_LISTENER(&l);
     }
 }

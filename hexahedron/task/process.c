@@ -503,8 +503,8 @@ void process_destroy(process_t *proc) {
         spinlock_acquire(&trace->lock);
         // TODO send PTRACE_EVENT_EXIT
         list_delete(trace->tracees, list_find(trace->tracees, proc));
-        spinlock_release(&trace->lock);
         proc->ptrace.tracer = NULL;
+        spinlock_release(&trace->lock);
     }
 
 extern void systemfs_proc_destroy(process_t *proc);
@@ -615,6 +615,16 @@ int process_executeCommon(elf_image_t *img) {
         return ret;
     }
 
+    // Close any file descriptors marked "close-on-exec"
+    fd_table_t *tbl = current_cpu->current_process->fd_table;
+    for (int fd = 0; fd < tbl->table_size; fd++) {
+        if (fd_isCloseExecute(fd)) {
+            LOG(DEBUG, "Closing file descriptor %d, it is marked as O_CLOEXEC (0x%x)\n", fd, tbl->fds[fd]->flags);
+            fd_remove(fd);
+        }
+    }
+
+    // Initialize the context
     arch_initialize_context(proc->main_thread, img->entrypoint, proc->main_thread->stack);
 
     // We own this process

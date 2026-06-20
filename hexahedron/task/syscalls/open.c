@@ -75,6 +75,11 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
         return r;
     }
 
+    // do O_CLOEXEC if needed
+    if ((flags & O_CLOEXEC)) {
+        fd_setCloseExecute(fd_out, true);
+    }
+
     // !!!: very bad
     file->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
     vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);

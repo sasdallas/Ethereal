@@ -19,6 +19,10 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:FD", __VA_ARGS__)
 
+#define FD_TEST_CLOEXEC(tbl,fd) bitmap_test((tbl)->cloexec, fd)
+#define FD_CLR_CLOEXEC(tbl,fd) bitmap_clear((tbl)->cloexec, fd)
+#define FD_SET_CLOEXEC(tbl,fd) bitmap_set((tbl)->cloexec, fd)
+
 /**
  * @brief Create a new file descriptor table
  */
@@ -29,6 +33,8 @@ fd_table_t *fd_createTable(int fd_count) {
     table->fds = kzalloc(sizeof(vfs_file_t*) * fd_count);
     table->table_size = fd_count;
     table->lowest_avl = 0;
+    table->cloexec = kmalloc(BITMAP_TO_SIZE(fd_count));
+    bitmap_fill(table->cloexec, 0, fd_count);
     return table;
 }
 
@@ -49,8 +55,9 @@ void fd_copyTable(struct process *parent, struct process *child) {
     fd_table_t *target = fd_createTable(source->table_size);
     child->fd_table = target;
 
+    memcpy(target->cloexec, source->cloexec, BITMAP_TO_SIZE(source->table_size));
+    
     target->lowest_avl = source->lowest_avl;
-
     for (int i = 0; i < source->table_size; i++) {
         vfs_file_t *f = source->fds[i];
         if (f) {
@@ -75,6 +82,7 @@ int fd_destroyTable(struct process *process) {
         }
     }
 
+    kfree(table->cloexec);
     kfree(table->fds);
     kfree(table);
     return 0;
@@ -111,8 +119,11 @@ static int fd_growTable(fd_table_t *table, int new_fd_count) {
     table->fds = krealloc(table->fds, sizeof(vfs_file_t*) * new_fd_count);
     table->table_size = new_fd_count;
 
+    table->cloexec = krealloc(table->cloexec, BITMAP_TO_SIZE(new_fd_count));
+
     if (new_fd_count > old_fd_count) {
         memset(&table->fds[old_fd_count], 0, sizeof(vfs_file_t*) * (new_fd_count - old_fd_count));
+        bitmap_clear_range(table->cloexec, old_fd_count, new_fd_count);
     }
 
     return 0;
@@ -178,6 +189,9 @@ int fd_add(vfs_file_t *file, int *fd_out) {
     table->fds[r] = file;
     *fd_out = r;
 
+    // Clear the CLOEXEC flag by default
+    FD_CLR_CLOEXEC(table, r);
+
     // Done
     mutex_release(&table->lck);
     return 0;
@@ -210,9 +224,10 @@ int fd_remove(int fd_number) {
  * @param oldfd The old file descriptor to duplicate
  * @param newfd The new file descriptor to duplicate
  * @param ret Returning file descriptor
+ * @param is_exact Whether newfd is exact or not. This is for stuff like F_DUPFD
  * @returns 0 on success
  */
-int fd_duplicate(int oldfd, int newfd, int *ret) {
+int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact) {
     LOG(DEBUG, "fd_duplicate %d %d\n", oldfd, newfd);
     fd_table_t *table = current_cpu->current_process->fd_table;
     if (oldfd < 0) return -EBADF;
@@ -235,18 +250,75 @@ int fd_duplicate(int oldfd, int newfd, int *ret) {
             mutex_release(&table->lck);
             return newfd;
         }
-    } else if (newfd >= table->table_size) {
-        int r = fd_growTable(table, newfd+1);
-        if (r < 0) {
-            mutex_release(&table->lck);
-            return r;
+    } else {
+        if (newfd >= table->table_size) {
+            int r = fd_growTable(table, newfd+1);
+            if (r < 0) {
+                mutex_release(&table->lck);
+                return r;
+            }
+        }
+
+        if (!is_exact) {
+            while (table->fds[newfd] != NULL) newfd++; 
         }
     }
 
+    // Clear the cloexec flag
+    FD_CLR_CLOEXEC(table, newfd);
+
     vfs_file_t *f = table->fds[oldfd];
     file_hold(f);
+
+    if (table->fds[newfd]) {
+        vfs_close(table->fds[newfd]);
+    }
+
     table->fds[newfd] = f;
     *ret = newfd;
     mutex_release(&table->lck);
+    return 0;
+}
+
+
+/**
+ * @brief Tests whether a file is close-on-exec
+ */
+bool fd_isCloseExecute(int fd) {
+    fd_table_t *tbl = current_cpu->current_process->fd_table;
+    mutex_acquire(&tbl->lck);
+
+    // validate fd
+    if (fd >= tbl->table_size || tbl->fds[fd] == NULL) {
+        mutex_release(&tbl->lck);
+        return false;
+    }
+
+    bool t = FD_TEST_CLOEXEC(tbl,fd);
+
+    mutex_release(&tbl->lck);
+    return t;
+}
+
+/**
+ * @brief Set FD_CLOEXEC flag
+ */
+int fd_setCloseExecute(int fd, bool state) {
+    fd_table_t *tbl = current_cpu->current_process->fd_table;
+    mutex_acquire(&tbl->lck);
+
+    // validate fd
+    if (fd >= tbl->table_size || tbl->fds[fd] == NULL) {
+        mutex_release(&tbl->lck);
+        return -EBADF;
+    }
+
+    if (state) {
+        FD_SET_CLOEXEC(tbl, fd);
+    } else {
+        FD_CLR_CLOEXEC(tbl, fd);
+    }
+
+    mutex_release(&tbl->lck);
     return 0;
 }

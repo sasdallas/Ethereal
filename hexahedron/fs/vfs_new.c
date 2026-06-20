@@ -1194,6 +1194,9 @@ vfs_inode_t *VFS_PREFIX(inode)() {
  * @returns IMPORTANT: Will either return 0 for "added to queue", 1 for "revents are ready", and anything else is an error.
  */
 int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_events_t *revents) {
+    // These events will signal regardless
+    events |= POLLHUP | POLLERR | POLLNVAL;
+
     // I don't remember why I did this way, but I did...
     if (f->ops->poll_events) {
         poll_events_t ret = f->ops->poll_events(f);

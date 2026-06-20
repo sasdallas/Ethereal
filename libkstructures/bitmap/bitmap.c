@@ -21,6 +21,30 @@ void bitmap_set(unsigned long *b, size_t i) {
     b[i / BITMAP_BITS] |= 1UL << (i % BITMAP_BITS);
 }
 
+
+void bitmap_clear_range(unsigned long *b, size_t start, size_t end) {
+    // need to align start
+    while ((start % BITMAP_BITS) != 0 && start < end) {
+        bitmap_clear(b, start);
+        start++;
+    }
+
+    if (start >= end) {
+        return;
+    }
+
+    if (end - start > BITMAP_BITS) {
+        memset(&b[start / BITMAP_BITS], 0, (end-start)/8);
+        start += ((end-start)/8) * 8; // truncates the last bit off
+    }
+
+    // clean the last bit up
+    while (start < end) {
+        bitmap_clear(b, start);
+        start++;
+    }
+}
+
 void bitmap_clear(unsigned long *b, size_t i) {
     b[i / BITMAP_BITS] &= ~(1UL << (i % BITMAP_BITS));
 }

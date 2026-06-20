@@ -41,7 +41,6 @@ long sys_ethereal_shared_new(size_t size, int flags) {
 
 key_t sys_ethereal_shared_key(int fd) {
     if (!FD_VALIDATE(fd)) return -EBADF;
-    // assert(0 && "sys_ethereal_shared_new");
     return sharedfs_key(FD(fd));
 }
 

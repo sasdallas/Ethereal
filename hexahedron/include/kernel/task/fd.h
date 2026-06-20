@@ -21,6 +21,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/fs/vfs_new.h>
 #include <kernel/processor_data.h>
+#include <structs/bitmap.h>
 
 /**** DEFINITIONS ****/
 
@@ -36,6 +37,7 @@ typedef struct fd_table {
     int table_size;
     int lowest_avl;             // Lowest available fd, if set to table_size there is none.
     vfs_file_t **fds;
+    unsigned long *cloexec;     // Small bitmap for cloexec
 } fd_table_t;
 
 /**** MACROS ****/
@@ -101,14 +103,27 @@ int fd_add(vfs_file_t *file, int *fd_out);
  */
 int fd_remove(int fd_number);
 
-
 /**
  * @brief Duplicate a file descriptor for a process
  * @param oldfd The old file descriptor to duplicate
  * @param newfd The new file descriptor to duplicate
  * @param ret Returning file descriptor
+ * @param is_exact Whether newfd is exact or not. This is for stuff like F_DUPFD
  * @returns 0 on success
  */
-int fd_duplicate(int oldfd, int newfd, int *ret);
+int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact);
+
+/**
+ * @brief Tests whether a file is close-on-exec
+ */
+bool fd_isCloseExecute(int fd);
+
+/**
+ * @brief Set FD_CLOEXEC flag
+ * @param fd The fd to set the flag on
+ * @param state The state of the flag
+ * @returns 0 on success
+ */
+int fd_setCloseExecute(int fd, bool state);
 
 #endif

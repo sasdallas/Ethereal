@@ -76,10 +76,10 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         // !!!: FLOW BREAKING TRASH
         vfs_file_t *f = FD(fds[i].fd);
         assert(f->ops && f->ops->poll_events);
-        fds[i].revents = f->ops->poll_events(f) & fds[i].events;
+        fds[i].revents = (short)(f->ops->poll_events(f) & (fds[i].events | POLLHUP | POLLERR));
         if (fds[i].revents) {
             have_hit++;
-        }        
+        }
     }
 
     poll_exit(waiter);

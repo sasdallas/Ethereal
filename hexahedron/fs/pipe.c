@@ -170,8 +170,10 @@ static ssize_t pipe_write(vfs_file_t *file, loff_t off, size_t size, const char 
         return -EPIPE; // TODO: track readers and send SIGPIPE
     }
 
-    // TODO: this needs to O_NONBLOCK? system doesn't work without it will fix later
-    if (!circbuf_remaining_write(pipe->buf)) return 0;
+    if (file->flags & O_NONBLOCK) {
+        if (!circbuf_remaining_write(pipe->buf)) return 0;
+    }
+
     ssize_t r = circbuf_write(pipe->buf, size, (uint8_t*)buffer);
     if (r >= 0) poll_signal(&pipe->read_event, POLLIN);
     return r;
@@ -187,7 +189,6 @@ static poll_events_t pipe_poll_events(vfs_file_t *file) {
     if (p->dead) {
         if (IS_WRITE(file)) events |= POLLERR;
         else events |= POLLHUP;
-        return events;
     }
 
     if (IS_WRITE(file)) {

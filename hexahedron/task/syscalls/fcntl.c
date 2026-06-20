@@ -21,19 +21,28 @@ long sys_fcntl(int fd, int cmd, int extra) {
     switch (cmd) {
         case F_DUPFD: {
             int output;
-            int e = fd_duplicate(fd, extra, &output);
+            int e = fd_duplicate(fd, extra, &output, false);
         
             if (e != 0) ret = e;
             else ret = output;
             break;
         }
 
+        case F_DUPFD_CLOEXEC: {
+            int output;
+            int e = fd_duplicate(fd, extra, &output, false);
+            if (e != 0) ret = e;
+            else ret = output;
+            fd_setCloseExecute(output, true);
+            break;
+        }
+
         case F_GETFD:
-            ret = file->flags & O_CLOEXEC;
+            ret = (fd_isCloseExecute(fd)) ? FD_CLOEXEC : 0;
             break;;
        
         case F_SETFD:
-            file->flags |= ((extra & FD_CLOEXEC) ? O_CLOEXEC : 0);
+            fd_setCloseExecute(fd, !!(extra & FD_CLOEXEC));
             ret = 0;
             break;
 
