@@ -85,6 +85,26 @@ ssize_t systemfs_proc_mem_usage(systemfs_node_t *n) {
 }
 
 /**
+ * @brief helper
+ */
+static char systemfs_proc_to_state(process_state_t s) {
+    switch (s) {
+        case PROCESS_RUNNING:
+            return 'R';
+        case PROCESS_SLEEPING:
+            return 'S';
+        case PROCESS_SUSPENDED:
+            return 'D';
+        case PROCESS_STOPPED:
+            return 'T';
+        case PROCESS_ZOMBIE:
+            return 'Z';
+        default:
+            return '?';
+    }
+}
+
+/**
  * @brief Status
  */
 ssize_t systemfs_proc_status(systemfs_node_t *n) {
@@ -95,10 +115,11 @@ ssize_t systemfs_proc_status(systemfs_node_t *n) {
         "Pgid:%d\n"
         "Uid:%d %d\n"
         "Gid:%d %d\n"
-        "Sid:%d",
+        "Sid:%d\n"
+        "State:%c\n",
         p->name, p->pid, p->pgid,
         p->uid, p->euid, p->gid, p->egid,
-        p->sid);
+        p->sid, systemfs_proc_to_state(p->state));
 }
 
 /**
