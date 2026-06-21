@@ -105,6 +105,7 @@ typedef struct process {
     thread_t *thread_list;              // Linked list for all threads in the process, *including the main thread*.
     size_t nthreads;                    // Number of threads
     spinlock_t thread_lock;
+    bool exiting;                       // Small flag to prevent race in process_exit
 
     // FILE INFORMATION
     char *wd_path;                      // Working directory path

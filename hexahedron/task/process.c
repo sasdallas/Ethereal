@@ -931,6 +931,12 @@ void process_exit(process_t *process, int status_code) {
     
     int is_current_process = (process == current_cpu->current_process);
 
+    // Try to exit
+    if (__atomic_exchange_n(&process->exiting, true, __ATOMIC_SEQ_CST) == true) {
+        // Process is already exiting
+        return thread_exit();
+    }
+
     // Now we need to mark all threads of this process as stopping. This will ensure that memory is fully separate
     spinlock_acquire(&process->thread_lock);
     
@@ -953,8 +959,6 @@ void process_exit(process_t *process, int status_code) {
 
     // Now we can mark it as stopped.
     process->state = PROCESS_STOPPED;
-
-    // TODO: Ugly
     process->exit_status = status_code;
 
     // Deparent the children
