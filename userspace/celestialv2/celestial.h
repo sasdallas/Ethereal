@@ -179,6 +179,7 @@ typedef struct celestial {
     wm_window_t *mouse_window; // the topmost window that the mouse is currently in
     input_bind_t *binds;
     pthread_mutex_t bind_lck;
+    wm_window_t *mouse_capture;
 
     // THREADS
     pthread_t ipc_acceptor_thread;
@@ -288,5 +289,6 @@ bool input_frameCursor(render_request_t *frame, int *x, int *y);
 void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns);
 void input_get_mouse_pos(int *x, int *y);
 void input_set_mouse(int mouse);
+void input_set_mouse_capture(wm_window_t *win);
 
 #endif

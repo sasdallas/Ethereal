@@ -54,6 +54,7 @@
 #define CELESTIAL_REQ_QUERY_WINDOW_IDS      0x1015
 #define CELESTIAL_REQ_BIND_KEY              0x1016
 #define CELESTIAL_REQ_SET_ROOT_WINDOW       0x1017
+#define CELESTIAL_REQ_QUERY_MOUSE           0x1018
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -206,6 +207,12 @@ typedef struct celestial_req_set_root_window {
     wid_t wid;
 } celestial_req_set_root_window_t;
 
+
+typedef struct celestial_req_query_mouse {
+    CELESTIAL_REQ_COMMON
+} celestial_req_query_mouse_t;
+
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -265,6 +272,12 @@ typedef struct celestial_resp_query_window_ids {
     wid_t wids[];
 } celestial_resp_query_window_ids_t;
 
+typedef struct celestial_resp_query_mouse {
+    CELESTIAL_REQ_COMMON
+    int x;
+    int y;
+} celestial_resp_query_mouse_t;
+
 /**** MACROS ****/
 
 /* Internal macro */
@@ -323,6 +336,13 @@ int celestial_getSocketFile();
  * @param cursor_id The ID of the target cursor (CELESTIAL_MOUSE_xxx)
  */
 int celestial_setMouseCursor(int cursor_id);
+
+/**
+ * @brief Query mouse
+ * @param out_x Output X
+ * @param out_y Output Y
+ */
+int celestial_queryMouse(int *x, int *y);
 
 struct _window_info;
 

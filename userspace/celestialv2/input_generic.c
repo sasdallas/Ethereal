@@ -106,6 +106,12 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         }
     }
 
+    if (SERVER->mouse_capture && SERVER->mouse_window == SERVER->mouse_capture) {
+        // dont update mouse X/Y, send rel mouse events
+        EVENT_SEND(SERVER->mouse_capture, celestial_event_mouse_motion_rel_t, CELESTIAL_EVENT_MOUSE_MOTION_REL, .x = (new_x - SERVER->mouse_x), .y = (new_y - SERVER->mouse_y), .buttons = CONVERT_MOUSE_BUTTONS(new_btns));
+        goto _rel_goto;
+    }
+
     wm_window_t *top = window_top(new_x, new_y);
 
     // Check if we are still in the mouse window
@@ -141,6 +147,7 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_enter_t, CELESTIAL_EVENT_MOUSE_ENTER, .x = TO_REL_X(new_x), .y = TO_REL_Y(new_y));
     }
 
+_rel_goto:
 
     if (NEWLY_PRESSED) {
         if (BUTTON_PRESSED(MOUSE_BUTTON_LEFT)) {
@@ -157,7 +164,7 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         // use old X and Y coordinates
         TRACE_DEBUG("Sending button up event.\n");
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_button_up_t, CELESTIAL_EVENT_MOUSE_BUTTON_UP, .x = TO_REL_X(SERVER->mouse_x), .y = TO_REL_Y(SERVER->mouse_y), .released = CONVERT_MOUSE_BUTTONS(NEWLY_RELEASED));
-    } else if ((SERVER->mouse_x != new_x || SERVER->mouse_y != new_y)  && SERVER->mouse_window->state != WINDOW_STATE_DRAGGING) {
+    } else if ((SERVER->mouse_x != new_x || SERVER->mouse_y != new_y)  && SERVER->mouse_window->state != WINDOW_STATE_DRAGGING && SERVER->mouse_window != SERVER->mouse_capture) {
         // otherwise, as long as the window is not dragging, send it mouse events
         if (BUTTON_HELD(MOUSE_BUTTON_LEFT)) {
             // dragging the window
@@ -168,6 +175,12 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
     } else if (scroll != 0) {
         // send a scroll event
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_scroll_t, CELESTIAL_EVENT_MOUSE_SCROLL, .x = TO_REL_X(new_x), .y = TO_REL_Y(new_y), .direction = (scroll == 1) ? CELESTIAL_MOUSE_SCROLL_UP : CELESTIAL_MOUSE_SCROLL_DOWN);
+    }
+
+    if (SERVER->mouse_capture && SERVER->mouse_window == SERVER->mouse_capture) {
+        // update buttons
+        SERVER->last_buttons = new_btns;
+        return;
     }
 
     // Update
@@ -205,12 +218,21 @@ void input_loadMouseSprite(int sprite, char *filename) {
 
 void input_draw() {
     if (!input_ready) return;
+    if (SERVER->mouse_window && SERVER->mouse_window == SERVER->mouse_capture) return; // dont draw mouse if mouse capture!
     gfx_renderSprite(RENDERER->ctx, mouse_sprites[mouse_type], SERVER->mouse_x, SERVER->mouse_y);
 }
 
 void input_draw_at(int x, int y) {
     if (!input_ready) return;
+    if (SERVER->mouse_window && SERVER->mouse_window == SERVER->mouse_capture) return; // dont draw mouse if mouse capture!
     gfx_renderSprite(RENDERER->ctx, mouse_sprites[mouse_type], x, y);
+}
+
+
+void input_set_mouse_pos(int x, int y) {
+    SERVER->mouse_x = x;
+    SERVER->mouse_y = y;
+    mouse_check_events(0,0,0,0);
 }
 
 bool input_frameCursor(render_request_t *frame, int *x, int *y) {
@@ -224,6 +246,11 @@ bool input_frameCursor(render_request_t *frame, int *x, int *y) {
 void input_get_mouse_pos(int *x, int *y) {
     *x = SERVER->mouse_x;
     *y = SERVER->mouse_y;
+}
+
+
+void input_set_mouse_capture(wm_window_t *win) {
+    SERVER->mouse_capture = win;
 }
 
 void input_set_mouse(int mouse) {

@@ -290,5 +290,33 @@ int celestial_queryWindowIDs(size_t *nids, wid_t **wids) {
     *(wids) = malloc(sizeof(wid_t) * resp->nwids);
     memcpy(*(wids), resp->wids, sizeof(wid_t) * resp->nwids);
 
+    free(resp);
     return 0;
 } 
+
+
+/**
+ * @brief Query mouse
+ * @param out_x Output X
+ * @param out_y Output Y
+ */
+int celestial_queryMouse(int *x, int *y) {
+    celestial_req_query_mouse_t req = {
+        .type = CELESTIAL_REQ_QUERY_MOUSE,
+        .size = sizeof(celestial_req_query_mouse_t),
+        .magic = CELESTIAL_MAGIC,
+    };
+
+    if (celestial_sendRequest(&req, req.size)) return -1;
+
+    celestial_resp_query_mouse_t *resp = celestial_getResponse(CELESTIAL_REQ_QUERY_MOUSE);
+    if (!resp) return -1;
+
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    *x = resp->x;
+    *y = resp->y;
+    
+    free(resp);
+    return 0;
+}

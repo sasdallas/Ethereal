@@ -314,6 +314,31 @@ REQUEST_HANDLER(set_root_window, CELESTIAL_REQ_SET_ROOT_WINDOW) {
     REQ_OK(req);
 }
 
+REQUEST_HANDLER(set_mouse_capture, CELESTIAL_REQ_SET_MOUSE_CAPTURE) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_SET_MOUSE_CAPTURE, -ESRCH);
+    
+    if (req->capture) {
+        input_set_mouse_capture(win);    
+    } else {
+        input_set_mouse_capture(NULL);
+    }
+
+    REQ_OK(req);
+}
+
+REQUEST_HANDLER(query_mouse, CELESTIAL_REQ_QUERY_MOUSE) {
+    int x, y;
+    input_get_mouse_pos(&x, &y);
+
+    DECLARE_RESP(query_mouse, resp, CELESTIAL_REQ_QUERY_MOUSE,
+        .x = x,
+        .y = y,
+    );
+
+    SEND_RESP(resp);
+}
+
 void request_handle(wm_client_t *client, void *buffer, size_t size) {
     if (size < sizeof(celestial_req_header_t)) {
         TRACE_ERROR("Client (fd = %d) sent request with invalid size %d\n", client->client_fd, size);
@@ -371,6 +396,10 @@ void request_handle(wm_client_t *client, void *buffer, size_t size) {
         EXECUTE_REQUEST(bind_key, CELESTIAL_REQ_BIND_KEY);
     } else if (hdr->type == CELESTIAL_REQ_SET_ROOT_WINDOW) {
         EXECUTE_REQUEST(set_root_window, CELESTIAL_REQ_SET_ROOT_WINDOW);
+    } else if (hdr->type == CELESTIAL_REQ_SET_MOUSE_CAPTURE) {
+        EXECUTE_REQUEST(set_mouse_capture, CELESTIAL_REQ_SET_MOUSE_CAPTURE);
+    } else if (hdr->type == CELESTIAL_REQ_QUERY_MOUSE) {
+        EXECUTE_REQUEST(query_mouse, CELESTIAL_REQ_QUERY_MOUSE);
     } else {
         TRACE_ERROR("Client %d sent unknown/unhandled request %d\n", client->client_fd, hdr->type);
         return request_send_error(client, hdr->type, -ENOSYS);
