@@ -100,25 +100,24 @@ int sys_open(const char *pathname, int flags, mode_t mode) {
 }
 
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
-    // SYSCALL_VALIDATE_PTR(pathname);
+    SYSCALL_VALIDATE_PTR(pathname);
 
-    // if (dirfd == AT_FDCWD || pathname[0] == '/') {
-    //     // Easy enough
-    //     return sys_open(pathname, flags, mode);
-    // }
+    if (dirfd == AT_FDCWD || pathname[0] == '/') {
+        // Easy enough
+        return sys_open(pathname, flags, mode);
+    }
 
-    // if (!FD_VALIDATE(dirfd) || FD(dirfd)->path == NULL) {
-    //     return -EBADF;
-    // }
+    vfs_file_t *f = GET_FD_OR_ERROR(dirfd);
+   
+    if (!(f->inode->attr.type == VFS_DIRECTORY)) {
+        return -ENOTDIR;
+    }
 
-    // fd_t *f = FD(dirfd);
-    // if (!(f->node->inode->attr.type == VFS_DIRECTORY)) {
-    //     return -ENOTDIR;
-    // }
-
-    // char *p = vfs_canonicalizePath(f->path, (char*)pathname);
-    // long r = __sys_open_internal(p, flags, mode);
-    // kfree(p);
-    // return r;
-    assert(0);
+    // !!
+    char tmp_buf[PATH_MAX];
+    vfs_canonicalize(f->path, (char*)pathname, tmp_buf);
+    long r = __sys_open_internal(tmp_buf, flags, mode);
+    
+    FD_FINISH(f);
+    return r;
 }
