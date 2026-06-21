@@ -22,7 +22,6 @@ long sys_access(const char *path, int amode) {
     if (amode & R_OK) flags |= O_RDONLY;
     if (amode & W_OK) flags |= O_WRONLY;
 
-    // TODO: Better this.. vfs_errno?
     vfs_file_t *f;
     int r = vfs_open((char*)path, flags, &f);
     if (r < 0) return r;

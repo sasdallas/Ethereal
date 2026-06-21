@@ -13,6 +13,9 @@
 
 #include <kernel/task/process.h>
 
+#define SELECT_READ_EVENTS (POLLIN | POLLHUP | POLLERR)
+#define SELECT_WRITE_EVENTS (POLLOUT | POLLERR)
+#define SELECT_ERROR_EVENTS (POLLPRI)
 
 long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->readfds) SYSCALL_VALIDATE_PTR(ctx->readfds);
@@ -46,24 +49,34 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (!FD_VALIDATE(fd)) continue;
 
         poll_events_t needed = 0;
-        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
-        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) needed |= POLLOUT;
-        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) {
+            needed |= SELECT_READ_EVENTS;
+        }
+        
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) {
+            needed |= SELECT_WRITE_EVENTS;
+        }
+        
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) {
+            needed |= SELECT_ERROR_EVENTS;
+        }
 
         poll_events_t out = 0;
         int ready = vfs_poll(FD(fd), waiter, needed, &out);
         if (ready == 1) {
             // Wow we have a hit oh my goodness
-            if (out & POLLIN) FD_SET(fd, &rfds);
-            if (out & POLLOUT) FD_SET(fd, &wfds);
-            if (out & POLLERR) FD_SET(fd, &efds);
+            if (out & SELECT_READ_EVENTS) FD_SET(fd, &rfds);
+            if (out & SELECT_WRITE_EVENTS) FD_SET(fd, &wfds);
+            if (out & SELECT_ERROR_EVENTS) FD_SET(fd, &efds);
             ret++;
         }
     }
 
 
     int timeout = -1;
-    if (ctx->timeout) timeout = (ctx->timeout->tv_sec * 1000) + (ctx->timeout->tv_nsec / 1000);
+    if (ctx->timeout) {
+        timeout = (ctx->timeout->tv_sec * 1000) + (ctx->timeout->tv_nsec / 1000000);
+    }
     
     if (ret || timeout == 0) {
         (current_cpu->current_thread->blocked_signals) = old_set;
@@ -84,11 +97,6 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         return -EINTR;
     }
 
-    if (w == -ETIMEDOUT) {
-        poll_exit(waiter);
-        poll_destroyWaiter(waiter);
-    }
-
     for (int fd = 0; fd < ctx->nfds; fd++) {
         if (!((ctx->readfds && FD_ISSET(fd, ctx->readfds)) || (ctx->writefds && FD_ISSET(fd, ctx->writefds)) || (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)))) {
             continue; // No need to care, it isn't a wanted file descriptor
@@ -98,20 +106,28 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         if (!FD_VALIDATE(fd)) continue;
         
         poll_events_t needed = 0;
-        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) needed |= POLLIN;
-        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) needed |= POLLOUT;
-        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) needed |= POLLERR;
+        if (ctx->readfds && FD_ISSET(fd, ctx->readfds)) {
+            needed |= SELECT_READ_EVENTS;
+        }
+        
+        if (ctx->writefds && FD_ISSET(fd, ctx->writefds)) {
+            needed |= SELECT_WRITE_EVENTS;
+        }
+        
+        if (ctx->errorfds && FD_ISSET(fd, ctx->errorfds)) {
+            needed |= SELECT_ERROR_EVENTS;
+        }
 
         // !!!: FLOW BREAKING TRASH
         vfs_file_t *f = FD(fd);
         assert(f->ops && f->ops->poll_events);
         poll_events_t out = f->ops->poll_events(f) & needed;
         if (out) {
+            // Wow we have a hit oh my goodness
+            if (out & SELECT_READ_EVENTS) FD_SET(fd, &rfds);
+            if (out & SELECT_WRITE_EVENTS) FD_SET(fd, &wfds);
+            if (out & SELECT_ERROR_EVENTS) FD_SET(fd, &efds);
             ret++;
-
-            if (out & POLLIN) FD_SET(fd, &rfds);
-            if (out & POLLOUT) FD_SET(fd, &wfds);
-            if (out & POLLERR) FD_SET(fd, &efds);
         }        
     }
 
@@ -122,11 +138,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
 
     (current_cpu->current_thread->blocked_signals) = old_set;
-
-    if (w != -ETIMEDOUT) {
-        poll_exit(waiter);
-        poll_destroyWaiter(waiter);
-    }
-
+    poll_exit(waiter);
+    poll_destroyWaiter(waiter);
     return ret;
 }

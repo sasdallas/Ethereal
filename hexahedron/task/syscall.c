@@ -334,7 +334,7 @@ long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oa
         oact->sa_flags = THREAD_SIGNAL(current_cpu->current_thread, signum).flags;
 
         if (oact->sa_handler == SIGNAL_ACTION_IGNORE) oact->sa_handler = SIG_IGN;
-        if (oact->sa_handler == SIGNAL_ACTION_DEFAULT) oact->sa_handler = SIG_DFL;
+        if ((uintptr_t)oact->sa_handler <= (uintptr_t)SIGNAL_ACTION_CONTINUE) oact->sa_handler = SIG_DFL;
     }
 
     // Now, assign the new one
@@ -411,10 +411,12 @@ long sys_socket(int domain, int type, int protocol) {
 }
 
 long sys_sendmsg(int socket, struct msghdr *message, int flags) {
+    if (flags) LOG(WARN, "sys_sendmsg: flags are 0x%x\n", flags);
     return socket_sendmsg(socket, message, flags);
 }
 
 long sys_recvmsg(int socket, struct msghdr *message, int flags) {
+    if (flags) LOG(WARN, "sys_recvmsg: flags are 0x%x\n", flags);
     return socket_recvmsg(socket, message, flags);
 }
 
