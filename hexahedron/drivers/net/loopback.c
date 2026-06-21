@@ -41,9 +41,11 @@ static int loopback_install() {
     uint8_t mac[6] = {00, 00, 00, 00, 00, 00};
     nic_t *nic = nic_create("lo", NIC_TYPE_ETHERNET, &loopback_nic_ops, mac, NULL);
 
-    nic->ipv4_address = inet_addr("127.0.0.1");
-    nic->ipv4_subnet =  inet_addr("255.0.0.0");
+    nic->ipv4_address = 0x7F000001; // 127.0.0.1
+    nic->ipv4_gateway = 0x00000000; // 0.0.0.0
+    nic->ipv4_subnet =  0x000000FF; // 255.0.0.0
     nic->mtu = 1500;
+    
     return 0;
 }
 

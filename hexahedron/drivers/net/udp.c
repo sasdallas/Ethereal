@@ -180,12 +180,13 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     // Route this to a destination NIC
-    nic_t *nic = nic_route(in->sin_addr.s_addr);
+    in_addr_t dest = ntohl(in->sin_addr.s_addr);
+    nic_t *nic = nic_route(dest);
     if (!nic) return -EHOSTUNREACH;
 
     ssize_t sent_bytes = 0;
 
-    // UDP preserves message boundaries. Each iovec should contain one packet.
+    assert(msg->msg_iovlen == 1 && "iovlen > 1 not supported");
     for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         // Construct an IPv4 packet
         udp_packet_t *udp_pkt = kmalloc( sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
@@ -197,7 +198,7 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         // Copy the payload
         memcpy(udp_pkt->data, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
     
-        ssize_t r = ipv4_send(nic, in->sin_addr.s_addr, IPV4_PROTOCOL_UDP, udp_pkt, sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
+        ssize_t r = ipv4_send(nic, dest, IPV4_PROTOCOL_UDP, udp_pkt, sizeof(udp_packet_t) + msg->msg_iov[i].iov_len);
         kfree(udp_pkt);
         if (r < 0) {
             return r;

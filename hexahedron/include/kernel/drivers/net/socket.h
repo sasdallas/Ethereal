@@ -33,6 +33,7 @@
 #define SOCKET_FLAG_OOBINLINE           0x10
 #define SOCKET_FLAG_DONTROUTE           0x20
 #define SOCKET_FLAG_NONBLOCKING         0x40
+#define SOCKET_FLAG_LISTENER            0x80
 
 /**** TYPES ****/
 

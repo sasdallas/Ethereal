@@ -115,7 +115,8 @@ static ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     struct sockaddr_in *sockaddr = (struct sockaddr_in*)msg->msg_name;
 
     // Route to a NIC
-    nic_t *nic = nic_route(sockaddr->sin_addr.s_addr);
+    in_addr_t dest = ntohl(sockaddr->sin_addr.s_addr);
+    nic_t *nic = nic_route(dest);
     if (!nic) return -ENETUNREACH; // ??? right code to return?
 
 
@@ -129,7 +130,7 @@ static ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         pkt->varies |= htons(sock->id);
         pkt->checksum = 0;
         pkt->checksum = htons(icmp_checksum((void*)pkt, msg->msg_iov[i].iov_len));
-        ssize_t r =  ipv4_send(nic, sockaddr->sin_addr.s_addr, IPV4_PROTOCOL_ICMP, pkt, msg->msg_iov[i].iov_len);
+        ssize_t r =  ipv4_send(nic, dest, IPV4_PROTOCOL_ICMP, pkt, msg->msg_iov[i].iov_len);
         
         if (r < 0) return r;
         sent_bytes += r;

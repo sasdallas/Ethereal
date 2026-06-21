@@ -162,9 +162,9 @@ int arp_request(nic_t *nic, in_addr_t address) {
     packet.htype = htons(ARP_HTYPE_ETHERNET);  // TODO
 
     // Setup TPA, SHA, and (maybe) SPA
-    packet.tpa = address;
+    packet.tpa = htonl(address);
     memcpy(packet.sha, nic->mac, 6);
-    if (nic->ipv4_address) packet.spa = nic->ipv4_address;
+    packet.spa = htonl(nic->ipv4_address);
 
     // Send the packet!
     ethernet_send(nic, &packet, ARP_PACKET_TYPE, ETHERNET_BROADCAST_MAC, sizeof(arp_packet_t));
@@ -181,6 +181,14 @@ int arp_request(nic_t *nic, in_addr_t address) {
  */
 int arp_search(nic_t *nic, in_addr_t address) {
     // Request
+    
+    // !!! hack to handle goobers asking for loopback
+    if (address == 0x7f000001 || address == 0x0) {
+        uint8_t mac[] = { 0,0,0,0,0,0 };
+        arp_add_entry(address, mac, ARP_TYPE_ETHERNET, nic);
+        return 0;
+    }
+
     if (arp_request(nic, address)) return 1;
     if (arp_get_entry(address)) return 0;
 
@@ -224,8 +232,8 @@ static void arp_reply(arp_packet_t *packet, nic_t *nic) {
     memcpy(resp.tha, packet->sha, 6);
     
     // SPA and TPA
-    resp.spa = nic->ipv4_address;
-    resp.tpa = packet->spa;
+    resp.spa = htonl(nic->ipv4_address);
+    resp.tpa = packet->spa; // already in network byte order
 
     // Send the packet
     ethernet_send(nic, &resp, ARP_PACKET_TYPE, packet->sha, sizeof(arp_packet_t));
@@ -259,15 +267,18 @@ static int arp_handle(void *frame, nic_t *nic, size_t size) {
         if (ntohs(packet->oper) == ARP_OPERATION_REQUEST) {
             // They're looking for someone. Who?
         #ifdef ARP_DEBUG
-            char *spa = inet_ntoa((struct in_addr){.s_addr = packet->spa});
-            LOG(DEBUG, " ARP: Request from " MAC_FMT " (IP %s) ", MAC(packet->sha), spa);
+            char *spa_s = inet_ntoa((struct in_addr){.s_addr = packet->spa});
+            LOG(DEBUG, " ARP: Request from " MAC_FMT " (IP %s) ", MAC(packet->sha), spa_s);
 
-            char *tpa = inet_ntoa((struct in_addr){.s_addr = packet->tpa});
-            LOG(NOHEADER, "for IP %s\n", tpa);
+            char *tpa_s = inet_ntoa((struct in_addr){.s_addr = packet->tpa});
+            LOG(NOHEADER, "for IP %s\n", tpa_s);
         #endif
 
+            in_addr_t spa = ntohl(packet->spa);
+            in_addr_t tpa = ntohl(packet->tpa);
+
             // Do we need to cache them?
-            arp_table_entry_t *exist = arp_get_entry((in_addr_t)packet->spa);
+            arp_table_entry_t *exist = arp_get_entry(spa);
             if (!exist || memcmp(packet->sha, exist->hwmac, 6)) {
                 // Cache them
                 arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic);
@@ -275,7 +286,7 @@ static int arp_handle(void *frame, nic_t *nic, size_t size) {
 
             
             // Ok, are they looking for us?
-            if (nic->ipv4_address && packet->tpa == nic->ipv4_address) {
+            if (nic->ipv4_address && tpa == nic->ipv4_address) {
                 // Yes, they are. Construct a response packet and send it back
             #ifdef ARP_DEBUG
                 LOG(DEBUG, " ARP: Request from " MAC_FMT " (IP: %s) with us (" MAC_FMT ", IP %s)\n", MAC(packet->sha), spa, MAC(nic->mac), inet_ntoa((struct in_addr){ .s_addr = nic->ipv4_address } ));
@@ -285,13 +296,13 @@ static int arp_handle(void *frame, nic_t *nic, size_t size) {
             }
         } else {
         #ifdef ARP_DEBUG
-            char spa[17];
-            __inet_ntoa(packet->spa, spa);
-            LOG(DEBUG, " ARP: Response from " MAC_FMT " to show they are IP %s\n", MAC(packet->sha), spa);
+            char spa_dbg[17];
+            __inet_ntoa(packet->spa, spa_dbg);
+            LOG(DEBUG, " ARP: Response from " MAC_FMT " to show they are IP %s\n", MAC(packet->sha), spa_dbg);
         #endif
 
             // Cache!
-            arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic);
+            arp_add_entry(ntohl(packet->spa), packet->sha, ARP_TYPE_ETHERNET, nic);
         }
     } else {
         LOG(WARN, " ARP: Invalid protocol type %04x\n", ntohs(packet->ptype));

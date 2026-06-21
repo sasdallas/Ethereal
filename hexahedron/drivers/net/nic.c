@@ -86,9 +86,9 @@ static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param) {
             SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
             info = (nic_info_t*)param;
             strncpy(info->nic_name, nic->name, 128);
-            info->nic_ipv4_addr = nic->ipv4_address;
-            info->nic_ipv4_gateway = nic->ipv4_gateway;
-            info->nic_ipv4_subnet = nic->ipv4_subnet;
+            info->nic_ipv4_addr = htonl(nic->ipv4_address);
+            info->nic_ipv4_gateway = htonl(nic->ipv4_gateway);
+            info->nic_ipv4_subnet = htonl(nic->ipv4_subnet);
             info->nic_mtu = nic->mtu;
             memcpy(info->nic_mac, nic->mac, 6);
             return 0;
@@ -96,9 +96,9 @@ static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param) {
         case IO_NIC_SET_INFO:
             SYSCALL_VALIDATE_PTR_SIZE(param, sizeof(nic_info_t));
             info = (nic_info_t*)param;
-            nic->ipv4_address = info->nic_ipv4_addr;
-            nic->ipv4_subnet = info->nic_ipv4_subnet;
-            nic->ipv4_gateway = info->nic_ipv4_gateway;
+            nic->ipv4_address = ntohl(info->nic_ipv4_addr);
+            nic->ipv4_subnet = ntohl(info->nic_ipv4_subnet);
+            nic->ipv4_gateway = ntohl(info->nic_ipv4_gateway);
             nic->mtu = info->nic_mtu;
             return 0;
     }

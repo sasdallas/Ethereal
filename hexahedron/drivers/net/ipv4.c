@@ -155,6 +155,7 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
         if (nic->ipv4_gateway && (!nic->ipv4_subnet || ((nic->ipv4_subnet & dest) != (nic->ipv4_address & nic->ipv4_subnet)))) {
             ent = arp_get_entry(nic->ipv4_gateway);
             tgt = nic->ipv4_gateway;
+            LOG(DEBUG, "Using gateway IP address %x\n", tgt);
         } else {
             ent = arp_get_entry(dest);
         }
@@ -198,8 +199,8 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
         pkt->length = htons(sizeof(ipv4_packet_t) + chunk);
         pkt->id = htons(id);
         pkt->offset = ((offset + chunk < size) ? IPV4_FLAG_MF : 0) | (offset >> 3);
-        pkt->src_addr = nic->ipv4_address;
-        pkt->dest_addr = dest;
+        pkt->src_addr = htonl(nic->ipv4_address);
+        pkt->dest_addr = htonl(dest);
         pkt->protocol = protocol;
         pkt->ttl = 64;
         pkt->checksum = 0;
