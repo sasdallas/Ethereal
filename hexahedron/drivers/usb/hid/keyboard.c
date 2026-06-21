@@ -28,7 +28,9 @@ uint16_t hid_to_ps2_scancode[] = {
     0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f,
     0x11, 0x2d, 0x15, 0x2c, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 
     0x0b, 0x1c, 0x01, 0x0e, 0x0f, 0x39, 0x0c, 0x0d, 0x1a, 0x1b, 0x2b, 0x2b, 0x27, 
-    0x28, 0x29, 0x33, 0x34, 0x35, 0x3a 
+    0x28, 0x29, 0x33, 0x34, 0x35, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41,
+    0x42, 0x43, 0x44, 0x57, 0x58, 0xE037, 0x46, 0xE046, 0xE052, 0xE047, 0xE049,
+    0xE053, 0xE04F, 0xE051, 0xE04D, 0xE04B, 0xE050, 0xE048
 };
 
 uint16_t hid_modifier_to_ps2_scancode[] = {
@@ -54,7 +56,6 @@ USB_STATUS usb_keyboardInitDriver(USBHidCollection_t *collection) {
  * @param collection The collection to begin the report on
  */
 USB_STATUS usb_keyboardBeginReport(USBHidCollection_t *collection) {
-    LOG(DEBUG, "Begin report\n");
     return USB_SUCCESS;
 }
 
@@ -80,7 +81,7 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
             if (!memchr(kbd->last_keyboard_state, kbd->current_keyboard_state[i], 8)) {
                 uint16_t sc = hid_to_ps2_scancode[kbd->current_keyboard_state[i]];
                 if (sc > UINT8_MAX) {
-                    periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, 0xE0); // PS/2 extended
+                    periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, 0xE0); // PS/2 extended
                 }
 
                 periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, hid_to_ps2_scancode[kbd->current_keyboard_state[i]] & 0xFF);
@@ -92,7 +93,7 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
                     periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, 0xE0); // PS/2 extended
                 }
 
-                periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, hid_to_ps2_scancode[kbd->last_keyboard_state[i]] & 0xFF);
+                periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, (hid_to_ps2_scancode[kbd->last_keyboard_state[i]] & 0xFF) | 0x80);
             }
         }
     }
@@ -105,14 +106,14 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
                 periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, 0xE0); // PS/2 extended
             }
 
-            periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, hid_modifier_to_ps2_scancode[i]);
+            periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, (hid_modifier_to_ps2_scancode[i] & 0xFF) | 0x80);
         } else if (kbd->modifiers & (1 << i) && !(kbd->last_modifiers & (1 << i))) {
             uint16_t sc  = hid_modifier_to_ps2_scancode[i];
             if (sc > UINT8_MAX) {
-                periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, 0xE0); // PS/2 extended
+                periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, 0xE0); // PS/2 extended
             }
 
-            periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, hid_modifier_to_ps2_scancode[i]);
+            periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, (hid_modifier_to_ps2_scancode[i] & 0xFF));
         }
     }
 
@@ -123,7 +124,6 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
     kbd->modifiers = 0x0;
     kbd->idx = 0;
 
-    HEXDUMP(kbd->current_keyboard_state, 8);
 
     return USB_SUCCESS;
 }

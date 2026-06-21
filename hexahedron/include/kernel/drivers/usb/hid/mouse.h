@@ -27,6 +27,7 @@ typedef struct USBHidMouseState {
     uint32_t rel_x;
     uint32_t rel_y; 
     uint8_t buttons;
+    int scroll;
 } USBHidMouseState_t;
 
 /**** FUNCTIONS ****/

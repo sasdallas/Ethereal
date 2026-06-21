@@ -28,7 +28,6 @@
  * @param collection The collection to init on
  */
 USB_STATUS usb_mouseInitDriver(USBHidCollection_t *collection) {
-    LOG(DEBUG, "Mouse driver start\n");
     USBHidMouseState_t *state = kzalloc(sizeof(USBHidMouseState_t));
     collection->d = state;
     return USB_SUCCESS;
@@ -55,8 +54,12 @@ USB_STATUS usb_mouseFinishReport(USBHidCollection_t *collection) {
     if (mouse->buttons & (1 << 1)) buttons |= MOUSE_BUTTON_RIGHT;
     if (mouse->buttons & (1 << 2)) buttons |= MOUSE_BUTTON_MIDDLE;
 
+    uint32_t scroll = MOUSE_SCROLL_NONE;
+    if (mouse->scroll > 0) scroll = MOUSE_SCROLL_UP;
+    if (mouse->scroll < 0) scroll = MOUSE_SCROLL_DOWN;
+
     // TODO: Scrolling support
-    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, mouse->rel_x, mouse->rel_y, MOUSE_SCROLL_NONE);
+    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, mouse->rel_x, mouse->rel_y, scroll);
 
     return USB_SUCCESS;
 }
@@ -108,7 +111,7 @@ USB_STATUS usb_mouseProcessRelative(struct USBHidCollection *collection, struct 
     } else if (usage_id == 0x31) {
         mouse->rel_y = -value;
     } else if (usage_id == 0x38) {
-        // TODO: Wheel
+        mouse->scroll = value;
     } else {
         LOG(WARN, "Unsupported mouse usage ID: %04x\n", usage_id);
     }

@@ -357,8 +357,6 @@ void hid_dumpCollection(USBHidCollection_t *collection, int depth) {
 list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t size, uint8_t *uses_report_id) {
     uint8_t *p = data;
 
-    HEXDUMP(p, size);
-
     USBHidParserState_t *state = kzalloc(sizeof(USBHidParserState_t));
     list_t *collections = list_create("usb hid collections");
 
@@ -563,7 +561,6 @@ void hid_callback(USBEndpoint_t *endp, USBTransferCompletion_t *complete) {
         assert(report_id); //
     }
 
-    HEXDUMP(data_ptr, (report_id) ? (complete->transfer->length-1) : complete->transfer->length);
 
     size_t current_offset = 0;
     foreach (collection_node, hid->collections) {
