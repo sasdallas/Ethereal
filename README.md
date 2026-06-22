@@ -1,3 +1,35 @@
+
+<div align="right">
+  <details>
+    <summary >🌐 Language</summary>
+    <div>
+      <div align="center">
+        <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=en">English</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=zh-CN">简体中文</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=zh-TW">繁體中文</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=ja">日本語</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=ko">한국어</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=hi">हिन्दी</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=th">ไทย</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=fr">Français</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=de">Deutsch</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=es">Español</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=it">Italiano</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=ru">Русский</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=pt">Português</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=nl">Nederlands</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=pl">Polski</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=ar">العربية</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=fa">فارسی</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=tr">Türkçe</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=vi">Tiếng Việt</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=id">Bahasa Indonesia</a>
+        | <a href="https://openaitx.github.io/view.html?user=sasdallas&project=Ethereal&lang=as">অসমীয়া</
+      </div>
+    </div>
+  </details>
+</div>
+
 # Ethereal
 
 A custom all-in-one operating system, written for speed, memory conservation, and reliability.\
