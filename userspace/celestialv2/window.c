@@ -420,16 +420,16 @@ void window_resize(wm_window_t *win, int nx, int ny, int w, int h) {
     }
 
     // Clamp it to resize bounds
-    if (w < win->resize.bounds.min_width) {
+    if ((unsigned)w < win->resize.bounds.min_width) {
         w = win->resize.bounds.min_width;
     }
-    if (h < win->resize.bounds.min_height) {
+    if ((unsigned)h < win->resize.bounds.min_height) {
         h = win->resize.bounds.min_height;
     }
-    if (w > win->resize.bounds.max_width) {
+    if ((unsigned)w > win->resize.bounds.max_width) {
         w = win->resize.bounds.max_width;
     }
-    if (h > win->resize.bounds.max_height) {
+    if ((unsigned)h > win->resize.bounds.max_height) {
         h = win->resize.bounds.max_height;
     }
 
