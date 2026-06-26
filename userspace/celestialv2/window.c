@@ -40,6 +40,11 @@ wm_window_t *window_create(wm_client_t *client, int flags, size_t width, size_t 
     window->z_array = Z_DEFAULT;
     window->anim.win = window;
     window->visible = true;
+    window->resize.bounds.min_width = 0;
+    window->resize.bounds.min_height = 0;
+    window->resize.bounds.max_width = SIZE_MAX;
+    window->resize.bounds.max_height = SIZE_MAX;
+    pthread_spin_init(&window->resize.resize_lck, PTHREAD_PROCESS_PRIVATE);
     __atomic_add_fetch(&client->window_count, 1, __ATOMIC_SEQ_CST);
     __atomic_add_fetch(&SERVER->window_count, 1, __ATOMIC_SEQ_CST);
 
@@ -391,4 +396,121 @@ void window_beginAnimation(wm_window_t *win) {
     }
 
     pthread_mutex_unlock(&anim_lock);
+}
+
+
+void window_resize(wm_window_t *win, int nx, int ny, int w, int h) {
+    if (__atomic_load_n(&win->resize.pending, __ATOMIC_SEQ_CST)) {
+        TRACE_DEBUG("pending resize already\n");
+        return;
+    }
+
+    // aight, do the thing
+    window_hold(win);
+
+    int ox = win->x; int oy = win->y;
+
+    // Clamp the new size to GFX_WIDTH
+    if (w + nx >= (int)GFX_WIDTH(SERVER->renderer.ctx)) {
+        w = GFX_WIDTH(SERVER->renderer.ctx) - nx;
+    }
+    
+    if (h + ny >= (int)GFX_HEIGHT(SERVER->renderer.ctx)) {
+        h = GFX_HEIGHT(SERVER->renderer.ctx) - ny;
+    }
+
+    // Clamp it to resize bounds
+    if (w < win->resize.bounds.min_width) {
+        w = win->resize.bounds.min_width;
+    }
+    if (h < win->resize.bounds.min_height) {
+        h = win->resize.bounds.min_height;
+    }
+    if (w > win->resize.bounds.max_width) {
+        w = win->resize.bounds.max_width;
+    }
+    if (h > win->resize.bounds.max_height) {
+        h = win->resize.bounds.max_height;
+    }
+
+    // Configure the new window data
+    if (win->width == w && win->height == h) {
+        // We don't actually care that much...
+        if (win->x != nx || win->y != ny) {
+            win->x = nx;
+            win->y = ny;
+            damage_move_locked(win,ox,oy);
+        }
+
+        window_release(win);
+        return;
+    }
+
+
+    // Create a new shared buffer
+#ifdef BUILDING_LINUX
+    #error "Not implemented"
+#else
+    int new_shm_object = shared_new(w * h * 4, SHARED_DEFAULT);
+    win->resize.new_bufkey = shared_key(new_shm_object);
+    win->resize.new_shmfd = new_shm_object;
+    win->resize.new_buffer = mmap(NULL, w*h*4, PROT_READ | PROT_WRITE, MAP_SHARED, new_shm_object, 0);
+#endif
+
+    win->resize.new_rect.width = w;
+    win->resize.new_rect.height = h;
+    win->resize.new_rect.x = nx;
+    win->resize.new_rect.y = ny;
+
+    // Resize is completed
+    __atomic_store_n(&win->resize.pending, true, __ATOMIC_SEQ_CST);
+    EVENT_SEND(win, celestial_event_resize_t, CELESTIAL_EVENT_RESIZE,
+        .new_width = w,
+        .new_height = h,
+        .buffer_key = win->resize.new_bufkey
+    );
+
+    window_release(win);
+}
+
+void window_resize_finish(wm_window_t *win) {
+    window_hold(win);
+    pthread_spin_lock(&win->resize.resize_lck);
+    if (__atomic_load_n(&win->resize.pending, __ATOMIC_SEQ_CST) == false) {
+        // I guess raced?
+        pthread_spin_unlock(&win->resize.resize_lck);
+        return;
+    }
+
+    // Close the old stuff
+    close(win->shmfd);
+    munmap(win->buffer, win->width*win->height*4);
+
+    // Swap it out
+    // TODO Lock this
+    win->buffer = win->resize.new_buffer;
+    win->bufkey = win->resize.new_bufkey;
+    win->shmfd = win->resize.new_shmfd;
+    
+    damage_lock();
+    damage_window(win);
+    int ox = win->x; int oy = win->y;
+    win->x = win->resize.new_rect.x;
+    win->y = win->resize.new_rect.y;
+    win->width = win->resize.new_rect.width;
+    win->height = win->resize.new_rect.height;
+    damage_window(win);
+    damage_unlock();
+
+    if (ox != win->x || oy != win->y) {
+        // Send position change
+        EVENT_SEND(win, celestial_event_position_change_t, CELESTIAL_EVENT_POSITION_CHANGE,
+            .x = win->x,
+            .y = win->y
+        );
+    }
+
+    __atomic_store_n(&win->resize.pending, false, __ATOMIC_SEQ_CST);
+    pthread_spin_unlock(&win->resize.resize_lck);
+    window_release(win);
 }

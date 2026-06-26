@@ -17,7 +17,7 @@
 #include <sys/poll.h>
 #include <unistd.h>
 
-sprite_t *mouse_sprites[2];
+sprite_t *mouse_sprites[6];
 unsigned char mouse_type = CELESTIAL_MOUSE_DEFAULT;
 static int input_ready = 0;
 
@@ -102,6 +102,82 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         if (!BUTTON_HELD(MOUSE_BUTTON_LEFT)) {
             WINDOW_CHANGE_STATE(mw, WINDOW_STATE_NORMAL);
         } else {
+            return;
+        }
+    } else if (SERVER->mouse_window && SERVER->mouse_window->state == WINDOW_STATE_RESIZING) {
+        // resize the window
+        wm_window_t *mw = SERVER->mouse_window;
+
+        pthread_mutex_lock(&SERVER->window_lock);
+        int x = mw->x;
+        int y = mw->y;
+        int w = mw->width;
+        int h = mw->height;
+
+        int right  = mw->x + mw->width;
+        int bottom = mw->y + mw->height;
+
+        switch (mw->resize.direction) {
+            case CELESTIAL_RESIZE_TOP:
+                y = new_y;
+                h = bottom - y;
+                break;
+
+            case CELESTIAL_RESIZE_BOTTOM:
+                h = new_y - y;
+                break;
+
+            case CELESTIAL_RESIZE_LEFT:
+                x = new_x;
+                w = right - x;
+                break;
+
+            case CELESTIAL_RESIZE_RIGHT:
+                w = new_x - x;
+                break;
+
+            case CELESTIAL_RESIZE_TOP_LEFT:
+                x = new_x;
+                y = new_y;
+                w = right - x;
+                h = bottom - y;
+                break;
+
+            case CELESTIAL_RESIZE_TOP_RIGHT:
+                y = new_y;
+                w = new_x - x;
+                h = bottom - y;
+                break;
+
+            case CELESTIAL_RESIZE_BOTTOM_RIGHT:
+                w = new_x - x;
+                h = new_y - y;
+                break;
+
+            case CELESTIAL_RESIZE_BOTTOM_LEFT:
+                x = new_x;
+                w = right - x;
+                h = new_y - y;
+                break;
+        }
+
+        int old_x = SERVER->mouse_x;
+        int old_y = SERVER->mouse_y;
+        SERVER->mouse_x = new_x;
+        SERVER->mouse_y = new_y;
+
+        pthread_mutex_unlock(&SERVER->window_lock);
+
+        window_resize(mw, x, y, w, h);
+
+        if (!BUTTON_HELD(MOUSE_BUTTON_LEFT)) {
+            WINDOW_CHANGE_STATE(mw, WINDOW_STATE_NORMAL);
+        } else {
+            damage_lock();
+            damage_add(input_cursorRect(old_x, old_y));
+            damage_add(input_cursorRect(SERVER->mouse_x, SERVER->mouse_y));
+            damage_unlock();
+        
             return;
         }
     }
@@ -255,7 +331,7 @@ void input_set_mouse_capture(wm_window_t *win) {
 
 void input_set_mouse(int mouse) {
     if (!input_ready) return;
-    if (mouse > CELESTIAL_MOUSE_TEXT || mouse_sprites[mouse] == NULL) {
+    if (mouse < 0 || mouse > CELESTIAL_MOUSE_DIAG_DESCEND || mouse_sprites[mouse] == NULL) {
         TRACE_ERROR("input_set_mouse unknown mouse type %d\n", mouse);
         return;
     }
@@ -270,6 +346,10 @@ void input_set_mouse(int mouse) {
 int input_init() {
     input_loadMouseSprite(CELESTIAL_MOUSE_DEFAULT, "/usr/share/cursors/default.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_TEXT, "/usr/share/cursors/text.bmp");
+    input_loadMouseSprite(CELESTIAL_MOUSE_HORIZONTAL, "/usr/share/cursors/horizontal.bmp");
+    input_loadMouseSprite(CELESTIAL_MOUSE_VERTICAL, "/usr/share/cursors/vertical.bmp");
+    input_loadMouseSprite(CELESTIAL_MOUSE_DIAG_ASCEND, "/usr/share/cursors/diag_ascend.bmp");
+    input_loadMouseSprite(CELESTIAL_MOUSE_DIAG_DESCEND, "/usr/share/cursors/diag_descend.bmp");
 
     SERVER->mouse_window = NULL;
     SERVER->mouse_x = (renderer_getWidth() - mouse_sprites[0]->width) / 2; 

@@ -259,4 +259,37 @@ int celestial_bindKey(window_t *win, key_scancode_t scancode, key_modifiers_t mo
  */
 int celestial_setRootWindow(window_t *win);
 
+/**
+ * @brief Set resize bounds for window
+ * @param win The window to change the resize bounds
+ * @param min_width The minimum width of the window
+ * @param min_height The minimum height of the window
+ * @param max_width The maximum width of the window
+ * @param max_height The maximum height of the window
+ */
+int celestial_setResizeBounds(window_t *win, size_t min_width, size_t min_height, size_t max_width, size_t max_height);
+
+/**
+ * @brief Set whether resizing is enabled or not
+ * @param win The window to set
+ * @param enabled Whether to enable resizing
+ * 
+ * When resizing a window, the decor lib will auto-detect any mouse attempts to resize and adjust accordingly.
+ * It will send CELESTIAL_EVENT_RESIZE events to allow you to resize.
+ */
+int celestial_setResizeEnabled(window_t *win, bool enabled);
+
+/**
+ * @brief Start resizing
+ * @param win The window to start resizing
+ * @param dir The direction to resize in
+ */
+int celestial_startResizing(window_t *win, unsigned char direction);
+
+/**
+ * @brief Stop resizing
+ * @param win The window to stop resizing
+ */
+int celestial_stopResizing(window_t *win);
+
 #endif

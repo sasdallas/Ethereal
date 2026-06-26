@@ -39,6 +39,96 @@ sprite_t *minimize_sprite = NULL;
 #define MERCURY_BORDER_GRADIENT_START           GFX_RGB(0x3f, 0x3b, 0x42)
 #define MERCURY_BORDER_GRADIENT_END             GFX_RGB(0x95, 0x90, 0x99)
 
+enum ss_pieces {
+    CORNER_UL,
+    CORNER_UR,
+    CORNER_BL,
+    CORNER_BR,
+    TOP,
+    LEFT,
+    BOT,
+    RIGHT,
+    NPIECES
+};
+
+static sprite_t *spritesheet[NPIECES];
+static sprite_t *sp_base;
+static int loaded = 0;
+
+#define CORNER_UL_X 0
+#define CORNER_UL_Y 0
+#define CORNER_UL_W 10
+#define CORNER_UL_H 26
+
+#define TOP_X 8
+#define TOP_Y 0
+#define TOP_W 1
+#define TOP_H 26
+
+#define CORNER_UR_X 11
+#define CORNER_UR_Y 0
+#define CORNER_UR_W 10
+#define CORNER_UR_H 26
+
+#define LEFT_X 0
+#define LEFT_Y 26
+#define LEFT_W 5
+#define LEFT_H 1
+
+#define RIGHT_X 16
+#define RIGHT_Y 26
+#define RIGHT_W 5
+#define RIGHT_H 1
+
+#define CORNER_BL_X 0
+#define CORNER_BL_Y 30
+#define CORNER_BL_W 5
+#define CORNER_BL_H 3
+
+#define CORNER_BR_X 16
+#define CORNER_BR_Y 30
+#define CORNER_BR_W 5
+#define CORNER_BR_H 3
+
+#define BOT_X 5
+#define BOT_Y 30
+#define BOT_W 1
+#define BOT_H 3
+
+
+/**
+ * @brief Load piece
+ */
+static sprite_t *mercury_loadPiece(sprite_t *base, int x, int y, int w, int h) {
+    sprite_t *n = gfx_createSprite(w,h);
+    gfx_context_t *ctx = gfx_createContext(CTX_DEFAULT, (uint8_t*)n->bitmap, w, h);
+    gfx_drawRectangleFilled(ctx, &GFX_RECT(0,0,w,h), GFX_RGBA(0,0,0,255));
+
+    for (int32_t dy = 0; dy < h; dy++) {
+        for (int32_t dx = 0; dx < w; dx++) {
+            SPRITE_PIXEL(n, dx, dy) = SPRITE_PIXEL(base, x + dx, y + dy);
+        }
+    }
+
+    free(ctx);
+    return n;
+} 
+
+/**
+ * @brief Load the spritesheet
+ */
+static void mercury_loadSpritesheet(sprite_t *sp) {
+    spritesheet[CORNER_UL] = mercury_loadPiece(sp, CORNER_UL_X, CORNER_UL_Y, CORNER_UL_W, CORNER_UL_H);
+    spritesheet[CORNER_UR] = mercury_loadPiece(sp, CORNER_UR_X, CORNER_UR_Y, CORNER_UR_W, CORNER_UR_H);
+    spritesheet[CORNER_BL] = mercury_loadPiece(sp, CORNER_BL_X, CORNER_BL_Y, CORNER_BL_W, CORNER_BL_H);
+    spritesheet[CORNER_BR] = mercury_loadPiece(sp, CORNER_BR_X, CORNER_BR_Y, CORNER_BR_W, CORNER_BR_H);
+    spritesheet[TOP] = mercury_loadPiece(sp, TOP_X, TOP_Y, TOP_W, TOP_H);
+    spritesheet[BOT] = mercury_loadPiece(sp, BOT_X, BOT_Y, BOT_W, BOT_H);
+    spritesheet[LEFT] = mercury_loadPiece(sp, LEFT_X, LEFT_Y, LEFT_W, LEFT_H);
+    spritesheet[RIGHT] = mercury_loadPiece(sp, RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H);
+    loaded = 1;
+}
+
 /**
  * @brief Initialize the Mercury theme
  * @param win The window to initialize Mercury on
@@ -50,6 +140,21 @@ int celestial_initMercury(window_t *win) {
     // Load font object
     win->decor->font = gfx_loadFont(win->decor->ctx, "/usr/share/DejaVuSans.ttf");
 
+    // Load the mercury borders
+    if (!loaded) {
+        FILE *f = fopen("/usr/share/mercury/borders.bmp", "r");
+        if (!f) {
+            fprintf(stderr, "mercury: Error loading /usr/share/mercury/borders.bmp\n");
+            fprintf(stderr, "mercury: Trying to continue anyways, this won't work well...\n");
+            return 1;
+        }   
+        
+        sp_base = gfx_createSprite(0,0);
+        gfx_loadSprite(sp_base, f);
+        fclose(f);
+        mercury_loadSpritesheet(sp_base);
+    }
+
     return 0;
 }
 
@@ -60,30 +165,59 @@ int celestial_initMercury(window_t *win) {
 int celestial_renderMercury(window_t *win) {
     decor_t *d = win->decor;
 
-    // Render our borders
-    
-    // General window border
-    gfx_rect_t rect_inner_window_border = { .x = d->borders.left_width - 1, .y = d->borders.top_height - 1, .width = WIN_WIDTH(win)  - d->borders.left_width - d->borders.right_width + 1, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height + 1 };
-
-    // Left border
-    gfx_rect_t rect_left = { .x = 0, .y = d->borders.top_height - 4, .width = d->borders.left_width, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height + 8 };
-    
-    // Right border
-    gfx_rect_t rect_right = { .x = WIN_WIDTH(win) - d->borders.right_width + 1, .y = d->borders.top_height - 4, .width = d->borders.right_width - 1, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height + 8, };
+    // Left and right borders
+    gfx_rect_t rect_left = { .x = 0, .y = d->borders.top_height, .width = d->borders.left_width, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height };
+    gfx_rect_t rect_right = { .x = WIN_WIDTH(win) - d->borders.right_width + 1, .y = d->borders.top_height, .width = d->borders.right_width - 1, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height, };
 
     gfx_drawRectangleFilled(win->decor->ctx, &GFX_RECT(0, 0, win->info->width, d->borders.top_height), GFX_RGBA(0,0,0,0));
-    gfx_drawRoundedRectangleGradient(win->decor->ctx, &GFX_RECT(0, 0, win->info->width, d->borders.top_height), 4, GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
-    
-    gfx_drawRectangleFilled(win->decor->ctx, &GFX_RECT(0, win->info->height - d->borders.bottom_height, win->info->width, d->borders.bottom_height), GFX_RGBA(0,0,0,0));
-    gfx_drawRoundedRectangleGradient(win->decor->ctx, &GFX_RECT(0, win->info->height - d->borders.bottom_height, win->info->width, d->borders.bottom_height), 4, GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
 
-    gfx_drawRectangleFilled(win->decor->ctx, &rect_left, MERCURY_COLOR_LEFT_BORDER);
-    gfx_drawRectangleFilled(win->decor->ctx, &rect_right, MERCURY_COLOR_RIGHT_BORDER);
-    gfx_drawRectangle(win->decor->ctx, &rect_inner_window_border, GFX_RGB(16,16,16));
-    gfx_renderSprite(win->decor->ctx, close_sprite, win->decor->ctx->width - close_sprite->width - 4, 2);
-    gfx_renderSprite(win->decor->ctx, maximize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 5, 2);
-    gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - 6, 2);
-    gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 6, win->decor->borders.top_height - 6, (win->decor->focused ? MERCURY_COLOR_TEXT_FOCUSED : MERCURY_COLOR_TEXT_UNFOCUSED));
+    gfx_drawRectangleFilled(win->decor->ctx, &GFX_RECT(0, win->info->height - d->borders.bottom_height, win->info->width, d->borders.bottom_height), GFX_RGBA(0,0,0,0));
+
+    // Upper left
+    gfx_renderSprite(win->decor->ctx, spritesheet[CORNER_UL], 0, 0);
+
+    // Left
+    gfx_drawRectangleFilled(win->decor->ctx, &rect_left, GFX_RGBA(0,0,0,0));
+    for (size_t i = d->borders.top_height; i <= WIN_HEIGHT(win) - d->borders.bottom_height; i++) {
+        gfx_renderSprite(win->decor->ctx, spritesheet[LEFT], 0, i);
+    }
+
+    // Right
+    gfx_drawRectangleFilled(win->decor->ctx, &rect_right, GFX_RGBA(0,0,0,0));
+    for (size_t i = d->borders.top_height; i <= WIN_HEIGHT(win) - d->borders.bottom_height; i++) {
+        gfx_renderSprite(win->decor->ctx, spritesheet[RIGHT], WIN_WIDTH(win) - d->borders.right_width, i);
+    }
+
+    // Top
+    for (size_t i = CORNER_UL_W; i < WIN_WIDTH(win) - CORNER_UR_W; i++) {
+        gfx_renderSprite(win->decor->ctx, spritesheet[TOP], i, 0);
+    }
+
+    // Upper right now
+    gfx_renderSprite(win->decor->ctx, spritesheet[CORNER_UR], WIN_WIDTH(win) - CORNER_UR_W, 0);
+
+    gfx_drawRectangleFilled(win->decor->ctx, &GFX_RECT(0,WIN_HEIGHT(win) - BOT_H, WIN_WIDTH(win), BOT_H), GFX_RGBA(0,0,0,0));
+    for (size_t i = CORNER_BL_W; i < WIN_WIDTH(win) - CORNER_BR_W; i++) {
+        gfx_renderSprite(win->decor->ctx, spritesheet[BOT], i, WIN_HEIGHT(win) - BOT_H);
+    }    
+
+    // Bottom corners
+    gfx_renderSprite(win->decor->ctx, spritesheet[CORNER_BL], 0, WIN_HEIGHT(win) - d->borders.bottom_height);
+    gfx_renderSprite(win->decor->ctx, spritesheet[CORNER_BR], WIN_WIDTH(win) - CORNER_BR_W, WIN_HEIGHT(win) - d->borders.bottom_height);
+
+    // The spritesheet doesn't actually have gradients, so...
+    gfx_drawRectangleFilledGradient(win->decor->ctx, &GFX_RECT(CORNER_UL_W, 3, WIN_WIDTH(win) - CORNER_UR_W - CORNER_UL_W, 23), GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
+    gfx_drawRectangleFilledGradient(win->decor->ctx, &GFX_RECT(CORNER_BL_W, WIN_HEIGHT(win) - 3, WIN_WIDTH(win) - CORNER_BL_W - CORNER_BR_W, 1), GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
+
+    // Draw the window outline
+    // gfx_rect_t rect_inner_window_border = { .x = d->borders.left_width - 1, .y = d->borders.top_height - 1, .width = WIN_WIDTH(win)  - d->borders.left_width - d->borders.right_width + 1, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height + 1 };
+    // gfx_drawRectangle(win->decor->ctx, &rect_inner_window_border, GFX_RGB(16,16,16));
+
+    // The rest of the junk
+    gfx_renderSprite(win->decor->ctx, close_sprite, win->decor->ctx->width - close_sprite->width - 7, 4);
+    gfx_renderSprite(win->decor->ctx, maximize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 8, 4);
+    gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - 9, 4);
+    gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 8, win->decor->borders.top_height - 6, (win->decor->focused ? MERCURY_COLOR_TEXT_FOCUSED : MERCURY_COLOR_TEXT_UNFOCUSED));
     gfx_render(win->decor->ctx);
     celestial_flip(win); // TODO: Only flip decorations
 
@@ -102,7 +236,7 @@ int celestial_inBoundsMercury(struct window *win, int32_t x, int32_t y) {
         return DECOR_BTN_MINIMIZE;
     } else if ((size_t)x >= win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 5 && (size_t)x < win->decor->ctx->width - close_sprite->width - 5) {
         return DECOR_BTN_MAXIMIZE;
-    } else if ((size_t)x >= win->decor->ctx->width - close_sprite->width - 4 && (size_t)x < win->decor->ctx->width - 4) {
+    } else if ((size_t)x >= win->decor->ctx->width - close_sprite->width - 4 && (size_t)x < win->decor->ctx->width - 8) {
         return DECOR_BTN_CLOSE;
     } else {
         return DECOR_BTN_NONE;
@@ -203,10 +337,10 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
 
     // Create decor object
     decor_t *d = malloc(sizeof(decor_t));
-    d->borders.top_height = 24;
-    d->borders.bottom_height = 4;
-    d->borders.right_width = 4;
-    d->borders.left_width = 4;
+    d->borders.top_height = 26;
+    d->borders.bottom_height = 3;
+    d->borders.right_width = 5;
+    d->borders.left_width = 5;
     d->flags = 0;
     d->init = celestial_initMercury;
     d->render = celestial_renderMercury;
@@ -225,10 +359,10 @@ decor_t *celestial_loadMercury(decor_handler_t *handler, window_t *win) {
  */
 decor_borders_t celestial_getBordersMercury(decor_handler_t *handler) {
     decor_borders_t borders = {
-        .top_height = 24,
-        .bottom_height = 4,
-        .right_width = 4,
-        .left_width = 4,
+        .top_height = 26,
+        .bottom_height = 3,
+        .right_width = 5,
+        .left_width = 5,
     };
 
     return borders;

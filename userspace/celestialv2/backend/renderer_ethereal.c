@@ -42,7 +42,7 @@ void *render_main(void *arg) {
 
         
         if (draw_cursor) input_draw_at(cursor_x, cursor_y);
-        gfx_render(RENDERER->ctx);
+        memcpy(RENDERER->ctx->buffer, RENDERER->ctx->backbuffer, GFX_SIZE(RENDERER->ctx));
     }
 }
 

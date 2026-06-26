@@ -22,6 +22,8 @@
 static FT_Library __gfx_library = NULL;
 static int __ft_initialized = 0;
 
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 /**
  * @brief Load a font from a file into the graphics render
  * @param ctx The context to use
@@ -116,12 +118,12 @@ static gfx_color_t gfx_freetypeBlend(gfx_color_t bottom, gfx_color_t top, uint8_
  * @brief Render a character at specific coordinates
  * @param ctx The context to render with
  * @param font The font character to render
- * @param ch The character to render
+ * @param ch The character/unicode to render
  * @param x The X coordinate to render the char at
  * @param y The Y coordinate to render the char at
  * @param color The color to render them
  */
-int gfx_renderCharacter(gfx_context_t *ctx, gfx_font_t *font, char ch, int _x, int _y, gfx_color_t color) {
+int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, uint32_t ch, int _x, int _y, gfx_color_t color) {
     // Load the glyph
     FT_UInt idx = FT_Get_Char_Index(font->face, ch);
 

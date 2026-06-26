@@ -55,6 +55,10 @@
 #define CELESTIAL_REQ_BIND_KEY              0x1016
 #define CELESTIAL_REQ_SET_ROOT_WINDOW       0x1017
 #define CELESTIAL_REQ_QUERY_MOUSE           0x1018
+#define CELESTIAL_REQ_SET_RESIZE_PARAMS     0x1019
+#define CELESTIAL_REQ_START_RESIZE          0x101A
+#define CELESTIAL_REQ_STOP_RESIZE           0x101B
+#define CELESTIAL_REQ_ACK_RESIZE            0x101C
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -65,6 +69,20 @@
 /* Mouse types */
 #define CELESTIAL_MOUSE_DEFAULT             0   // Default pointer
 #define CELESTIAL_MOUSE_TEXT                1   // I-Beam for text
+#define CELESTIAL_MOUSE_HORIZONTAL          2   // Horizontal resize
+#define CELESTIAL_MOUSE_VERTICAL            3   // Vertical resize
+#define CELESTIAL_MOUSE_DIAG_ASCEND         4   // Diagonal ascending resize
+#define CELESTIAL_MOUSE_DIAG_DESCEND        5   // Diagonal descending resize
+
+/* Resize direction */
+#define CELESTIAL_RESIZE_TOP                    0
+#define CELESTIAL_RESIZE_RIGHT                  1
+#define CELESTIAL_RESIZE_LEFT                   2
+#define CELESTIAL_RESIZE_BOTTOM                 3
+#define CELESTIAL_RESIZE_TOP_LEFT               4
+#define CELESTIAL_RESIZE_TOP_RIGHT              5
+#define CELESTIAL_RESIZE_BOTTOM_RIGHT           6
+#define CELESTIAL_RESIZE_BOTTOM_LEFT            7
 
 /**** TYPES ****/
 
@@ -212,6 +230,30 @@ typedef struct celestial_req_query_mouse {
     CELESTIAL_REQ_COMMON
 } celestial_req_query_mouse_t;
 
+typedef struct celestial_req_set_resize_params {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;
+    size_t min_width;
+    size_t min_height;
+    size_t max_width;
+    size_t max_height;
+} celestial_req_set_resize_params_t;
+
+typedef struct celestial_req_start_resize {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;
+    unsigned char direction;
+} celestial_req_start_resize_t;
+
+typedef struct celestial_req_stop_resize {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;
+} celestial_req_stop_resize_t;
+
+typedef struct celestial_req_ack_resize {
+    CELESTIAL_REQ_COMMON
+    wid_t wid;
+} celestial_req_ack_resize_t;
 
 /* RESPONSES */
 

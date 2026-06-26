@@ -339,6 +339,49 @@ REQUEST_HANDLER(query_mouse, CELESTIAL_REQ_QUERY_MOUSE) {
     SEND_RESP(resp);
 }
 
+REQUEST_HANDLER(set_resize_params, CELESTIAL_REQ_SET_RESIZE_PARAMS) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_SET_RESIZE_PARAMS, -ESRCH);
+
+    if ((size_t)win->width > req->max_width || (size_t)win->width < req->min_width ||
+        (size_t)win->height > req->max_height || (size_t)win->height < req->min_height) {
+        return request_send_error(client, CELESTIAL_REQ_SET_RESIZE_PARAMS, -EINVAL);
+    }
+
+    win->resize.bounds.min_width = req->min_width;
+    win->resize.bounds.min_height = req->min_height;
+    win->resize.bounds.max_width = req->max_width;
+    win->resize.bounds.max_height = req->max_height;
+
+    REQ_OK(req);
+}
+
+REQUEST_HANDLER(start_resize, CELESTIAL_REQ_START_RESIZE) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_START_RESIZE, -ESRCH);
+
+    win->resize.direction = req->direction;
+    WINDOW_CHANGE_STATE(win, WINDOW_STATE_RESIZING);
+    REQ_OK(req);
+}
+
+REQUEST_HANDLER(stop_resize, CELESTIAL_REQ_STOP_RESIZE) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_STOP_RESIZE, -ESRCH);
+
+    WINDOW_CHANGE_STATE(win, WINDOW_STATE_NORMAL);
+    REQ_OK(req);
+}
+
+REQUEST_HANDLER(ack_resize, CELESTIAL_REQ_ACK_RESIZE) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return; // no response
+
+    window_resize_finish(win);
+
+    // no response
+}
+
 void request_handle(wm_client_t *client, void *buffer, size_t size) {
     if (size < sizeof(celestial_req_header_t)) {
         TRACE_ERROR("Client (fd = %d) sent request with invalid size %d\n", client->client_fd, size);
@@ -400,6 +443,14 @@ void request_handle(wm_client_t *client, void *buffer, size_t size) {
         EXECUTE_REQUEST(set_mouse_capture, CELESTIAL_REQ_SET_MOUSE_CAPTURE);
     } else if (hdr->type == CELESTIAL_REQ_QUERY_MOUSE) {
         EXECUTE_REQUEST(query_mouse, CELESTIAL_REQ_QUERY_MOUSE);
+    } else if (hdr->type == CELESTIAL_REQ_SET_RESIZE_PARAMS) {
+        EXECUTE_REQUEST(set_resize_params, CELESTIAL_REQ_SET_RESIZE_PARAMS);
+    } else if (hdr->type == CELESTIAL_REQ_START_RESIZE) {
+        EXECUTE_REQUEST(start_resize, CELESTIAL_REQ_START_RESIZE);
+    } else if (hdr->type == CELESTIAL_REQ_STOP_RESIZE) {
+        EXECUTE_REQUEST(stop_resize, CELESTIAL_REQ_STOP_RESIZE);
+    } else if (hdr->type == CELESTIAL_REQ_ACK_RESIZE) {
+        EXECUTE_REQUEST(ack_resize, CELESTIAL_REQ_ACK_RESIZE);
     } else {
         TRACE_ERROR("Client %d sent unknown/unhandled request %d\n", client->client_fd, hdr->type);
         return request_send_error(client, hdr->type, -ENOSYS);

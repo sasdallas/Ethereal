@@ -103,6 +103,25 @@ typedef struct wm_window {
     key_t bufkey;               // Buffer shared memory key
     int shmfd;                  // Buffer shared memory fd
 
+    struct {
+        bool pending;
+        unsigned char direction;
+
+        // will be stuck in limbo until the server allows it to continue
+        int new_shmfd;
+        uint8_t *new_buffer;
+        key_t new_bufkey;
+        gfx_rect_t new_rect;
+
+        struct {
+            size_t min_width;
+            size_t min_height;
+            size_t max_width;
+            size_t max_height;
+        } bounds;
+
+        pthread_spinlock_t resize_lck;
+    } resize;
 } wm_window_t;
 
 typedef struct damage_node {
@@ -264,6 +283,8 @@ void window_moveZ(wm_window_t *win, z_array_t new_z);
 void window_close(wm_window_t *win);
 void window_destroy(wm_window_t *win);
 void window_beginAnimation(wm_window_t *win);
+void window_resize(wm_window_t *win, int nx, int ny, int w, int h);
+void window_resize_finish(wm_window_t *win);
 
 inline bool window_contains(wm_window_t *win, int x, int y) {
     return (x >= win->x && y >= win->y && x < win->x + win->width && y < win->y + win->height);

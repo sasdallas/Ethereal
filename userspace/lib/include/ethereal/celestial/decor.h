@@ -118,6 +118,8 @@ typedef struct decor {
     decor_in_bounds_t inbtn;    // Button bounds check
     decor_update_state_t state; // Update state
 
+    bool resizable;             // Whether a window is resizable or not
+
     gfx_font_t *font;           // Font
     void *d;                    // Specific to decoration handler
 } decor_t;
@@ -155,7 +157,7 @@ decor_handler_t *celestial_getDefaultDecorations();
 
 /**
  * @brief Get boundaries for decoration
- * @param handler The decoration handler to get boundaries for
+* @param handler The decoration handler to get boundaries for
  */
 decor_borders_t celestial_getDecorationBorders(decor_handler_t *handler);
 

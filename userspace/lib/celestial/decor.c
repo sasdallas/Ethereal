@@ -38,6 +38,8 @@ decor_handler_t *celestial_default_decor =  &celestial_mercury_theme;
 int decor_was_last_in_borders = 0; // Was the last mouse state in the borders?
 int decor_faked_exit_event = 0; // Decor faked last mouse event?
 int decor_last_clicked_in_borders = 0; // The last click was in the borders?
+bool decor_had_custom_mouse = false; // Whether the mouse sprite was one for resizing
+unsigned char decor_last_resize_direction = 0;
 
 /**
  * @brief Initialize specific decorations for a window
@@ -112,6 +114,81 @@ decor_borders_t celestial_getDecorationBorders(decor_handler_t *handler) {
 }
 
 /**
+ * @brief Convert coordinates to scale direction
+ */
+static int celestial_getScaleDirection(window_t *win, int x, int y) {
+#define ON_LEFT ((x <= win->decor->borders.left_width+4))
+#define ON_RIGHT ((x >= (int)win->info->width - win->decor->borders.right_width - 8))
+#define ON_TOP ((y <= win->decor->borders.top_height))
+#define ON_BOTTOM ((y >= (int)win->info->height - win->decor->borders.bottom_height - 6))
+
+    if (ON_TOP && ON_LEFT) return CELESTIAL_RESIZE_TOP_LEFT;
+    if (ON_TOP && ON_RIGHT) return CELESTIAL_RESIZE_TOP_RIGHT;
+    if (ON_BOTTOM && ON_RIGHT) return CELESTIAL_RESIZE_BOTTOM_RIGHT;
+    if (ON_BOTTOM && ON_LEFT) return CELESTIAL_RESIZE_BOTTOM_LEFT;
+    if (ON_TOP && y < 8) return CELESTIAL_RESIZE_TOP;
+    if (ON_RIGHT) return CELESTIAL_RESIZE_RIGHT;
+    if (ON_BOTTOM) return CELESTIAL_RESIZE_BOTTOM;
+    if (ON_LEFT) return CELESTIAL_RESIZE_LEFT;
+
+    return -1; // Not on resize border
+
+#undef ON_LEFT
+#undef ON_RIGHT
+#undef ON_TOP
+#undef ON_BOTTOM
+}
+
+static int resize_cursors[] = {
+    CELESTIAL_MOUSE_VERTICAL,
+    CELESTIAL_MOUSE_HORIZONTAL,
+    CELESTIAL_MOUSE_HORIZONTAL,
+    CELESTIAL_MOUSE_VERTICAL,
+    CELESTIAL_MOUSE_DIAG_DESCEND,
+    CELESTIAL_MOUSE_DIAG_ASCEND,
+    CELESTIAL_MOUSE_DIAG_DESCEND,
+    CELESTIAL_MOUSE_DIAG_ASCEND
+};
+
+/**
+ * @brief Process mouse event (resize-specific garbage)
+ */
+static void celestial_handleDecorEventResize(window_t *win, void *event) {
+    celestial_event_header_t *hdr = (celestial_event_header_t*)event;
+    if (hdr->type == CELESTIAL_EVENT_MOUSE_MOTION) {
+        celestial_event_mouse_motion_t *motion = (celestial_event_mouse_motion_t *)hdr; 
+        int resize_dir = celestial_getScaleDirection(win, motion->x, motion->y);
+        if (resize_dir == -1) {
+            if (decor_had_custom_mouse) {
+                celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
+                decor_had_custom_mouse = false;
+            }
+            return; // no resize direction
+        }
+        
+        decor_last_resize_direction = resize_dir;
+
+        celestial_setMouseCursor(resize_cursors[resize_dir]);
+        decor_had_custom_mouse = true;
+    } else if (hdr->type == CELESTIAL_EVENT_MOUSE_EXIT) {
+        if (decor_had_custom_mouse) {
+            celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
+            decor_had_custom_mouse = false;
+        }
+    } else if (hdr->type == CELESTIAL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (decor_had_custom_mouse) {
+            printf("rsz START!\n");
+            celestial_startResizing(win, decor_last_resize_direction);
+        }
+    } else if (hdr->type == CELESTIAL_EVENT_MOUSE_BUTTON_UP) {
+        if (decor_had_custom_mouse) {
+            printf("Rsz FINISH!\n");
+            celestial_stopResizing(win);
+        }
+    }
+}
+
+/**
  * @brief Handle a mouse event
  * @param win The window the event occurred on
  * @param event The event to handle
@@ -125,11 +202,16 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
         case CELESTIAL_EVENT_MOUSE_BUTTON_DOWN:
             // Depending on bounds
             celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)hdr;
+
+            if (decor_had_custom_mouse && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
+                celestial_handleDecorEventResize(win,event);
+                return 0;
+            }
+
             if (DECOR_IN_BORDERS(down->x, down->y) && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
                 decor_last_clicked_in_borders = 1;
                 int in_borders = (DECOR_IN_BORDERS(down->x, down->y));
                 int b = in_borders ? win->decor->inbtn(win, down->x, down->y) : DECOR_BTN_NONE;
-
                 if (b == DECOR_BTN_CLOSE) {
                     celestial_closeWindow(win);
                     return 0;
@@ -145,6 +227,11 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
         case CELESTIAL_EVENT_MOUSE_BUTTON_UP:
             // Depending on bounds
             celestial_event_mouse_button_up_t *up = (celestial_event_mouse_button_up_t*)hdr;
+            if (decor_had_custom_mouse) {
+                celestial_handleDecorEventResize(win,hdr);
+                return 0;
+            }
+
             if (DECOR_IN_BORDERS(up->x, up->y)) {
                 celestial_stopDragging(win);
                 return 0;
@@ -172,7 +259,6 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
 
                 if (b == DECOR_BTN_MINIMIZE) win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_HOVER);
                 else win->decor->state(win, DECOR_BTN_MINIMIZE, DECOR_BTN_STATE_NORMAL);
-
 
                 // Fix hack
                 if (!in_borders) {
@@ -216,8 +302,17 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                     decor_was_last_in_borders = 1;
                 }
 
+                if (win->decor->resizable) {
+                    celestial_handleDecorEventResize(win, event);
+                }
+
                 return 0;
             } else {
+                if (decor_had_custom_mouse) {
+                    celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
+                    decor_had_custom_mouse = false;
+                }
+
                 // Update motion X
                 motion->x -= win->decor->borders.left_width;
                 motion->y -= win->decor->borders.top_height;
@@ -230,10 +325,13 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
             return 0;
 
         case CELESTIAL_EVENT_MOUSE_EXIT:
+            if (win->decor->resizable) {
+                celestial_handleDecorEventResize(win, event);
+            }
+        
             if (!decor_faked_exit_event) {
                 return 1;
             }
-
 
             decor_faked_exit_event = 0;
             return 0;

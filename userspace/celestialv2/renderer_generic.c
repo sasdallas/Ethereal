@@ -21,7 +21,23 @@ void render_request(render_request_t *upd) {
         gfx_drawRectangleFilled(RENDERER->ctx, &upd->rect, GFX_RGB(0, 0, 0));
         return;
     }
-    
+
+    bool is_resizing = (upd->win->state == WINDOW_STATE_RESIZING);
+
+    if (is_resizing) {
+        pthread_spin_lock(&upd->win->resize.resize_lck);
+        
+        // A window that was resizing may have had its upd rect changed. Clamp it back
+        gfx_rect_t *r = &upd->rect;
+        wm_window_t *win = upd->win;
+        if (r->x > (unsigned)win->width || r->y > (unsigned)win->height) {
+            pthread_spin_unlock(&win->resize.resize_lck);
+            return;
+        }
+        if (r->x + r->width > (unsigned)win->width) r->width = win->width - r->x;
+        if (r->y + r->height > (unsigned)win->height) r->height = win->height - r->y;
+    }
+
     if (upd->state == WINDOW_STATE_OPENING) {
         sprite_t sp = {
             .width = upd->win->width,
@@ -76,4 +92,8 @@ void render_request(render_request_t *upd) {
     }
 
     window_release(upd->win);
+    
+    if (is_resizing) {
+        pthread_spin_unlock(&upd->win->resize.resize_lck);
+    }
 }

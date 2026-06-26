@@ -347,6 +347,13 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             ansi->get_cursor(&x, &y);
             y = i;
             ansi->move_cursor(x,y);
+        } else if (ch == HVP) {
+            int x = 0;
+            int y = 0;
+            if (argc) x = strtol(argv[0], NULL, 10) - 1;
+            if (argc > 1) y = strtol(argv[1], NULL, 10) - 1;
+
+            ansi->move_cursor(x,y);
         } else {
             fprintf(stderr, "ANSI: Unrecognized function '%c' argc=%d\n", ch, argc);
         }

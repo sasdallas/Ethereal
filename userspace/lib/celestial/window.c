@@ -585,9 +585,11 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
         win->buffer = NULL; // So that celestial_getFramebuffer returns a proper framebuffer from our buffer key
 
         // Update the window width + height
-        win->width = win->ctx->width;
-        win->height = win->ctx->height;
-
+        win->info->width = resize_event->new_width;
+        win->info->height = resize_event->new_height;
+        win->width = resize_event->new_width;
+        win->height = resize_event->new_height;    
+    
         // Now let's start updating decorations. First, using the decor context, update the real window height
         win->decor->ctx->width = resize_event->new_width;
         win->decor->ctx->height = resize_event->new_height;
@@ -598,9 +600,15 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
         // Move window graphics context
         win->ctx->buffer = &GFX_PIXEL_REAL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
         if (win->decor->ctx->backbuffer) win->ctx->backbuffer = &GFX_PIXEL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
-        win->ctx->width -= win->decor->borders.right_width + win->decor->borders.left_width;
-        win->ctx->height -= win->decor->borders.bottom_height + win->decor->borders.top_height;
+        win->ctx->width = resize_event->new_width - (win->decor->borders.right_width + win->decor->borders.left_width);
+        win->ctx->height = resize_event->new_height - (win->decor->borders.bottom_height + win->decor->borders.top_height);
         win->ctx->pitch = win->decor->ctx->pitch;
+
+        win->width = resize_event->new_width - (win->decor->borders.right_width + win->decor->borders.left_width);
+        win->height = resize_event->new_height - (win->decor->borders.bottom_height + win->decor->borders.top_height);
+
+        win->decor->render(win);
+        gfx_render(win->decor->ctx);
     } else {
         // Easy, just update some minor stuff
         // First, update the shared memory object key
@@ -632,6 +640,16 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
 
     // The resize event is complete
     close(old_shm_fd);
+
+    // Now acknowledge
+    celestial_req_ack_resize_t ack = {
+        .magic = CELESTIAL_MAGIC,
+        .type = CELESTIAL_REQ_ACK_RESIZE,
+        .size = sizeof(ack),
+        .wid = win->wid
+    };
+
+    celestial_sendRequest(&ack, sizeof(ack));
 } 
 
 /**
@@ -762,6 +780,118 @@ int celestial_setRootWindow(window_t *win) {
 
     // Wait for a response
     celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_ROOT_WINDOW);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Set resize bounds for window
+ * @param win The window to change the resize bounds
+ * @param min_width The minimum width of the window
+ * @param min_height The minimum height of the window
+ * @param max_width The maximum width of the window
+ * @param max_height The maximum height of the window
+ */
+int celestial_setResizeBounds(window_t *win, size_t min_width, size_t min_height, size_t max_width, size_t max_height) {
+    celestial_req_set_resize_params_t req = {
+        .type = CELESTIAL_REQ_SET_RESIZE_PARAMS,
+        .size = sizeof(celestial_req_set_resize_params_t),
+        .magic = CELESTIAL_MAGIC,
+        .wid = win->wid,
+        .min_width = min_width,
+        .min_height = min_height,
+        .max_width = max_width,
+        .max_height = max_height ,
+    };
+
+
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_RESIZE_PARAMS);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Set whether resizing is enabled or not
+ * @param win The window to set
+ * @param enabled Whether to enable resizing
+ * 
+ * When resizing a window, the decor lib will auto-detect any mouse attempts to resize and adjust accordingly.
+ * It will send CELESTIAL_EVENT_RESIZE events to allow you to resize.
+ */
+int celestial_setResizeEnabled(window_t *win, bool enabled) {
+    if ((win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) == 0) {
+        // Cannot resize these windows yet
+        return 0;
+    }
+
+    win->decor->resizable = enabled;
+    return 0;
+}
+
+/**
+ * @brief Start resizing
+ * @param win The window to start resizing
+ * @param dir The direction to resize in
+ */
+int celestial_startResizing(window_t *win, unsigned char direction) {
+    celestial_req_start_resize_t req = {
+        .type = CELESTIAL_REQ_START_RESIZE,
+        .size = sizeof(celestial_req_start_resize_t),
+        .magic = CELESTIAL_MAGIC,
+        .wid = win->wid,
+        .direction = direction
+    };
+
+    
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_START_RESIZE);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Stop resizing
+ * @param win The window to stop resizing
+ */
+int celestial_stopResizing(window_t *win) {
+    celestial_req_stop_resize_t req = {
+        .type = CELESTIAL_REQ_STOP_RESIZE,
+        .size = sizeof(celestial_req_stop_resize_t),
+        .magic = CELESTIAL_MAGIC,
+        .wid = win->wid
+    };
+
+
+    if (celestial_sendRequest(&req, req.size) < 0) {
+        return -1;
+    }   
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_STOP_RESIZE);
     if (!resp) return -1;
 
     // Handle error in resp

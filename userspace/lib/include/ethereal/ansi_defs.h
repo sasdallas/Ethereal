@@ -48,5 +48,6 @@
 #define SHOW                    'h'     // Show cursor
 #define REP                     'b'     // Repeat
 #define VPA                     'd'     // Vertical position absolute
+#define HVP                     'f'     // Horizontal and vertical position
 
 #endif

@@ -77,12 +77,12 @@ int gfx_setFontSize(gfx_font_t *font, size_t size);
  * @brief Render a character at specific coordinates
  * @param ctx The context to render with
  * @param font The font character to render
- * @param ch The character to render
+ * @param ch The character/unicode to render
  * @param x The X coordinate to render the char at
  * @param y The Y coordinate to render the char at
  * @param color The color to render them
  */
-int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, char ch, int _x, int _y, gfx_color_t color);
+int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, uint32_t ch, int _x, int _y, gfx_color_t color);
 
 /**
  * @brief Render a string of text at specific coordinates
