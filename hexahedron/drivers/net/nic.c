@@ -14,11 +14,13 @@
 
 #include <kernel/drivers/net/nic.h>
 #include <kernel/drivers/net/ethernet.h>
+#include <kernel/drivers/net/route.h>
 #include <kernel/drivers/nicdev.h>
 #include <kernel/fs/devfs.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/task/syscall.h>
 #include <kernel/fs/systemfs.h>
+#include <ethereal/network.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <structs/list.h>
@@ -101,6 +103,26 @@ static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param) {
             nic->ipv4_gateway = ntohl(info->nic_ipv4_gateway);
             nic->mtu = info->nic_mtu;
             return 0;
+    
+        case IO_NIC_ADD_ROUTE: {
+            net_route_t *rt = (net_route_t*)param;
+            nic_t *tgt = nic_get(rt->name);
+            if (!tgt) return -ENODEV;
+
+            route_ipv4_t route = {
+                .dev = tgt,
+                .dest = ntohl(rt->dest),
+                .gw = ntohl(rt->gateway),
+                .metric = rt->metric,
+                .netmask = ntohl(rt->mask),
+                .flags = rt->flags,
+                .next = NULL,
+            };
+
+            route_add(&route);
+            return 0;
+        };
+
     }
 
     if (nic->ops->ioctl) {
@@ -235,6 +257,23 @@ nic_t *nic_route(in_addr_t addr) {
     // Return the SECOND node in the list
     if (!nic_list->head->next) return NULL;
     return (nic_t*)nic_list->head->next->value;
+}
+
+/**
+ * @brief Find NIC device by name
+ * @param name The name of the NIC device
+ */
+nic_t *nic_get(char *name) {
+    foreach(nic_node, nic_list) {
+        nic_t *nic = (nic_t*)nic_node->value;
+        if (nic) {
+            if (!strncmp(name, nic->name, 128)) {
+                return nic;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 /**

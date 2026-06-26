@@ -119,8 +119,6 @@ static ssize_t icmp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     nic_t *nic = nic_route(dest);
     if (!nic) return -ENETUNREACH; // ??? right code to return?
 
-
-
     ssize_t sent_bytes = 0;
     for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         // Check it

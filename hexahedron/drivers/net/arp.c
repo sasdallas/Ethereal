@@ -183,7 +183,7 @@ int arp_search(nic_t *nic, in_addr_t address) {
     // Request
     
     // !!! hack to handle goobers asking for loopback
-    if (address == 0x7f000001 || address == 0x0) {
+    if (address == 0x7f000001) {
         uint8_t mac[] = { 0,0,0,0,0,0 };
         arp_add_entry(address, mac, ARP_TYPE_ETHERNET, nic);
         return 0;

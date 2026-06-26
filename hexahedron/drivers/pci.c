@@ -2,7 +2,6 @@
  * @file hexahedron/drivers/pci.c
  * @brief PCI driver
  * 
- * @todo Support MSI and MSI-X
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.

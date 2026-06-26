@@ -15,6 +15,7 @@
 #include <kernel/drivers/net/ethernet.h>
 #include <kernel/drivers/net/arp.h>
 #include <kernel/drivers/net/socket.h>
+#include <kernel/drivers/net/route.h>
 #include <kernel/init.h>
 #include <kernel/mm/alloc.h>
 #include <structs/hashmap.h>
@@ -143,26 +144,34 @@ int ipv4_sendPacket(nic_t *nic, ipv4_packet_t *packet) {
 ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, size_t size) {
     if (!size) return 0;
     
-    // First, resolve the IP address
-
+    // First, resolve the MAC address
     uint8_t hwmac[6];
 
     if (dest != IPV4_BROADCAST_IP) {
-        arp_table_entry_t *ent = NULL;
-        in_addr_t tgt = dest;
-
-        // TODO: idk if this check is correct
-        if (nic->ipv4_gateway && (!nic->ipv4_subnet || ((nic->ipv4_subnet & dest) != (nic->ipv4_address & nic->ipv4_subnet)))) {
-            ent = arp_get_entry(nic->ipv4_gateway);
-            tgt = nic->ipv4_gateway;
-            LOG(DEBUG, "Using gateway IP address %x\n", tgt);
-        } else {
-            ent = arp_get_entry(dest);
+        // Get a routing table entry for it
+        route_ipv4_t *ip = route_lookup(dest);
+        if (ip == NULL) {
+            LOG(ERR, "Unreachable destination: 0x%x\n", dest);
+            return -ENETUNREACH;
         }
 
-        if (!ent) {
-            if (arp_search(nic, tgt)) {
-                LOG(ERR, "Send to IP %x failed (destination could not be located)\n", dest);
+        // Check to see if we need to route to it through this big check
+        nic = ip->dev;
+        
+        // Routes which specifically provide a gateway
+        in_addr_t tgt = ip->gw ? ip->gw : dest;
+
+        // Apparently, local subnet addrs like 192.168.1.255 exist
+        if ((dest & (~ip->netmask)) == (~ip->netmask) && ip->netmask) {
+            memset(hwmac, 0xFF, 6);
+            goto _begin_send;
+        }
+
+        // Get to MAC address
+        arp_table_entry_t *ent = arp_get_entry(tgt);
+        if (ent == NULL) {
+            if (arp_search(nic, tgt) != 0) {
+                LOG(ERR, "Send to IP %x failed (destination could not be located)\n", tgt);
                 return -ENETUNREACH;
             }
 
@@ -172,9 +181,11 @@ ssize_t ipv4_send(nic_t *nic, in_addr_t dest, uint8_t protocol, void *frame, siz
 
         memcpy(hwmac, ent->hwmac, 6);
     } else {
-        memset(hwmac, 0xff, 6);
+        // use passed nic
+        memset(hwmac, 0xFF, 6);
     }
 
+_begin_send:
     assert(nic->mtu > sizeof(ipv4_packet_t));
     size_t max_per_packet = (nic->mtu - sizeof(ipv4_packet_t)) & ~7;
 

@@ -12,6 +12,7 @@
  */
 
 #include <kernel/drivers/net/ethernet.h>
+#include <kernel/drivers/net/route.h>
 #include <kernel/init.h>
 #include <arpa/inet.h>
 
@@ -46,7 +47,19 @@ static int loopback_install() {
     nic->ipv4_subnet =  0x000000FF; // 255.0.0.0
     nic->mtu = 1500;
     
+    // Add a route for localhost
+    route_ipv4_t loopback_route = {
+        .dev = nic,
+        .dest = 0x7F000001,
+        .gw = 0x00000000,
+        .netmask = 0xFF000000,
+        .metric = 10000,
+        .flags = RT_FLAG_UP
+    };
+
+    route_add(&loopback_route);
+
     return 0;
 }
 
-NET_INIT_ROUTINE(loopback, INIT_FLAG_DEFAULT, loopback_install);
+NET_INIT_ROUTINE(loopback, INIT_FLAG_DEFAULT, loopback_install, route);
