@@ -171,8 +171,8 @@ __unlock_thread:
     movq %rdi, %rcx 
     add $0x74, %rcx
     movb $0, %al
-    lock xchgb %al, (%rcx)
-
+    lock xchgb %al,(%rcx)
+ 
 .no_need:
     ret
 
