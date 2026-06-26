@@ -108,7 +108,16 @@ int initrd_unpack(uint8_t *buffer, size_t size) {
 
             // TODO update dir attributes
         } else if (h->type[0] == USTAR_HARD_LINK) {
-            
+            // unpack "hardlink"
+            char linkname_fix[256];
+            strncpy(&linkname_fix[1], h->linkname, 100);
+            linkname_fix[0] = '/';
+
+            int r = vfs2_symlink(linkname_fix, full_path, NULL);
+            if (r) {
+                LOG(ERR, "Failed to create symlink %s -> %s (error code %d)\n", full_path, h->linkname, r);
+                goto _next_entry;
+            }
         } else if (h->type[0] == USTAR_SYMLINK) {
             // unpack symlink
             int r = vfs2_symlink(h->linkname, full_path, NULL);
