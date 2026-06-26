@@ -133,7 +133,11 @@ int dhcp_request(int sock, uint8_t *mac, in_addr_t req_ip, in_addr_t server_ip) 
 
     DHCP_LOG("sending DHCPREQUEST to server %s ", inet_ntoa((struct in_addr){ .s_addr = server_ip }));
     DHCP_LOG("for IP %s\n", inet_ntoa((struct in_addr){ .s_addr = req_ip }));
-    return dhcp_send(sock, server_ip, &packet);
+    
+    // !!! This used to be able to dhcp_send to the server_ip, but due to the
+    // !!! routing table restriction (ie we have nothing) we have to send to INADDR_BROADCAST.
+    // !!! Can be corrected once raw sockets are implemented
+    return dhcp_send(sock, INADDR_BROADCAST, &packet);
 }
 
 /**
@@ -415,6 +419,39 @@ int main(int argc, char *argv[]) {
     
     if (ioctl(nic, IO_NIC_SET_INFO, &info) < 0) {
         perror("IO_NIC_SET_INFO");
+        goto _cleanup;
+    }
+
+    // Add the two routes
+    net_route_t r = {
+        .dest = 0,
+        .mask = 0,
+        .gateway = *opt.router_start,
+        .flags = RT_FLAG_UP,
+        .metric = 1002,
+    };
+
+    strncpy(r.name, info.nic_name, sizeof(r.name));
+
+    if (ioctl(nic, IO_NIC_ADD_ROUTE, &r) < 0) {
+        perror("IO_NIC_ADD_ROUTE");
+        goto _cleanup;
+    }
+
+
+    // Now add another route for local
+    net_route_t local = {
+        .dest = pkt.yiaddr & (opt.subnet_mask),
+        .gateway = 0,
+        .mask = opt.subnet_mask,
+        .flags = RT_FLAG_UP,
+        .metric = 1002,
+    };
+
+    strncpy(local.name, info.nic_name, sizeof(local.name));
+
+    if (ioctl(nic, IO_NIC_ADD_ROUTE, &local) < 0) {
+        perror("IO_NIC_ADD_ROUTE");
         goto _cleanup;
     }
 

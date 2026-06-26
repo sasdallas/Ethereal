@@ -75,6 +75,11 @@ rb_tree_node_t *rbtree_search(rb_tree_t *tree, void *key, int (*search_fn)(void 
  */
 void rbtree_delete(rb_tree_t *tree, rb_tree_node_t *node);
 
+/**
+ * @brief Get leftmost node
+ * @param tree The tree
+ */
+rb_tree_node_t *rbtree_leftmost(rb_tree_t *tree);
 
 
 #endif

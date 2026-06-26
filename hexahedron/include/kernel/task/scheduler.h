@@ -56,29 +56,14 @@ void scheduler_initCPU();
 int scheduler_insertThread(thread_t *thread);
 
 /**
- * @brief Remove a thread from the queue
- * @param thread The tread to remove
- * @returns 0 on success
+ * @brief Yield a thread
  */
-int scheduler_removeThread(thread_t *thread);
-
-/**
- * @brief Reschedule the current thread
- * 
- * Whenever a thread hits 0 on its timeslice, it is automatically popped and
- * returned to the back of the list.
- */
-void scheduler_reschedule();
+void scheduler_yield(thread_t *old);
 
 /**
  * @brief Get the next thread to switch to
  * @returns A pointer to the next thread
  */
 thread_t *scheduler_get();
-
-/**
- * @brief Scheduler tick method, called every update
- */
-int scheduler_update(uint64_t ticks);
 
 #endif

@@ -376,19 +376,26 @@ void rbtree_delete(rb_tree_t *tree, rb_tree_node_t *n) {
     u->parent = n->parent;
     u->color = n->color;
     u->left = n->left;
-    u->right = n->right;
-    n->left->parent = u;
-    if (u_parent != n) n->right->parent = u;
 
-    // Make the successor the parent effectively
-    if (parent == NULL) tree->root = u;
-    else if (parent->left == n) parent->left = u;
-    else parent->right = u;
-
-    // Move the node into the successor (or its parent)'s children
     if (u_parent == n) {
-        u->right = n; n->parent = u;
+        n->left->parent = u;
+        if (u_right) u_right->parent = u;
+
+        if (parent == NULL) tree->root = u;
+        else if (parent->left == n) parent->left = u;
+        else parent->right = u;
+
+        u->right = u_right;
+        n->parent = u;
     } else {
+        u->right = n->right;
+        n->left->parent = u;
+        n->right->parent = u;
+        
+        if (parent == NULL) tree->root = u;
+        else if (parent->left == n) parent->left = u;
+        else parent->right = u;
+
         u_parent->left = n; n->parent = u_parent;
     }
 
@@ -401,4 +408,17 @@ void rbtree_delete(rb_tree_t *tree, rb_tree_node_t *n) {
 
     // Now, recurse.
     return rbtree_delete(tree, n);
+}
+
+/**
+ * @brief Get leftmost node
+ * @param tree The tree
+ */
+rb_tree_node_t *rbtree_leftmost(rb_tree_t *tree) {
+    rb_tree_node_t *n = tree->root;
+    while (n && n->left) {
+        n = n->left;
+    }
+
+    return n;
 }

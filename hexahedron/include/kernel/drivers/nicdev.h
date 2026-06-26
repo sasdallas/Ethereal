@@ -17,20 +17,6 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <netinet/in.h>
-
-/**** TYPES ****/
-
-typedef struct nic_info {
-    char nic_name[256];                 // NIC name (hehe, "nickname")
-    uint8_t nic_mac[6];                 // NIC MAC address
-    size_t nic_mtu;                     // NIC MTU
-    in_addr_t nic_ipv4_addr;            // NIC IPv4 address
-    in_addr_t nic_ipv4_subnet;          // NIC IPv4 subnet
-    in_addr_t nic_ipv4_gateway;         // NIC IPv4 gateway
-} nic_info_t;
-
-/**** DEFINITIONS ****/
-#define IO_NIC_GET_INFO     0x4001      // Get NIC information
-#define IO_NIC_SET_INFO     0x4002      // Set NIC information
+#include <ethereal/network.h>
 
 #endif  

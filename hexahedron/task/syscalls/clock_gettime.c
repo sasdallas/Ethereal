@@ -21,7 +21,7 @@ long sys_clock_gettime(int clock, time_t *secs, long *nanos) {
         case CLOCK_MONOTONIC_RAW: {
             struct timeval tv;
             clock_gettimeofday(&tv, NULL);    
-        *secs = tv.tv_sec;
+            *secs = tv.tv_sec;
             *nanos = tv.tv_usec * 1000;
             break;
         };

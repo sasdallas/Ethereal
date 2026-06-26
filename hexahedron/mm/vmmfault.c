@@ -32,6 +32,7 @@ int vmm_fault(vmm_fault_information_t *info) {
     if (info->address < MMU_USERSPACE_START || info->address >= MMU_USERSPACE_END) return VMM_FAULT_UNRESOLVED;
 
     info->address = PAGE_ALIGN_DOWN(info->address);
+    if (info->from == VMM_FAULT_FROM_KERNEL && info->address < PAGE_SIZE) return VMM_FAULT_UNRESOLVED;
 
     // Okay, the address is within the userspace. Get the space..
     vmm_space_t *sp = vmm_getSpaceForAddress((void*)info->address);

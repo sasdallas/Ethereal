@@ -29,14 +29,6 @@ int scheduler_next_cpu_to_load_balance = 0;
 bool scheduler_load_balancing_enabled = false;
 
 /**
- * @brief Scheduler tick method, called every update
- * @returns 1 to preempt
- */
-int scheduler_update(uint64_t ticks) {
-    return 1;
-}
-
-/**
  * @brief Initialize the scheduler
  */
 void scheduler_init() {
@@ -69,24 +61,6 @@ int scheduler_insertThread(thread_t *thread) {
     spinlock_release(current_cpu->sched.lock);
 
     return 0;
-}
-
-/**
- * @brief Remove a thread from the queue
- * @param thread The tread to remove
- * @returns 0 on success
- */
-int scheduler_removeThread(thread_t *thread) {
-    return 1;
-}
-
-/**
- * @brief Reschedule the current thread
- * 
- * Whenever a thread hits 0 on its timeslice, it is automatically popped and
- * returned to the back of the list.
- */
-void scheduler_reschedule() {
 }
 
 /**

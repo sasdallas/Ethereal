@@ -122,5 +122,10 @@ int nic_destroy(nic_t *nic);
  */
 nic_t *nic_route(in_addr_t addr);
 
+/**
+ * @brief Find NIC device by name
+ * @param name The name of the NIC device
+ */
+nic_t *nic_get(char *name);
 
 #endif
