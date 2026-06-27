@@ -54,7 +54,32 @@ ssize_t ringbuffer_write(ringbuffer_t *ringbuffer, char *buffer, size_t count) {
     }
 
     memcpy(ringbuffer->buffer, buffer + l1, count - l1);
-    ringbuffer->tail = (ringbuffer->tail + count) % ringbuffer->buffer_size;
+    ringbuffer->tail += count;
+    return count;
+}
+
+/**
+ * @brief Read from ringbuffer (peaking)
+ * @param ringbuffer The ringbuffer to read from
+ * @param buffer The buffer to read into
+ * @param count The count to read in
+ */
+ssize_t ringbuffer_peek(ringbuffer_t *ringbuffer, char *buffer, size_t count) {
+    size_t avail = ringbuffer->tail - ringbuffer->head;
+    if (!avail) return 0;
+    if (count > avail) count = avail;
+
+    size_t off = ringbuffer->head % ringbuffer->buffer_size;
+    size_t l1 = ringbuffer->buffer_size - off;
+    if (l1 > count) l1 = count;
+
+    memcpy(buffer, ringbuffer->buffer + off, l1);
+
+    if (l1 == count) {
+        return count;
+    }
+
+    memcpy(buffer + l1, ringbuffer->buffer, count - l1);
     return count;
 }
 
@@ -69,10 +94,10 @@ ssize_t ringbuffer_read(ringbuffer_t *ringbuffer, char *buffer, size_t count) {
     if (!avail) return 0;
     if (count > avail) count = avail;
 
-    size_t l1 = (ringbuffer->buffer_size - 1) - ringbuffer->head + 1;
+    size_t off = ringbuffer->head % ringbuffer->buffer_size;
+    size_t l1 = ringbuffer->buffer_size - off;
     if (l1 > count) l1 = count;
 
-    size_t off = (ringbuffer->head % ringbuffer->buffer_size);
     memcpy(buffer, ringbuffer->buffer + off, l1);
 
     if (l1 == count) {

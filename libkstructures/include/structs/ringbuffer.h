@@ -55,6 +55,14 @@ ssize_t ringbuffer_write(ringbuffer_t *ringbuffer, char *buffer, size_t count);
 ssize_t ringbuffer_read(ringbuffer_t *ringbuffer, char *buffer, size_t count);
 
 /**
+ * @brief Read from ringbuffer (peaking)
+ * @param ringbuffer The ringbuffer to read from
+ * @param buffer The buffer to read into
+ * @param count The count to read in
+ */
+ssize_t ringbuffer_peek(ringbuffer_t *ringbuffer, char *buffer, size_t count);
+
+/**
  * @brief Returns the amount of data remaining to read
  * @param ringbuffer The ringbuffer
  */

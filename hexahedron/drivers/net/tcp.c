@@ -7,6 +7,7 @@
  * 
  * @ref https://datatracker.ietf.org/doc/html/rfc793
  * 
+ * @todo This is very finnicky in error cases (RSTs in particular).
  * @todo Implement window scaling for us, we support it for remote hosts but for now we are stuck with 65535
  * @todo Segment retransmission
  * 
@@ -46,6 +47,7 @@ typedef struct tcp_tcb {
     refcount_t ref;         // TCB_HOLD, TCB_RELEASE
     mutex_t lck;            // Lock for managing things like state, port, connection, etc.
     bool awaiting_flush;    // Awaiting flush
+    bool abort;             // Abort TCB
 
     char *transmit_buffer;  // Transmission buffer
 
@@ -86,6 +88,7 @@ typedef struct tcp_tcb {
     queue_t *pending_connections;
     
     // TODO: replace this with a hashmap
+    spinlock_t sub_lock; // locked only for parents during list modifications, as those are the only ones
     struct tcp_tcb *sub_link; // either next on normal TCBs or the first subchild on listener TCBs
     struct tcp_tcb *parent; // parented listener connection
 } tcp_tcb_t;
@@ -103,6 +106,7 @@ static void tcp_freeTCB(tcp_tcb_t *tcb);
 #define TCB_LOCK_RCV(tcb) mutex_acquire(&(tcb)->recv_window.rcvlck)
 #define TCB_UNLOCK_RCV(tcb) mutex_release(&(tcb)->recv_window.rcvlck)
 
+#define TCP_PKT_INSIDE_WINDOW(pkt, tcb) ((int32_t)(ntohl((pkt)->seq) - (tcb)->recv_window.rcvnxt) < (int32_t)(tcb)->recv_window.rcvwnd && (int32_t)(ntohl((pkt)->seq) - (tcb)->recv_window.rcvnxt) >= 0)
 
 /* TCP socket hashmap */
 hashmap_t *tcp_port_map = NULL;
@@ -144,6 +148,7 @@ typedef struct tcp_worker {
     queue_rb_t request_queue;
     volatile size_t requests;
     mutex_t lock;
+    event_t wakeup;
 } tcp_worker_t;
 
 tcp_worker_t tcp_workers[TCP_THREADS] = { 0 };
@@ -159,15 +164,16 @@ static poll_events_t tcp_poll_events(sock_t *sock);
 static int tcp_close(sock_t *sock);
 static int tcp_listen(sock_t *sock, int backlog);
 static int tcp_accept(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
-
+static int tcp_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen);
+static int tcp_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen);
 
 sock_ops_t tcp_socket_ops = {
     .accept = tcp_accept,
     .bind = tcp_bind,
     .close = tcp_close,
     .connect = tcp_connect,
-    .getpeername = NULL,
-    .getsockname = NULL,
+    .getpeername = tcp_getpeername,
+    .getsockname = tcp_getsockname,
     .getsockopt = NULL,
     .setsockopt = NULL,
     .listen = tcp_listen,
@@ -182,8 +188,11 @@ tcp_tcb_t *tcp_findTCB(in_port_t port, in_addr_t remote_host, in_port_t remote_p
 void tcp_initTCB(tcp_tcb_t *tcb);
 
 /* Log method */
+#if 0
 #define LOG(status, ...) dprintf_module(status, "NET:TCP", __VA_ARGS__)
-
+#else
+#define LOG(...)
+#endif
 
 /**
  * @brief TCP checksum
@@ -249,7 +258,7 @@ static int tcp_sendPacket(tcp_tcb_t *tcb, nic_t *nic, in_addr_t target, tcp_pack
     pkt->checksum = 0;
     
     tcp_checksum_psuedo_t psuedo = {
-        .src = nic->ipv4_address,
+        .src = htonl(nic->ipv4_address),
         .dst = htonl(target),
         .length = htons(size),
         .protocol = IPV4_PROTOCOL_TCP,
@@ -257,7 +266,7 @@ static int tcp_sendPacket(tcp_tcb_t *tcb, nic_t *nic, in_addr_t target, tcp_pack
     };
 
     pkt->checksum = tcp_checksum(&psuedo, pkt);
-    int err = ipv4_send(nic, htonl(target), IPV4_PROTOCOL_TCP, pkt, size);
+    int err = ipv4_send(nic, target, IPV4_PROTOCOL_TCP, pkt, size);
     return (err < 0) ? err : 0;
 }
 
@@ -300,6 +309,32 @@ static int tcp_reset(tcp_tcb_t *tcb, in_addr_t ip, tcp_packet_t *offender) {
     return tcp_sendPacket(tcb, nic, ip, &pkt, sizeof(tcp_packet_t));
 }
 
+/**
+ * @brief Acknowledge RST
+ */
+static int tcp_acknowledgeReset(tcp_tcb_t *tcb, tcp_packet_t *pkt) {
+    // RFC 791:
+    // If the connection is in a synchronized state (ESTABLISHED,
+    // FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK, TIME-WAIT),
+    // any unacceptable segment (out of window sequence number or
+    // unacceptible acknowledgment number) must elicit only an empty
+    // acknowledgment segment containing the current send-sequence number
+    // and an acknowledgment indicating the next sequence number expected
+    // to be received, and the connection remains in the same state.
+
+    if (tcb->state == TCP_STATE_SYN_SENT || TCP_PKT_INSIDE_WINDOW(pkt, tcb)) {
+        LOG(WARN, "Processing TCP RST packet.\n");
+
+        // Poll error and inform the user that the TCB is fucked
+        tcb->abort = true;
+        poll_signal(&tcb->wndev, POLLERR);
+        return 0;
+    }
+
+    // Continue processing packets
+    return 1;
+}
+
 
 
 /**
@@ -315,7 +350,6 @@ int tcp_transmit(tcp_tcb_t *tcb) {
     if (!size) return 0;
 
     tcp_packet_t *pkt = (tcp_packet_t*)tcb->transmit_buffer;
-    LOG(DEBUG, "transmitting segment length=%d\n", size);
     tcp_initPacket(pkt, tcb, size, TCP_PSH | TCP_ACK);
 
     // TODO RETRANSMISSION!!!!!!!!!!!!!!!!!!!!!!
@@ -333,10 +367,12 @@ int tcp_transmit(tcp_tcb_t *tcb) {
  * @brief Parse packet options
  */
 void tcp_parsePacketOptions(tcp_packet_t *pkt, uint8_t *scale, uint16_t *mss) {
+    // Configure defaults
+    *scale = 0;
+    *mss = 536; // IPv4 MSS
+
     if (pkt->data_offset == sizeof(tcp_packet_t)/4) {
-        // No options to parse, use defaults
-        *scale = 0;
-        *mss = 536; // IPv4 MSS
+        // nothing to parse
         return;
     }
 
@@ -376,19 +412,15 @@ void tcp_parsePacketOptions(tcp_packet_t *pkt, uint8_t *scale, uint16_t *mss) {
 /**
  * @brief Find the least loaded worker for a request, returning locked
  */
-static tcp_worker_t *tcp_findWorker(unsigned char request_type) {
-    // TODO: Check how good this actually is
-    tcp_worker_t *best = NULL;
-    for (int i = 0; i < TCP_THREADS; i++) {
-        tcp_worker_t *worker = &tcp_workers[i];
-        
-        // Find the least loaded worker
-        if (!best || (worker->requests < best->requests)) {
-            best = worker;
-        }
-    }
-    
+static tcp_worker_t *tcp_findWorker(tcp_tcb_t *tcb, unsigned char request_type) {
     // TODO: could be improved further
+    tcp_worker_t *best;
+    if (tcb) {
+        best = &tcp_workers[tcb->port % TCP_THREADS];
+    } else {
+        best = &tcp_workers[0];
+    }
+
     if (best) mutex_acquire(&best->lock);
     return best;
 }
@@ -398,7 +430,6 @@ static tcp_worker_t *tcp_findWorker(unsigned char request_type) {
  */
 static void tcp_requestWorker(tcp_worker_t *worker, tcp_tcb_t *tcb, unsigned char request_type, void *request, size_t request_size) {
     if (tcb) TCB_HOLD(tcb);
-    dprintf(DEBUG, "TCB Worker Request %x\n", request_type);
     tcp_worker_request_t *req = kmalloc(sizeof(tcp_worker_request_t) + request_size);
     req->request_type = request_type;
     req->tcb = tcb;
@@ -406,7 +437,7 @@ static void tcp_requestWorker(tcp_worker_t *worker, tcp_tcb_t *tcb, unsigned cha
 
     queue_rb_push(&worker->request_queue, req);
     worker->requests++;
-    sleep_wakeup(worker->thr);
+    EVENT_SIGNAL(&worker->wakeup);
 }
 
 /**
@@ -426,10 +457,12 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
     if (!request->tcb) {
         // A TCB was not specified, therefore nothing is bound to the port.
         // Send a RST back
+        LOG(INFO, "Refusing connection to port %d (nothing bound)\n", ntohs(tcp_pkt->dst_port));
         tcp_reset(NULL, ntohl(ip_pkt->src_addr), tcp_pkt);
         return;
     }
 
+    LOG(INFO, "TCP worker processing packet (in state %d)\n", request->tcb->state);
 
     tcp_tcb_t *tcb = request->tcb;
     TCB_LOCK(tcb);
@@ -462,8 +495,10 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
             new->parent = tcb;
 
             // Do not notify the parent-TCB just yet but put it in the list so we can get the final ACK
+            spinlock_acquire(&tcb->sub_lock);
             new->sub_link = tcb->sub_link;
             tcb->sub_link = new;
+            spinlock_release(&tcb->sub_lock);
 
             LOG(DEBUG, "Got a new connection on from port %d\n", ntohs(tcp_pkt->src_port));
 
@@ -487,7 +522,7 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
             new->recv_window.rcvnxt = new->send_window.sndwl1 + 1;
             new->recv_window.rcvwnd = TCP_DFL_WINDOW_SIZE;
 
-            new->transmit_buffer = kmalloc(new->send_window.sndmss);
+            new->transmit_buffer = kmalloc(new->send_window.sndmss + sizeof(tcp_packet_t));
 
             // TODO: SEND THE MSS
             tcp_packet_t pkt;
@@ -573,15 +608,19 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
             break;
 
         case TCP_STATE_ESTABLISHED: {
-            LOG(DEBUG, "ESTABLISHED socket flags %x.\n", tcp_pkt->flags);
+            if (tcp_pkt->flags & TCP_RST) {
+                // RST receieved
+                assert(tcp_acknowledgeReset(tcb, tcp_pkt) == 0);
+                break;
+            }
+
             if (tcp_pkt->flags & TCP_PSH || tcp_pkt->flags & TCP_ACK) {
                 // Calculate payload size
                 size_t payload_len = ntohs(ip_pkt->length) - sizeof(ipv4_packet_t) - (tcp_pkt->data_offset * 4);
                 
                 if (payload_len > 0) {
                     char *payload = (char*)tcp_pkt + (tcp_pkt->data_offset * 4);
-                    
-                    LOG(DEBUG, "Received %d bytes\n", payload_len);
+
                     TCB_LOCK_RCV(tcb);
                     ssize_t written = ringbuffer_write(tcb->recv_window.buffer, payload, payload_len);
                     tcb->recv_window.rcvwnd -= written;
@@ -622,6 +661,10 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
         case TCP_STATE_FIN_WAIT_1: {
             // FIN-WAIT-1 state, we are looking for an ACK.
             // TODO: TIMEOUTS AND SUPPORTING FIN/FIN-ACK
+            if (tcp_pkt->flags != TCP_ACK) {
+                LOG(WARN, "Got packet with flags 0x%x\n", tcp_pkt->flags);
+                break;
+            }
             assert(tcp_pkt->flags == TCP_ACK); // note that this is actually wrong and it could be in any order. 
             LOG(DEBUG, "Got ACK, going to FIN_WAIT_2\n");
             tcb->state = TCP_STATE_FIN_WAIT_2;
@@ -709,16 +752,22 @@ void tcp_worker(void *arg) {
     tcp_worker_t *worker = (tcp_worker_t*)arg;
     for (;;) {
         mutex_acquire(&worker->lock);
+
         if (queue_rb_empty(&worker->request_queue)) {
+            event_listener_t l;
+            EVENT_INIT_LISTENER(&l);
+            EVENT_ATTACH(&l, &worker->wakeup);
             mutex_release(&worker->lock);
-            sleep_prepare();
-            sleep_enter();
+            EVENT_WAIT(&l, -1);
+            EVENT_DETACH(&l);
+            EVENT_DESTROY_LISTENER(&l);
             continue;
         }
 
         tcp_worker_request_t *request;
         assert(queue_rb_pop(&worker->request_queue, (void**)&request) == 0);
         worker->requests--;
+        mutex_release(&worker->lock); // avoid holding this lock like the plague, thanks to loopback device
 
         if (request->request_type == TCP_WORKER_CLOSE) {
             assert(0 && "TODO: TCP_WORKER_CLOSE");
@@ -731,8 +780,6 @@ void tcp_worker(void *arg) {
         }
 
         kfree(request);
-
-        mutex_release(&worker->lock);
     }
 }
 
@@ -743,6 +790,7 @@ void tcp_initWorker(int num) {
     tcp_worker_t *worker = &tcp_workers[num];
     MUTEX_INIT(&worker->lock);
     QUEUE_RB_INIT(&worker->request_queue, QUEUE_DEFAULT_SIZE);
+    EVENT_INIT(&worker->wakeup);
     worker->requests = 0;
     if (tcp_process) {
         worker->thr = process_createKernelThread(tcp_process, 0, tcp_worker, worker);
@@ -765,7 +813,7 @@ int tcp_handle(nic_t *nic, void *packet, size_t size) {
     }
 
     // find a worker thread to process this
-    tcp_worker_t *worker = tcp_findWorker(TCP_WORKER_PROCESS_PACKET);
+    tcp_worker_t *worker = tcp_findWorker(tcb, TCP_WORKER_PROCESS_PACKET);
     assert(worker); // TODO
     tcp_requestWorker(worker, tcb, TCP_WORKER_PROCESS_PACKET, packet, size);
     tcp_finishWorker(worker);
@@ -791,7 +839,7 @@ void tcp_initTCB(tcp_tcb_t *tcb) {
     
     // initialize recv_window
     tcb->recv_window.buffer = ringbuffer_create(TCP_DFL_WINDOW_SIZE);
-    tcb->recv_window.rcvwnd = TCP_DFL_WINDOW_SHIFT;
+    tcb->recv_window.rcvwnd = TCP_DFL_WINDOW_SIZE;
     MUTEX_INIT(&tcb->recv_window.rcvlck);
 
     // initialize send window
@@ -815,25 +863,36 @@ tcp_tcb_t *tcp_findTCB(in_port_t port, in_addr_t remote_host, in_port_t remote_p
     tcp_tcb_t *tcb = TCP_TCB(hashmap_get(tcp_port_map, (void*)(uintptr_t)port));
     mutex_release(&tcp_port_map_mutex);
 
-    // Ok we have a TCB but does it have a subconnection?
+    if (tcb == NULL) return NULL;
 
-    if (tcb && tcb->sub_link) {
+    // Ok we have a TCB but does it have a subconnection?
+    if (tcb->sub_link) {
         // Yes, let's find it
-        TCB_LOCK(tcb);
+        spinlock_acquire(&tcb->sub_lock);
         
         tcp_tcb_t *iter = tcb->sub_link;
         while (iter) {
             if (iter->connect_info.target_addr == remote_host && iter->connect_info.target_port == remote_port) {
                 assert(iter->port == port);
-                TCB_HOLD(iter);
-                TCB_UNLOCK(tcb);
+                TCB_HOLD(iter);    
+                spinlock_release(&tcb->sub_lock);
                 return iter;
             }
 
             iter = iter->sub_link;
         }
 
-        TCB_UNLOCK(tcb);
+        spinlock_release(&tcb->sub_lock);
+        
+        // No one was found send the listener back
+        TCB_HOLD(tcb);
+        return tcb;
+    }
+
+    if (tcb->state != TCP_STATE_LISTEN && tcb->state != TCP_STATE_CLOSED && tcb->connect_info.target_addr != 0) {
+        if (tcb->connect_info.target_addr != remote_host || tcb->connect_info.target_port != remote_port) {
+            return NULL;
+        }
     }
 
     if (tcb) TCB_HOLD(tcb);
@@ -1010,16 +1069,26 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     tcp_tcb_t *tcb = TCP_TCB(sock->driver);
     TCB_HOLD(tcb);
 
+    if (tcb->abort) {
+        // TODO: Not all states set this
+        TCB_RELEASE(tcb);
+        return -ECONNRESET;
+    }
+
     if (tcb->state != TCP_STATE_ESTABLISHED) {
         TCB_RELEASE(tcb);
-
-        // TODO: ECONNRESET
         return -ENOTCONN;
     }
 
     // If the ringbuffer is full init a listener
     TCB_LOCK_SND(tcb);
     while (ringbuffer_remaining_write(tcb->send_window.buffer) == 0) {
+        if (sock_nonblocking(sock)) {
+            TCB_UNLOCK_SND(tcb);
+            TCB_RELEASE(tcb);
+            return -EAGAIN;
+        }
+
         LOG(DEBUG, "Waiting for TCB to be ready to send...\n");
         poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, 1);
         poll_add(waiter, &tcb->wndev, POLLOUT | POLLERR);
@@ -1047,12 +1116,13 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         ringbuffer_write(tcb->send_window.buffer, (char*)iov->iov_base, to_send);
         remaining -= to_send;
         written += to_send;
+        LOG(DEBUG, "Wrote %d bytes to TCB need_flush=%d\n", written, tcb->awaiting_flush);
     }
 
-    LOG(DEBUG, "Wrote %d bytes to TCB need_flush=%d\n", written, tcb->awaiting_flush);
+
     // If needed send a request
     if (!tcb->awaiting_flush) {
-        tcp_worker_t *worker = tcp_findWorker(TCP_WORKER_FLUSH_SEND);
+        tcp_worker_t *worker = tcp_findWorker(tcb, TCP_WORKER_FLUSH_SEND);
         assert(worker);
         tcp_requestWorker(worker, tcb, TCP_WORKER_FLUSH_SEND, NULL, 0);
         tcp_finishWorker(worker);
@@ -1084,9 +1154,14 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     
-    // If the ringbuffer is empty init a listener
     TCB_LOCK_RCV(tcb);
     while (ringbuffer_remaining_read(tcb->recv_window.buffer) == 0) {
+        if (sock_nonblocking(sock)) {
+            TCB_UNLOCK_RCV(tcb);
+            TCB_RELEASE(tcb);
+            return -EAGAIN;
+        }
+
         poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, 1);
         poll_add(waiter, &tcb->wndev, POLLIN | POLLERR);
         TCB_UNLOCK_RCV(tcb);
@@ -1106,16 +1181,28 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     // RCV is locked and ready to go
     ssize_t read = 0;
     size_t remaining = ringbuffer_remaining_read(tcb->recv_window.buffer);
+    assert(((flags & MSG_PEEK) == 0) || msg->msg_iovlen == 1);
     for (unsigned i = 0; i < msg->msg_iovlen; i++) {
         if (!remaining) break;
         struct iovec *iov = &msg->msg_iov[i];
         ssize_t to_read = min(iov->iov_len, remaining);
-        to_read = ringbuffer_read(tcb->recv_window.buffer, (char*)iov->iov_base, to_read);
-        tcb->recv_window.rcvwnd += to_read;
+
+        if (flags & MSG_PEEK) {
+            // !!! TO BE FIXED: Bugged if there are multiple iovecs
+            to_read = ringbuffer_peek(tcb->recv_window.buffer, (char*)iov->iov_base, to_read);
+        } else {
+            to_read = ringbuffer_read(tcb->recv_window.buffer, (char*)iov->iov_base, to_read);
+            tcb->recv_window.rcvwnd += to_read;
+
+            LOG(DEBUG, "Read %d bytes.\n", to_read);
+        }
+
         remaining -= to_read;
         read += to_read;
     }
 
+
+    tcp_acknowledge(tcb); // Re-advertise new RCVWND
 
     TCB_UNLOCK_RCV(tcb);
     TCB_RELEASE(tcb);
@@ -1129,6 +1216,8 @@ static poll_events_t tcp_poll_events(sock_t *sock) {
     tcp_tcb_t *tcb = TCP_TCB(sock->driver);;
     poll_events_t events = 0;
 
+    if (tcb->abort) return POLLERR;
+
     switch (tcb->state) {
         case TCP_STATE_LISTEN:
             events |= (queue_empty(tcb->pending_connections) ? 0 : POLLIN);
@@ -1140,7 +1229,7 @@ static poll_events_t tcp_poll_events(sock_t *sock) {
             // Check if data available
             events |= (ringbuffer_remaining_write(tcb->send_window.buffer) ? POLLOUT : 0) | (ringbuffer_remaining_read(tcb->recv_window.buffer) ? POLLIN : 0);
             break;
-        
+
         default:
             // The rest of these are closed
             events |= POLLHUP | (ringbuffer_remaining_read(tcb->recv_window.buffer));
@@ -1190,8 +1279,7 @@ static int tcp_close(sock_t *sock) {
     
     // If this TCB had a parent, remove the TCB from its children list
     if (tcb->parent) {
-        TCB_LOCK(tcb->parent);
-
+        spinlock_acquire(&tcb->parent->sub_lock);
         tcp_tcb_t *sub = tcb->parent->sub_link;
 
         if (sub == tcb) {
@@ -1202,8 +1290,7 @@ static int tcp_close(sock_t *sock) {
                 sub->sub_link = tcb->sub_link; 
             }
         }
-
-        TCB_UNLOCK(tcb->parent);
+        spinlock_release(&tcb->parent->sub_lock);
     }
 
     TCB_LOCK(tcb);
@@ -1216,6 +1303,7 @@ static int tcp_close(sock_t *sock) {
         while (ringbuffer_remaining_read(tcb->send_window.buffer) > 0 && tcb->send_window.sndwnd > 0) {
             if (tcp_transmit(tcb) < 0) break;
         }
+        
         TCB_UNLOCK_SND(tcb);
 
         tcb->state = (tcb->state == TCP_STATE_ESTABLISHED) ? TCP_STATE_FIN_WAIT_1 : TCP_STATE_LAST_ACK;
@@ -1228,6 +1316,8 @@ static int tcp_close(sock_t *sock) {
         tcp_sendPacket(tcb, nic, tcb->connect_info.target_addr, &pkt, sizeof(tcp_packet_t));
         tcb->send_window.sndnxt++;
 
+        LOG(DEBUG, "TCB sent FIN-ACK ok!\n");
+
         // Do not release the initial ref just yet but wait for the state machine to do that
     } else if (tcb->state == TCP_STATE_LISTEN) {
         // There really isnt much we can do here since the child TCBs rely on this guy.
@@ -1236,7 +1326,8 @@ static int tcp_close(sock_t *sock) {
         tcb->state = TCP_STATE_CLOSED;
         TCB_RELEASE(tcb);
     } else if (tcb->state == TCP_STATE_SYN_SENT) {
-        assert(0 && "TODO: close TCP_STATE_SYN_SENT");
+        LOG(WARN, "close in SYN_SENT is not fully ready!!\n");
+        tcb->state = TCP_STATE_CLOSED;
     } else {
         LOG(DEBUG, "Attempted close in invalid state %d\n", tcb->state);
     }
@@ -1261,6 +1352,9 @@ static int tcp_listen(sock_t *sock, int backlog) {
     tcb->parent = NULL;
     tcb->sub_link = NULL;
     TCB_UNLOCK(tcb);
+
+    // mark socket as listener
+    sock->flags |= SOCKET_FLAG_LISTENER;
 
     return 0;
 }
@@ -1320,6 +1414,46 @@ static int tcp_accept(struct sock *sock, struct sockaddr *sockaddr, socklen_t *a
 
     int sfd = socket_insert(sck);
     return sfd;
+}
+
+/**
+ * @brief TCP getsockname
+ */
+static int tcp_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen) {
+    tcp_tcb_t *tcb = TCP_TCB(sock->driver);
+    TCB_LOCK(tcb);
+
+    struct sockaddr_in *addr_in = (struct sockaddr_in*)addr;
+    
+    addr_in->sin_family = AF_INET;
+    addr_in->sin_addr.s_addr = 0;
+    addr_in->sin_port = htons(tcb->port);
+
+    TCB_UNLOCK(tcb);
+    return 0;
+}
+
+/**
+ * @brief TCP getpeername
+ */
+static int tcp_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen) {
+    tcp_tcb_t *tcb = TCP_TCB(sock->driver);
+    TCB_LOCK(tcb);
+
+    struct sockaddr_in *addr_in = (struct sockaddr_in*)addr;
+
+    addr_in->sin_family = AF_INET;
+    
+    if (tcb->state == TCP_STATE_CLOSED || tcb->state == TCP_STATE_LISTEN) {
+        addr_in->sin_addr.s_addr = 0;
+        addr_in->sin_port = 0;
+    } else {
+        addr_in->sin_addr.s_addr = htonl(tcb->connect_info.target_addr);
+        addr_in->sin_port = htons(tcb->connect_info.target_port);
+    }
+
+    TCB_UNLOCK(tcb);
+    return 0;
 }
 
 /**
