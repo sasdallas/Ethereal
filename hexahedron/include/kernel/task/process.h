@@ -111,9 +111,11 @@ typedef struct process {
     char *wd_path;                      // Working directory path
     vfs_inode_t *wd_node;               // Working directory node
     fd_table_t *fd_table;               // File descriptor table
+    mode_t umask;                       // User-file creation mask
 
     // SIGNALS
     void *userspace;                    // Userspace allocation (only for sigtramp right now)
+    spinlock_t uspace_lck;              // Userspace lock
 
     // TIMER
     process_timer_t itimers[3];         // setitimer timers
@@ -169,9 +171,6 @@ void process_yield(uint8_t reschedule);
 
 /**
  * @brief Create a new idle process
- * 
- * Creates and returns an idle process. All this process does is repeatedly
- * call @c arch_pause and try to switch to the next thread.
  * 
  * @note    This process should not be added to the process tree. Instead it is
  *          kept in the main process data structure, and will be switched to when there are no other processes

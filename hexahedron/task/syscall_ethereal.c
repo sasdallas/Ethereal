@@ -34,7 +34,7 @@
 long sys_ethereal_shared_new(size_t size, int flags) {
     int f = sharedfs_new(current_cpu->current_process, size, flags);
     if (f >= 0) {
-        LOG(INFO, "New shared memory object created (fd %d): %p\n", f, FD(f));
+        LOG(INFO, "New shared memory object created (fd %d): %p\n", f, FD(f)->priv);
     }
     return f;
 }

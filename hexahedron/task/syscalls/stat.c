@@ -50,7 +50,7 @@ static int sys_stat_common(vfs_file_t *f, struct stat *statbuf) {
 
 long sys_stat(const char *pathname, struct stat *statbuf) {
     vfs_file_t *f;
-    int r = vfs_open((char*)pathname, O_NOFOLLOW, &f);
+    int r = vfs_open((char*)pathname, 0, &f);
     if (r) return r;
 
     r = sys_stat_common(f, statbuf);

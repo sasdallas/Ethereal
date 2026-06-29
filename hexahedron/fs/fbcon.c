@@ -67,7 +67,7 @@ static int fbcon_ioctl(devfs_node_t *file, unsigned long request, void *arg) {
  * @brief fbcon init
  */
 static int fbcon_init() {
-    return !devfs_register(devfs_root, "fbcon", VFS_BLOCKDEVICE, &fbcon_dev_ops, DEVFS_MAJOR_CONSOLE, 0, NULL);
+    return !devfs_register(devfs_root, "fbcon", VFS_CHARDEVICE, &fbcon_dev_ops, DEVFS_MAJOR_CONSOLE, 0, NULL);
 }
 
 FS_INIT_ROUTINE(fbcon, INIT_FLAG_DEFAULT, fbcon_init, devfs);

@@ -34,6 +34,7 @@
 #define SOCKET_FLAG_DONTROUTE           0x20
 #define SOCKET_FLAG_NONBLOCKING         0x40
 #define SOCKET_FLAG_LISTENER            0x80
+#define SOCKET_FLAG_PASSCRED            0x100
 
 /**** TYPES ****/
 
@@ -64,7 +65,7 @@ typedef struct sock_ops {
     int (*getsockname)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
     int (*getpeername)(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
     int (*getsockopt)(struct sock *sock, int level, int option_name, void *option_value, socklen_t *option_len);
-    int (*setsockopt)(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
+    int (*setsockopt)(struct sock *sock, int level, int option_name, const void *option_value, socklen_t option_len);
     int (*poll)(struct sock *sock, poll_waiter_t *waiter, poll_events_t events);
     poll_events_t (*poll_events)(struct sock *sock);
 } sock_ops_t;

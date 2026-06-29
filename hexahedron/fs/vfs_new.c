@@ -1103,6 +1103,39 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
     return err;
 }
 
+
+/**
+ * @brief VFS chmod
+ * @param inode The inode to chmod
+ * @param mode The new mode to set
+ * @returns 0 on success or error code 
+ */
+int vfs_chmod(vfs_inode_t *inode, mode_t mode) {
+    // to chmod, just do setattr 
+    vfs_inode_attr_t attr = {
+        .mode = mode
+    };
+
+    return vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_MODE);
+}
+
+/**
+ * @brief VFS chown
+ * @param inode The inode to chown
+ * @param uid The uid to set
+ * @param gid The gid to set
+ * @returns 0 on success or error code
+ */
+int vfs_chown(vfs_inode_t *inode, uid_t uid, gid_t gid) {
+    // to chown, just do setattr
+    vfs_inode_attr_t attr = {
+        .uid = uid,
+        .gid = gid,
+    };
+
+    return vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_UID | INODE_ATTR_CHANGE_GID);
+}
+
 /**
  * @brief Get an inode from the mount cache
  * @param mount The VFS mount to retrieve the inode from

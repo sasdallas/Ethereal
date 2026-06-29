@@ -171,7 +171,9 @@ static ssize_t pipe_write(vfs_file_t *file, loff_t off, size_t size, const char 
     }
 
     if (file->flags & O_NONBLOCK) {
-        if (!circbuf_remaining_write(pipe->buf)) return 0;
+        if (!circbuf_remaining_write(pipe->buf)) {
+            return -EAGAIN;
+        }
     }
 
     ssize_t r = circbuf_write(pipe->buf, size, (uint8_t*)buffer);

@@ -493,6 +493,7 @@ int vfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
  * @param attr_mask Mask of attributes to set
  */
 static inline int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) {
+    // TODO locking
     return inode_setattr(inode, attr, attr_mask);
 }
 
@@ -668,6 +669,23 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
  * @returns 0 on success or error code
  */
 int vfs_statvfs(vfs_mount_t *mount, vfs_mount_info_t *info);
+
+/**
+ * @brief VFS chmod
+ * @param inode The inode to chmod
+ * @param mode The new mode to set
+ * @returns 0 on success or error code 
+ */
+int vfs_chmod(vfs_inode_t *inode, mode_t mode);
+
+/**
+ * @brief VFS chown
+ * @param inode The inode to chown
+ * @param uid The uid to set
+ * @param gid The gid to set
+ * @returns 0 on success or error code
+ */
+int vfs_chown(vfs_inode_t *inode, uid_t uid, gid_t gid);
 
 
 #endif

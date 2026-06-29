@@ -56,13 +56,18 @@ const __signal_handler signal_default_action[] = {
 };
 
 /* Pending signal set */
-#define SIGBIT(signum) (1 << signum)
+#define SIGBIT(signum) (1 << (signum))
 #define SIGNAL_MARK_PENDING(thr, signum) (thr->pending_signals) |= SIGBIT(signum)
 #define SIGNAL_UNMARK_PENDING(thr, signum) (thr->pending_signals) &= ~(SIGBIT(signum))
+#define SIGNAL_MARK_FORCE(thr, signum) (thr->forced_signals) |= SIGBIT(signum)
+#define SIGNAL_UNMARK_FORCE(thr, signum) (thr->forced_signals) &= ~(SIGBIT(signum))
 #define SIGNAL_IS_BLOCKED(thr, signum) ((thr->blocked_signals & SIGBIT(signum)) && !(signum == SIGKILL) && !(signum == SIGSTOP))
 #define SIGNAL_IS_PENDING(thr, signum) (thr->pending_signals & SIGBIT(signum) && !SIGNAL_IS_BLOCKED(thr, signum))
+#define SIGNAL_IS_FORCED(thr, signum) ((thr)->forced_signals & SIGBIT(signum))
 #define SIGNAL_ANY_PENDING(thr) ((thr)->pending_signals & ~(thr)->blocked_signals)
 #define SIGNAL_IS_IGNORED(sig)
+#define SIGNAL_CLEAR_BLOCKED(thr,sig) (thr)->blocked_signals &= ~(SIGBIT(signal))
+#define SIGNAL_RESET_HANDLER(thr,sig) (thr)->signals[sig].handler = SIGNAL_ACTION_DEFAULT
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SIGNAL", __VA_ARGS__)
@@ -136,7 +141,6 @@ int signal_send(struct process *proc, int signal) {
  */
 static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
     process_t *proc = thr->parent;
-    if (!proc) return 0;
 
     // Get signal and handler
     proc_signal_t *sig = &THREAD_SIGNAL(thr, signum);
@@ -149,6 +153,9 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // We're gonna handle this signal so unset it
     SIGNAL_UNMARK_PENDING(thr, signum);
+
+    // No longer any use
+    spinlock_release(&thr->siglock);
 
     // Handle appropriately
     if (handler == SIGNAL_ACTION_DEFAULT) {
@@ -184,11 +191,9 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
         }
 
         // Now enter a loop forever with no escape!!
-        spinlock_release(&thr->siglock);
         do {
             process_yield(0);
         } while (!SIGNAL_ANY_PENDING(thr));
-        spinlock_acquire(&thr->siglock);
 
         // Oh, we escaped. Go back to normal exit state.
         proc->exit_status = PROCESS_EXIT_NORMAL;
@@ -210,19 +215,24 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // If the process does not have a userspace allocation, create one.
     // !!!: This probably needs to be refactored?
+    spinlock_acquire(&proc->uspace_lck);
     extern uintptr_t __userspace_start, __userspace_end;
-    if (!proc->userspace) {
+    if (!proc->userspace || !vmm_validate((uintptr_t)proc->userspace, PAGE_SIZE, VMM_PTR_USER)) {
         size_t sz = PAGE_ALIGN_UP((uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
 
         // !!! minor hack, signal system shouldn't even be running in interrupt context but whatever.
-        proc->userspace = vmm_map((void*)0x1000, sz, VM_FLAG_ALLOC | VM_FLAG_FAKE_ME_NOT, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
+        proc->userspace = vmm_map((void*)0x1000, sz, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
         if (!proc->userspace) {
             kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
         }
 
         // Copy in the userspace section
         memcpy(proc->userspace, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
+        LOG(DEBUG, "Userspace allocation (pid %d) at %p\n", proc->pid, proc->userspace);
+    } else {
+        LOG(DEBUG, "Already have proc->userspace %p\n", proc->userspace);
     }
+    spinlock_release(&proc->uspace_lck);
 
     // Push onto the stack the variables
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));
@@ -247,6 +257,39 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 } 
 
 /**
+ * @brief Send a signal to a thread, with force
+ * @param thread The thread to send the signal to
+ * @param signal The signal to send
+ * 
+ * Forced signals cannot be ignored by the thread. They are automatically unblocked,
+ * have their handlers reset, and are marked in the force list. 
+ */
+int signal_sendThreadForce(thread_t *thr, int signal) {
+    spinlock_acquire(&thr->siglock);
+
+    // Reset signal handler
+    SIGNAL_RESET_HANDLER(thr, signal);
+
+    // Mark as pending in force list, which bypasses blocked
+    SIGNAL_MARK_FORCE(thr, signal);
+
+    // Handle
+    if (thr->status & THREAD_STATUS_SLEEPING) {
+        sleep_wakeupReason(thr, WAKEUP_SIGNAL);
+    }
+
+    // Wake them up if they aren't us
+    if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
+        // Wakeup bro
+        thr->parent->state = PROCESS_RUNNING;
+        scheduler_insertThread(thr);
+    }
+
+    spinlock_release(&thr->siglock);
+    return 0;;
+}
+
+/**
  * @brief Handle signals sent to a process
  * @param thread The thread to check signals for
  * @param regs The current registers for the frame (this is called on IRQ)
@@ -256,28 +299,42 @@ int signal_handle(struct thread *thr, registers_t *regs) {
     process_t *proc = thr->parent;
     if (!proc) return 0;
 
-    if (!SIGNAL_ANY_PENDING(thr)) goto _done;
-
-    // Lock the process' siglock
     spinlock_acquire(&thr->siglock);
     
-    // !!!: RT signals are not supported
+    if (!SIGNAL_ANY_PENDING(thr)) {
+        spinlock_release(&thr->siglock);
+        goto _leave;
+    }
+
+    // Signals like SIGKILL and critical ones have higher priority
+    int sig_to_process = NSIG;
+    if (SIGNAL_IS_PENDING(thr, SIGKILL)) {
+        spinlock_release(&thr->siglock);
+        proc->exit_status = PROCESS_EXIT_SIGNAL;
+        process_exit(current_cpu->current_process, SIGKILL);
+    }
+
+    // Find the signal to process, checking forced first
+    // !!! RT signals not supported
     for (int i = 0; i < SIGRTMIN; i++) {
-        if (SIGNAL_IS_PENDING(thr, i)) {
-            // The signal is pending - let's handle it.
-            int h = signal_try_handle(thr, i, regs);
-            
-            // Did we handle?
-            if (h == 1) goto _done;
-            if (h) {
-                spinlock_release(&thr->siglock);
-                return 1;
-            }
+        if (SIGNAL_IS_FORCED(thr, i)) {
+            sig_to_process = i;
+            goto _process;
+        }
+
+        if (SIGNAL_IS_PENDING(thr, i) && sig_to_process > i) {
+            sig_to_process = i;
         }
     }
 
-_done:
-    spinlock_release(&thr->siglock);
+    assert(sig_to_process != NSIG); 
+
+_process:
+
+    // Handle the appropriate signal
+    signal_try_handle(thr, sig_to_process, regs);
+
+_leave:
     return 0;
 }
 

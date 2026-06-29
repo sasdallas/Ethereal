@@ -216,11 +216,16 @@ long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time
 long sys_futex_wake(uint32_t *pointer);
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode);
 long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags); 
-long sys_clock_gettime(int clock, time_t *secs, long *nanos);
 long sys_symlinkat(const char *target_path, int dirfd, const char *link_path);
+long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags);
+mode_t sys_umask(mode_t mask);
+long sys_clock_gettime(int clock, time_t *secs, long *nanos);
+long sys_fsync(int fd);
 long sys_pread(int fd, void *buf, size_t nbyte, off_t offset);
 long sys_pwrite(int fd, void *buf, size_t nbyte, off_t offset);
 long sys_pause();
+long sys_fchownat(int fd, const char *path, uid_t owner, gid_t group, int flags);
+long sys_faccessat(int fd, const char *path, int amode, int flags);
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);

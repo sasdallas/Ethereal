@@ -94,6 +94,7 @@ int fd_destroyTable(struct process *process);
  * @param file The file to add to the process
  * @param fd_out (Output) fd number
  * @returns Error code
+ * @warning THIS DOES NOT ADD A REFERENCE TO THE FILE!!
  */
 int fd_add(vfs_file_t *file, int *fd_out);
 

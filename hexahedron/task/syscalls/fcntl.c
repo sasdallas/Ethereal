@@ -63,6 +63,10 @@ long sys_fcntl(int fd, int cmd, int extra) {
         case F_GETFL:
             return file->flags;
 
+        case F_GETLK:
+            ret = 0;
+            break;
+
         case F_SETLK:
             ret = 0;
             break;

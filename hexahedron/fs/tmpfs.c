@@ -15,6 +15,7 @@
 #include <kernel/fs/tmpfs.h>
 #include <kernel/debug.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/mm/cache.h>
 #include <kernel/init.h>
 
 /* Log method */
@@ -39,6 +40,7 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
 static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off);
 static int tmpfs_read_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
 static int tmpfs_write_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t mask);
 
 /* Filesystem */
 static vfs2_filesystem_t tmpfs_filesystem = {
@@ -56,7 +58,7 @@ static vfs_inode_ops_t tmpfs_inode_ops = {
     .mkdir = tmpfs_mkdir,
     .readlink = tmpfs_readlink,
     .rmdir = NULL,
-    .setattr = NULL,
+    .setattr = tmpfs_setattr,
     .symlink = tmpfs_symlink,
     .truncate = tmpfs_truncate,
     .unlink = tmpfs_unlink,
@@ -571,6 +573,7 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
         return -ENXIO; // should send a SIGBUS
     }
     
+#ifndef KERNEL_ENABLE_PAGE_CACHE
     mutex_acquire(&node->lck); // TODO: rwlock/rwsem
 
     // Well, now we can just read from the pages.
@@ -593,6 +596,30 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
     arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
 
     mutex_release(&node->lck);
+#else
+    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
+
+    // Well, now we can just read from the pages.
+    size_t remaining = size;
+    size_t pg_ind = off / PAGE_SIZE;
+    size_t bpos = 0;
+
+    while (remaining) {
+        // map the corresponding page into memory
+        pmm_page_t *p;
+        assert(cache_getPage(f->inode, off, &p) == 0);
+        arch_mmu_map(NULL, (uintptr_t)addr + bpos, pmm_address(p), flags);
+
+        bpos += PAGE_SIZE;
+        remaining -= PAGE_SIZE;
+        pg_ind++;
+    }
+
+    arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
+
+    mutex_release(&node->lck);
+
+#endif
     return 0;
 }
 
@@ -650,6 +677,26 @@ static int tmpfs_read_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
  * @brief tmpfs write page
  */
 static int tmpfs_write_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
+    return 0;
+}
+
+/**
+ * @brief tmpfs setattr
+ */
+static int tmpfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t mask) {
+    tmpfs_node_t *n = inode->priv;
+
+    // update it based on mask
+    if (mask & INODE_ATTR_CHANGE_MODE) n->attr.mode = attr->mode;
+    if (mask & INODE_ATTR_CHANGE_ATIME) n->attr.atime = attr->atime;
+    if (mask & INODE_ATTR_CHANGE_MTIME) n->attr.mtime = attr->mtime;
+    if (mask & INODE_ATTR_CHANGE_CTIME) n->attr.ctime = attr->ctime;
+    if (mask & INODE_ATTR_CHANGE_UID) n->attr.uid = attr->uid;
+    if (mask & INODE_ATTR_CHANGE_GID) n->attr.gid = attr->gid;
+
+    // update inode attr
+    memcpy(&inode->attr, &n->attr, sizeof(vfs_inode_attr_t));
+
     return 0;
 }
 

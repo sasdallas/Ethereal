@@ -140,16 +140,19 @@ static syscall_func_t syscall_table[] = {
     [SYS_RENAMEAT]          = (syscall_func_t)(uintptr_t)sys_renameat,
     [SYS_LINKAT]            = (syscall_func_t)(uintptr_t)0xdeadbeef,
     [SYS_SYMLINKAT]         = (syscall_func_t)(uintptr_t)sys_symlinkat,
-    [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)sys_fchmodat,
     [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)0xdeadbeef,
     [SYS_FLOCK]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
-    [SYS_UMASK]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_UMASK]             = (syscall_func_t)(uintptr_t)sys_umask,
     [SYS_CLOCK_GETTIME]     = (syscall_func_t)(uintptr_t)sys_clock_gettime,
+    [SYS_FSYNC]             = (syscall_func_t)(uintptr_t)sys_fsync,
     [SYS_PREAD]             = (syscall_func_t)(uintptr_t)sys_pread,
     [SYS_PWRITE]            = (syscall_func_t)(uintptr_t)sys_pwrite,
     [SYS_GETRLIMIT]         = (syscall_func_t)(uintptr_t)0xdeadbeef,
     [SYS_SETRLIMIT]         = (syscall_func_t)(uintptr_t)0xdeadbeef,
-    [SYS_PAUSE]             = (syscall_func_t)(uintptr_t)sys_pause
+    [SYS_PAUSE]             = (syscall_func_t)(uintptr_t)sys_pause,
+    [SYS_FCHOWNAT]          = (syscall_func_t)(uintptr_t)sys_fchownat,
+    [SYS_FACCESSAT]         = (syscall_func_t)(uintptr_t)sys_faccessat,
 }; 
 
 
@@ -230,8 +233,7 @@ void syscall_handle(syscall_t *syscall) {
  * @brief Change data segment size
  */
 void *sys_brk(void *addr) {
-    assert(0); // sbrk sucks anyways
-    return addr;
+    return (void*)-ENOSYS;
 }
 
 long sys_usleep(useconds_t usec) {

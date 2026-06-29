@@ -21,7 +21,6 @@ ssize_t sys_write(int fd, const void *buffer, size_t count) {
     ssize_t i = vfs_write(n, n->pos, count, (const char*)buffer);
     if (i >= 0) n->pos += i;
 
-    if (!i) SYSCALL_LOG(WARN, "sys_write wrote nothing for size %d\n", count);
     FD_FINISH(n);
     return i;
 }
