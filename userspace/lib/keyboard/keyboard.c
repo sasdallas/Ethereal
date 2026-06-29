@@ -18,6 +18,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
 
 #define MOD(t) { if (ev->type == KEYBOARD_EVENT_PRESS) { kbd->mods |= t; } else { kbd->mods &= ~t; }; ev->mods = kbd->mods; ev->ascii = '\0'; }
 #define CTRL ((kbd->mods & KEYBOARD_MOD_LEFT_CTRL) || (kbd->mods & KEYBOARD_MOD_RIGHT_CTRL))
@@ -165,7 +166,7 @@ keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
 
     // I hate periphfs....
     if (ev_src->scancode >= 0x80) ev_src->scancode -= 0x80; // Adjust for key release
-    ev->scancode = SHIFT ? kbd_us_scancodes_upper[ev_src->scancode] : kbd_us_scancodes_lower[ev_src->scancode];
+    ev->scancode = kbd_us_scancodes_lower[ev_src->scancode];
     ev->ascii = ev->scancode;
     ev->type = ev_src->event_type == EVENT_KEY_PRESS ? KEYBOARD_EVENT_PRESS : KEYBOARD_EVENT_RELEASE;
     ev->mods = kbd->mods;
@@ -220,6 +221,10 @@ keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
 
         default:
             // We should just have a normal ASCII character
+            if (SHIFT) {
+                ev->ascii = kbd_us_scancodes_upper[ev_src->scancode];
+            }
+
             if (CTRL) {
                 // Let's convert this one
                 // https://github.com/klange/toaruos/blob/master/lib/kbd.c#L154
@@ -236,7 +241,6 @@ keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
                     ev->ascii = o;
                 }
             } else {
-                // ev->ascii remains unchanged
                 // TODO: Keyboard layouts here!
             }
 

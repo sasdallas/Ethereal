@@ -9,3 +9,4 @@ ser_output2.txt
 drivers/test
 drivers/test/*
 **/generated_build_rules.mk
+.vscode/
