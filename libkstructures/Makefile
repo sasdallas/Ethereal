@@ -27,16 +27,13 @@ $(OUT_OBJ_KERNEL)/%.o: %.c Makefile
 
 # Compile a C file (libc)
 $(OUT_OBJ_LIBC)/%.o: %.c Makefile
-	$(CC) $(CFLAGS) -D__LIBCSTRUCTURES -c $< -o $@
+	$(CC) $(CFLAGS) -fPIC -D__LIBCSTRUCTURES -c $< -o $@
 
 # Build target for libkstructures
 $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a: $(KERNEL_C_OBJECTS)
 	$(AR) rcs $@ $(KERNEL_C_OBJECTS)
 
 # Build target for libstructures
-$(DESTDIR)$(LIB_DIRECTORY)/libstructures.a: $(LIBC_C_OBJECTS)
-	$(AR) rcs $@ $(LIBC_C_OBJECTS)
-
 $(DESTDIR)$(LIB_DIRECTORY)/libstructures.so: $(LIBC_C_OBJECTS)
 	$(CC) $(CFLAGS) -shared -o $@ $(LIBC_C_OBJECTS)
 
@@ -67,7 +64,7 @@ install-headers:
 	@-mkdir -pv $(DESTDIR)$(LIBDIR)/pkgconfig/
 	cp structures.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a $(DESTDIR)$(LIB_DIRECTORY)/libstructures.a  $(DESTDIR)$(LIB_DIRECTORY)/libstructures.so
+install: PRINT_HEADER CREATE_BUILD_DIRECTORIES $(DESTDIR)$(LIB_DIRECTORY)/libkstructures.a  $(DESTDIR)$(LIB_DIRECTORY)/libstructures.so
 
 clean:
 	@-rm -r $(OUT_OBJ_KERNEL)

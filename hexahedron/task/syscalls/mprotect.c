@@ -16,9 +16,6 @@
 #include <sys/mman.h>
 
 long sys_mprotect(void *addr, size_t len, int prot) {
-    // mlibc
-    return 0;
-
     mmu_flags_t target = ((prot & PROT_READ) ? MMU_FLAG_PRESENT : 0) |
                          ((prot & PROT_WRITE) ? MMU_FLAG_WRITE : 0) |
                          ((prot & PROT_EXEC) ? 0 : MMU_FLAG_NOEXEC) |
