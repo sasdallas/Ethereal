@@ -75,6 +75,7 @@ typedef struct thread {
     proc_signal_t signals[NSIG];
     sigset_t pending_signals;
     sigset_t blocked_signals;
+    sigset_t forced_signals;
 
     // OTHER
     vmm_context_t *ctx;                     // Context
