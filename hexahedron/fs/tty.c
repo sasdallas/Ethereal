@@ -272,7 +272,7 @@ static int tty_poll(devfs_node_t *file, poll_waiter_t *waiter, poll_events_t eve
  */
 static poll_events_t tty_poll_events(devfs_node_t *n) {
     tty_t *tty = n->priv;
-    return POLLOUT | (circbuf_remaining_read(tty->read_buf));
+    return POLLOUT | (circbuf_remaining_read(tty->read_buf) ? POLLIN : 0);
 }
 
 /**
