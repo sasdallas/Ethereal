@@ -273,7 +273,6 @@ void kmain() {
     vfs_init();
     vfs2_init();
 
-
     // Run the system phase
     INIT_RUN_PHASE(PHASE_FS);
 

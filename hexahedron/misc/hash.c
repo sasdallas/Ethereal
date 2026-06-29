@@ -75,7 +75,7 @@ uint32_t crc32(void *ptr, size_t size) {
     uint32_t crc = 0xFFFFFFFF;
     uint8_t *p = (uint8_t*)ptr;
     while (size) {
-        crc = (crc >> 8) ^ crc_table[crc ^ *p++];
+        crc = (crc >> 8) ^ crc_table[(crc ^ *p++) & 0xff];
         size -= 1;
     }
     return crc ^ 0xFFFFFFFF;

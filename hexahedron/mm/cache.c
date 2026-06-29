@@ -482,8 +482,6 @@ void cache_pruner(void *arg) {
         sleep_time(15, 0); // every 15s
         sleep_enter();
 
-        dprintf(INFO, "Beginning cache prune.\n");
-
         unsigned char next_period = __atomic_load_n(&cache_period, __ATOMIC_SEQ_CST) ^ 1;
 
         // !!! This is an O(n) algorithm, should maybe add some type of LRU to it?
