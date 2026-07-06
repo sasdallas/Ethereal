@@ -101,11 +101,11 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
  */
 int thread_destroy(thread_t *thr) {
     // Free the thread's stack
+    LOG(DEBUG, "******************************************** Thread %p destroying\n", thr);
     if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
     slab_free(thread_cache, thr);
 
-    LOG(DEBUG, "******************************************** Thread %p destroyed\n", thr);
     return 0;
 }
 
@@ -115,12 +115,12 @@ int thread_destroy(thread_t *thr) {
  */
 void thread_safeExit(thread_t *arg) {
     thread_t *t = (thread_t*)arg;
-    __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
     __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
+    __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
     __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
 
     if (t->parent->nthreads == 0) {
-        process_destroy(t->parent);
+        reaper_push(t->parent);
     }
 
     PREEMPT_ENABLE();

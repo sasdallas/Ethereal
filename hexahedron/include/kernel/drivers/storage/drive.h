@@ -18,56 +18,23 @@
 #include <kernel/fs/devfs.h>
 #include <kernel/drivers/storage/partition.h>
 #include <kernel/drivers/storage/mbr.h>
+#include <ethereal/drive.h>
+#include <kernel/mm/cache.h>
 
 /**** DEFINITIONS ****/
-
-// Drive types
-#define DRIVE_TYPE_UNKNOWN      0   // Unknown
-#define DRIVE_TYPE_IDE_HD       1   // IDE harddrive
-#define DRIVE_TYPE_CDROM        2   // CD-ROM (use DRIVE_TYPE_SCSI_CDROM for SCSI CDROMs)
-#define DRIVE_TYPE_SATA         3   // SATA drive
-#define DRIVE_TYPE_SCSI         4   // SCSI drive
-#define DRIVE_TYPE_SCSI_CDROM   5   // SCSI CD-rom
-#define DRIVE_TYPE_NVME         6   // NVMe drive
-#define DRIVE_TYPE_FLOPPY       7   // Floppy drive
-#define DRIVE_TYPE_MMC          8   // MMC drive
-
-
-#define DRIVE_NAME_IDE_HD       "idehd"
-#define DRIVE_NAME_CDROM        "cdrom"
-#define DRIVE_NAME_SATA         "sata"
-#define DRIVE_NAME_SCSI         "scsi"
-#define DRIVE_NAME_SCSI_CDROM   "scsicd"
-#define DRIVE_NAME_NVME         "nvme"
-#define DRIVE_NAME_FLOPPY       "floppy"
-#define DRIVE_NAME_MMC          "mmc"
-#define DRIVE_NAME_UNKNOWN      "unknown"
 
 /**** TYPES ****/
 
 struct drive;
 
-/**
- * @brief Read sectors method for a drive
- * @param drive The drive object to read sectors
- * @param lba The LBA to read
- * @param sectors The amount of sectors to read
- * @param buffer The buffer to read the sectors into
- * @returns Number of sectors read or error code
- */
-typedef ssize_t (*drive_read_sectors_t)(struct drive*, uint64_t, size_t, uint8_t*);
-
-/**
- * @brief Write sectors method for a drive
- * @param drive The drive object to write sectors
- * @param lba The LBA to write
- * @param sectors The amount of sectors to write
- * @param buffer The buffer to write the sectors using
- * @returns Number of sectors written or error code
- */
-typedef ssize_t (*drive_write_sectors_t)(struct drive*, uint64_t, size_t, uint8_t*);
-
-
+typedef struct drive_ops {
+    ssize_t (*read_sectors)(struct drive*, uint64_t, size_t, uint8_t*);
+    ssize_t (*write_sectors)(struct drive*, uint64_t, size_t, uint8_t*);
+    ssize_t (*read_range)(struct drive*, page_range_t*);
+    ssize_t (*write_range)(struct drive*,page_range_t*);
+    int (*ioctl)(struct drive*, int, void *);
+    int (*flush)(struct drive*);
+} drive_ops_t;
 
 typedef struct drive {
     devfs_node_t *node;                     // Device filesystem node
@@ -80,8 +47,7 @@ typedef struct drive {
     char *revision;                         // Drive revision
     char *vendor;                           // Drive vendor
 
-    drive_read_sectors_t read_sectors;      // Read sectors method
-    drive_write_sectors_t write_sectors;    // Write sectors method
+    drive_ops_t *ops;
 
     list_t *partitions;                     // Partitions
     unsigned long last_part_index;          // Last partition index
@@ -94,10 +60,11 @@ typedef struct drive {
 /**
  * @brief Create a new drive object
  * @param type The type of the drive being created
+ * @param ops Drive operations
  * 
  * Please make sure you fill all fields possible out
  */
-drive_t *drive_create(int type);
+drive_t *drive_create(int type, drive_ops_t *ops);
 
 /**
  * @brief Mount the drive object

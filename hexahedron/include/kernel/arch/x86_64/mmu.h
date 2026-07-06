@@ -55,6 +55,8 @@
     ((((uint64_t)(addr) & MMU_CANONICAL_MASK) == 0ULL) || \
      (((uint64_t)(addr) & MMU_CANONICAL_MASK) == MMU_CANONICAL_MASK))
 
+#define BARRIER() asm volatile ("" ::: "memory")
+
 /**** TYPES ****/
 typedef uintptr_t mmu_dir_t;
 

@@ -183,7 +183,7 @@ arch_yield:
     // prev in %rdi and dest in %rsi
 
     /* Load destination context */
-    addq $0xA0, %rsi
+    addq $0xA8, %rsi
     movq 0(%rsi), %rsp
     movq 8(%rsi), %rbp
     movq 16(%rsi), %rbx
@@ -220,7 +220,7 @@ arch_handle_threadexit:
     // Idle thread in %rdi, next thread in %rsi
 
     // Load the kernel stack for the idle thread
-    addq $0xA0, %rdi
+    addq $0xA8, %rdi
     movq 0(%rdi), %rsp
     movq 8(%rdi), %rbp
     movq 16(%rdi), %rbx

@@ -163,6 +163,8 @@ void timer_irq() {
             // do_repeats = true;
 
             timer_insertLocked(ev);
+        } else {
+            ev->active = false;
         }
 
         ev = next_ev;
@@ -196,8 +198,10 @@ void timer_irq() {
  */
 int timer_init(timer_event_t *timer, timer_expire_t expire, void *expire_ctx, time_t ns, bool repeat, char *name) {
     TASKLET_INIT(&timer->tsklet, name, expire, expire_ctx);
+    
     timer->repeat = repeat;
     timer->intv = NS_TO_TICKS(ns, current_cpu->timer_dev);
+    timer->active = false;
     return 0;
 }
 
@@ -215,7 +219,8 @@ int timer_insert(timer_event_t *timer) {
     timer_stop();
 
     int ret = timer_insertLocked(timer);
-    
+    timer->active = true;
+
     // Re-arm timer if needed
     timer_arm();
 
@@ -235,6 +240,13 @@ int timer_remove(timer_event_t *timer) {
     // stop timer and update ticks
     timer_stop();
 
+    if (timer->active == false) {
+        // This timer is not active
+        timer_arm();
+        spinlock_release(&dev->queue_lock);
+        return 1;
+    }
+
     if (timer == dev->queue) {
         // the timer is the head of the queue
         dev->queue = timer->next;
@@ -243,6 +255,8 @@ int timer_remove(timer_event_t *timer) {
         if (timer->prev) timer->prev->next = timer->next;
         if (timer->next) timer->next->prev = timer->prev;
     }
+
+    timer->active = false;
 
     // Re-arm timer
     timer_arm();

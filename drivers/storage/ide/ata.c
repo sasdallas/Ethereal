@@ -57,6 +57,15 @@ static spinlock_t *ata_lock = NULL;
 #define LOG_DEVICE(status, device, ...)     LOG(status, "[DRIVE %s:%s%s%s] ", (device->channel == ATA_PRIMARY) ? "PRIMARY" : "SECONDARY", (device->slave) ? "SLAVE" : "MASTER", (device->channel == ATA_PRIMARY) ? "  " : "", (device->slave) ? " " : ""); \
                                             dprintf(NOHEADER, __VA_ARGS__)
 
+/* Drive ops */
+ssize_t ide_read_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer);
+ssize_t ide_write_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer);
+drive_ops_t ata_ops = {
+    .read_sectors = ide_read_sectors,
+    .write_sectors = ide_write_sectors,
+    .flush = NULL,
+    .ioctl = NULL
+};
 
 
 /**
@@ -501,10 +510,8 @@ ssize_t ide_write_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buf
  * @param device The device to create the drive object from
  */
 drive_t *ide_createDrive(ide_device_t *device) {
-    drive_t *d = drive_create((device->atapi) ? DRIVE_TYPE_CDROM : DRIVE_TYPE_IDE_HD);
+    drive_t *d = drive_create((device->atapi) ? DRIVE_TYPE_CDROM : DRIVE_TYPE_IDE_HD, &ata_ops);
     d->driver = (void*)device;
-    d->read_sectors = ide_read_sectors;
-    d->write_sectors = ide_write_sectors;
 
     // Setup other things
     d->sectors = device->size / (device->atapi ? device->atapi_block_size : 512);

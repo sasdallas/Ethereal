@@ -153,6 +153,8 @@ static syscall_func_t syscall_table[] = {
     [SYS_PAUSE]             = (syscall_func_t)(uintptr_t)sys_pause,
     [SYS_FCHOWNAT]          = (syscall_func_t)(uintptr_t)sys_fchownat,
     [SYS_FACCESSAT]         = (syscall_func_t)(uintptr_t)sys_faccessat,
+    [SYS_SYNC]              = (syscall_func_t)(uintptr_t)sys_sync,
+    [SYS_FSTATAT]           = (syscall_func_t)(uintptr_t)sys_fstatat
 }; 
 
 

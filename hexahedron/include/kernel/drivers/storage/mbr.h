@@ -54,7 +54,7 @@ typedef struct mbr_partition {
 /**
  * @brief Try to initialize MBR on a drive
  * @param drive The drive to initialize MBR on
- * @returns 1 if MBR could be initialized
+ * @returns 0 on success
  */
 int mbr_init(struct drive *drive);
 

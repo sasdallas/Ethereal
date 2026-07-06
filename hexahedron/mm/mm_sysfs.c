@@ -97,8 +97,10 @@ ssize_t systemfs_memory_kernel(systemfs_node_t *node) {
  */
 ssize_t systemfs_memory_cache(systemfs_node_t *node) {
     return systemfs_printf(node,
-        "%lld\n",
-        cache_active()
+        "Active:%lld\n"
+        "Dirty:%lld\n",
+        cache_active(),
+        cache_dirty()
     );
 }
 

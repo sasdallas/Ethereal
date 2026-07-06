@@ -232,16 +232,17 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             }
 
             vmm_memory_range_t *new_range = vmm_createRange(r->start, end, r->vmm_flags, r->mmu_flags);
-            if (r->prev ) r->prev->next = new_range;
+            if (r->prev) r->prev->next = new_range;
+            else space->range = new_range;
             new_range->prev = r->prev;
             new_range->next = r;
             r->prev = new_range;
             r->start = end;
 
             if (op_type == VM_OP_SET_FLAGS) {
-                r->mmu_flags = mmu_flags;
+                new_range->mmu_flags = mmu_flags;
 
-                for (uintptr_t i = r->start; i < r->end; i += PAGE_SIZE) {
+                for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
                     arch_mmu_setflags(NULL, i, mmu_flags);
                 }
             } else {
@@ -324,6 +325,12 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     if (start != (uintptr_t)addr && vm_flags & VM_FLAG_FIXED) {
         LOG(WARN, "Couldn't match address hint and VM_FLAG_FIXED - find_free returned %p but needed %p\n", start, addr);
         goto _finish; // Did not match address hint
+    } else if (start != (uintptr_t)addr && vm_flags & VM_FLAG_REPLACE) {
+        // this method of set 0 free was sourced from Astral's VMM
+        __vmm_update(sp, addr, size, VM_OP_SET_FLAGS, 0);
+        arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
+        __vmm_update(sp, addr, size, VM_OP_FREE, 0);
+        start = (uintptr_t)addr;
     }
 
     // Create the new range

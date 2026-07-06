@@ -13,8 +13,10 @@
 
 #include <kernel/drivers/storage/drive.h>
 #include <kernel/drivers/storage/mbr.h>
+#include <kernel/drivers/storage/gpt.h>
 #include <kernel/fs/devfs.h>
 #include <kernel/mm/alloc.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <errno.h>
 #include <string.h>
@@ -48,20 +50,78 @@ static int drive_ids[] = {
 /* device filesystem ops */
 static ssize_t drive_read(devfs_node_t *node, loff_t off, size_t size, char *buffer);
 static ssize_t drive_write(devfs_node_t *node, loff_t off, size_t size, const char *buffer);
+static int drive_ioctl(devfs_node_t *node, unsigned long request, void *argp);
+
+static int drive_read_range(devfs_node_t *node, page_range_t *range);
+static int drive_write_range(devfs_node_t *node, page_range_t *range);
 
 static devfs_ops_t drive_ops = {
     .open = NULL,
     .close = NULL,
     .read = drive_read,
     .write = drive_write,
-    .ioctl = NULL,
+    .ioctl = drive_ioctl,
     .lseek = NULL,
     .poll = NULL,
     .poll_events = NULL,
     .mmap = NULL,
     .mmap_prepare = NULL,
     .munmap = NULL,
+    .read_range = drive_read_range,
+    .write_range = drive_write_range,
 };
+
+/**
+ * @brief Drive ioctl
+ */
+static int drive_ioctl(devfs_node_t *node, unsigned long request, void *argp) {
+    drive_t *d = node->priv;
+    switch (request) {
+        case IO_DRIVE_GET_INFO:
+            drive_info_t *i = (drive_info_t*)argp;
+            i->sector_size = d->sector_size;
+            i->sectors = d->sectors;
+            i->type = d->type;
+            return 0;
+
+        case IO_DRIVE_GET_MODEL:
+            if (d->model) strncpy(argp, d->model, 256);
+            return 0;
+
+        case IO_DRIVE_GET_SERIAL:
+            if (d->serial) strncpy(argp, d->serial, 256);
+            return 0;
+
+        case IO_DRIVE_GET_REV:
+            if (d->revision) strncpy(argp, d->revision, 256);
+            return 0;
+
+        case IO_DRIVE_GET_VENDOR:
+            if (d->vendor) strncpy(argp, d->vendor, 256);
+            return 0;
+        
+        case IO_DRIVE_RESCAN_PART: {
+            LOG(INFO, "Rescanning for partitions on drive.\n");
+
+            // !!! Incredibly racey
+            node_t *n = d->partitions->head;
+            while (n) {
+                node_t *nxt = n->next;
+                partition_delete((partition_t*)n->value);
+                n = nxt;
+            }
+
+            d->last_part_index = 0;
+
+            drive_mount(d);
+            return 0;
+        }
+
+        default:
+            if (d->ops->ioctl) return d->ops->ioctl(d,request,argp);
+            return -ENODEV;
+    }
+}
 
 /**
  * @brief Generic drive read method
@@ -85,17 +145,18 @@ static ssize_t drive_read(devfs_node_t *node, loff_t off, size_t size, char *buf
     uint64_t sector_count = end_sector - lba_start;
 
     // Trigger read call
-    uint8_t *temporary_buffer = kmalloc(sector_count * d->sector_size);
-    ssize_t r = d->read_sectors(d, lba_start, sector_count, temporary_buffer);
+    size_t bsz = sector_count * d->sector_size;
+    uint8_t *temporary_buffer = vmm_map(NULL, bsz, VM_FLAG_ALLOC, MMU_FLAG_PRESENT|MMU_FLAG_WRITE);
+    ssize_t r = d->ops->read_sectors(d, lba_start, sector_count, temporary_buffer);
 
     if (r != (ssize_t)sector_count) {
-        kfree(temporary_buffer);
+        vmm_unmap(temporary_buffer, bsz);
         return r;
     }
 
     // We now have a temporary buffer, copy at sector_offset to buffer
     memcpy(buffer, (temporary_buffer + sector_offset), size);
-    kfree(temporary_buffer);
+    vmm_unmap(temporary_buffer,bsz);
 
     return size;
 }
@@ -112,6 +173,8 @@ static ssize_t drive_write(devfs_node_t *node, loff_t off, size_t size, const ch
     if (off > node->attr.size) return 0;
     if (off + size > (size_t)node->attr.size) size = node->attr.size - off;
 
+    LOG(DEBUG, "drive_write off=%d size=%d\n", off, size);
+
     drive_t *d = (drive_t*)node->priv;
 
     // Calculate how many sectors it would span
@@ -122,20 +185,21 @@ static ssize_t drive_write(devfs_node_t *node, loff_t off, size_t size, const ch
     uint64_t sector_count = end_sector - lba_start;
 
     // First, create a buffer to hold everything
-    uint8_t *write_buffer = kmalloc(sector_count * d->sector_size);
+    size_t bsz = sector_count * d->sector_size;
+    uint8_t *write_buffer = vmm_map(NULL, bsz, VM_FLAG_ALLOC, MMU_FLAG_PRESENT|MMU_FLAG_WRITE);
     
     // Read the first sector if needed
     if (sector_offset) {
-        ssize_t r = d->read_sectors(d, lba_start, 1, write_buffer);
+        ssize_t r = d->ops->read_sectors(d, lba_start, 1, write_buffer);
         if (r < 0) {
-            kfree(write_buffer);
+            vmm_unmap(write_buffer, bsz);
             return r;
         }
 
         // We also have to get the last sector
-        r = d->read_sectors(d, end_sector - 1, 1, write_buffer + ((sector_count-1) * d->sector_size));
+        r = d->ops->read_sectors(d, end_sector - 1, 1, write_buffer + ((sector_count-1) * d->sector_size));
         if (r < 0) {
-            kfree(write_buffer);
+            vmm_unmap(write_buffer, bsz);
             return r;
         }
     }
@@ -144,35 +208,83 @@ static ssize_t drive_write(devfs_node_t *node, loff_t off, size_t size, const ch
     memcpy(write_buffer + sector_offset, buffer, size);
 
     // Trigger write call
-    ssize_t r = d->write_sectors(d, lba_start, sector_count, write_buffer);
+    ssize_t r = d->ops->write_sectors(d, lba_start, sector_count, write_buffer);
 
     if (r != (ssize_t)sector_count) {
-        kfree(write_buffer);
+        vmm_unmap(write_buffer, bsz);
         return r;
     }
 
     // We now have a temporary buffer, copy at sector_offset to buffer
-    kfree(write_buffer);
+    vmm_unmap(write_buffer, bsz);
 
     return size;
 }
 
+static int drive_read_range(devfs_node_t *node, page_range_t *range) {
+    drive_t *d = (drive_t*)node->priv;
+
+    ssize_t r = 0;
+    if (d->ops->read_range) {
+        r = d->ops->read_range(d, range);
+    } else {
+        assert(d->sector_size <= PAGE_SIZE && "unimpl");
+        for (unsigned i = 0; i < range->npages; i++) {
+            uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+            ssize_t r = d->ops->read_sectors(d, range->offset + (i * PAGE_SIZE), PAGE_SIZE/d->sector_size, (uint8_t*)p);
+            arch_mmu_unmap_physical(range->pages[i], PAGE_SIZE);
+            
+            if (r < 0) {
+                return r;
+            }
+        }
+    }
+
+    return r;
+}
+
+static int drive_write_range(devfs_node_t *node, page_range_t *range) {
+    drive_t *d = (drive_t*)node->priv;
+
+    ssize_t r = 0;
+    if (d->ops->write_range) {
+        r = d->ops->write_range(d, range);
+    } else {
+        assert(d->sector_size <= PAGE_SIZE && "unimpl");
+        for (unsigned i = 0; i < range->npages; i++) {
+            uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+            ssize_t r = d->ops->write_sectors(d, range->offset + (i * PAGE_SIZE), PAGE_SIZE/d->sector_size, (uint8_t*)p);
+            arch_mmu_unmap_physical(range->pages[i], PAGE_SIZE);
+            
+            if (r < 0) {
+                return r;
+            }
+        }
+    }
+
+    return r;
+}
+
+
 /**
  * @brief Create a new drive object
  * @param type The type of the drive being created
+ * @param ops Drive operations
  * 
  * Please make sure you fill all fields possible out
  */
-drive_t *drive_create(int type) {
+drive_t *drive_create(int type, drive_ops_t *ops) {
     if (type < 0 || type > DRIVE_TYPE_MMC) type = DRIVE_TYPE_UNKNOWN;
     drive_t *r = kzalloc(sizeof(drive_t));
     r->type = type;
+    r->ops = ops;
 
     // Construct drive name
     char name_tmp[256];
     snprintf(name_tmp, 256, "%s%d", drive_mappings[type], drive_ids[type]++);
     r->node = devfs_register(devfs_root, name_tmp, VFS_BLOCKDEVICE, &drive_ops, DEVFS_MAJOR_IDE_HD, drive_ids[type], r); // TODO: DEVFS MAJOR SUPPORT 
 
+    LOG(DEBUG, "Created new drive \"%s\"\n", name_tmp);
     r->partitions = list_create("part list");
     r->last_part_index = 0;
 
@@ -189,9 +301,15 @@ int drive_mount(drive_t *drive) {
     drive->node->attr.size = drive->sectors * drive->sector_size;
 
     // Init MBR
-    if (mbr_init(drive) != 1) {
-        LOG(DEBUG, "MBR initialization failed. GPT support is TODO\n");
+    if (mbr_init(drive) == 0) {
+        return 0;
     }
 
+    // Init GPT
+    if (gpt_init(drive) == 0) {
+        return 0;
+    }
+
+    LOG(INFO, "No valid partitioning scheme detected on drive.\n");
     return 0;
 }

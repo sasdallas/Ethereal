@@ -226,6 +226,8 @@ long sys_pwrite(int fd, void *buf, size_t nbyte, off_t offset);
 long sys_pause();
 long sys_fchownat(int fd, const char *path, uid_t owner, gid_t group, int flags);
 long sys_faccessat(int fd, const char *path, int amode, int flags);
+void sys_sync();
+long sys_fstatat(int fd, const char *path, struct stat *buf, int flags);
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);

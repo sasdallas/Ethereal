@@ -21,13 +21,11 @@ LDFLAGS += -lversion -lethereal -lstructures
 
 MAKE_OUTPUT:
 	-@mkdir -p $(OBJ_DIR)
-	-@mkdir -p $(INITRD)/bin/
 
 $(OBJ_DIR)/%: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@.o
 	$(CC) $@.o $(LDFLAGS) -o $@
 	cp -r $@ $(DESTDIR)$(BINARY_DIR)
-	cp -r $@ $(INITRD)/bin
 
 install: MAKE_OUTPUT $(C_OUTPUTS)
 

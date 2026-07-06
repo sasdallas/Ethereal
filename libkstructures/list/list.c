@@ -147,7 +147,7 @@ void list_append_node_before(list_t *list, node_t *append_before, node_t *node) 
         // Append to the end of the list.
         node->next = NULL;
         node->prev = list->tail;
-        list->tail->next = node;
+        if (list->tail) list->tail->next = node;
         list->tail = node;
         list->length++;
         return;

@@ -14,10 +14,17 @@
 #include <kernel/task/process.h>
 
 long sys_fsync(int fd) {
-    if (!FD_VALIDATE(fd)) {
-        return -EBADF;
+    vfs_file_t *f = GET_FD_OR_ERROR(fd);
+    int r = 0;
+    SYSCALL_LOG(DEBUG, "fsync\n");
+    if (f->inode->cache) {
+        r = cache_syncInode(f->inode);
     }
+    
+    FD_FINISH(f);
+    return r;
+}
 
-    // fsync is stub
-    return 0;
+void sys_sync() {
+    cache_sync();
 }

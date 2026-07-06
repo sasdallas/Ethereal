@@ -12,6 +12,7 @@
  */
 
 #include <kernel/lock/rwsem.h>
+#include <errno.h>
 
 #define RWSEM_WRITER_ACTIVE(s) (!!((s) & (1u << 31)))
 #define RWSEM_READERS_ACTIVE(s) ((s) & ~(1u << 31))
@@ -85,4 +86,44 @@ void rwsem_finishWrite(rwsem_t *rwsem) {
     } else {
         sleep_wakeupQueue(&rwsem->reader_queue, -1);
     }
+}
+
+
+/**
+ * @brief Try to start a read on a read/write semaphore
+ * @param rwsem The semaphore to attempt to read on
+ * @returns 0 on success
+ */
+int rwsem_tryStartRead(rwsem_t *rwsem) {
+    while (1) {
+        int old = atomic_load(&rwsem->state);
+        if (RWSEM_WRITER_ACTIVE(old) || atomic_load(&rwsem->writers_waiting) > 0) {
+            // There's a writer active right now
+            return -EBUSY;
+        }
+
+        if (atomic_compare_exchange_weak(&rwsem->state, &old, old+1)) break;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Try to start a write on a read/write semaphore
+ * @param rwsem The semaphore to attempt to write on
+ * @returns 0 on success
+ */
+int rwsem_tryStartWrite(rwsem_t *rwsem) {
+    atomic_fetch_add(&rwsem->writers_waiting, 1);
+    while (1) {
+        int old = atomic_load(&rwsem->state);
+        if (RWSEM_WRITER_ACTIVE(old) || RWSEM_READERS_ACTIVE(old) > 0) {
+            return -EBUSY;
+        }
+
+        if (atomic_compare_exchange_weak(&rwsem->state, &old, old | (1u << 31))) break;
+    }
+
+    atomic_fetch_sub(&rwsem->writers_waiting, 1);
+    return 0;
 }

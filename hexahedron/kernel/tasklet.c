@@ -72,6 +72,11 @@ void tasklet_insert(tasklet_t *tasklet) {
     // LOG(DEBUG, "Priming tasklet \"%s\"\n", tasklet->name);
     tasklet_cpu_t *tsk = current_cpu->tasklet;
     TASKLET_LOCK();
+    if (tasklet->active) {
+        TASKLET_UNLOCK();
+        return;
+    }
+
     tasklet->next = tsk->queue;
     tsk->queue = tasklet;
     tasklet->prev = NULL;
@@ -90,5 +95,6 @@ void tasklet_remove(tasklet_t *tasklet) {
     else current_cpu->tasklet->queue = tasklet->next;
     if (tasklet->next) tasklet->next->prev = tasklet->prev;
     if (tasklet->active) current_cpu->tasklet->pending--;
+    tasklet->active = false;
     TASKLET_UNLOCK();
 }

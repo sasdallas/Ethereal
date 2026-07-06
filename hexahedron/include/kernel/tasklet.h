@@ -44,8 +44,8 @@ typedef struct tasklet_cpu {
 
 /**** MACROS ****/
 
-#define TASKLET_DECLARE(_vname, _name, _cb, _ctx) tasklet_t _vname = { .next = NULL, .prev = NULL, .name = _name, .cb = _cb, .tasklet_ctx = _ctx }
-#define TASKLET_INIT(t, _name, _cb, _ctx) ({ (t)->name = _name; (t)->cb = _cb; (t)->tasklet_ctx = _ctx; (t)->next = (t)->prev = NULL; })
+#define TASKLET_DECLARE(_vname, _name, _cb, _ctx) tasklet_t _vname = { .next = NULL, .prev = NULL, .name = _name, .cb = _cb, .tasklet_ctx = _ctx, .active = false, }
+#define TASKLET_INIT(t, _name, _cb, _ctx) ({ (t)->name = _name; (t)->cb = _cb; (t)->tasklet_ctx = _ctx; (t)->next = (t)->prev = NULL; (t)->active = false ;})
 
 /**** FUNCTIONS ****/
 

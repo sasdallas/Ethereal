@@ -54,6 +54,7 @@
 #include <limits.h>
 #include <structs/hashmap.h>
 #include <kernel/config.h>
+#include <kernel/mm/cache.h>
 
 /**** DEFINITIONS ****/
 
@@ -129,6 +130,7 @@ typedef struct vfs_mount_ops {
     int (*unmount)(struct vfs_mount *mount);
     int (*write_inode)(struct vfs_inode *inode);
     int (*statvfs)(struct vfs_mount *mount, vfs_mount_info_t *info);
+    int (*sync)(struct vfs_mount *mount);
 } vfs_mount_ops_t;
 
 /* File operations */
@@ -147,6 +149,7 @@ typedef struct vfs_file_ops {
     int (*mmap_prepare)(struct vfs_file *file, struct vmm_memory_range *range); // prepare the range for mapping (yes, it will be a VMM memory range)
     int (*lseek)(struct vfs_file *file, loff_t off, int whence, loff_t *pos); // optional lseek equivalent. pos is a pointer to file->pos. returns 0 on success and sets pos to the new pos.
     int (*check_flags)(struct vfs_file *file); // called on fcntl(F_SETFL)
+    int (*fsync)(struct vfs_file *file);
 } vfs_file_ops_t;
 
 /* Inode attributes */
@@ -186,8 +189,9 @@ typedef struct vfs_inode_ops {
 
 /* VFS page cache operations */
 typedef struct vfs_cache_ops {
-    int (*read_page)(struct vfs_inode *file, loff_t offset, uintptr_t page);
-    int (*write_page)(struct vfs_inode *file, loff_t offset, uintptr_t page);
+    // These should just return 0 on success. Pages are physical!
+    int (*read_range)(struct vfs_inode *file, page_range_t *range);
+    int (*write_range)(struct vfs_inode *file, page_range_t *range);
 } vfs_cache_ops_t;
 
 typedef struct vfs_icache_entry {
@@ -464,6 +468,28 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
 ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 
 /**
+ * @brief Read from a file (bypassing the page cache)
+ * @param file The file to read from
+ * @param off The offset to read from
+ * @param size The size to read
+ * @param buffer The output buffer to read into
+ * @returns Amount of bytes read or negative error code
+ */
+ssize_t vfs_readSync(vfs_file_t *file, loff_t off, size_t size, char *buffer);
+
+/**
+ * @brief Write to a file directly (bypassing the page cache)
+ * @param file The file to write to
+ * @param off The offset to write to
+ * @param size The size to write
+ * @param buffer The output buffer to write with
+ * @returns Amount of bytes write or negative error code
+ * 
+ * Also syncronizes the file
+ */
+ssize_t vfs_writeSync(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
+
+/**
  * @brief Close file
  * @param file The file to close
  */
@@ -492,10 +518,7 @@ int vfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
  * @param attr The attributes output pointer
  * @param attr_mask Mask of attributes to set
  */
-static inline int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) {
-    // TODO locking
-    return inode_setattr(inode, attr, attr_mask);
-}
+int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask);
 
 /**
  * @brief VFS ioctl
@@ -687,5 +710,15 @@ int vfs_chmod(vfs_inode_t *inode, mode_t mode);
  */
 int vfs_chown(vfs_inode_t *inode, uid_t uid, gid_t gid);
 
+/**
+ * @brief Sync a filesystem
+ * @param mount The filesystem to sync
+ */
+int vfs_syncFilesystem(vfs_mount_t *mount);
+
+/**
+ * @brief Sync all filesystems
+ */
+int vfs_syncFilesystems();
 
 #endif

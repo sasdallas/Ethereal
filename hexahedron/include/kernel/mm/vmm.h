@@ -2,7 +2,7 @@
  * @file hexahedron/include/kernel/mm/vmm.h
  * @brief Hexahedron VMM interface
  * 
- * The VMM interface of Hexahedron is inspired by the Astral VMM
+ * The VMM interface of Hexahedron is heavily inspired by the Astral VMM
  * https://github.com/Mathewnd/Astral/
  * 
  * This includes: MMU + VMM API, usage of slabs, VMM contexts, and probably a few other things.
@@ -28,6 +28,7 @@
 #include <kernel/fs/vfs_new.h>
 #include <kernel/mm/cache.h>
 #include <kernel/misc/mutex.h>
+#include <sys/mman.h>
 
 /**** DEFINITIONS ****/
 
@@ -38,6 +39,7 @@
 #define VM_FLAG_SHARED      0x8         // Shared memory mapping
 #define VM_FLAG_DEVICE      0x10        // The physical memory of this mapping refers to device memory and should not be held or freed
 #define VM_FLAG_FAKE_ME_NOT 0x20        // Do not allow this memory region to be filled in later and fill it in now
+#define VM_FLAG_REPLACE     0x40        // Replace the existing mapping (MAP_FIXED)
 
 /* VM_OP_ */
 #define VM_OP_SET_FLAGS     1
@@ -285,5 +287,20 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
  * @param mmu_flags MMU flags
  */
 int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags);
+
+/**
+ * @brief Convert mmap() family protection flags to MMU flags
+ * Utility for usermode
+ */
+static inline mmu_flags_t vmm_toMMU(int prot) {
+    if (prot == PROT_NONE) return 0; // no flags needed
+
+    mmu_flags_t ret = MMU_FLAG_PRESENT |
+        ((prot & PROT_WRITE) ? MMU_FLAG_WRITE : 0) |
+        ((prot & PROT_EXEC) ? 0 : MMU_FLAG_NOEXEC) |
+        MMU_FLAG_USER;
+    
+    return ret;
+}
 
 #endif

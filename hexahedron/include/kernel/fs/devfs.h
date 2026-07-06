@@ -61,6 +61,8 @@ typedef struct devfs_ops {
     int (*mmap)(struct devfs_node *file, void *addr, size_t len, off_t off, uint64_t flags);
     int (*mmap_prepare)(struct devfs_node *file, struct vmm_memory_range *range);
     int (*munmap)(struct devfs_node *file, void *addr, size_t len, off_t offset);
+    int (*read_range)(struct devfs_node *file, page_range_t *range);
+    int (*write_range)(struct devfs_node *file, page_range_t *range);
 } devfs_ops_t;
 
 typedef struct devfs_node {
@@ -113,5 +115,12 @@ int devfs_unregister(devfs_node_t *node);
  * @returns Node or NULL
  */
 devfs_node_t *devfs_get(char *name);
+
+/**
+ * @brief Open a node by its name
+ * @param name The name of the device node to get
+ * @returns Node or NULL
+ */
+vfs_inode_t *devfs_getByName(char *name);
 
 #endif

@@ -246,24 +246,10 @@ int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
 }
 
 /**
- * @brief IRQ handler
- * @param context xHCI
+ * @brief xHCI tasklet
  */
-int xhci_irq(irq_t *irq, void *context) {
-    xhci_t *xhci = (xhci_t*)context;
-
-    // TODO: return IRQ_NOT_SOURCE
-
-    // Acknowledge
-    XHCI_ACKNOWLEDGE(xhci);
-
-    // Clear EINT
-    if (!(xhci->op->usbsts & XHCI_USBSTS_EINT)) {
-        LOG(WARN, "xHCI interrupt without EINT being set..?");
-        return 0;
-    }
-    
-    xhci->op->usbsts = XHCI_USBSTS_EINT;
+void xhci_tasklet(void *context) {
+    xhci_t *xhci = (void*)context;
 
     while (1) {
         xhci_trb_t *t = xhci_dequeueEventTRB(xhci);
@@ -320,7 +306,7 @@ int xhci_irq(irq_t *irq, void *context) {
                 };
 
                 // TODO: Stall handler? Maybe this is a flag in USBTransferCompletion
-                // TODO: NOT EXECUTE CALLBACK SYNCRONOUSLY IN IRQ CONTEXT!!!!!!!!!!! EXTREMELY EXTREMELY BAD!!!
+                // TODO: BAD!! STUPID!!
                 if (pending->callback) {
                     pending->callback(pending->endp, &completion);
                 }
@@ -333,6 +319,29 @@ int xhci_irq(irq_t *irq, void *context) {
 
     // Reprogram ERDP without EHB
     xhci->run->irs[0].erdp = (uint64_t)(xhci->event_ring->trb_list_phys + (xhci->event_ring->dequeue * sizeof(xhci_trb_t))) | XHCI_ERDP_EHB;
+}
+
+/**
+ * @brief IRQ handler
+ * @param context xHCI
+ */
+int xhci_irq(irq_t *irq, void *context) {
+    xhci_t *xhci = (xhci_t*)context;
+
+    // TODO: return IRQ_NOT_SOURCE
+
+    // Acknowledge
+    XHCI_ACKNOWLEDGE(xhci);
+
+    // Clear EINT
+    if (!(xhci->op->usbsts & XHCI_USBSTS_EINT)) {
+        LOG(WARN, "xHCI interrupt without EINT being set..?");
+        return 0;
+    }
+    
+    xhci->op->usbsts = XHCI_USBSTS_EINT;
+
+    tasklet_insert(&xhci->tsklet);
 
     return IRQ_HANDLED;
 }
@@ -454,7 +463,6 @@ void xhci_thread(void *context) {
                 xhci_initializeDevice(xhci, i);
             }
         }
-
     }
 }
 
@@ -518,6 +526,7 @@ int xhci_initController(pci_device_t *device) {
     // Make xHCI structure
     xhci_t *xhci = kzalloc(sizeof(xhci_t));
     xhci->dev = device;
+    TASKLET_INIT(&xhci->tsklet, "xHCI tasklet", xhci_tasklet, xhci);
 
     // Read in BAR0
     pci_bar_t *bar = pci_readBAR(device->bus, device->slot, device->function, 0);

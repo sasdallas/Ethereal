@@ -43,6 +43,7 @@ typedef struct thread_sleep {
     volatile int wakeup_reason;             // Reason this thread got woken up
     unsigned long seconds, subseconds;      // Seconds and subseconds
     struct sleep_queue *queue;              // Queue being slept on
+    bool interruptible;                     // Whether this sleep is interruptible
 } thread_sleep_t;
 
 /**
@@ -70,6 +71,13 @@ typedef struct sleep_queue {
  * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  */
 void sleep_prepare();
+
+/**
+ * @brief Prepare thread for uninterruptible sleep
+ * 
+ * Signals will not be able to wake this thread
+ */
+void sleep_prepareUninterruptible();
 
 /**
  * @brief Wakeup another thread for a reason

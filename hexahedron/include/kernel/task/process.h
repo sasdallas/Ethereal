@@ -139,6 +139,8 @@ typedef struct process {
 #define PROC_IS_ROOT(proc) ((proc)->euid == 0)
 #define PROC_IS_LEADER(proc) ((proc)->pgid == (proc)->pid)
 
+#define NEEDS_ROOT if (current_cpu->current_process->euid != 0) return -EPERM;
+
 /**** FUNCTIONS ****/
 
 /**
@@ -272,5 +274,11 @@ thread_t *process_createKernelThread(process_t *process, unsigned int flags, voi
  * Doesn't free the process but turns it into a zombie
  */
 void process_destroy(process_t *proc);
+
+/**
+ * @brief Push a process onto the reaper
+ * @param proc The process to push
+ */
+void reaper_push(process_t *proc);
 
 #endif

@@ -318,6 +318,12 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         if (vfs_root_inode) inode_hold(process->wd_node);
     }
 
+    if (parent) {
+        process->umask = parent->umask;
+    } else {
+        process->umask = 0022;
+    }
+
     // Create tree node
     if (parent && parent->node) {
         process->node = tree_insert_child(process_tree, parent->node, (void*)process);

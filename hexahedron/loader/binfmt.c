@@ -43,7 +43,9 @@ int binfmt_last_entry = 2;
  */
 static int binfmt_shebang(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     char buf[256];
-    if (vfs_read(file, 0, 256, buf) <= 0) return -EIO;
+    ssize_t r = vfs_read(file, 0, 255, buf);
+    if (r < 0) return r;
+    buf[r] = 0;
     vfs_close(file);
 
     char *sb_start = buf + 2;
@@ -58,7 +60,7 @@ static int binfmt_shebang(char *path, vfs_file_t *file, int argc, char **argv, c
     if (arg) *(arg++) = 0;
 
     vfs_file_t *interp;
-    int r = vfs_open(sb_start, O_RDONLY, &interp);
+    r = vfs_open(sb_start, O_RDONLY, &interp);
     if (r) return r;
 
     int new_argc = argc + (arg ? 2 : 1);
@@ -95,8 +97,11 @@ int binfmt_register(binfmt_entry_t entry) {
  */
 int binfmt_exec(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
     // Read bytes of the file
-    char bytes[BINFMT_BYTE_MAX];
-    if (vfs_read(file, 0, BINFMT_BYTE_MAX, bytes) != BINFMT_BYTE_MAX) return -EIO;
+    char bytes[BINFMT_BYTE_MAX] = { 0 };
+    ssize_t r = vfs_read(file, 0, BINFMT_BYTE_MAX, bytes);
+    if (r <= 0) {
+        return r; 
+    }
 
     // Start comparing
     for (int i = 0; i < binfmt_last_entry; i++) {

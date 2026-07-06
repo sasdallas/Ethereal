@@ -111,7 +111,9 @@ typedef struct xhci {
     // ctrb + friends garbage
     xhci_command_completion_trb_t ctr;              // Completion TRB
     volatile uint8_t flag;                          // Flag
-    volatile uint8_t port_status_changed;           // Port status was changed, keep iterating                            // MSI in use
+    volatile uint8_t port_status_changed;           // Port status was changed, keep iterating
+    
+    tasklet_t tsklet; 
 } xhci_t;
 
 /**** VARIABLES ****/

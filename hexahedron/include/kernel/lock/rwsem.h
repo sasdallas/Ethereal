@@ -62,4 +62,18 @@ int rwsem_startWrite(rwsem_t *rwsem);
  */
 void rwsem_finishWrite(rwsem_t *rwsem);
 
+/**
+ * @brief Try to start a read on a read/write semaphore
+ * @param rwsem The semaphore to attempt to read on
+ * @returns 0 on success
+ */
+int rwsem_tryStartRead(rwsem_t *rwsem);
+
+/**
+ * @brief Try to start a write on a read/write semaphore
+ * @param rwsem The semaphore to attempt to write on
+ * @returns 0 on success
+ */
+int rwsem_tryStartWrite(rwsem_t *rwsem);
+
 #endif

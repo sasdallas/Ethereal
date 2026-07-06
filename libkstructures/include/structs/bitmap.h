@@ -19,7 +19,7 @@
 #include <stdbool.h>
 
 // This follows something similar to Linux's bitmap implementation
-#define BITMAP_DEFINE(name, nbits) unsigned long name[(nbits + sizeof(long) - 1) / sizeof(long)];
+#define BITMAP_DEFINE(name, nbits) unsigned long name[(nbits + sizeof(long) - 1) / sizeof(long)]
 #define BITMAP_BITS (sizeof(unsigned long) * 8)
 #define BITMAP_TO_SIZE(nbits) ((nbits + sizeof(unsigned char) - 1) / sizeof(unsigned char))
 

@@ -302,8 +302,8 @@ void ansi_parse(ansi_t *ansi, uint8_t ch) {
             size_t x = 0;
             size_t y = 0;
 
-            if (argc >= 1) x = (size_t)strtol(argv[0], NULL, 10) - 1;
-            if (argc >= 2) y = (size_t)strtol(argv[0], NULL, 10) - 1;
+            if (argc >= 1) y = (size_t)strtol(argv[0], NULL, 10) - 1;
+            if (argc >= 2) x = (size_t)strtol(argv[1], NULL, 10) - 1;
             
             ansi->move_cursor(ANSI_CLAMPX(x), ANSI_CLAMPY(y));
         } else if (ch == CUU) {

@@ -103,7 +103,7 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
     } else if (region->type == PHYS_MEMORY_MODULE) {
         // TODO: This works but I don't like it one bit..
         // First try to allocate from previous sections
-    #if 1
+    #if 0
         pmm_section_t *s = zones[zone];
         while (s) {
             if (s->nfree >= size / PAGE_SIZE) {
@@ -224,7 +224,13 @@ void pmm_init(pmm_region_t *region) {
     while (r) {
         LOG(DEBUG, "PMM entry %016llX - %016llX (%s)\n", r->start, r->end, pmm_memory_types[r->type]);
 
+        r->start = PAGE_ALIGN_UP(r->start);
         r->end = PAGE_ALIGN_DOWN(r->end); // Shouldn't cause any problems...
+
+        if (r->start >= r->end) {
+            r = r->next;
+            continue;
+        }
 
         if (r->type == PHYS_MEMORY_AVAILABLE || r->type == PHYS_MEMORY_MODULE) {
             // Create sections for available regions
@@ -237,12 +243,12 @@ void pmm_init(pmm_region_t *region) {
     }
     
     pmm_memory_size = memory_size;
-
+    
 
     // Now we need to build the page arrays for each section
     if (!biggest) {
         LOG(ERR, "No biggest section found; cannot build page arrays\n");
-        return;
+        assert(0);
     }
 
     uintptr_t bo = biggest->start;

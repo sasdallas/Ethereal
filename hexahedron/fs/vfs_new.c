@@ -63,10 +63,11 @@ vfs_inode_t *vfs_root_inode = NULL; // Initialized as a dummy node in vfs_init
 
 /* Filesystem map */
 hashmap_t *vfs_fs_map = NULL;
+mutex_t vfs_fs_mut = MUTEX_INITIALIZER;
 
 /* Inode cache */
 vfs_icache_entry_t *vfs_inode_cache[40] = { NULL };
-spinlock_t vfs_inode_cache_lock = SPINLOCK_INITIALIZER;
+mutex_t vfs_inode_cache_mut = MUTEX_INITIALIZER;
 
 /* Next inode */
 /* Used by memory things like tmpfs/initfs */
@@ -197,6 +198,8 @@ int vfs_canonicalize(char *wd, char *input, char *output) {
  * @param mount The inode mount
  * @param ino The inode number to lookup
  * @returns Held inode or NULL
+ * 
+ * Expects mutex to be held!!
  */
 static vfs_inode_t *vfs_cacheFindInode(vfs_mount_t *mount, ino_t ino) {
     // First hash the mount and the ino number together
@@ -208,24 +211,23 @@ static vfs_inode_t *vfs_cacheFindInode(vfs_mount_t *mount, ino_t ino) {
     struct to_hash hash_struct =  { .m = mount, .i = ino };
     uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
 
-    spinlock_acquire(&vfs_inode_cache_lock);
     vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
     while (ent) {
         vfs_inode_t *i = CONTAINER_OF(ent, vfs_inode_t, c_entry);
         
         if (i->mount == mount && i->attr.ino == ino) {
-            spinlock_release(&vfs_inode_cache_lock);
             return i;
         }
 
         ent = ent->next;
     }
-    spinlock_release(&vfs_inode_cache_lock);
+
     return NULL;
 }
 
 /**
  * @brief Insert inode into cache
+ * Expects lock held!
  */
 static void vfs_cacheInsertInode(vfs_mount_t *mount, ino_t ino, vfs_inode_t *inode) {
     // First hash the mount and the ino number together
@@ -237,15 +239,12 @@ static void vfs_cacheInsertInode(vfs_mount_t *mount, ino_t ino, vfs_inode_t *ino
     struct to_hash hash_struct =  { .m = mount, .i = ino };
     uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
 
-    spinlock_acquire(&vfs_inode_cache_lock);
     vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
 
     vfs_inode_cache[hash % 40] = &inode->c_entry;
     inode->c_entry.next = ent;
     inode->c_entry.prev = NULL;
     if (ent) ent->prev = &inode->c_entry;
-
-    spinlock_release(&vfs_inode_cache_lock);
 }
 
 /**
@@ -261,7 +260,7 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
     struct to_hash hash_struct =  { .m = mount, .i = inode->attr.ino };
     uint64_t hash = fnv1a_64(&hash_struct, sizeof(struct to_hash));
 
-    spinlock_acquire(&vfs_inode_cache_lock);
+    mutex_acquire(&vfs_inode_cache_mut);
     vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
 
     // Delink
@@ -272,7 +271,7 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
         vfs_inode_cache[hash % 40] = inode->c_entry.next;
     }
     
-    spinlock_release(&vfs_inode_cache_lock);
+    mutex_release(&vfs_inode_cache_mut);
 }
 
 /**
@@ -458,6 +457,7 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
     }
 
     // The filesystem was mounted successfully
+    // TODO lock
     mount_dst->next = filesystem->fs_mounts;
     if (filesystem->fs_mounts) filesystem->fs_mounts->prev = mount_dst;
     filesystem->fs_mounts = mount_dst;
@@ -555,6 +555,15 @@ int vfs_changeGlobalRoot(vfs2_filesystem_t *filesystem, char *src, unsigned long
     mutex_acquire(&vfs_map_mut);
     vfs_inode_t *previous_inode = vfs_root_inode;
     vfs_root_inode = mount_dst->root;
+
+    // fixup the mount map
+    vfs_mount_entry_t *ent = hashmap_get(vfs_map, previous_inode);
+    if (ent != NULL) {
+        hashmap_set(vfs_map, vfs_root_inode, ent);
+        hashmap_remove(vfs_map, previous_inode);
+    }
+
+    // this should kill it
     inode_release(previous_inode);
     mutex_release(&vfs_map_mut);
 
@@ -785,8 +794,15 @@ int vfs_createat(vfs_inode_t *inode, char *path, mode_t mode, vfs_inode_t **inod
     }
 
     if (r == 0) {
-        // Cache the inode
-        vfs_cacheInsertInode(tmp->mount, tmp->attr.ino, tmp);
+        // Cache the inode if it wasnt cached already
+        mutex_acquire(&vfs_inode_cache_mut);
+
+        if (vfs_cacheFindInode(tmp->mount, tmp->attr.ino) == NULL) {
+            inode_hold(tmp);
+            vfs_cacheInsertInode(tmp->mount, tmp->attr.ino, tmp);
+        }
+
+        mutex_release(&vfs_inode_cache_mut);
     }
 
     inode_release(parent);
@@ -843,52 +859,68 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
  * @returns Amount of bytes read or negative error code
  */
 ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
+    if (file->inode->attr.type == VFS_DIRECTORY) {
+        return -EISDIR;
+    }
+
 #ifndef KERNEL_ENABLE_PAGE_CACHE
     return file_read(file, off, size, buffer);
 #else
     if (!VFS_CACHEABLE(file->inode)) {
         return file_read(file, off, size, buffer);
     }
-
+    
     if (file->inode->cache == NULL) {
         file->inode->cache = cache_create();
     }
-
-    if (off > file->inode->attr.size) {
+    
+    if (off >= file->inode->attr.size) {
         return 0;
     }
 
-    if (off+size > (size_t)file->inode->attr.size) {
+    if (off + size > (size_t)file->inode->attr.size) {
         size = file->inode->attr.size - off;
+    }
+    
+    if (size == 0) {
+        return 0;
     }
 
     // Now do a page cache read
+    size_t pg_ind_start = off / PAGE_SIZE;
+    size_t pg_ind_end   = (off + size - 1) / PAGE_SIZE;
+    size_t npages       = pg_ind_end - pg_ind_start + 1;
+
+    page_range_t *range;
+    range = kmalloc(sizeof(page_range_t) + (npages*sizeof(uintptr_t)));
+    int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, 0);
+    if (r) {
+        return r;
+    }
+
     size_t remaining = size;
-    size_t pg_ind = off / PAGE_SIZE;
     size_t pg_off = off % PAGE_SIZE;
     size_t bpos = 0;
-    
-    while (remaining) {
+    for (size_t i = 0; i < npages && remaining; i++) {
         size_t chunk = PAGE_SIZE - pg_off;
         if (chunk > remaining) chunk = remaining;
 
-        pmm_page_t *output;
-        int r = cache_getPage(file->inode, pg_ind * PAGE_SIZE, &output);
-        if (r) { return r; }
-
-        uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
+        uintptr_t rmap = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
         memcpy(buffer + bpos, (void*)rmap + pg_off, chunk);
         arch_mmu_unmap_physical(rmap, PAGE_SIZE);
 
-        pmm_release(pmm_address(output));
-
         bpos += chunk;
         remaining -= chunk;
-        pg_ind++;
         pg_off = 0;
     }
 
-    return (ssize_t)size;
+    cache_releaseRange(range);
+    
+    if (npages >= 32) {
+        kfree(range);
+    }
+
+    return bpos;
 #endif
 }
 
@@ -901,9 +933,14 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
  * @returns Amount of bytes write or negative error code
  */
 ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
-#ifndef KERNEL_ENABLE_PAGE_CACHE
-    return file_write(file, off, size, buffer);
-#else
+    if (file->inode->attr.type == VFS_DIRECTORY) {
+        return -EISDIR;
+    }
+
+    if (file->flags & O_DIRECT) {
+        return vfs_writeSync(file, off, size, buffer);
+    }
+
     if (!VFS_CACHEABLE(file->inode)) {
         return file_write(file, off, size, buffer);
     }
@@ -912,40 +949,203 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
         file->inode->cache = cache_create();
     }
 
-    if (file->inode->attr.type == VFS_FILE && (size_t)file->inode->attr.size != off+size) {
+    // While files can grow, block devices cannot
+    if (file->inode->attr.type == VFS_FILE && (size_t)file->inode->attr.size < off+size) {
+        int r = vfs_truncate(file->inode, off+size);
+        if (r < 0) return r;
+    } else if (file->inode->attr.type == VFS_BLOCKDEVICE) {
+        if (off > (loff_t)inode_size(file->inode)) return 0;
+        if (off+size > inode_size(file->inode)) size = inode_size(file->inode)-off;
+    }
+
+    if (size == 0) {
+        return 0;
+    }
+
+    // Now do a page cache write
+    size_t pg_ind_start = off / PAGE_SIZE;
+    size_t pg_ind_end   = (off + size - 1) / PAGE_SIZE;
+    size_t npages       = pg_ind_end - pg_ind_start + 1;
+
+    // we can save a ton of time if we do aligned writes
+    int flags = 0;
+    if ((off % PAGE_SIZE) == 0 && ((off+size) % PAGE_SIZE) == 0) {
+        flags |= CACHE_FLAG_ALIGNEDWRITE;
+    }
+
+    // allocate a range
+    // TODO: if npages is small enough, use stack memory instead of kmalloc
+    page_range_t *range = kmalloc(sizeof(page_range_t) + (npages * sizeof(uintptr_t)));
+    int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, flags);
+    if (r) {
+        return r;
+    }
+
+    size_t remaining = size;
+    size_t pg_off = off % PAGE_SIZE;
+    size_t bpos = 0;
+    for (size_t i = 0; i < npages && remaining; i++) {
+        size_t chunk = PAGE_SIZE - pg_off;
+        if (chunk > remaining) chunk = remaining;
+
+        uintptr_t rmap = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+        memcpy((void*)rmap + pg_off, buffer + bpos, chunk);
+        arch_mmu_unmap_physical(rmap, PAGE_SIZE);
+
+        bpos += chunk;
+        remaining -= chunk;
+        pg_off = 0;
+    }
+
+
+    cache_markRangeDirty(file->inode->cache, range);
+    cache_releaseRange(range);
+    kfree(range);
+    return bpos;
+}
+
+/**
+ * @brief Read from a file (bypassing the page cache)
+ * @param file The file to read from
+ * @param off The offset to read from
+ * @param size The size to read
+ * @param buffer The output buffer to read into
+ * @returns Amount of bytes read or negative error code
+ */
+ssize_t vfs_readSync(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
+    // TODO right now at least this doesnt matter
+    return vfs_read(file,off,size,buffer);
+}
+
+/**
+ * @brief Write to a file directly (bypassing the page cache)
+ * @param file The file to write to
+ * @param off The offset to write to
+ * @param size The size to write
+ * @param buffer The output buffer to write with
+ * @returns Amount of bytes write or negative error code
+ * 
+ * Also syncronizes the file
+ */
+ssize_t vfs_writeSync(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
+    if (!VFS_CACHEABLE(file->inode) || !file->inode->cache) {
+        return file_write(file, off, size, buffer);
+    }
+
+    // TODO This needs to be upgraded! We dont want to bother updating these pages...
+    // TODO code duplication, tbf
+    if (file->inode->attr.type == VFS_FILE && (size_t)file->inode->attr.size < off+size) {
         int r = vfs_truncate(file->inode, off+size);
         if (r < 0) return r;
     }
 
+    if (file->inode->attr.type == VFS_BLOCKDEVICE) {
+        if (off > (loff_t)inode_size(file->inode)) return 0;
+        if (off+size > inode_size(file->inode)) size = inode_size(file->inode)-off;
+    }
+
+
+    if (size == 0) {
+        return 0;
+    }
+
+    // Now do a page cache write
+    size_t pg_ind_start = off / PAGE_SIZE;
+    size_t pg_ind_end   = (off + size - 1) / PAGE_SIZE;
+    size_t npages       = pg_ind_end - pg_ind_start + 1;
+
+    // If we can do a page aligned write do that
+    int flags = 0;
+    if ((off % PAGE_SIZE) == 0 && ((off+size) % PAGE_SIZE) == 0) {
+        flags |= CACHE_FLAG_ALIGNEDWRITE;
+    }
+
+    // TODO stack allocate if small enough
+    page_range_t *range = kmalloc(sizeof(page_range_t) + (npages * sizeof(uintptr_t)));
+    int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, flags);
+    if (r) {
+        kfree(range);
+        return r;
+    }
+
     size_t remaining = size;
-    size_t pg_ind = off / PAGE_SIZE;
     size_t pg_off = off % PAGE_SIZE;
     size_t bpos = 0;
-    
-    while (remaining) {
+    for (size_t i = 0; i < npages && remaining; i++) {
         size_t chunk = PAGE_SIZE - pg_off;
         if (chunk > remaining) chunk = remaining;
 
-        pmm_page_t *output;
-        int r = cache_getPage(file->inode, pg_ind * PAGE_SIZE, &output);
-        if (r) { return r; }
-
-        uintptr_t rmap = arch_mmu_remap_physical(pmm_address(output), PAGE_SIZE, REMAP_TEMPORARY);
+        uintptr_t rmap = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
         memcpy((void*)rmap + pg_off, buffer + bpos, chunk);
         arch_mmu_unmap_physical(rmap, PAGE_SIZE);
 
-        pmm_release(pmm_address(output));
-        cache_markDirty(output);
-
         bpos += chunk;
         remaining -= chunk;
-        pg_ind++;
         pg_off = 0;
     }
 
+
+    cache_markRangeDirty(file->inode->cache, range);
+    cache_releaseRange(range);
+    kfree(range);
+
+    // We are finished writing, sync the node
+    if (file->ops->fsync) {
+        int r = file->ops->fsync(file);
+        if (r != 0) {
+            return r;
+        }
+    } else {
+        int r = cache_syncInode(file->inode);
+        if (r != 0) {
+            return r;
+        }
+    }
+
     return (ssize_t)size;
-#endif
 }
+
+/**
+ * @brief Sync a filesystem
+ * @param mount The filesystem to sync
+ */
+int vfs_syncFilesystem(vfs_mount_t *mount) {
+    // todo locking
+    if (mount->ops && mount->ops->sync) {
+        return mount->ops->sync(mount);
+    } else {
+        return 0;
+    }
+}
+
+/**
+ * @brief Sync all filesystems
+ */
+int vfs_syncFilesystems() {
+    // !!! Ugly and annoying
+    mutex_acquire(&vfs_fs_mut);
+
+    list_t *l = hashmap_values(vfs_fs_map);
+    foreach(fsn,l) {
+        vfs2_filesystem_t *fs = fsn->value;
+        vfs_mount_t *iter = fs->fs_mounts;
+        while (iter) {
+            // TODO lock
+            int r = vfs_syncFilesystem(iter);
+            if (r != 0) {
+                mutex_release(&vfs_fs_mut);
+                list_destroy(l,false);
+                return r;
+            }
+
+            iter = iter->next;
+        }
+    }
+
+    mutex_release(&vfs_fs_mut);
+    return 0;
+}
+
 
 /**
  * @brief Get attribute VFS
@@ -1009,8 +1209,6 @@ loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence) {
         case SEEK_END:
             file->pos = off + file->inode->attr.size;
             break;
-        default:
-            assert(0 && "unsupported seek value"); // debug
     }
 
     return file->pos;    
@@ -1045,9 +1243,12 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path) {
     r = inode_unlink(parent, child, last);
 
     if (r == 0) {
-        // The cache holds an initial reference to this inode, so we can lose it now
-        // !!! Need to have some sort of cache pruning system
+        // This inode is cached
         inode_release(child);
+
+        // release the original refs
+        inode_release(child);
+        inode_release(child); // i dont know where this one is from but its consistent
     }
 
     inode_release(parent);
@@ -1103,6 +1304,16 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
     return err;
 }
 
+/**
+ * @brief Set attribute VFS
+ * @param inode The inode to get the attributes of
+ * @param attr The attributes output pointer
+ * @param attr_mask Mask of attributes to set
+ */
+int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) {
+    // TODO locking
+    return inode_setattr(inode, attr, attr_mask);
+}
 
 /**
  * @brief VFS chmod
@@ -1152,18 +1363,34 @@ int vfs_chown(vfs_inode_t *inode, uid_t uid, gid_t gid) {
  */
 vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
     // Lookup inode in VFS cache
-    vfs_inode_t *inode = vfs_cacheFindInode(mount, ino);
-    if (inode) {
-        // yay
-        inode_hold(inode);
-        return inode;
+    // To order this correctly we need to have the mutex
+    mutex_acquire(&vfs_inode_cache_mut);
+
+    if (mount) {
+        vfs_inode_t *inode = vfs_cacheFindInode(mount, ino);
+        if (inode) {
+            inode_hold(inode);
+            mutex_release(&vfs_inode_cache_mut);
+
+            // This inode might still be in the process of being created
+            while (__atomic_load_n(&inode->state, __ATOMIC_SEQ_CST) & INODE_STATE_NEW) {
+                // !!! depending on how long they are holding this inode for.. might need a waitqueue
+                asm volatile (  "sti\n"
+                                "hlt\n");
+            }
+
+            return inode;
+        }
     }
 
     // create it
-    inode = vfs2_inode();
-    spinlock_acquire(&inode->lock);
-    inode->state |= INODE_STATE_NEW;
-    inode_hold(inode); // Hold the inode again until it's done
+    vfs_inode_t *inode = vfs2_inode();
+    __atomic_fetch_or(&inode->state, INODE_STATE_NEW, __ATOMIC_SEQ_CST);
+    inode_hold(inode); // Cache inode ref
+    vfs_cacheInsertInode(mount,ino,inode);
+
+    mutex_release(&vfs_inode_cache_mut);
+
     return inode;
 }
 
@@ -1174,10 +1401,7 @@ vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
  * Call this after you finish setting up an inode of @c INODE_STATE_NEW
  */
 void vfs_createdInode(vfs_inode_t *inode) {
-    inode->state &= ~(INODE_STATE_NEW);
-    inode_release(inode);
-    vfs_cacheInsertInode(inode->mount, inode->attr.ino, inode);
-    spinlock_release(&inode->lock);
+    __atomic_fetch_and(&inode->state, ~(INODE_STATE_NEW), __ATOMIC_SEQ_CST);
 }
 
 /**
@@ -1194,7 +1418,10 @@ vfs2_filesystem_t *vfs_getFilesystem(char *name) {
  */
 void vfs_register(vfs2_filesystem_t *filesystem) {
     assert(filesystem->mount != NULL);
+    
+    mutex_acquire(&vfs_fs_mut);
     hashmap_set(vfs_fs_map, (void*)filesystem->name, filesystem);
+    mutex_release(&vfs_fs_mut);
 }
 
 /**
@@ -1202,7 +1429,9 @@ void vfs_register(vfs2_filesystem_t *filesystem) {
  * @param filesystem The filesystem to unregister
  */
 void vfs_unregister(vfs2_filesystem_t *filesystem) {
+    mutex_acquire(&vfs_fs_mut);
     hashmap_remove(vfs_fs_map, (void*)filesystem->name);
+    mutex_release(&vfs_fs_mut);
 }
 
 /**

@@ -75,7 +75,7 @@ void print_entry(char *ent) {
 
     // Get stat data
     struct stat st;
-    if (stat(ent, &st) < 0) {
+    if (lstat(ent, &st) < 0) {
         fprintf(stderr, "ls: %s: %s\n", ent, strerror(errno));
         return;
     }
@@ -161,7 +161,7 @@ void print_entry(char *ent) {
 
         if (is_tty) {
             if (stat(link_buf, &st) < 0) {
-                printf("%s", link_buf);
+                printf("%s\n", link_buf);
                 return;
             }
 

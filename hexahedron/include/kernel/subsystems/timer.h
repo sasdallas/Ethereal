@@ -75,6 +75,7 @@ typedef struct timer_event {
     tasklet_t tsklet; // stores timer name
     uint64_t intv; // in ticks
     bool repeat; // if repeating will be requeued as a tasklet
+    bool active;
 } timer_event_t;
 
 /**** FUNCTIONS ****/

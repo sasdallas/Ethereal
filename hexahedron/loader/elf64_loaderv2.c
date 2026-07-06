@@ -28,6 +28,11 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "LOADER:ELF2", __VA_ARGS__)
 
+#ifdef ELF_DEBUG
+#define DEBUG(...) LOG(DEBUG, __VA_ARGS__)
+#else
+#define DEBUG(...)
+#endif
 
 /**
  * @brief Open an ELF image
@@ -128,7 +133,7 @@ int elf_checkImage(elf_image_t *image, int type) {
  */
 static int elf_mapSegment(elf_image_t *img, Elf64_Phdr *phdr) {
     // Zero out the memory region that will be loaded
-    LOG(DEBUG, "Map segment p_vaddr=%p p_offset=%p p_filesz=0x%x p_memsz=0x%x\n", phdr->p_vaddr, phdr->p_offset, phdr->p_filesz, phdr->p_memsz);
+    DEBUG("Map segment p_vaddr=%p p_offset=%p p_filesz=0x%x p_memsz=0x%x\n", phdr->p_vaddr, phdr->p_offset, phdr->p_filesz, phdr->p_memsz);
     uintptr_t seg_start = img->load_bias + phdr->p_vaddr;
     uintptr_t seg_end = seg_start + phdr->p_memsz;
 
@@ -167,7 +172,7 @@ static int elf_loadImageExecutable(elf_image_t *img) {
         }
     }
 
-    LOG(DEBUG, "Calculated ELF file span: %p - %p\n", min_vaddr, max_vaddr);
+    DEBUG("Calculated ELF file span: %p - %p\n", min_vaddr, max_vaddr);
 
     size_t image_size = max_vaddr - min_vaddr;
     image_size += min_vaddr & 0xFFF; // !!!: hack that should be moved to vmm_map, ensures that we can fully map in this region
@@ -196,7 +201,7 @@ static int elf_loadImageExecutable(elf_image_t *img) {
         return -ENOMEM;
     }
 
-    LOG(DEBUG, "Loading ELF file to base: %p\n", base);
+    DEBUG("Loading ELF file to base: %p\n", base);
     img->load_bias = (uintptr_t)base - min_vaddr;
     img->img_base = (uintptr_t)base;
     img->entrypoint = img->load_bias + ehdr->e_entry;

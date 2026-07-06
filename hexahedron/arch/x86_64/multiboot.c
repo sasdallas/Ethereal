@@ -167,10 +167,14 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
 
             module->mod_start = arch_mmu_remap_physical(mod_tag->mod_start, 0xDEADBEEF, REMAP_TEMPORARY);
             module->mod_end = arch_mmu_remap_physical(mod_tag->mod_end, 0xDEADBEEF, REMAP_TEMPORARY);
-            module->cmdline = (char*)arch_relocate_structure(MBRELOC(mod_tag->cmdline), strlen((char*)MBRELOC(mod_tag->cmdline)));
             
-            // Null-terminate cmdline
-            module->cmdline[strlen((char*)MBRELOC(mod_tag->cmdline)) - 1] = 0;
+            size_t cmdline_len = strlen((char*)MBRELOC(mod_tag->cmdline));
+            if (cmdline_len) {
+                module->cmdline = (char*)arch_relocate_structure(MBRELOC(mod_tag->cmdline), cmdline_len);
+                module->cmdline[cmdline_len - 1] = 0;
+            } else {
+                module->cmdline = "";
+            }
 
             module->next = NULL;
         } else if (tag->type == MULTIBOOT_TAG_TYPE_ACPI_OLD) {
@@ -199,9 +203,11 @@ generic_parameters_t *arch_parse_multiboot2(multiboot_t *bootinfo) {
             parameters->bootloader_name[strlen(bootldr->string)] = 0;
         } else if (tag->type == MULTIBOOT_TAG_TYPE_CMDLINE) {
             struct multiboot_tag_string *cmdline = (struct multiboot_tag_string *)tag; 
+            dprintf(DEBUG, "test\n");
             if (strlen(cmdline->string)) {
-            parameters->kernel_cmdline = (char*)arch_relocate_structure((uintptr_t)cmdline->string, strlen(cmdline->string));
-            parameters->kernel_cmdline[strlen(cmdline->string)] = 0;
+                dprintf(DEBUG, "kernel: %d\n", strlen(cmdline->string));
+                parameters->kernel_cmdline = (char*)arch_relocate_structure((uintptr_t)cmdline->string, strlen(cmdline->string));
+                parameters->kernel_cmdline[strlen(cmdline->string)] = 0;
             } else {
                 parameters->kernel_cmdline = (char*)arch_allocate_structure(1);
                 parameters->kernel_cmdline[0] = 0;
@@ -609,6 +615,7 @@ void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, pmm_region_t *regions) {
     uintptr_t kstart = (uintptr_t)&__kernel_start_phys;
     uintptr_t kend = (uintptr_t)&__kernel_end_phys;
 
+
     // Stage 1 of parsing
     struct multiboot_tag *tag = (struct multiboot_tag*)(bootinfo->tags);
     while (tag->type != MULTIBOOT_TAG_TYPE_END) {
@@ -621,7 +628,12 @@ void arch_parse_multiboot2_mmap(multiboot_t *_bootinfo, pmm_region_t *regions) {
                 
                 regions[i].start = ent->addr;
                 regions[i].end = ent->addr + ent->len;
-                regions[i].type = arch_e820_to_pmm[ent->type];
+                if (ent->type >= 1 && ent->type <= 5) {
+                    regions[i].type = arch_e820_to_pmm[ent->type];
+                } else {
+                    regions[i].type = PHYS_MEMORY_RESERVED;
+                }
+
                 regions[i].next = NULL;
                 
                 if (i != 0) regions[i-1].next = &regions[i];

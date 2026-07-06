@@ -90,10 +90,27 @@ void sleep_callback(uint64_t ticks) {
  * Use @c sleep_enter to actually enter the sleep state, which will also return the reason you woke up
  */
 void sleep_prepare() {
-    spinlock_acquire(&current_cpu->current_thread->sleep.lock);
-    current_cpu->current_thread->sleep.seconds = 0;
-    current_cpu->current_thread->sleep.subseconds = 0;
-    current_cpu->current_thread->sleep.queue = NULL;
+    thread_t *cur = current_cpu->current_thread;
+    spinlock_acquire(&cur->sleep.lock);
+    cur->sleep.seconds = 0;
+    cur->sleep.subseconds = 0;
+    cur->sleep.queue = NULL;
+    cur->sleep.interruptible = true;
+    __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_SLEEPING);
+}
+
+/**
+ * @brief Prepare thread for uninterruptible sleep
+ * 
+ * Signals will not be able to wake this thread
+ */
+void sleep_prepareUninterruptible() {
+    thread_t *cur = current_cpu->current_thread;
+    spinlock_acquire(&cur->sleep.lock);
+    cur->sleep.seconds = 0;
+    cur->sleep.subseconds = 0;
+    cur->sleep.queue = NULL;
+    cur->sleep.interruptible = false;
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_SLEEPING);
 }
 
@@ -139,6 +156,11 @@ int sleep_wakeupReason(struct thread *thread, int reason) {
     }
 
     spinlock_acquire(&thread->sleep.lock);
+
+    if (reason == WAKEUP_SIGNAL && thread->sleep.interruptible == false) {
+        spinlock_release(&thread->sleep.lock);
+        return 1;
+    }
 
     if ((thread->status & THREAD_STATUS_SLEEPING) == 0) {
         spinlock_release(&thread->sleep.lock);

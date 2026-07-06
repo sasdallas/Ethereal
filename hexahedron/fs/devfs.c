@@ -43,8 +43,9 @@ static int devfs_write_inode(vfs_inode_t *inode);
 static int devfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
 static int devfs_unimplemented();
 
-static int devfs_read_page(vfs_inode_t *file, loff_t offset, uintptr_t page);
-static int devfs_write_page(vfs_inode_t *file, loff_t offset, uintptr_t page);
+static int devfs_read_range(vfs_inode_t *file, page_range_t *range);
+static int devfs_write_range(vfs_inode_t *file, page_range_t *range);
+
 
 /* File operations */
 static vfs_file_ops_t devfs_file_ops = {
@@ -79,8 +80,8 @@ static vfs_inode_ops_t devfs_inode_ops = {
 };
 
 static vfs_cache_ops_t devfs_cache_ops = {
-    .read_page = devfs_read_page,
-    .write_page = devfs_write_page,
+    .read_range = devfs_read_range,
+    .write_range = devfs_write_range,
 };
 
 /* Mount operations */
@@ -372,31 +373,51 @@ static int devfs_munmap(vfs_file_t *file, void *addr, size_t size, off_t offset)
 }
 
 /**
- * @brief devfs read page
+ * @brief devfs read range
  */
-static int devfs_read_page(vfs_inode_t *inode, loff_t offset, uintptr_t page) {
+static int devfs_read_range(vfs_inode_t *inode, page_range_t *range) {
     assert(inode->attr.type == VFS_BLOCKDEVICE);
     devfs_node_t *n = inode->priv;
     int r = 0;
-    
-    if (n->ops->read) {
-        r = (int)n->ops->read(n, offset, PAGE_SIZE, (char*)page);
+
+    if (n->ops->read_range) {
+        r = n->ops->read_range(n,range);
+    } else {
+        if (n->ops->read == NULL) return -ENODEV;
+
+        for (unsigned i = 0; i < range->npages; i++) {
+            uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+            r = n->ops->read(n, range->offset + (i*PAGE_SIZE), PAGE_SIZE, (char*)p);
+            arch_mmu_unmap_physical(p, PAGE_SIZE);
+            if (r != 0) break;
+        }
     }
-    
-    if (r < 0) return r;
-    return 0;
+
+    return r;
 }
 
 /**
- * @brief devfs write page
+ * @brief devfs write range
  */
-static int devfs_write_page(vfs_inode_t *inode, loff_t offset, uintptr_t page) {
+static int devfs_write_range(vfs_inode_t *inode, page_range_t *range) {
     assert(inode->attr.type == VFS_BLOCKDEVICE);
     devfs_node_t *n = inode->priv;
     int r = 0;
-    if (n->ops->write) r = (int)n->ops->write(n, offset, PAGE_SIZE, (const char*)page);
-    if (r < 0) return r;
-    return 0;
+
+    if (n->ops->write_range) {
+        r = n->ops->write_range(n,range);
+    } else {
+        if (n->ops->write == NULL) return -ENODEV;
+
+        for (unsigned i = 0; i < range->npages; i++) {
+            uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+            r = n->ops->write(n, range->offset + (i*PAGE_SIZE), PAGE_SIZE, (const char*)p);
+            arch_mmu_unmap_physical(p, PAGE_SIZE);
+            if (r != 0) break;
+        }
+    }
+
+    return r;
 }
 
 /**
@@ -547,6 +568,32 @@ devfs_node_t *devfs_get(char *name) {
     }
 
     return cur;
+}
+
+/**
+ * @brief Open a node by its name
+ * @param name The name of the device node to get
+ * @returns Node or NULL
+ */
+vfs_inode_t *devfs_getByName(char *name) {
+    devfs_node_t *n = devfs_get(name);
+    if (!n) return NULL;
+
+    vfs_inode_t *ret = vfs_iget(NULL, n->ino);
+    if (!ret) return NULL;
+
+    if (ret->state & INODE_STATE_NEW) {
+        memcpy(&ret->attr, &n->attr, sizeof(vfs_inode_attr_t));
+        ret->ops = &devfs_inode_ops;
+        ret->f_ops = &devfs_file_ops;
+        ret->c_ops = &devfs_cache_ops;
+        ret->mount = NULL;
+        ret->priv = (void*)n;
+        if (!n->ops || !n->ops->mmap) ret->flags |= INODE_FLAG_MMAP_UNSUPPORTED; // Kinda a hack
+        vfs_createdInode(ret);
+    }
+
+    return ret;
 }
 
 /**

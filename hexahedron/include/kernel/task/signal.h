@@ -70,5 +70,12 @@ int signal_handle(struct thread *thr, struct _registers *regs);
  */
 int signal_sendGroup(pid_t pgid, int signal);
 
+/**
+ * @brief Send a signal to a specific thread
+ * @param thread The thread to send the signal to
+ * @param signal The signal to send to the thread
+ * @returns 0 on success
+ */
+int signal_sendThread(struct thread *thr, int signal);
 
 #endif

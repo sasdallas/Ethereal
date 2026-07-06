@@ -16,13 +16,6 @@
 #include <sys/mman.h>
 
 long sys_mprotect(void *addr, size_t len, int prot) {
-    mmu_flags_t target = ((prot & PROT_READ) ? MMU_FLAG_PRESENT : 0) |
-                         ((prot & PROT_WRITE) ? MMU_FLAG_WRITE : 0) |
-                         ((prot & PROT_EXEC) ? 0 : MMU_FLAG_NOEXEC) |
-                         MMU_FLAG_USER; 
-
-
-    SYSCALL_LOG(DEBUG, "Updating VM flags for region %p - %p to %x\n", addr, addr+len, prot);
-
+    mmu_flags_t target = vmm_toMMU(prot);
     return vmm_update(addr, len, VM_OP_SET_FLAGS, target);
 }

@@ -38,8 +38,8 @@ static int tmpfs_destroy(vfs_inode_t *inode);
 static int tmpfs_rename(vfs_inode_t *src_parent, vfs_inode_t *child, char *src_name, vfs_inode_t *dest_parent, char *dest_name, unsigned int flags);
 static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags);
 static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off);
-static int tmpfs_read_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
-static int tmpfs_write_page(vfs_inode_t *f, loff_t offset, uintptr_t page);
+static int tmpfs_read_range(vfs_inode_t *f, page_range_t *range);
+static int tmpfs_write_range(vfs_inode_t *f, page_range_t *range);
 static int tmpfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t mask);
 
 /* Filesystem */
@@ -84,8 +84,8 @@ static vfs_file_ops_t tmpfs_file_ops = {
 
 /* Cache ops */
 static vfs_cache_ops_t tmpfs_cache_ops = {
-    .read_page = tmpfs_read_page,
-    .write_page = tmpfs_write_page,
+    .read_range = tmpfs_read_range,
+    .write_range = tmpfs_write_range
 };
 
 /* Cache */
@@ -659,24 +659,23 @@ static int tmpfs_munmap(vfs_file_t *f, void *addr, size_t size, off_t off) {
     return size;
 }
 
-/**
- * @brief tmpfs read page
- */
-static int tmpfs_read_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
-    tmpfs_node_t *n = i->priv;
-    if (offset > n->attr.size) return -ENXIO;
-    memset((void*)page, 0, PAGE_SIZE);
-   
-    // pin the page
-    pmm_page_t *pg = pmm_page(arch_mmu_physical(NULL, page));
-    pg->flags |= PAGE_FLAG_PERMANENT;
+static int tmpfs_read_range(vfs_inode_t *f, page_range_t *range) {
+    // for all pages
+    for (unsigned i = 0; i < range->npages; i++) {
+        pmm_page_t *p = pmm_page(range->pages[i]);
+        p->flags |= PAGE_FLAG_PERMANENT;
+    }
+
     return 0;
 }
 
-/**
- * @brief tmpfs write page
- */
-static int tmpfs_write_page(vfs_inode_t *i, loff_t offset, uintptr_t page) {
+static int tmpfs_write_range(vfs_inode_t *f, page_range_t *range) {
+    // !!! This is a hack to get around the cache layer. When it optimizes its writes it bypasses read_range
+    for (unsigned i = 0; i < range->npages; i++) {
+        pmm_page_t *p = pmm_page(range->pages[i]);
+        p->flags |= PAGE_FLAG_PERMANENT;
+    }
+
     return 0;
 }
 

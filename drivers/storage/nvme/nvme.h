@@ -20,6 +20,10 @@
 #include <kernel/misc/spinlock.h>
 #include <structs/list.h>
 #include <kernel/drivers/pci.h>
+#include <kernel/tasklet.h>
+#include <structs/bitmap.h>
+#include <kernel/arch/arch.h>
+#include <kernel/misc/waitqueue.h>
 
 /**** TYPES ****/
 
@@ -193,6 +197,29 @@ typedef struct nvme_command {
 } __attribute__((packed)) nvme_command_t;
 
 STATIC_ASSERT(sizeof(nvme_command_t) == 15 * sizeof(uint32_t));
+
+typedef struct nvme_set_features_command {
+    uint32_t nsid;
+    uint64_t reserved1;
+    uint64_t mptr;
+    nvme_data_pointer_t dptr;
+
+    union {
+        struct {
+            uint32_t fid:8;
+            uint32_t reserved2:23;
+            uint32_t sv:1;
+        };
+
+        uint32_t cdw10;
+    };
+
+    uint32_t cdw11;
+    uint32_t cdw12;
+    uint32_t cdw13;
+    uint32_t cdw14;
+    uint32_t cdw15;
+} __attribute__((packed)) nvme_set_features_command_t;
 
 /**
  * @brief Identify command
@@ -450,54 +477,50 @@ typedef struct nvme_ident {
 
 STATIC_ASSERT(sizeof(nvme_ident_t) == 4096);
 
-/**
- * @brief NVMe completion event
- */
-typedef struct nvme_completion {
-    uint16_t cid;                       // CID
-    uint16_t status;                    // Status code
-} nvme_completion_t;
+#define NVME_QUEUE_DEPTH (PAGE_SIZE / sizeof(nvme_sq_entry_t))
 
-/**
- * @brief NVMe queue structure
- */
+typedef struct nvme_queue_desc {
+    uintptr_t addr;
+    size_t size;
+    int index;
+    uint32_t *doorbell;
+    uint8_t phase;
+} nvme_queue_desc_t;
+
+typedef struct nvme_transfer {
+    nvme_sq_entry_t ent;
+    void *thread;
+    uint16_t status;
+    uint32_t dw0;
+} nvme_transfer_t;
+
+// I/O queues consist of an SQ/CQ
 typedef struct nvme_queue {
-    spinlock_t lock;                    // Queue lock
-
-    uintptr_t cq;                       // Completion queue
-    uintptr_t sq;                       // Submission queue
-
-    uint32_t cq_head;                   // Completion queue head
-    uint32_t sq_tail;                   // Submission queue tail
-    uint8_t cq_phase;                   // Completion queue phase
-
-    nvme_doorbell_t *doorbell;          // Doorbell
-    size_t depth;                       // Queue depth
-    uint16_t cid_last;                  // Last CID
-
-    list_t *completions;                // Completion events
+    spinlock_t lock;
+    nvme_queue_desc_t sq;
+    nvme_queue_desc_t cq;
+    tasklet_t tsklet;
+    nvme_transfer_t *entries[NVME_QUEUE_DEPTH];
+    BITMAP_DEFINE(ent_bitmap, NVME_QUEUE_DEPTH);
+    int pending;
+    wait_queue_t ent_wait;
 } nvme_queue_t;
 
-/**
- * @brief NVMe structure
- */
 typedef struct nvme {
-    volatile nvme_registers_t *regs;    // Registers
-    nvme_queue_t *admin_queue;          // Admin queue
-    nvme_queue_t *io_queue;             // I/O queue
-    pci_device_t *dev;                  // PCI device
-    nvme_ident_t *ident;                // Identification
-} nvme_t;   
+    volatile nvme_registers_t *regs;
+    nvme_queue_t *admin;
+    nvme_queue_t **ioqueues;
+    int last_queue;
+    size_t nqueues;
+    pci_device_t *pcidev;
+    nvme_ident_t ident;
+} nvme_t;
 
-
-/**
- * @brief NVMe namespace structure
- */
 typedef struct nvme_namespace {
-    nvme_t *controller;                 // Controller
-    uint32_t nsid;                      // Namespace ID
-    uintptr_t dma_region;               // DMA region
+    nvme_t *controller;
+    uint32_t nsid;
 } nvme_namespace_t;
+
 
 /**
  * @brief NVMe read command
@@ -586,6 +609,7 @@ typedef struct nvme_namespace_identify {
 #define NVME_OPC_IDENTIFY               0x06
 #define NVME_OPC_WRITE                  0x01
 #define NVME_OPC_READ                   0x02
+#define NVME_OPC_SET_FEATURES           0x09
 
 
 /* CNS values */
@@ -625,38 +649,17 @@ typedef struct nvme_namespace_identify {
 #define NVME_STATUS_SANITIZE_IN_PROGRESS    0x1D
 #define NVME_STATUS_SGL_DATA_BLOCK_INVALID  0x1E
 
-/* Depths */
-#define NVME_ADMIN_QUEUE_DEPTH          (PAGE_SIZE / sizeof(nvme_sq_entry_t))
-#define NVME_IO_QUEUE_DEPTH             (PAGE_SIZE / sizeof(nvme_sq_entry_t))
+#define NVME_MAX_IO_QUEUES                  16
 
 /**** MACROS ****/
 
 #define NVME_DOORBELL_STRIDE        (1 << (2 + nvme->regs->cap.dstrd))
 #define NVME_GET_DOORBELL(x)        ((nvme_doorbell_t*)(((uintptr_t)nvme->regs) + (0x1000 + (2*x) * NVME_DOORBELL_STRIDE)))
+#define NVME_GET_DOORBELL_SQ(x)        ((uint32_t*)(((uintptr_t)nvme->regs) + (0x1000 + (2*x) * NVME_DOORBELL_STRIDE)))
+#define NVME_GET_DOORBELL_CQ(x)        ((uint32_t*)(((uintptr_t)nvme->regs) + (0x1000 + (2*x+1) * NVME_DOORBELL_STRIDE)))
 
 /**** FUNCTIONS ****/
 
-/**
- * @brief Create a new NVMe queue
- * @param depth Queue depth
- * @param doorbell NVMe doorbell
- * @returns NVMe queue
- */
-nvme_queue_t *nvme_createQueue(size_t depth, nvme_doorbell_t *doorbell);
-
-/**
- * @brief Submit a command to an NVMe queue
- * @param queue The queue to submit the command to
- * @param entry The submission queue entry
- * @returns CID on success
- */
-uint16_t nvme_submitQueue(nvme_queue_t *queue, nvme_sq_entry_t *entry);
-
-/**
- * @brief Handle an IRQ in a queue
- * @param queue The queue to handle the IRQ for
- */
-void nvme_irqQueue(nvme_queue_t *queue);
 
 
 #endif

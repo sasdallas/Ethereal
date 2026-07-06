@@ -77,6 +77,7 @@ int dhcp_send(int sock, in_addr_t server, dhcp_packet_t *dhcp_packet) {
  */
 int dhcp_discover(int sock, uint8_t *mac) {
     dhcp_packet_t packet;
+    memset(&packet, 0, sizeof(dhcp_packet_t));
 
     packet.opcode = DHCP_OP_REQUEST;
     packet.htype = DHCP_HTYPE_ETH;
@@ -110,6 +111,7 @@ int dhcp_discover(int sock, uint8_t *mac) {
  */
 int dhcp_request(int sock, uint8_t *mac, in_addr_t req_ip, in_addr_t server_ip) {
     dhcp_packet_t packet;
+    memset(&packet, 0, sizeof(dhcp_packet_t));
 
     packet.opcode = DHCP_OP_REQUEST;
     packet.htype = DHCP_HTYPE_ETH;
