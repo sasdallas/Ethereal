@@ -13,12 +13,13 @@
 
 #include <kernel/fs/poll.h>
 #include <kernel/mm/alloc.h>
+#include <kernel/mm/slab.h>
 #include <kernel/misc/util.h>
-#include <kernel/task/sleep.h>
+#include <kernel/task/process.h>
 #include <kernel/panic.h>
+#include <kernel/init.h>
 #include <assert.h>
 #include <errno.h>
-
 
 /* UNCOMMENT TO ENABLE DEBUG */
 // #define POLL_DEBUG 1
@@ -26,21 +27,34 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:POLL", __VA_ARGS__)
 
+slab_cache_t *waiter_cache = NULL;
+slab_cache_t *waiter_node_cache = NULL;
+
+static void poll_freeWaiter(poll_waiter_t *w);
+
+#define LOCK_WAITER(n) __atomic_test_and_set(&(n)->lock, __ATOMIC_ACQUIRE)
+#define UNLOCK_WAITER(n) __atomic_clear(&(n)->lock, __ATOMIC_RELEASE)
+#define MATCH_EVENTS(e1,e2) ((e1) & (e2) || ((e2) & (POLLHUP | POLLERR)))
+#define HOLD_WAITER(n) refcount_inc(&(n)->refs)
+#define RELEASE_WAITER(n) if (refcount_dec(&(n)->refs) == 1) poll_freeWaiter((n))
+
+
+
 /**
  * @brief Create and initialize a waiter
  * @param thr The thread to use
  * @param nevents Number of events waiting on
  */
 poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
-    poll_waiter_t *w = kzalloc(sizeof(poll_waiter_t));
-    w->thr = thr;
-    w->nevents = nevents;
-    w->i = 0;
-    w->events =  kmalloc(sizeof(poll_event_t*) * nevents);
-    w->dead = false;
-    w->result = NULL;
+    poll_waiter_t *w = slab_allocate(waiter_cache);
+    assert(w);
+    LOCK_WAITER(w);
     refcount_init(&w->refs, 1);
-    spinlock_acquire(&w->lock);
+    w->thr = current_cpu->current_thread;
+    w->nevents = nevents;
+    w->events = kmalloc(sizeof(poll_event_t*) * nevents);
+    w->ready = false;
+    w->i = 0;
     return w;
 }
 
@@ -51,42 +65,29 @@ poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
  * @param events The events being waited on
  */
 int poll_add(poll_waiter_t *waiter, poll_event_t *event, poll_events_t events) {
-    spinlock_acquire(&event->lock);
-    
-    // run check syncronously
     if (event->checker) {
         poll_events_t result = event->checker(event);
-
-        if (events & result || (result & POLLHUP) || (result & POLLERR)) {
-            // !!!: Waste
-            poll_result_t *r = kmalloc(sizeof(poll_result_t));
-            r->revents = (events | POLLHUP | POLLERR) & result;
-            r->ev = event;
-
-            // Push the result
-            spinlock_acquire(&waiter->result_lock);
-            r->next = waiter->result;
-            waiter->result = r;
-            spinlock_release(&waiter->result_lock);
-
-            spinlock_release(&event->lock);
+    
+        if (MATCH_EVENTS(events,result)) {
+            waiter->ready = true;
             return 0;
         }
     }
 
-    // didn't get anything. continue polling.
-    poll_waiter_node_t *n = kmalloc(sizeof(poll_waiter_node_t)); // TODO: cache this
+    poll_waiter_node_t *n = slab_allocate(waiter_node_cache);
     n->waiter = waiter;
     n->events = events;
     n->next = event->h;
     n->prev = NULL;
 
-    refcount_inc(&waiter->refs);
+    spinlock_acquire(&event->lock);
     if (event->h) event->h->prev = n;
     event->h = n;
-    assert(waiter->i < waiter->nevents); // If this fails more events were added on a waiter than the waiter was allocated for. Dumbass.
+    assert(waiter->i < waiter->nevents);
     waiter->events[waiter->i++] = event;
+    HOLD_WAITER(waiter);
     spinlock_release(&event->lock);
+
     return 0;
 }
 
@@ -97,37 +98,47 @@ int poll_add(poll_waiter_t *waiter, poll_event_t *event, poll_events_t events) {
  * @returns Error code (EINTR or ETIMEDOUT)
  */
 int poll_wait(poll_waiter_t *waiter, int timeout) {
-    spinlock_acquire(&waiter->result_lock);
+    if (waiter->thr == NULL) {
+        assert(timeout == -1 && "kernel sleeping on timeout not supported");
+        while (__atomic_load_n(&waiter->ready, __ATOMIC_SEQ_CST) == false) {
+            arch_pause_single();
+        }
 
-    if (waiter->result) {
-        spinlock_release(&waiter->result_lock);
-        spinlock_release(&waiter->lock);
-        return 0; // Events were given
+        return 0;   
     }
 
-    // Prepare
     if (timeout != -1) {
-        sleep_time(timeout / 1000, timeout % 1000);
+        sleep_time(timeout/1000, timeout%1000);
     } else {
         sleep_prepare();
     }
 
-    // NOW release the locks and result lock
-    spinlock_release(&waiter->lock);
-    spinlock_release(&waiter->result_lock);
-    int w = sleep_enter();
-    __atomic_store_n(&waiter->dead, true, __ATOMIC_SEQ_CST);
+    // Release the lock right here
+    UNLOCK_WAITER(waiter);
 
-    int r = 0;
-    if (w == WAKEUP_SIGNAL) {
-        r = -EINTR;
+    // Check if we got signalled
+    if (__atomic_load_n(&waiter->ready, __ATOMIC_SEQ_CST)) {
+        sleep_exit();
+        return 0;
+    }
+
+    int w = sleep_enter();
+
+    // If another thread didnt wake us we need this lock
+    LOCK_WAITER(waiter);
+
+    // if we got awoken, w doesn't matter
+    if (__atomic_load_n(&waiter->ready, __ATOMIC_SEQ_CST) == true) {
+        return 0;
     }
 
     if (w == WAKEUP_TIME) {
-        r = -ETIMEDOUT;
+        return -ETIMEDOUT;
+    } else if (w == WAKEUP_SIGNAL) {
+        return -EINTR;
+    } else {
+        return 0;
     }
-
-    return r;
 }
 
 /**
@@ -139,66 +150,16 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
     spinlock_acquire(&event->lock);
 
     poll_waiter_node_t *wn = event->h;
-    
-    if (!wn) {
-    #ifdef POLL_DEBUG
-        LOG(DEBUG, "poll_signal had no events\n");
-    #endif
-
-        spinlock_release(&event->lock);
-        return;
-    }
-
-
     while (wn) {
-        
-        if (wn->waiter->dead) {
-        #ifdef POLL_DEBUG
-            LOG(DEBUG, "Dead waiter %p\n", wn->waiter);
-        #endif
-
-            poll_waiter_node_t *n = wn->next;
-            if (n) n->prev = wn->prev;
-            if (wn->prev) wn->prev->next = n;
-            if (wn == event->h) event->h = wn->next;
-
-            poll_destroyWaiter(wn->waiter);
-            kfree(wn);
-
-            wn = n;
-            continue;
-        }
-
-        if (wn->events & events || (events & POLLHUP) || (events & POLLERR)) {
-            // !!!: Waste
-            poll_result_t *r = kmalloc(sizeof(poll_result_t));
-            r->revents = (wn->events | POLLHUP | POLLERR) & events;
-            r->ev = event;
-
-            // Push the result
-            spinlock_acquire(&wn->waiter->result_lock);
-            r->next = wn->waiter->result;
-            wn->waiter->result = r;
-            spinlock_release(&wn->waiter->result_lock);
-
-        #ifdef POLL_DEBUG 
-            LOG(DEBUG, "Triggering wakeup on waiter %p\n", wn->waiter);
-        #endif
-            sleep_wakeup(wn->waiter->thr);
-
-            // Remove the waiter
-        #ifdef POLL_DEBUG
-            LOG(DEBUG, "Result appended for waiter %p\n", wn->waiter);
-        #endif
-
-            poll_destroyWaiter(wn->waiter);
-            poll_waiter_node_t *n = wn->next;
-            if (n) n->prev = wn->prev;
-            if (wn->prev) wn->prev->next = n;
-            if (wn == event->h) event->h = wn->next;
-            kfree(wn);
-            wn = n;
-            continue;
+        if (MATCH_EVENTS(wn->events, events)) {
+            // we can try to wake this guy up
+            __atomic_store_n(&wn->waiter->ready, true, __ATOMIC_SEQ_CST);
+            
+            if (!LOCK_WAITER(wn->waiter)) {
+                if (wn->waiter->thr) {
+                    sleep_wakeup(wn->waiter->thr);
+                }
+            }
         }
 
         wn = wn->next;
@@ -212,37 +173,33 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
  * @param waiter The waiter
  */
 void poll_exit(poll_waiter_t *waiter) {
-    __atomic_store_n(&waiter->dead, true, __ATOMIC_SEQ_CST);
+    for (unsigned i = 0; i < waiter->i; i++) {
+        poll_event_t *ev = waiter->events[i];
+        spinlock_acquire(&ev->lock);
 
-    int found = 0;
-    for (size_t i = 0; i < waiter->i; i++) {
-        // this is to pull the waiter object out of the event object and destroy it
-        poll_event_t *event = waiter->events[i];
-        spinlock_acquire(&event->lock);
-        
-        poll_waiter_node_t *wn = waiter->events[i]->h;
+        // find us
+        poll_waiter_node_t *wn = ev->h;
         while (wn) {
             if (wn->waiter == waiter) {
-                // Found it!
-                poll_waiter_node_t *n = wn->next;
-                if (n) n->prev = wn->prev;
-                if (wn->prev) wn->prev->next = n;
-                if (wn == event->h) event->h = wn->next;
-                kfree(wn);
-                refcount_dec(&waiter->refs);
-                
-                found++;
+                // Pull us out
+                if (wn->next) wn->next->prev = wn->prev;
+                if (wn->prev) wn->prev->next = wn->next;
+                if (wn == ev->h) ev->h = wn->next;
                 break;
             }
 
             wn = wn->next;
         }
 
-        spinlock_release(&event->lock);
+        spinlock_release(&ev->lock);
+
+        if (wn != NULL) {
+            slab_free(waiter_node_cache, wn);
+            RELEASE_WAITER(waiter);
+        }
     }
 
-    waiter->i -= found;
-    assert(waiter->refs == 1);
+    waiter->i = 0;
 }
 
 /**
@@ -250,22 +207,21 @@ void poll_exit(poll_waiter_t *waiter) {
  * Remember to call @c poll_exit
  */
 void poll_destroyWaiter(poll_waiter_t *waiter) {
-    assert(waiter->refs >= 1);
-    refcount_dec(&waiter->refs);
-    if (!waiter->refs) {
-        
-    #ifdef POLL_DEBUG
-        LOG(DEBUG, "Destroying waiter %p\n", waiter);
-    #endif
-
-        poll_result_t *r = waiter->result;
-        while (r) {
-            poll_result_t *n = r->next;
-            kfree(r);
-            r = n;
-        }
-
-        kfree(waiter->events);
-        kfree(waiter);
-    }
+    RELEASE_WAITER(waiter);
 }
+
+/**
+ * @brief Free waiter
+ */
+static void poll_freeWaiter(poll_waiter_t *w) {
+    kfree(w->events);
+    slab_free(waiter_cache, w);
+}
+
+int poll_initCaches() {
+    waiter_cache = slab_createCache("poll waiter cache", SLAB_CACHE_DEFAULT, sizeof(poll_waiter_t), 0, NULL, NULL);
+    waiter_node_cache = slab_createCache("poll waiter node cache", SLAB_CACHE_DEFAULT, sizeof(poll_waiter_node_t), 0, NULL, NULL);
+    return 0;
+}
+
+KERN_EARLY_INIT_ROUTINE(poll, INIT_FLAG_DEFAULT, poll_initCaches);
