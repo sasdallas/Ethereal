@@ -177,12 +177,10 @@ static void celestial_handleDecorEventResize(window_t *win, void *event) {
         }
     } else if (hdr->type == CELESTIAL_EVENT_MOUSE_BUTTON_DOWN) {
         if (decor_had_custom_mouse) {
-            printf("rsz START!\n");
             celestial_startResizing(win, decor_last_resize_direction);
         }
     } else if (hdr->type == CELESTIAL_EVENT_MOUSE_BUTTON_UP) {
         if (decor_had_custom_mouse) {
-            printf("Rsz FINISH!\n");
             celestial_stopResizing(win);
         }
     }

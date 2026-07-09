@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _WIDGET_H
-#define _WIDGET_H
+#ifndef _ETHEREAL_WIDGET_H
+#define _ETHEREAL_WIDGET_H
 
 /**** INCLUDES ****/
 #include <ethereal/widget/label.h>

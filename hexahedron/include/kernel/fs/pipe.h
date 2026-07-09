@@ -17,14 +17,15 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/fs/poll.h>
-#include <structs/circbuf.h>
+#include <kernel/misc/mutex.h>
+#include <structs/ringbuffer.h>
 
 /**** TYPES ****/
 
 typedef struct fs_pipe {
-    poll_event_t read_event;    // Read event
-    poll_event_t write_event;   // Write event
-    circbuf_t *buf;             // Pipe buffer
+    poll_event_t event;         // Event
+    mutex_t lock;               // Pipe lock
+    ringbuffer_t *buf;          // Ring buffer
     volatile int readers;
     volatile int writers;
     volatile char dead;         // Pipe dead

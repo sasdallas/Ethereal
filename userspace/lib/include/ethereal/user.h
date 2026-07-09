@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _USER_H
-#define _USER_H
+#ifndef _ETHEREAL_USER_H
+#define _ETHEREAL_USER_H
 
 /* !!!: BUILD HACK */
 #ifdef _SYS_USER_H

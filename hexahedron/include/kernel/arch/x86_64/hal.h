@@ -52,6 +52,11 @@ void hal_init(int stage);
 void hal_initializeInterrupts();
 
 /**
+ * @brief Initialize exception handlers (early)
+ */
+void hal_initializeExceptionHandlers();
+
+/**
  * @brief Handle ending an interrupt
  */
 void hal_endInterrupt(uintptr_t interrupt_number);

@@ -45,7 +45,7 @@ static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, i
     thr->status = status;
     thr->ctx = ctx ? ctx : vmm_kernel_context;
     thr->flags = flags;
-    thr->tid = last_tid++;
+    thr->tid = __atomic_add_fetch(&last_tid, 1, __ATOMIC_RELAXED);
     thr->sched_node.value = thr;
 
     // Thread ticks aren't updated because they should ONLY be updated when scheduler_insertThread is called

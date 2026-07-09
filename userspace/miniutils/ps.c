@@ -23,6 +23,7 @@ char *get_process_name(char *proc_dir_name) {
     snprintf(name, 512, "/system/processes/%s/status", proc_dir_name);
 
     FILE *f = fopen(name, "r");
+    if (!f) return NULL;
     memset(buffer, 0, 128);
     fread(buffer, 128, 1, f);
     buffer[strlen(buffer)-1] = 0;
@@ -46,8 +47,11 @@ int main(int argc, char *argv[]) {
     struct dirent *ent = readdir(dirp);
     while (ent) {
         if (isdigit(ent->d_name[0]) || (ent->d_name[0] == '-' && isdigit(ent->d_name[1]))) {
-            // Get process name
-            printf("%s  \t\t\t%s\n", ent->d_name, get_process_name(ent->d_name));
+            char *name = get_process_name(ent->d_name);
+            if (name) {
+                // Get process name
+                printf("%s  \t\t\t%s\n", ent->d_name, name);
+            }
         }
 
         ent = readdir(dirp);

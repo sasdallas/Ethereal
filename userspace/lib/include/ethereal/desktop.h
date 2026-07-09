@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _DESKTOP_H
-#define _DESKTOP_H
+#ifndef _ETHEREAL_DESKTOP_H
+#define _ETHEREAL_DESKTOP_H
 
 /**** INCLUDES ****/
 #include <graphics/gfx.h>

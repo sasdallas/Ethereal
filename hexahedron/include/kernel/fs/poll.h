@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <sys/poll.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/refcount.h>
 #include <stddef.h>
 #include <stdbool.h>
 
@@ -25,23 +26,19 @@
 
 /**** TYPES ****/
 
-typedef uint32_t poll_events_t;
+typedef uint16_t poll_events_t;
 struct poll_event;
 
 typedef struct poll_waiter {
-    spinlock_t lock;                // General lock, stays locked until poll_wait
-    spinlock_t result_lock;         // Results lock
-
-    struct thread *thr;             // Thread
+    unsigned char lock;             // General atomic lock, stays locked until poll_wait
+    struct thread *thr;             // Thread waiting
     
     size_t nevents;                 // Number of events
     size_t i;                       // Index
     struct poll_event **events;     // Allocated at poll_createWaiter time
     
-    _Atomic(bool) dead;             // Dead waiter
-    atomic_int refs;                // References remaining to this waiter
-
-    struct poll_result *result;     // Result list
+    bool ready;                     // Early wakey
+    refcount_t refs;                // References remaining to this waiter
 } poll_waiter_t;
 
 // I literally do not care if this is good or not
@@ -51,13 +48,6 @@ typedef struct poll_waiter_node {
     poll_events_t events;
     poll_waiter_t *waiter;
 } poll_waiter_node_t;
-
-typedef struct poll_result {
-    struct poll_result *next;
-    struct poll_event *ev;
-    poll_events_t revents;
-} poll_result_t;
-
 
 typedef poll_events_t (*poll_events_checker_t)(struct poll_event *ev);
 typedef struct poll_event {

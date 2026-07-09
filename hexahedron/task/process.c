@@ -465,7 +465,7 @@ void process_destroyZombie(process_t *proc) {
     }
 
     spinlock_acquire(&process_list_lock);
-    list_delete(process_list, list_find(process_list, (void*)proc));
+    list_delete(process_list, &proc->proc_list_node);
     spinlock_release(&process_list_lock);
 
     process_freePID(proc->pid);
@@ -945,8 +945,9 @@ void process_exit(process_t *process, int status_code) {
 
     // Now we need to mark all threads of this process as stopping. This will ensure that memory is fully separate
     spinlock_acquire(&process->thread_lock);
-    
     thread_t *t = process->thread_list;
+    spinlock_release(&process->thread_lock);
+
     while (t) {
         __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPING);
         if ((t->status & THREAD_STATUS_STOPPED) == 0 && t != current_cpu->current_thread) {
@@ -954,14 +955,13 @@ void process_exit(process_t *process, int status_code) {
 
             while ((t->status & THREAD_STATUS_STOPPED) == 0) {
                 // LOG(DEBUG, "process_exit waiting for thread %d to stop\n", t->tid);
-                arch_pause_single();
+                arch_pause();
             }
         }
 
         t = t->next;
     }
 
-    spinlock_release(&process->thread_lock);
 
     // Now we can mark it as stopped.
     process->state = PROCESS_STOPPED;

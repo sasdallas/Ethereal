@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _CELESTIAL_H
-#define _CELESTIAL_H
+#ifndef _ETHEREAL_CELESTIAL_H
+#define _ETHEREAL_CELESTIAL_H
 
 /**** INCLUDES ****/
 #include <ethereal/celestial/request.h>

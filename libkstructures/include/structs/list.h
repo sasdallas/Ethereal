@@ -32,7 +32,9 @@ typedef struct _list {
 
 /**** DEFINITIONS ****/
 
-#define foreach(i, list) for (node_t *i = list->head; i != NULL; i = i->next)
+#define foreach(i, list) for (node_t *i = (list)->head; i != NULL; i = i->next)
+#define LIST_INIT(l) ({ (l)->name = NULL; (l)->head = (l)->tail = NULL; (l)->length = 0; })
+#define LIST_INITIALIZER { .name = NULL, .head = NULL, .tail = NULL, .length = 0 }
 
 /**** FUNCTIONS ****/
 

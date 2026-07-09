@@ -79,6 +79,9 @@ static void hal_init_stage1() {
     // Say hi!
     arch_say_hello(1);
 
+    // Bringup exception handlers
+    hal_initializeExceptionHandlers();
+
     // Initialize SSE
     arch_enable_sse();
 

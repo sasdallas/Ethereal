@@ -72,7 +72,7 @@ extern generic_parameters_t *arch_get_generic_parameters();
 extern int arch_current_cpu();
 
 /**
- * @brief Pause execution on the current CPU until preemption
+ * @brief Pause execution until interrupt
  */
 void arch_pause();
 

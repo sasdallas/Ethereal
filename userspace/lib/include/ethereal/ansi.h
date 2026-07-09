@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _ANSI_H
-#define _ANSI_H
+#ifndef _ETHEREAL_ANSI_H
+#define _ETHEREAL_ANSI_H
 
 /**** INCLUDES ****/
 #include <stdint.h>

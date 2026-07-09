@@ -96,11 +96,9 @@ void kernel_panic_extended(uint32_t bugcode, char *module, char *format, ...) {
     printf(COLOR_CODE_RED   "*** STOP: cpu%i: %s (module \"%s\")\n", arch_current_cpu(), kernel_bugcode_strings[bugcode], module);
     
     // Print out anything additional
-    char additional[512];
     va_list ap;
     va_start(ap, format);
     xvasprintf(kernel_panic_putchar, NULL, format, ap);
-    vsnprintf(additional, 512, format, ap);
     va_end(ap);
 
     // Print out a generic message

@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _SYS_ETHEREAL_DRIVER_H
-#define _SYS_ETHEREAL_DRIVER_H
+#ifndef _ETHEREAL_DRIVER_H
+#define _ETHEREAL_DRIVER_H
 
 /**** INCLUDES ****/
 #include <kernel/loader/driver.h>

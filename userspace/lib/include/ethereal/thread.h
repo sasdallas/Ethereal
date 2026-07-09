@@ -13,8 +13,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _SYS_ETHEREAL_THREAD_H
-#define _SYS_ETHEREAL_THREAD_H
+#ifndef _ETHEREAL_THREAD_H
+#define _ETHEREAL_THREAD_H
 
 /**** INCLUDES ****/
 #include <stdint.h>

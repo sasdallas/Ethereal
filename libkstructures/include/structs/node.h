@@ -27,4 +27,6 @@ typedef struct _node {
     void *owner;            // Owner of this node
 } node_t;
 
+#define NODE_INIT(n,v) ({ (n)->next = (n)->prev = (n)->owner = NULL; (n)->value = (v); })
+
 #endif

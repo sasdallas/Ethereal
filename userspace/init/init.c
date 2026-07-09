@@ -108,6 +108,8 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
         return 1;
     }
 
+    printf("init: hello!\n");
+
     // Setup environment variables
     putenv("PATH=/usr/bin/"); // TEMP
     putenv("HOME=/root/");
@@ -121,15 +123,19 @@ __attribute__((target("no-sse"))) int main(int argc, char *argv[]) {
 
     // Read kernel command line
     FILE *f = fopen("/system/cmdline", "r");
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    long size = 0;
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+    }
 
-
+    // Load command line
     char *cmdline = NULL;
     if (size) {
         cmdline = malloc(size);
         fread(cmdline, size, 1, f);
+        cmdline[size-1] = 0;
     } else {
         cmdline = malloc(1);
         *cmdline = 0;

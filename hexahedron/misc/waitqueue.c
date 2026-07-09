@@ -57,12 +57,13 @@ void waitqueue_add(wait_queue_t *wq, wait_queue_node_t *n) {
  * @returns Error code or 0 on success
  */
 int waitqueue_wait(wait_queue_t *wq, wait_queue_node_t *n, int timeout) {
-    if (n->thr == NULL) {
+    if (n->thr == NULL || IN_TASKLET()) {
         // NULL threads indicate that the kernel wants to sleep
+        // While we technically can go to sleep in a tasklet its not good for the kernel
         assert(timeout == -1 && "kernel sleeping on timeout not supported");
 
         while (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) == false) {
-            arch_pause_single();
+            arch_pause();
         }
 
         return 0;

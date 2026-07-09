@@ -219,7 +219,7 @@ static int msix_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
     uint32_t data = irq->num;
     entry->msg_addr_low = (uint32_t)(addr & 0xFFFFFFFF);
     entry->msg_addr_high = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
-    entry->msg_data = data;
+    entry->msg_data = data & 0xFF;
     entry->vector_ctrl = entry->vector_ctrl & ~1u; // clears masked bit
 
     return 0;

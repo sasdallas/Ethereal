@@ -232,6 +232,30 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         smp_acknowledgeCoreShutdown();
         for (;;);
     }
+
+    // Was this in userspace?
+    if (regs->cs == 0x2B) {
+        dprintf(ERR, "A userspace exception was detected.\n");
+        dprintf(ERR, "Thread %p (%d) on process \'%s\' (%d)\n", current_cpu->current_thread, current_cpu->current_thread->tid, current_cpu->current_process->name, current_cpu->current_process->pid);
+        
+        if (exception_index < X86_64_MAX_EXCEPTIONS) {
+            dprintf(ERR, "Exception: %s (%i)\n", hal_exception_table[exception_index], exception_index);
+        } else {
+            dprintf(ERR, "Exception: ??? (%d)\n", exception_index);
+        }
+
+        dprintf(ERR, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
+        dprintf(ERR, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
+        dprintf(ERR, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
+        dprintf(ERR, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
+        dprintf(ERR, "ERR %016llX RIP %016llX RFL %016llX\n", regs->err_code, regs->rip, regs->rflags);
+        dprintf(ERR, "CS %04X DS %04X SS %04X\n", regs->cs, regs->ds, regs->ss);
+        dprintf(ERR, "CR0 %08X CR2 %016llX CR3 %016llX\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3);
+        dprintf(ERR, "Killing process.\n");
+
+        process_exit(current_cpu->current_process, 1);
+        return;
+    }
     
     // Looks like no one caught this exception.
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
@@ -368,6 +392,10 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
     // TODO move to IRQ handler probably
     if (current_cpu->current_process && current_cpu->current_thread) {
         signal_handle(current_cpu->current_thread, regs);
+            
+        if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
+            thread_exit();
+        }
     }
 }
 
@@ -459,14 +487,52 @@ int hal_debugTrapHandler(uintptr_t exception_index, registers_t *regs, extended_
 }
 
 /**
+ * @brief Initialize exception handlers (early)
+ */
+void hal_initializeExceptionHandlers() {
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    hal_gdtInit();
+
+    // Clear the IDT table
+    memset((void*)hal_idt_table, 0x00, sizeof(hal_idt_table));
+
+    // Install the exception handlers
+    hal_registerInterruptVector(0, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halDivisionException);
+    hal_registerInterruptVector(1, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halDebugException);
+    hal_registerInterruptVector(2, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halNMIException);
+    hal_registerInterruptVector(3, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halBreakpointException);
+    hal_registerInterruptVector(4, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halOverflowException);
+    hal_registerInterruptVector(5, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halBoundException);
+    hal_registerInterruptVector(6, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halInvalidOpcodeException);
+    hal_registerInterruptVector(7, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halNoFPUException);
+    hal_registerInterruptVector(8, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halDoubleFaultException);
+    hal_registerInterruptVector(9, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halCoprocessorSegmentException);
+    hal_registerInterruptVector(10, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halInvalidTSSException);
+    hal_registerInterruptVector(11, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halSegmentNotPresentException);
+    hal_registerInterruptVector(12, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halStackSegmentException);
+    hal_registerInterruptVector(13, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halGeneralProtectionException);
+    hal_registerInterruptVector(14, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halPageFaultException);
+    hal_registerInterruptVector(15, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halReservedException);
+    hal_registerInterruptVector(16, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halFloatingPointException);
+    hal_registerInterruptVector(17, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halAlignmentCheck);
+    hal_registerInterruptVector(18, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halMachineCheck);
+    hal_registerInterruptVector(19, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halSIMDFloatingPointException);
+    hal_registerInterruptVector(20, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halVirtualizationException);
+    hal_registerInterruptVector(21, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halControlProtectionException);
+    hal_registerInterruptVector(28, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halHypervisorInjectionException);
+    hal_registerInterruptVector(29, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halVMMCommunicationException);
+    hal_registerInterruptVector(30, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halSecurityException);
+    hal_registerInterruptVector(31, X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32, 0x08, (uint64_t)&halReserved2Exception);
+
+    hal_installIDT();
+}
+
+/**
  * @brief Initializes the PIC, GDT/IDT, TSS, etc.
  */
 void hal_initializeInterrupts() {
     // Interrupts must be disabled
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
-
-    // Start the GDT
-    hal_gdtInit();
 
     // Clear the IDT table
     memset((void*)hal_idt_table, 0x00, sizeof(hal_idt_table));

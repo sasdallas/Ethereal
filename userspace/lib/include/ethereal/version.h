@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _VERSION_H
-#define _VERSION_H
+#ifndef _ETHEREAL_VERSION_H
+#define _ETHEREAL_VERSION_H
 
 
 /**** TYPES ****/

@@ -45,13 +45,18 @@ generic_parameters_t *arch_get_generic_parameters() {
 }
 
 /**
- * @brief Pause execution on the current CPU for one cycle
+ * @brief Wait for next interrupt
  */
 void arch_pause() {
-    // Halt here. This will allow for an interrupt to catch us
-    asm volatile (  "sti\n"
-                    "hlt\n"
-                    "cli\n");
+	unsigned long flags;
+	asm volatile(
+        "pushf\n"
+        "pop %0\n"
+        "sti\n"
+        "hlt\n"
+        "push %0\n"
+        "popf\n"
+        : "=r"(flags) :: "memory", "cc");
 }
 
 /**
