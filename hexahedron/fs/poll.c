@@ -77,10 +77,10 @@ int poll_add(poll_waiter_t *waiter, poll_event_t *event, poll_events_t events) {
     poll_waiter_node_t *n = slab_allocate(waiter_node_cache);
     n->waiter = waiter;
     n->events = events;
-    n->next = event->h;
-    n->prev = NULL;
 
     spinlock_acquire(&event->lock);
+    n->next = event->h;
+    n->prev = NULL;
     if (event->h) event->h->prev = n;
     event->h = n;
     assert(waiter->i < waiter->nevents);
