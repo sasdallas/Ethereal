@@ -261,7 +261,11 @@ int hal_acpicaShutdown() {
  * @brief HAL do ACPICA reboot
  */
 int hal_acpicaReboot() {
-    dprintf(ERR, "ACPICA reboot not supported\n");
+    if (!hal_getACPICA()) return 1;
+
+    ACPI_STATUS Status = AcpiReset();
+    dprintf(ERR, "AcpiReset failed (Status = 0x%x)\n", Status);
+
     return 1;
 }
 
