@@ -30,6 +30,8 @@ install-headers:
 	-mkdir $(SYSROOT)/device
 	-mkdir $(SYSROOT)/comm
 
+	-mkdir -p $(INITRD)/boot/drivers/
+
 clean:
 	-rm -rf $(INITRD)/
 	-rm -rf $(SYSROOT)/
