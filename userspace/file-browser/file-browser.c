@@ -36,7 +36,7 @@
 #define VIEW_ICON_SIZE ((file_browser_view_mode == VIEW_MODE_ICON) ? 32 : 16)
 
 char file_browser_path[PATH_MAX] = { 0 };
-unsigned char file_browser_view_mode = VIEW_MODE_ICON;
+unsigned char file_browser_view_mode = VIEW_MODE_COLUMN;
 
 nt_window_t *file_browser_window = NULL;
 nt_widget_t *scroll_container = NULL;
@@ -247,7 +247,7 @@ nt_widget_t *create_menubar() {
     // Create view menu
     nt_widget_t *view_menu = nt_menu_create();
     nt_widget_t *column_view_btn = nt_menu_item_create_button_icon("Column View", NULL);
-    nt_widget_t *icon_view_btn = nt_menu_item_create_button_icon("Icon View", NULL);
+    nt_widget_t *icon_view_btn = nt_menu_item_create_button_icon("Icon View (beta)", NULL);
     
     nt_signal_connect(column_view_btn, "pressed", column_view_pressed, NULL);
     nt_signal_connect(icon_view_btn, "pressed", icon_view_pressed, NULL);
