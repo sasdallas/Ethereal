@@ -22,7 +22,6 @@
 #include <graphics/text.h>
 #include <graphics/pattern.h>
 #include <graphics/util.h>
-#include <graphics/anim.h>
 #include <graphics/matrix.h>
 #include <structs/list.h>
 #include <pthread.h>

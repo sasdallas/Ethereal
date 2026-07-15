@@ -209,14 +209,11 @@ int celestial_renderMercury(window_t *win) {
     gfx_drawRectangleFilledGradient(win->decor->ctx, &GFX_RECT(CORNER_UL_W, 3, WIN_WIDTH(win) - CORNER_UR_W - CORNER_UL_W, 23), GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
     gfx_drawRectangleFilledGradient(win->decor->ctx, &GFX_RECT(CORNER_BL_W, WIN_HEIGHT(win) - 3, WIN_WIDTH(win) - CORNER_BL_W - CORNER_BR_W, 1), GFX_GRADIENT_HORIZONTAL, MERCURY_BORDER_GRADIENT_START, MERCURY_BORDER_GRADIENT_END);
 
-    // Draw the window outline
-    // gfx_rect_t rect_inner_window_border = { .x = d->borders.left_width - 1, .y = d->borders.top_height - 1, .width = WIN_WIDTH(win)  - d->borders.left_width - d->borders.right_width + 1, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height + 1 };
-    // gfx_drawRectangle(win->decor->ctx, &rect_inner_window_border, GFX_RGB(16,16,16));
-
     // The rest of the junk
-    gfx_renderSprite(win->decor->ctx, close_sprite, win->decor->ctx->width - close_sprite->width - 7, 4);
-    gfx_renderSprite(win->decor->ctx, maximize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 8, 4);
-    gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - 9, 4);
+#define BTN_OFFSET_INITIAL              10
+    gfx_renderSprite(win->decor->ctx, close_sprite, win->decor->ctx->width - close_sprite->width - BTN_OFFSET_INITIAL, 4);
+    gfx_renderSprite(win->decor->ctx, maximize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - BTN_OFFSET_INITIAL - 1, 4);
+    gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - BTN_OFFSET_INITIAL - 2, 4);
     gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 8, win->decor->borders.top_height - 6, (win->decor->focused ? MERCURY_COLOR_TEXT_FOCUSED : MERCURY_COLOR_TEXT_UNFOCUSED));
     gfx_render(win->decor->ctx);
     celestial_flip(win); // TODO: Only flip decorations
@@ -232,15 +229,27 @@ int celestial_renderMercury(window_t *win) {
  * @returns Button ID in bounds
  */
 int celestial_inBoundsMercury(struct window *win, int32_t x, int32_t y) {
-    if ((size_t)x >=  win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - 6 && (size_t)x < win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 6) {
-        return DECOR_BTN_MINIMIZE;
-    } else if ((size_t)x >= win->decor->ctx->width - close_sprite->width - maximize_sprite->width - 5 && (size_t)x < win->decor->ctx->width - close_sprite->width - 5) {
-        return DECOR_BTN_MAXIMIZE;
-    } else if ((size_t)x >= win->decor->ctx->width - close_sprite->width - 4 && (size_t)x < win->decor->ctx->width - 8) {
+    if (x < 0 || y < 0) return DECOR_BTN_NONE;
+
+    size_t win_width = win->decor->ctx->width;
+
+    size_t close_start = win_width - close_sprite->width - 10;
+    size_t max_start   = close_start - maximize_sprite->width - 1;
+    size_t min_start   = max_start - minimize_sprite->width - 1;
+
+    if ((size_t)x >= close_start && (size_t)x < win_width - 8) {
         return DECOR_BTN_CLOSE;
-    } else {
-        return DECOR_BTN_NONE;
     }
+    
+    if ((size_t)x >= max_start && (size_t)x < close_start - 1) {
+        return DECOR_BTN_MAXIMIZE;
+    }
+    
+    if ((size_t)x >= min_start && (size_t)x < max_start - 1) {
+        return DECOR_BTN_MINIMIZE;
+    }
+
+    return DECOR_BTN_NONE;
 }
 
 /**
