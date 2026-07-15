@@ -1,4 +1,4 @@
 #!/bin/sh
 
-# Execute whatarewe
-whatarewe
+# Execute whatarewe (any argument = non-UTF)
+whatarewe nonfancy
