@@ -73,7 +73,6 @@ static int sharedfs_open(devfs_node_t *n, unsigned long flags) {
  * @brief sharedfs close
  */
 static int sharedfs_close(devfs_node_t *n) {
-    LOG(DEBUG, "sharedfs_close\n");
     shared_object_t *obj = (shared_object_t*)n->priv;
     obj->refcount--;
     if (obj->refcount <= 0) {

@@ -1,5 +1,5 @@
 /**
- * @file drivers/example/ps2.c
+ * @file drivers/misc/ps2/ps2.c
  * @brief PS/2 driver for Hexahedron
  * 
  * @warning This driver is pretty messy
@@ -217,6 +217,7 @@ void ps2_identifyDevices() {
         // Check those identification bytes!
         if (!byte_count) {
             LOG(INFO, "Device %d: AT keyboard (unsupported)\n", i);
+            kbd_init(i);
             continue;
         }
 
@@ -364,7 +365,8 @@ int driver_init(int argc, char **argv) {
     ps2_sendCommand(PS2_COMMAND_ENABLE_PORT2);
 
     int dual_channel = 0;
-    if (!(ps2_sendCommandResponse(PS2_COMMAND_READ_CCB) & PS2_CCB_PORT2CLK)) {
+    ccb = ps2_sendCommandResponse(PS2_COMMAND_READ_CCB);
+    if (!(ccb & PS2_CCB_PORT2CLK)) {
         // Dual channel PS/2 controller
         LOG(DEBUG, "Detected a dual PS/2 controller\n");
         dual_channel = 1;
@@ -400,6 +402,16 @@ int driver_init(int argc, char **argv) {
 
     ps2_port_count = 1 + !!dual_channel;
 
+    // Identify devices
+    ps2_identifyDevices();
+
+    // Flush everything
+    timeout = 1000;
+    while ((inportb(PS2_STATUS) & PS2_STATUS_OUTPUT_FULL) && timeout > 0) {
+        inportb(PS2_DATA);
+        timeout--;
+    }
+
     // Ok, controller looks good! Let's setup our interfaces
     ccb = ps2_sendCommandResponse(PS2_COMMAND_READ_CCB);
     ccb |= PS2_CCB_PORT2INT | PS2_CCB_PORT1INT | PS2_CCB_PORTTRANSLATION;
@@ -408,8 +420,6 @@ int driver_init(int argc, char **argv) {
     // Re-enable the ports
     ps2_sendCommand(PS2_COMMAND_ENABLE_PORT1);
     if (dual_channel) ps2_sendCommand(PS2_COMMAND_ENABLE_PORT2);
-
-    ps2_identifyDevices();
 
     return 0;
 }

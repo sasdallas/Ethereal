@@ -29,6 +29,11 @@ typedef struct ringbuffer {
     char *buffer;
 } ringbuffer_t;
 
+/**** MACROS ****/
+
+#define RINGBUFFER_DEFINE_STATIC(name, size) char name##_storage[(size)];\
+                                             ringbuffer_t name = { .head = 0, .tail = 0, .buffer_size = size, .buffer = name##_storage }; 
+
 /**** FUNCTIONS ****/
 
 /**
@@ -61,6 +66,13 @@ ssize_t ringbuffer_read(ringbuffer_t *ringbuffer, char *buffer, size_t count);
  * @param count The count to read in
  */
 ssize_t ringbuffer_peek(ringbuffer_t *ringbuffer, char *buffer, size_t count);
+
+/**
+ * @brief Discard content from ringbuffer
+ * @param ringbuffer The ringbuffer to discard
+ * @param count The amount to discard
+ */
+ssize_t ringbuffer_discard(ringbuffer_t *ringbuffer, size_t count);
 
 /**
  * @brief Returns the amount of data remaining to read

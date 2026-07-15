@@ -51,6 +51,7 @@
 
 // process flags
 #define PROCESS_KERNEL          0x01    // Process is a kernel-mode process 
+#define PROCESS_TRACE_SYS       0x02    // Trace the process system calls
 
 /**** TYPES ****/
 

@@ -27,7 +27,7 @@ MAKE_OUTPUT:
 
 # C compilation
 $(OUTPUT_DIR)/%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@ -I$(DESTDIR)$(INCLUDE_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 ./$(OUTPUT_FILE): $(C_OBJS)
 	$(LD) $(LDFLAGS) -o $(OUTPUT_FILE) $(C_OBJS)

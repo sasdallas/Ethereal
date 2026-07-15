@@ -50,6 +50,7 @@
 #define E1000_REG_RXDESCHEAD        0x2810
 #define E1000_REG_RXDESCTAIL        0x2818
 #define E1000_REG_RDTR              0x2820
+#define E1000_REG_RXDCTL			0x2828
 
 #define E1000_REG_TCTRL             0x0400
 #define E1000_REG_TXDESCLO          0x3800
@@ -57,6 +58,7 @@
 #define E1000_REG_TXDESCLEN         0x3808
 #define E1000_REG_TXDESCHEAD        0x3810
 #define E1000_REG_TXDESCTAIL        0x3818
+#define E1000_REG_TXDCTL			0x3828
 
 #define E1000_REG_RXADDR            0x5400
 #define E1000_REG_RXADDRHIGH        0x5404
@@ -128,8 +130,8 @@
 #define E1000_CMD_IDE                           (1 << 7)    // Interrupt Delay Enable
 
 /* Descriptor numbers */
-#define E1000_NUM_TX_DESC                       512
-#define E1000_NUM_RX_DESC                       512
+#define E1000_NUM_TX_DESC                       256
+#define E1000_NUM_RX_DESC                       256
 
 /* ICR */
 #define E1000_ICR_TXDW                          (1 << 0)
@@ -149,25 +151,25 @@
  * @brief RX descriptor
  */
 typedef struct e1000_rx_desc {
-	volatile uint64_t addr;
-	volatile uint16_t length;
-	volatile uint16_t checksum;
-	volatile uint8_t  status;
-	volatile uint8_t  errors;
-	volatile uint16_t special;
+	uint64_t addr;
+	uint16_t length;
+	uint16_t checksum;
+	uint8_t  status;
+	uint8_t  errors;
+	uint16_t special;
 } __attribute__((packed)) e1000_rx_desc_t;
 
 /**
  * @brief TX descriptor
  */
 typedef struct e1000_tx_desc {
-	volatile uint64_t addr;
-	volatile uint16_t length;
-	volatile uint8_t  cso;
-	volatile uint8_t  cmd;
-	volatile uint8_t  status;
-	volatile uint8_t  css;
-	volatile uint16_t special;
+	uint64_t addr;
+	uint16_t length;
+	uint8_t  cso;
+	uint8_t  cmd;
+	uint8_t  status;
+	uint8_t  css;
+	uint16_t special;
 } __attribute__((packed)) e1000_tx_desc_t;
 
 /**
@@ -177,13 +179,13 @@ typedef struct e1000 {
     pci_device_t *pci_device;                   // PCI device
     uint16_t nic_type;                          // Device ID field
     nic_t *n;                             		// NIC
-	spinlock_t *lock;							// NIC lock
+	spinlock_t rcv_lck;
 
     uintptr_t mmio;                             // MMIO address
 
-    int eeprom;                                 // Has EEPROM
-    int link;                                   // Link status
+    bool eeprom;								// Has EEPROM
     int tx_current;                             // Current Tx
+	int tx_current2;							// Current Tx2 (borrowed from banan-os lol)
     int rx_current;                             // Current Rx
 
     volatile e1000_tx_desc_t *tx_descs;         // Tx descriptors

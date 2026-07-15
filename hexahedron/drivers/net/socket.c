@@ -144,7 +144,6 @@ ssize_t socket_sendmsg(int socket, struct msghdr *message, int flags) {
 
     // Validate the full message
     socket_validateMsg(message);
-    assert(message->msg_control == NULL);
 
     sock_t *sock = (sock_t*)f->priv;
     if (sock->ops->sendmsg) {
@@ -208,6 +207,9 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
         case SO_DONTROUTE:
             SOCKET_CHANGE_FLAG(SOCKET_FLAG_DONTROUTE, option_value);
             return 0;
+        case SO_PASSCRED:
+            SOCKET_CHANGE_FLAG(SOCKET_FLAG_PASSCRED, option_value);
+            return 0;
     }
 
     // Now handle the other types
@@ -261,7 +263,13 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
             SOCKET_CHECK_LEN(option_len, int);
             SOCKET_GET_FLAG(SOCKET_FLAG_DONTROUTE, option_value, option_len);
             return 0;
-        case SO_PEERCRED:
+        case SO_PASSCRED:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_PASSCRED, option_value, option_len);
+            return 0;
+        case SO_ACCEPTCONN:
+            SOCKET_CHECK_LEN(option_len, int);
+            SOCKET_GET_FLAG(SOCKET_FLAG_LISTENER, option_value, option_len);
             return 0;
     }
 
@@ -270,6 +278,18 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
         case SO_ERROR:
             SOCKET_CHECK_LEN(option_len, int);
             *((int*)option_len) = 0;
+            return 0;
+        case SO_TYPE:
+            SOCKET_CHECK_LEN(option_len, int);
+            *((int*)option_len) = sock->type;
+            return 0;
+        case SO_PROTOCOL:
+            SOCKET_CHECK_LEN(option_len, int);
+            *((int*)option_len) = sock->protocol;
+            return 0;
+        case SO_DOMAIN:
+            SOCKET_CHECK_LEN(option_len, int);
+            *((int*)option_len) = sock->domain;
             return 0;
     }
 
@@ -296,13 +316,20 @@ int socket_setsockopt(int socket, int level, int option_name, const void *option
 
     sock_t *sock = (sock_t*)f->priv;
 
-    // TODO: Replace this with a handler system. This is temporary
-    switch (level) {
-        case SOL_SOCKET:
-            return socket_default_setsockopt(sock, option_name, option_value, option_len);
-        default:
-            return -ENOTSUP;
+    int r = -ENOPROTOOPT;
+    
+    // Use default first
+    if (level == SOL_SOCKET) {
+        r = socket_default_setsockopt(sock, option_name, option_value, option_len);
     }
+
+    // Try using socket
+    // TODO what if they still want setsockopt even if socket_default_setsockopt succeds? need to add flag
+    if (sock->ops->setsockopt && r < 0) {
+        r = sock->ops->setsockopt(sock, level, option_name, option_value, option_len);
+    }
+
+    return r;
 }
 
 /**
@@ -323,16 +350,20 @@ int socket_getsockopt(int socket, int level, int option_name, void *option_value
 
     sock_t *sock = (sock_t*)f->priv;
 
-    SYSCALL_VALIDATE_PTR(option_len);
-    SYSCALL_VALIDATE_PTR_SIZE(option_value, *option_len);
+    int r = -ENOPROTOOPT;
 
-    // TODO: Replace this with a handler system. This is temporary
-    switch (level) {
-        case SOL_SOCKET:
-            return socket_default_getsockopt(sock, option_name, option_value, option_len);
-        default:
-            return -ENOPROTOOPT;
+    // Use default first
+    if (level == SOL_SOCKET) {
+        r = socket_default_getsockopt(sock, option_name, option_value, option_len);
     }
+
+    // Try using socket
+    // TODO what if they still want getsockopt even if socket_default_setgockopt succeds? need to add flag
+    if (sock->ops->getsockopt && r < 0) {
+        r = sock->ops->getsockopt(sock, level, option_name, option_value, option_len);
+    }
+    
+    return r;
 }
 
 /**
@@ -543,8 +574,9 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
 
     int fd_num;
     assert(fd_add(f, &fd_num) == 0);
+
     if (type_original & SOCK_CLOEXEC) {
-        LOG(WARN, "SOCK_CLOEXEC is not supported\n");
+        fd_setCloseExecute(fd_num, true);
     }
 
     return fd_num;

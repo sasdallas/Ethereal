@@ -1,13 +1,12 @@
 # Ethereal
 
-A custom all-in-one operating system, written for speed, memory conservation, and reliability.\
-Formerly known as reduceOS
+A custom all-in-one hobby operating system.
 
 ## What is Ethereal?
 
-Ethereal is a project with the goal of creating a fully functional OS from scratch with all components a modern OS would have.
+Ethereal is a project with the goal of creating a fully functional OS with all components a modern OS would have.
 
-Currently, the project is developing its usermode stages.
+It is **not** Linux-based, nor does it share any code with Linux at all. Rather, it uses a custom OS kernel.
 
 ## Screenshots
 
@@ -23,30 +22,37 @@ Currently, the project is developing its usermode stages.
 ![Ethereal but REALLY on IRC](https://github.com/user-attachments/assets/fedac2c5-db99-463f-88d9-44b1a239dcdd)\
 *Ethereal on Libera chat (#ethereal)*
 
-![](https://preview.redd.it/ethereal-smp-enabled-usb-supporting-multitasking-kernel-v0-ahe88a85dowe1.png?width=682&format=png&auto=webp&s=b435a1e0d57a91b7d4e0479f9649960b74a22de7)\
-*Ethereal running DOOM*
-
 ## Features
 
 - Full SMP-enabled kernel
-- Custom window manager (Celestial)
-- USB support for UHCI/EHCI/xHCI controllers
-- AHCI/IDE support
-- Networking stack with E1000 and RTL8139 network card driver
-- Priority-based round-robin scheduler with a well-tested API
-- Support for the `mlibc` C library and its wide variety of functions
+- Advanced page cache that makes disk syncing fast
+- Custom window manager (Celestial) and userspace
+- USB support for xHCI controllers
+- AHCI/NVMe disk support (technically IDE too, albeit a very poorly written driver)
+- Networking stack with E1000 and RTL8169 network card driver
+- Support for the `mlibc` C library
 - Full ACPI support with the ACPICA library (with backup MinACPI library that doesn't have AML parsing)
 
 ## Project structure
 
-- `base`: Contains the base filesystem. Files in `base/initrd` go in the initial ramdisk (for non LiveCD boots) and files in `base/sysroot` go in sysroot.
+- `base`: Contains the base filesystem. Files in `base/initrd` go in the initial ramdisk (for non-LiveCD boots) and files in `base/sysroot` go in sysroot.
 - `buildscripts`: Contains buildscripts for the build system
 - `conf`: Contains misc. configuration files, such as architecture files, GRUB configs, extra boot files, etc.
 - `drivers`: Drivers for Hexahedron, copied based on their configuration.
 - `external`: Contains external projects, such as ACPICA. See External Components.
 - `hexahedron`: The main kernel project
-- `libkstructures`: Contains misc. kernel structures, like lists/hashmaps/parsers/whatever
+- `libkstructures`: Contains misc. structures, like lists/hashmaps/parsers/whatever
 - `libc`: Contains mlibc
+- `userspace`: Contains the userspace libraries and programs in Ethereal
+
+## Code notice
+
+Ethereal's codebase is the result of over 2 years of effort.
+
+In some areas, the code is extremely concise, well-written, and optimized.\
+In other areas, it isn't - I learned as I made this project.
+
+Take caution if using Ethereal as a source to learn how to make your own OS.
 
 ## Building
 
@@ -82,18 +88,23 @@ Here is a small list:
 - `--no-acpica`: Disable the ACPICA library and fallback to MinACPI implementation. Only useful in extreme cases.
 - `--no-acpi`: Disable all ACPI implementations. Disables SMP as well.
 - `--disable-smp`: Enable ACPI, but disable SMP
-- `--disable-cow`: Disable copy-on-write. Not recommended, but can be useful in extreme cases.
 - `--no-psf-font`: Don't load the PSF font from initrd
 
 ## External components
+
 Certain external components are available in `external`, `libc`, and other parts of the kernel. Here is a list of them and their versions:
+
 - ACPICA UNIX* (Intel License): Version 20240927 [available here](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/download.html)
 - libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
 - freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
 - mlibc (MIT license): [Ethereal fork available here](https://github.com/sasdallas/mlibc)
 - tinf (zlib license): [available here](https://github.com/jibsen/tinf/)
 - json-parser (BSD 2-clause license): [available here](https://github.com/json-parser/json-parser)
-- PlutoSVG (MIT license): [available here](https://github.com/sammycage/plutosvg)
+
+Certain external components are by the same developer, however may follow a different license:
+
+- Essence (BSD 3-clause license): [available here](https://github.com/sasdallas/Essence)
+- Neutron (GPLv3 license): [available here](https://github.com/sasdallas/Neutron) 
 
 ## Credits
 
@@ -112,4 +123,4 @@ All files, unless specified in the copyright header, fall under this license. An
 
 **LICENSING ISSUES:** If a file is found without proper commenting, immediately contact me (preferably through a public channel such as GitHub issues for transparency) directly to resolve it.
 
-Ethereal's goal has **NEVER** been to take code, but it has happened in the past. Please contact me!
+Ethereal's goal has **NEVER** been to take code, however if it does happen please contact me!

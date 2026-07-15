@@ -287,6 +287,112 @@ pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar) {
     return bar_out;
 }
 
+
+/**
+ * @brief Get a BAR structure
+ * @param dev The device to get
+ * @param idx The index of the BAR to get
+ * @returns A BAR structure, or NULL
+ * 
+ * Do note that if you choose to not map the BAR it will be read again, as only
+ * memory-mapped BARs are stored in a PCI device.
+ */
+pci_bar_t *pci_getBAR(pci_device_t *dev, uint8_t bar) {
+    assert(bar <= 5);
+    if (dev->bar[bar].valid) {
+        return &dev->bar[bar];
+    }
+
+    // First, we should get the header type
+    uint8_t header_type = 0xFF;
+    pci_readConfigByte(dev, PCI_HEADER_TYPE_OFFSET, &header_type);
+    header_type &= PCI_HEADER_TYPE;
+
+    // Make sure it's valid
+    if (header_type != PCI_HEADER_TYPE_GENERAL && header_type != PCI_HEADER_TYPE_PCI_TO_PCI_BRIDGE) {
+        LOG(DEBUG, "Invalid or unsupported header type while reading BAR: 0x%x\n", header_type);
+        return NULL; // Invalid device
+    }
+
+    // Check the limits of the BAR for the header type
+    if (bar > 5 || (header_type == PCI_HEADER_TYPE_PCI_TO_PCI_BRIDGE && bar > 1)) {
+        return NULL; // Invalid BAR
+    }
+
+    // BARs are defined as having the same base offset across our two supported header types
+    // So all we have to do to calculate the existing address is PCI_GENERAL_BAR0_OFFSET + (bar * 4)
+    uint8_t offset = PCI_GENERAL_BAR0_OFFSET + (bar * 0x4);
+    
+    // Now go ahead and disable I/O and memory access in the command register (we'll restore it at the end)
+    uint16_t restore_command;
+    pci_readConfigWord(dev, PCI_COMMAND_OFFSET, &restore_command);
+    pci_writeConfigWord(dev, PCI_COMMAND_OFFSET, restore_command & ~(PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE));
+
+    // Read in the BAR
+    uint32_t bar_address;
+    pci_readConfigDword(dev, offset, &bar_address);
+
+    // Read in the BAR size by writing all 1s (seeing which bits we can set)
+    pci_writeConfigDword(dev, offset, 0xFFFFFFFF);
+    
+    uint32_t bar_size;
+    pci_readConfigDword(dev, offset, &bar_size);
+
+    bar_size = ~bar_size + 1;
+    pci_writeConfigDword(dev, offset, bar_address);
+
+    // Now we just need to parse it. Allocate memory for the response  
+    pci_bar_t *bar_out = &dev->bar[bar];
+
+    // Switch and parse.
+    // PCI_BAR_MEMORY16 is currently unsupported, but PCI_BAR_MEMORY64 and PCI_BAR_MEMORY16 are part of the same type field.
+    if (bar_address & PCI_BAR_MEMORY64 && !(bar_address & PCI_BAR_MEMORY16)) {
+        // NOTE: This hasn't been tested yet. I think it might work okay but I'm not sure.
+        // NOTE: If you have any way of testing this, please let me know :)
+
+        // This is a 64-bit memory space BAR
+        bar_out->type = PCI_BAR_MEMORY64;
+
+        // Read the rest of the address
+        uint32_t bar_address_high;
+        pci_readConfigDword(dev, offset + 4, &bar_address_high);
+    
+        // Now put the values in
+        bar_out->address = (bar_address & 0xFFFFFFF0) | ((uint64_t)(bar_address_high & 0xFFFFFFFF) << 32);
+        bar_out->size = bar_size;
+        bar_out->prefetchable = (bar_address & 0x8) ? 1 : 0;
+    } else if (bar_address & PCI_BAR_IO_SPACE) {
+        // This is an I/O space BAR
+        bar_out->type = PCI_BAR_IO_SPACE;
+        bar_out->address = (bar_address & 0xFFFFFFFC);
+        bar_out->size = bar_size;
+        bar_out->prefetchable = 0;
+    } else if (bar_address & PCI_BAR_MEMORY16) {
+        // This is a 16-bit memory space BAR (unsupported)
+        LOG(ERR, "Unimplemented support for 16-bit BARs!!!\n");
+        assert(0);
+    } else {
+        // This is a 32-bit memory space BAR
+        bar_out->address = bar_address & 0xFFFFFFF0;
+        bar_out->size = bar_size;
+        bar_out->type = PCI_BAR_MEMORY32;
+        bar_out->prefetchable = (bar_address & 0x8) ? 1 : 0;
+    }
+
+    bar_out->valid = true;
+
+    if (bar_out->type != PCI_BAR_IO_SPACE) {
+        // Map the memory
+        bar_out->mapped = mmio_map(bar_out->address, bar_out->size);
+    }
+
+    // Restore BAR
+    pci_writeConfigWord(dev, PCI_COMMAND_OFFSET, restore_command);
+    
+    // Done!
+    return bar_out;
+}
+
 /**
  * @brief Read the type of the PCI device (class code + subclass)
  * 
@@ -401,7 +507,7 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->slot = slot;
     dev->function = function;
     dev->vid = pci_readConfigOffset(bus, slot, function, PCI_VENID_OFFSET, 2);
-    dev->pid = pci_readConfigOffset(bus, slot, function, PCI_DEVID_OFFSET, 2);
+    dev->devid = pci_readConfigOffset(bus, slot, function, PCI_DEVID_OFFSET, 2);
     dev->class_code = pci_readConfigOffset(bus, slot, function, PCI_CLASSCODE_OFFSET, 1);
     dev->subclass_code = pci_readConfigOffset(bus, slot, function, PCI_SUBCLASS_OFFSET, 1);
     dev->driver = NULL;
@@ -409,7 +515,7 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->msix_offset = -1;
     dev->irqs = NULL;
 
-    // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
+    // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->devid, dev->bus, dev->slot, dev->function);
 
     // Do we need to initialize another bus?
     if (dev->class_code == 0x06 && dev->subclass_code == 0x04) {
@@ -510,18 +616,18 @@ int pci_scanFunction(uint8_t bus, uint8_t slot, uint8_t function, pci_scan_callb
 
                 // Matching VID?
                 if (map->vid == dev->vid) {
-                    // For each PID
-                    uint16_t *pid = map->pid;
+                    // For each devid
+                    uint16_t *devid = map->devid;
 
-                    if (*pid == PCI_NONE) {
-                        // The first and only PID in the list is PCI_NONE, accept all that have VID
+                    if (*devid == PCI_NONE) {
+                        // The first and only devid in the list is PCI_NONE, accept all that have VID
                         break;
                     }
 
                     int found = 0;
-                    while (*pid != PCI_NONE) {
-                        if (*pid == dev->pid) { found = 1; break; }
-                        pid++;
+                    while (*devid != PCI_NONE) {
+                        if (*devid == dev->devid) { found = 1; break; }
+                        devid++;
                     }
 
                     // Did we find it?
@@ -626,9 +732,37 @@ pci_device_t *pci_getDevice(uint8_t bus, uint8_t slot, uint8_t function) {
 }
 
 /**
+ * @brief Get capability of PCI device
+ * @param dev The device to search the capability list of
+ * @param offset The offset to check (pointer)
+ * @returns The first byte at the capability
+ */
+uint8_t pci_getNextCapability(pci_device_t *dev, uint8_t *offset) {
+    uint16_t sts;
+    pci_readConfigWord(dev, PCI_STATUS_OFFSET, &sts);
+    if (((sts & PCI_STATUS_CAPABILITIES_LIST) == 0)) {
+        return PCI_CAP_NONE;
+    }
+
+    if (*offset == 0) {
+        uint8_t cap_list_off;
+        pci_readConfigByte(dev, PCI_GENERAL_CAPABILITIES_OFFSET, &cap_list_off);
+        *offset = cap_list_off;
+    }
+
+    uint16_t cap;
+    pci_readConfigWord(dev, *offset, &cap);
+
+    // next capability
+    *offset = (cap >> 8) & 0xfc;
+    return *offset ? cap & 0xff : PCI_CAP_NONE;
+}
+
+/**
  * @brief PCI probe for MSI/MSI-X
  */
 static void pci_probeCaps(pci_device_t *dev) {
+    // TODO use api pci_getNextCapability
     uint16_t sts;
     pci_readConfigWord(dev, PCI_STATUS_OFFSET, &sts);
     if (((sts & PCI_STATUS_CAPABILITIES_LIST) == 0)) {
@@ -642,12 +776,12 @@ static void pci_probeCaps(pci_device_t *dev) {
         uint16_t cap;
         pci_readConfigWord(dev, cap_list_off, &cap);
 
-        if ((cap & 0xFF) == 0x05) {
+        if ((cap & 0xFF) == PCI_CAP_MSI) {
             LOG(DEBUG, "Probe: Found MSI offset at 0x%x\n", cap_list_off);
             dev->msi_offset = cap_list_off;
         }
 
-        if ((cap & 0xFF) == 0x11) {
+        if ((cap & 0xFF) == PCI_CAP_MSI_X) {
             LOG(DEBUG, "Probe: Found MSI-X offset at 0x%x\n", cap_list_off);
             dev->msix_offset = cap_list_off;
         }
@@ -732,7 +866,7 @@ static int pci_allocateInterruptMSIX(pci_device_t *dev, int min, int max) {
     // See https://wiki.osdev.org/PCI
     uint16_t ctrl;
     pci_readConfigWord(dev, dev->msix_offset + 0x02, &ctrl);
-    ctrl |= (1 << 15);
+    ctrl |= (1 << 15) | (1 << 14);
     pci_writeConfigWord(dev, dev->msix_offset + 0x02, ctrl);
 
     // Check the table size
@@ -788,6 +922,10 @@ static int pci_allocateInterruptMSIX(pci_device_t *dev, int min, int max) {
 
     // TODO: cleanup BAR MMIO
     kfree(bar);
+
+    // re-enable MSI-X
+    ctrl &= ~(1 << 14);
+    pci_writeConfigWord(dev, dev->msix_offset + 0x02, ctrl);
 
     return irqs_allocated;
 }

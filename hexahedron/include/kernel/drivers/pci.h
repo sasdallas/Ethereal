@@ -16,6 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <stdbool.h>
 
 /**** DEFINITIONS ****/
 
@@ -25,7 +26,7 @@
 #define PCI_MAX_SLOT                32      // 32 slots
 #define PCI_MAX_FUNC                8       // 8 functions
 
-#define PCI_MAX_PID                 32
+#define PCI_MAX_DEVID               32
 
 // BAR-specifics
 #define PCI_BAR_MEMORY32            0x0     // 32-bit memory space BAR (physical RAM) 
@@ -106,6 +107,12 @@
 #define PCI_IRQ_MSI_X                       0x04
 #define PCI_IRQ_ALL                         (PCI_IRQ_PIN_INTERRUPT | PCI_IRQ_MSI | PCI_IRQ_MSI_X)
 
+// Capability types
+#define PCI_CAP_NONE                        0x00
+#define PCI_CAP_MSI                         0x05
+#define PCI_CAP_VENDOR_SPECIFIC             0x09
+#define PCI_CAP_MSI_X                       0x11
+
 // PCI types that are required
 #define PCI_TYPE_BRIDGE                     0x0604  // PCI-to-PCI bridge
 
@@ -123,35 +130,6 @@ typedef struct pci_irq {
 } pci_irq_t;
 
 /**
- * @brief PCI device object
- * @param bus Device bus
- * @param slot Device slot
- * @param function Device function
- * @param class_code Class code of the device
- * @param subclass_code Subclass code of the device
- * @param vid Vendor ID of the device
- * @param pid Product ID of the device
- */
-typedef struct pci_device {
-    uint8_t bus;
-    uint8_t slot;
-    uint8_t function;
-    uint8_t class_code;
-    uint8_t subclass_code;
-    uint16_t vid;
-    uint16_t pid;
-    void *driver;                  
-
-    pci_irq_t *irqs;            // Allocated array of IRQs
-    int nirqs;                  // Number of IRQs allocated
-
-    int msi_offset;             // MSI offset in configuration space (-1 if not found)
-    int msix_offset;            // MSI-X offset in configuration space (-1 if not found)
- 
-    int valid;                  // !!!: Valid device hack
-} pci_device_t;
-
-/**
  * @brief PCI base address register
  *
  * @param type Defines the type of the BAR and its address size. Can be @c PCI_BAR_IO_SPACE or @c PCI_BAR_MEMORY32 or @c PCI_BAR_MEMORY64
@@ -160,11 +138,43 @@ typedef struct pci_device {
  * @param address The address of the BAR
  */
 typedef struct pci_bar {
+    bool valid;         // Whether the BAR is valid
     int type;           // Type of the BAR
     uint64_t size;      // Size of the BAR
     int prefetchable;   // Whether the BAR is prefetchable (it does not read side effects)
-    uint64_t address;   // Address of the BAR. Note that it doesn't take up all of this space.s
+    uint64_t address;   // Physical address of the BAR. Note that it doesn't take up all of this space.
+    uint64_t mapped;    // Mapped address of the BAR.
 } pci_bar_t;
+
+/**
+ * @brief PCI device object
+ * @param bus Device bus
+ * @param slot Device slot
+ * @param function Device function
+ * @param class_code Class code of the device
+ * @param subclass_code Subclass code of the device
+ * @param vid Vendor ID of the device
+ * @param devid Device ID of the device
+ */
+typedef struct pci_device {
+    bool valid;
+    uint8_t bus;
+    uint8_t slot;
+    uint8_t function;
+    uint8_t class_code;
+    uint8_t subclass_code;
+    uint16_t vid;
+    uint16_t devid;
+    void *driver;  
+
+    pci_irq_t *irqs;            // Allocated array of IRQs
+    int nirqs;                  // Number of IRQs allocated
+
+    int msi_offset;             // MSI offset in configuration space (-1 if not found)
+    int msix_offset;            // MSI-X offset in configuration space (-1 if not found)
+
+    pci_bar_t bar[6];           // BARs
+} pci_device_t;
 
 /**
  * @brief PCI scan callback function
@@ -175,18 +185,18 @@ typedef struct pci_bar {
 typedef int (*pci_scan_callback_t)(pci_device_t *device, void *data);
 
 /**
- * @brief PCI VID:PID(s) mapping
+ * @brief PCI VID:DID(s) mapping
  */
-typedef struct pci_id_pid_mapping {
-    uint16_t vid;                   // Vendor ID
-    uint16_t pid[PCI_MAX_PID+1];    // PCI_NONE-terminated of accepted PIDs. If there is only one and VID matches, it will be accepted
+typedef struct pci_id_mapping {
+    uint16_t vid;                       // Vendor ID
+    uint16_t devid[PCI_MAX_DEVID+1];    // PCI_NONE-terminated of accepted DEVIDs. If there is only one and VID matches, it will be accepted
 } pci_id_mapping_t;
 
 /**
  * @brief PCI scan parameters
  * @param class_code Class code being scanned for, leave as 0 to ignore
  * @param subclass_code Subclass code being scanned for, leave as 0 to ignore
- * @param id_list List of VID:PID(s) mappings to accept, leave as NULL to ignore. SHOULD END WITH PCI_ID_MAPPING_END
+ * @param id_list List of VID:DEVID(s) mappings to accept, leave as NULL to ignore. SHOULD END WITH PCI_ID_MAPPING_END
  */
 typedef struct pci_scan_parameters {
     uint8_t class_code;
@@ -210,11 +220,11 @@ typedef struct pci_bus {
 } pci_bus_t;
 
 typedef struct pci_msix_entry {
-    uint32_t msg_addr_low;              // Low bits of message address
-    uint32_t msg_addr_high;             // High bits of message address
-    uint32_t msg_data;                  // Message data
-    uint32_t vector_ctrl;               // Vector control
-} pci_msix_entry_t;
+    volatile uint32_t msg_addr_low;              // Low bits of message address
+    volatile uint32_t msg_addr_high;             // High bits of message address
+    volatile uint32_t msg_data;                  // Message data
+    volatile uint32_t vector_ctrl;               // Vector control
+}  pci_msix_entry_t;
 
 /**** MACROS ****/
 
@@ -227,8 +237,8 @@ typedef struct pci_msix_entry {
 #define PCI_BUS(address) (uint8_t)((address >> 16) & 0xFF)
 
 // Ending mapping
-#define PCI_ID_MAPPING_END { .pid = { PCI_NONE }, .vid = PCI_NONE }
-#define PCI_PID_ACCEPT_ALL { PCI_NONE }
+#define PCI_ID_MAPPING_END { .devid = { PCI_NONE }, .vid = PCI_NONE }
+#define PCI_DEVID_ACCEPT_ALL { PCI_NONE }
 
 /**** FUNCTIONS ****/
 
@@ -323,6 +333,24 @@ static inline int pci_writeConfigDword(pci_device_t *dev, uint8_t offset, uint32
 }
 
 /**
+ * @brief Read structure
+ * @param dev The device to read the structure from
+ * @param offset Structure offset
+ * @param st Pointer to structure
+ * @param st_size The size of the structure
+ * 
+ * This will read individual bytes starting from offset into the structure st.
+ */
+static inline int pci_readStructure(pci_device_t *dev, uint8_t offset, void *st, uint8_t st_size) {
+    for (unsigned i = 0; i < st_size; i++) {
+        int r = pci_readConfigByte(dev, offset++, (uint8_t*)(&((uint8_t*)st)[i]));
+        if (r != 0) return r;
+    }
+
+    return 0;
+}
+
+/**
  * @brief Auto-determine a BAR type and read it using the configuration space
  * 
  * Returns a pointer to an ALLOCATED @c pci_bar_t structure. You MUST free this structure
@@ -334,8 +362,20 @@ static inline int pci_writeConfigDword(pci_device_t *dev, uint8_t offset, uint32
  * @param bar The number of the BAR to read
  * 
  * @returns A @c pci_bar_t structure or NULL  
+ * 
+ * 
+ * THIS API IS LEGACY AND HAS BEEN REPLACED WITH @c pci_getBAR
  */
 pci_bar_t *pci_readBAR(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar);
+
+
+/**
+ * @brief Get a BAR structure
+ * @param dev The device to get
+ * @param idx The index of the BAR to get
+ * @returns A BAR structure, or NULL
+ */
+pci_bar_t *pci_getBAR(pci_device_t *dev, uint8_t bar);
 
 /**
  * @brief Initialize and probe for PCI devices
@@ -384,5 +424,12 @@ pci_irq_t *pci_getInterruptVector(pci_device_t *dev, int idx);
  */
 int pci_freeInterrupts(pci_device_t *dev);
 
+/**
+ * @brief Get capability of PCI device
+ * @param dev The device to search the capability list of
+ * @param offset The offset to check (pointer)
+ * @returns The first byte at the capability
+ */
+uint8_t pci_getNextCapability(pci_device_t *dev, uint8_t *offset);
 
 #endif

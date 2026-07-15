@@ -136,6 +136,7 @@ void rtl8139_thread(void *context) {
         uint16_t *packet = (uint16_t*)(nic->rx_buffer + nic->rx_current);
         uint16_t packet_len = packet[1];
         ethernet_handle((ethernet_packet_t*)(packet+2), nic->n, packet_len);
+        
 
         // Update counts
         nic->n->stats.rx_packets++;
@@ -149,7 +150,6 @@ void rtl8139_thread(void *context) {
 
         // Update on device
         RTL8139_WRITE16(RTL8139_REG_CAPR, nic->rx_current - 16);
-
     }
 }
 
@@ -345,7 +345,7 @@ int rtl8139_scan(pci_device_t *dev, void *data) {
  */
 int driver_init(int argc, char *argv[]) {
     pci_id_mapping_t id_list[] = {
-        { .vid = 0x10ec, .pid = { 0x8139, PCI_NONE } },
+        { .vid = 0x10ec, .devid = { 0x8139, PCI_NONE } },
         PCI_ID_MAPPING_END
     };
 

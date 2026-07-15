@@ -79,12 +79,12 @@ int ata_find(pci_device_t *dev, void *data) {
 
     // !!!: Ugh, why did I think only one ATA controller could be present? That was a while ago and now I hate myself for it.
     if (ide_pci) {
-        LOG(WARN, "Additional IDE controller detected: 0x%x 0x%x at bus %i slot %i function %i\n", dev->vid, dev->pid, dev->bus, dev->slot, dev->function);
+        LOG(WARN, "Additional IDE controller detected: 0x%x 0x%x at bus %i slot %i function %i\n", dev->vid, dev->devid, dev->bus, dev->slot, dev->function);
         LOG(WARN, "This IDE driver does not support multiple controllers.\n");
         return 0;
     }
 
-    LOG(DEBUG, "IDE controller - vendor 0x%x device 0x%x\n", dev->vid, dev->pid);
+    LOG(DEBUG, "IDE controller - vendor 0x%x device 0x%x\n", dev->vid, dev->devid);
 
     ide_pci = dev;
     return 0;

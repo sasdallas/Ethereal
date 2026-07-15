@@ -84,6 +84,30 @@ ssize_t ringbuffer_peek(ringbuffer_t *ringbuffer, char *buffer, size_t count) {
 }
 
 /**
+ * @brief Discard content from ringbuffer
+ * @param ringbuffer The ringbuffer to discard
+ * @param count The amount to discard
+ */
+ssize_t ringbuffer_discard(ringbuffer_t *ringbuffer, size_t count) {
+    size_t avail = ringbuffer->tail - ringbuffer->head;
+    if (!avail) return 0;
+    if (count > avail) count = avail;
+
+    size_t off = ringbuffer->head % ringbuffer->buffer_size;
+    size_t l1 = ringbuffer->buffer_size - off;
+    if (l1 > count) l1 = count;
+
+    if (l1 == count) {
+        ringbuffer->head = (ringbuffer->head + count);
+        return count;
+    }
+
+    ringbuffer->head = ringbuffer->head + count;
+    return count;
+}
+
+
+/**
  * @brief Read from ringbuffer
  * @param ringbuffer The ringbuffer to read from
  * @param buffer The buffer to read into

@@ -6,3 +6,6 @@
 	path = external/essence/essence
 	url = https://github.com/sasdallas/essence
 	branch = main
+[submodule "userspace/lib/neutron/neutron"]
+	path = userspace/lib/neutron/neutron
+	url = https://github.com/sasdallas/Neutron

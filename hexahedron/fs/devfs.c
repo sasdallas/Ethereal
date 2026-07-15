@@ -161,8 +161,10 @@ static ssize_t devfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffe
     if (file->inode->attr.type != VFS_BLOCKDEVICE && file->inode->attr.type != VFS_CHARDEVICE) return -ENODEV;
 
     devfs_node_t *n = file->priv;
+
+    // read and read_ext are the same function
     if (n->ops && n->ops->read) {
-        return n->ops->read(n, off, size, buffer);
+        return n->ops->read_ext(n, off, size, buffer, file->flags);
     } else {
         return -ENODEV;
     }
@@ -176,8 +178,10 @@ static ssize_t devfs_write(vfs_file_t *file, loff_t off, size_t size, const char
     if (file->inode->attr.type != VFS_BLOCKDEVICE && file->inode->attr.type != VFS_CHARDEVICE) return -ENODEV;
 
     devfs_node_t *n = file->priv;
+
+    // write and write_ext are the same function
     if (n->ops && n->ops->write) {
-        return n->ops->write(n, off, size, buffer);
+        return n->ops->write_ext(n, off, size, buffer, file->flags);
     } else {
         return -ENODEV;
     }

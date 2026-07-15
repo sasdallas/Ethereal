@@ -36,7 +36,7 @@ static void poll_freeWaiter(poll_waiter_t *w);
 #define UNLOCK_WAITER(n) __atomic_clear(&(n)->lock, __ATOMIC_RELEASE)
 #define MATCH_EVENTS(e1,e2) ((e1) & (e2) || ((e2) & (POLLHUP | POLLERR)))
 #define HOLD_WAITER(n) refcount_inc(&(n)->refs)
-#define RELEASE_WAITER(n) if (refcount_dec(&(n)->refs) == 1) poll_freeWaiter((n))
+#define RELEASE_WAITER(n) if (refcount_dec(&(n)->refs) == 0) poll_freeWaiter((n))
 
 
 

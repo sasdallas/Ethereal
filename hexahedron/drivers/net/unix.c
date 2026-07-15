@@ -1,6 +1,6 @@
 /**
  * @file hexahedron/drivers/net/unix.c
- * @brief UNIX socket driver
+ * @brief UNIX sockets
  * 
  * 
  * @copyright
@@ -8,34 +8,51 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2025 Samuel Stuart
+ * Copyright (C) 2026 Samuel Stuart
  */
 
 #include <kernel/drivers/net/unix.h>
 #include <kernel/drivers/net/socket.h>
-#include <sys/un.h>
-#include <kernel/mm/alloc.h>
 #include <kernel/fs/vfs_new.h>
-#include <string.h>
-#include <assert.h>
-#include <errno.h>
-#include <stdatomic.h>
-#include <kernel/init.h>
-#include <structs/hashmap.h>
+#include <kernel/task/process.h>
+#include <kernel/processor_data.h>
+#include <kernel/mm/alloc.h>
+#include <kernel/mm/slab.h>
 #include <kernel/debug.h>
+#include <kernel/init.h>
+#include <string.h>
+
+/* Caches */
+slab_cache_t *unix_socket_cache = NULL;
+slab_cache_t *unix_conn_cache = NULL;
 
 /* Path map */
 hashmap_t *unix_path_map = NULL;
-spinlock_t path_map_lck = { 0 };
+mutex_t unix_path_lock = MUTEX_INITIALIZER;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVERS:NET:UNIX", __VA_ARGS__)
 
 /* Get unix socket */
-#define USOCK(sock) ((unix_sock_t*)sock->driver)
+#define USOCK(sock) ((unix_socket_t*)sock->driver)
 
-/* State */
-#define UNIX_STATE_CHANGE(usock, s) atomic_store(&usock->state, s)
+/* State (might be atomic in future) */
+#define UNIX_STATE_CHANGE(usock, s) (usock)->state = s;
+#define UNIX_GET_STATE(usock) ((usock)->state)
+
+/* Refcount methods */
+static void unix_free(unix_socket_t *usock);
+#define UNIX_HOLD(u) (refcount_inc(&(u)->refs))
+#define UNIX_RELEASE(u) if (refcount_dec(&(u)->refs) == 0) { unix_free(u); }
+
+/* Sizes */
+#define UNIX_DEFAULT_RB_SIZE        256 * 1024
+#define UNIX_DEFAULT_QUEUE_SIZE     256
+
+/* Update cred */
+#define UNIX_UPDATE_CRED(usock)     (usock)->cred.pid = current_cpu->current_process->pid;\
+                                    (usock)->cred.uid = current_cpu->current_process->uid;\
+                                    (usock)->cred.gid = current_cpu->current_process->gid;
 
 /* Ops */
 static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
@@ -45,9 +62,14 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
 static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
 static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
 static poll_events_t unix_poll_events(sock_t *sock);
+static poll_events_t unix_poll_events_inner(unix_socket_t *usock);
+static int unix_poll(sock_t *sock, poll_waiter_t *w, poll_events_t e);
 static int unix_close(sock_t *sock);
 static int unix_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *address_len);
 static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len);
+static int unix_getsockopt(sock_t *sock, int level, int option_name, void *option_value, socklen_t *option_len);
+static int unix_setsockopt(sock_t *sock, int level, int option_name, const void *option_value, socklen_t option_len);
+
 static sock_ops_t unix_sock_ops = {
     .accept = unix_accept,
     .bind = unix_bind,
@@ -56,581 +78,578 @@ static sock_ops_t unix_sock_ops = {
     .recvmsg = unix_recvmsg,
     .sendmsg = unix_sendmsg,
     .poll_events = unix_poll_events,
+    .poll = unix_poll,
     .close = unix_close,
     .getpeername = unix_getpeername,
     .getsockname = unix_getsockname,
-    .getsockopt = NULL,
-    .poll = NULL,
-    .setsockopt = NULL,
+    .getsockopt = unix_getsockopt,
+    .setsockopt = unix_setsockopt,
 };
 
 
-
-
 /**
- * @brief UNIX decrement and free
- */
-void unix_decrementAndFree(unix_sock_t *usock) {
-    refcount_dec(&usock->ref);
-    if (usock->ref) return;
-    
-    // Destroy the socket
-    LOG(INFO, "Need to destroy UNIX socket\n");
-    if (usock->peer) usock->peer->peer = NULL;
-    if (usock->un_path) {
-        kfree(usock->un_path);
-    }
-
-
-    if (usock->sock->type == SOCK_STREAM) {
-        // TODO
-        // circbuf_destroy(usock->stream.cb);
-    } else {
-        // DGRAM/SEQPACKET, destroy
-        kfree(usock->pkt.d->rx_wait_queue);
-        kfree(usock->pkt.d->tx_wait_queue);
-        
-        // Go through packet list and free each one
-        unix_sock_packet_t *p = usock->pkt.d->rx_head;
-        while (p) {
-            unix_sock_packet_t *nxt = p->next;
-            kfree(p);
-            p = nxt;
-        }
-    }
-
-    if (usock->node) inode_release(usock->node);
-
-    if (usock->is_listener) {
-        mutex_destroy(usock->server.m); // No clients should be connected
-
-        while (!queue_empty(usock->server.conn)) {
-            unix_conn_req_t *c = queue_pop(usock->server.conn);
-            if (c->state == UNIX_CONN_DEAD) free(c);
-            else c->state = UNIX_CONN_DEAD;
-        }
-
-        kfree(usock->server.conn);
-        kfree(usock->server.accepters);
-    }    
-
-    kfree(usock);
-}
-
-/**
- * @brief UNIX socket bind method
- * @param sock The sock to bind
- * @param addr The address to bind to
- * @param addrlen The address length
+ * @brief unix bind
  */
 static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
-    unix_sock_t *usock = USOCK(sock);
+    unix_socket_t *usock = USOCK(sock);
+    struct sockaddr_un *un = (struct sockaddr_un*)sockaddr;
 
-    if (usock->state != UNIX_SOCK_STATE_INIT) {
-        dprintf(ERR, "UNIX socket is not in UNIX_SOCK_STATE_INIT\n");
-        return -EINVAL; // Bound already
-    }
+    mutex_acquire(&usock->lock);
 
-    // if (addrlen != sizeof(struct sockaddr_un)) {
-    //     dprintf(ERR, "Invalid address size %d\n", addrlen);
-    //     return -EINVAL;
-    // }
-
-    struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
-    if (!(*addr->sun_path)) {
-        dprintf(ERR, "Provide a sun_path");
+    if (usock->inode != NULL) {
+        LOG(ERR, "Socket is already bound, failed to bind\n");
+        mutex_release(&usock->lock);
         return -EINVAL;
     }
 
-    // Canonicalize the current path
-    // !!!: this is literally a stack buffer overflow in plain sight
-    char p[strlen(current_cpu->current_process->wd_path) + strlen(addr->sun_path) + 1];
-    vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
+    // canonicalize the path
+    char path[PATH_MAX];
+    vfs_canonicalize(current_cpu->current_process->wd_path, un->sun_path, path);
 
-    // TODO: I have no idea what this is supposed to contain
+    LOG(DEBUG, "UNIX socket binding to %s\n", path);
+
+    // TODO: this inode must be created as a socket
     vfs_inode_t *i;
-    int r = vfs_create(p, 0755, &i);
-    if (r) {
+    int r = vfs_create(path, 0755, &i);
+    if (r != 0) {
+        mutex_release(&usock->lock);
         return r;
     }
 
-    // TODO: this inode needs to be changed to a socket
-    usock->node = i;
+    usock->inode = i;
+    usock->path = strdup(path);
 
-    spinlock_acquire(&path_map_lck);
-    hashmap_set(unix_path_map, p, sock);
-    spinlock_release(&path_map_lck);
+    mutex_release(&usock->lock);
 
-    usock->un_path = strdup(p);
-    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_BOUND);
+    // add to map cache
+    mutex_acquire(&unix_path_lock);
+    hashmap_set(unix_path_map, usock->inode, usock);
+    mutex_release(&unix_path_lock);
 
     return 0;
 }
 
 /**
- * @brief UNIX socket listen method
- * @param sock The socket to listen on
- * @param backlog The backlog to use
+ * @brief unix listen
  */
 static int unix_listen(sock_t *sock, int backlog) {
-    if (sock->type != SOCK_SEQPACKET && sock->type != SOCK_STREAM) return -EOPNOTSUPP;
-
-    unix_sock_t *usock = USOCK(sock); 
-
-    if (usock->state == UNIX_SOCK_STATE_LISTEN) {
-        return 0; // backlog is not needed
-    }
-
-    if (usock->state != UNIX_SOCK_STATE_BOUND) {
+    unix_socket_t *usock = USOCK(sock);
+    mutex_acquire(&usock->lock);
+    
+    if (UNIX_GET_STATE(usock) != UNIX_SOCK_STATE_INIT) {
+        LOG(ERR, "Socket attempted to listen in state %d\n", UNIX_GET_STATE(usock));
+        mutex_release(&usock->lock);
         return -EINVAL;
     }
-    
-    // Create listening structures
-    usock->server.m = mutex_create("unix connection mutex");
-    usock->server.conn = queue_create();
-    usock->server.accepters = sleep_createQueue("unix socket acceptors");
 
+    // Prepare socket to listen
+    QUEUE_RB_INIT(&usock->listen.backlog, backlog); // creates a ringbuffer, which is why it was delayed
+
+    // Update cred
+    UNIX_UPDATE_CRED(usock);
+
+    // In listening state now
     UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_LISTEN);
 
+    mutex_release(&usock->lock);
     return 0;
 }
 
 /**
- * @brief UNIX socket accept method
- * @param sock The socket to accept on
- * @param sockaddr Output address if required
- * @param addrlen Address length
+ * @brief unix accept
  */
 static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
-    unix_sock_t *u = USOCK(sock);
-    if (u->state != UNIX_SOCK_STATE_LISTEN) {
-        LOG(ERR, "Socket not in listening state\n");
+    unix_socket_t *usock = USOCK(sock);
+
+    LOG(DEBUG, "trace: unix_accept on socket %p\n", usock);
+
+    mutex_acquire(&usock->lock);
+    if (UNIX_GET_STATE(usock) != UNIX_SOCK_STATE_LISTEN) {
+        LOG(ERR, "UNIX socket cannot accept if not in listening state\n");
+        mutex_release(&usock->lock);
         return -EINVAL;
     }
 
-    // Look for available connection requests
-    unix_conn_req_t *r = NULL;
-    while (!r) {
-        mutex_acquire(u->server.m);
-
-        // Any pending?
-        if (!queue_empty(u->server.conn)) {
-            // Yes, we do have a pending. Pop it!
-            LOG(DEBUG, "Pending connection detected\n");
-            r = queue_pop(u->server.conn);
-            assert(r);
-
-            if (r->state == UNIX_CONN_DEAD) {
-                // Oops
-                free(r);
-                r = NULL;
-            }
-        }
-    
-        if (!r) {
-            if (sock_nonblocking(sock)) {
-                mutex_release(u->server.m);
-                return -EWOULDBLOCK;
-            } 
-
-            // Wait in acceptor queue
-            sleep_inQueue(u->server.accepters);
-            mutex_release(u->server.m);
-            int w = sleep_enter();
-            if (w == WAKEUP_SIGNAL) return -EINTR;
-        } else {
-            mutex_release(u->server.m);
-        }
+    if (usock->inode == NULL) {
+        LOG(ERR, "UNIX socket cannot accept if not bound\n");
+        mutex_release(&usock->lock);
+        return -EINVAL;
     }
 
-    // We should have a pending request, let's build it up
-    unix_sock_t *tgt = USOCK(r->socket);
-    
-    // Create a new peer socket
+    // wait for a person to become available
+    for (;;) {
+        poll_events_t avail = unix_poll_events_inner(usock);
+        if (avail & POLLIN) break;
+
+        if (sock_nonblocking(sock)) {
+            mutex_release(&usock->lock);
+            return -EWOULDBLOCK;
+        }
+
+        // TODO avoid holding lock while allocating
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &usock->event, POLLIN);
+        mutex_release(&usock->lock);
+
+        // TODO: timeout
+        int r = poll_wait(w, -1);
+        poll_exit(w);
+        poll_destroyWaiter(w);
+
+        if (r != 0) {
+            return r;
+        }
+
+        mutex_acquire(&usock->lock);
+    }
+
+    // pop them
+    unix_connection_req_t *req = NULL;
+    queue_rb_pop(&usock->listen.backlog, (void**)&req);
+    assert(req);
+
+    // TODO: redo this once i add timeouts, right now client is forever sleeping    
+    mutex_release(&usock->lock);
+
+    // get needed fields and destroy req structure
+    unix_socket_t *client = req->usock;
+    thread_t *thr = req->thr;
+    slab_free(unix_conn_cache, req);
+
+    // create a new socket
     int sfd = socket_create(current_cpu->current_process, AF_UNIX, sock->type, sock->protocol);
     if (sfd < 0) {
-        // Client should catch itself
-        return -ECONNABORTED;
+        return sfd;
     }
 
     sock_t *new_sock = FD(sfd)->priv;
-    unix_sock_t *new_usock = USOCK(new_sock);
+    unix_socket_t *new_usock = USOCK(new_sock);
 
-    refcount_inc(&new_usock->ref);
-    refcount_inc(&tgt->ref);
-    UNIX_STATE_CHANGE(tgt, UNIX_SOCK_STATE_CONNECTED);
-    UNIX_STATE_CHANGE(new_usock, UNIX_SOCK_STATE_CONNECTED);
+    // hold the client and the new unix socket
+    UNIX_HOLD(client);
+    UNIX_HOLD(new_usock);
+    client->peer = new_usock;
+    new_usock->peer = client;
 
-    new_usock->un_path = strdup(u->un_path);
-
-    // Connect up the peers
-    tgt->peer = new_usock;
-    new_usock->peer = tgt;
-
-    assert(r->state == UNIX_CONN_WAITING);
-    atomic_store(&r->state, UNIX_CONN_CONNECTED);
-    sleep_wakeup(r->thr);
-
-    // Fillout addrlen if needed
-    if (addrlen) {
-        size_t size = (*addrlen > sizeof(struct sockaddr_un)) ? sizeof(struct sockaddr_un) : *addrlen;
-        SYSCALL_VALIDATE_PTR_SIZE(sockaddr, *addrlen);
-    
-        
-        struct sockaddr_un new_un;
-        new_un.sun_family = AF_UNIX;
-        strncpy(new_un.sun_path, u->un_path, 108);
-        memcpy(sockaddr, &new_un, size);
+    // we need to initialize the new unix socket's data structures
+    new_usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+    new_usock->path = strdup(usock->path);
+    if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
+        QUEUE_RB_INIT(&new_usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
     }
 
+    // advance both sockets to connected state
+    UNIX_STATE_CHANGE(client, UNIX_SOCK_STATE_CONNECTED); // todo racey
+    UNIX_STATE_CHANGE(new_usock, UNIX_SOCK_STATE_CONNECTED);
+
+    // signal the new client
+    poll_signal(&client->event, POLLOUT);
+
+    // wakeup thread
+    if (thr) sleep_wakeup(thr);
+
+    // we need to fill sockaddr if they want if
+    if (sockaddr) {
+        // TODO: This is buggy
+        assert(addrlen && (*addrlen) >= sizeof(struct sockaddr_un));
+
+        struct sockaddr_un *un = (struct sockaddr_un *)sockaddr;
+        un->sun_family = AF_UNIX;
+        
+        if (client->path) {
+            strncpy(un->sun_path, client->path, 108);
+        } else {
+            un->sun_path[0] = 0;
+        }
+    }
 
     return sfd;
 }
 
+
+
 /**
- * @brief UNIX socket connect method
- * @param sock The socket to connect
- * @param sockaddr The socket address
- * @param addrlen The address length
+ * @brief unix connect
  */
 static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
     if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET) return -EOPNOTSUPP;
+    if (addrlen < sizeof(struct sockaddr_un)) {
+        LOG(ERR, "Tried to connect but passed an address length of %d\n", addrlen);
+        return -EINVAL;
+    }
 
-    unix_sock_t *usock = USOCK(sock);
+    unix_socket_t *usock = USOCK(sock);
+    mutex_acquire(&usock->lock);
 
-    if (addrlen != sizeof(struct sockaddr_un)) return -EINVAL;
+    if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+        mutex_release(&usock->lock);
+        return -EISCONN;
+    }
+
+    if (usock->state == UNIX_SOCK_STATE_CONNECTING) {
+        mutex_release(&usock->lock);
+        return -EAGAIN;
+    }
+
+    if (usock->state != UNIX_SOCK_STATE_INIT) {
+        mutex_release(&usock->lock);
+        return -EINVAL;
+    }
+
+    // Create the datastructures for the socket, if they dont exist
+    if (usock->pkt.rb == NULL) {
+        usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+        if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
+            QUEUE_RB_INIT(&usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
+        }
+    }
+
+    // Update credentials
+    UNIX_UPDATE_CRED(usock);
+
     struct sockaddr_un *addr = (struct sockaddr_un*)sockaddr;
 
     // Canonicalize the path...
     char p[PATH_MAX];
     vfs_canonicalize(current_cpu->current_process->wd_path, addr->sun_path, p);
 
-    LOG(DEBUG, "UNIX_CONNECT: %s\n", p);
-    
-    // Get server
-    sock_t *serv = hashmap_get(unix_path_map, p);
-    if (!serv) { return -ENOENT; } // ???
-    unix_sock_t *userv = USOCK(serv);
+    LOG(DEBUG, "UNIX socket connecting to %s\n", p);
 
-    if (!(serv->type == sock->type)) {
-        return -EPROTOTYPE;
+    vfs_file_t *f;
+    int r = vfs_open(addr->sun_path, O_RDWR, &f);
+    if (r < 0) {
+        mutex_release(&usock->lock);
+        return r;
     }
 
-    if (sock->type == SOCK_DGRAM) {
-        // Don't actually need to do any work since this is a datagram
-        usock->peer = userv;
-        UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CONNECTED);
-        return 0;
+    // resolve that socket
+    mutex_acquire(&unix_path_lock);
+    unix_socket_t *serv = hashmap_get(unix_path_map, f->inode);
+    mutex_release(&unix_path_lock);
+
+    vfs_close(f);
+
+    if (!serv) {
+        mutex_release(&usock->lock);
+        return -ENOTSOCK;
     }
 
-    // Make sure server is actually listening
-    if (userv->state != UNIX_SOCK_STATE_LISTEN) return -ECONNREFUSED;
+    // create a connection request
+    unix_connection_req_t *req = slab_allocate(unix_conn_cache);
+    req->thr = sock_nonblocking(sock) ? NULL : current_cpu->current_thread;
+    req->usock = usock;
 
-    // Create connection request
-    unix_conn_req_t *r = kmalloc(sizeof(unix_conn_req_t));
-    r->socket = sock;
-    r->state = UNIX_CONN_WAITING;
-    r->thr = current_cpu->current_thread;
+    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CONNECTING);
+    mutex_release(&usock->lock);
 
-    LOG(DEBUG, "UNIX connection...\n");
+    // Now we can push into the server
+    mutex_acquire(&serv->lock);
 
-    // Insert us into queue
-    queue_node_t *n = queue_node_create(r);
-    mutex_acquire(userv->server.m);
-    poll_signal(&userv->sock->sock_event, POLLIN);
-    sleep_prepare();
-    queue_push_node(userv->server.conn, n);
-    sleep_wakeupQueue(userv->server.accepters, 1);
-    mutex_release(userv->server.m);
-
-
-    int attempts = 0;
-
-    while (1) {
-        attempts++;
-        if (attempts >= 3) {
-            LOG(WARN, "3 connection attempts expired on UNIX socket, assuming dead\n");
-            atomic_store(&r->state, UNIX_CONN_DEAD);
-            return -ETIMEDOUT;
-        }
-        
-        int w = sleep_enter();
-        if (w == WAKEUP_SIGNAL) { atomic_store(&r->state, UNIX_CONN_DEAD); return -EINTR; }
-
-        if (r->state == UNIX_CONN_CONNECTED) {
-            // Connected to the socket successfully
+    // Wait until space in the backlog is available
+    for (;;) {
+        poll_events_t r = unix_poll_events_inner(serv);
+        if (r & POLLOUT) {
             break;
         }
 
-        sleep_time(1, 0);
+        if (sock_nonblocking(sock)) {
+            mutex_release(&serv->lock);
+            return -EAGAIN;
+        }
+
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &serv->event, POLLOUT);
+        mutex_release(&serv->lock);
+        int ret = poll_wait(w, -1); // TODO timeout
+
+        poll_exit(w);
+        poll_destroyWaiter(w);
+
+        if (ret != 0) {
+            return ret;
+        }
+
+        mutex_acquire(&serv->lock);
     }
 
-    LOG(INFO, "Connection succeeded with %s\n", usock->peer->un_path);
-    free(r);
-    return 0;
-}
+    // Push
+    queue_rb_push(&serv->listen.backlog, req);
+    poll_signal(&serv->event, POLLIN);
 
-
-/**
- * @brief UNIX socket recvmsg method
- * @param sock The socket to receive messages on
- * @param msg The message to receive
- * @param flags Additional flags
- */
-static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
-    if (!msg->msg_iovlen) return 0;
-    unix_sock_t *usock = USOCK(sock);
-
-    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && usock->state != UNIX_SOCK_STATE_CONNECTED) {
-        // Peer not connected
-        return -ENOTCONN;
+    if (!sock_nonblocking(sock)) {
+        // we will need to be asleep for this
+        // TODO: timeout
+        sleep_prepare();
     }
+
+    mutex_release(&serv->lock);
     
-    if ((sock->type == SOCK_STREAM || sock->type == SOCK_SEQPACKET) && usock->state != UNIX_SOCK_STATE_CONNECTED && !usock->peer) {
-        // No peer
-        return -ECONNRESET;
-    }
+    if (sock_nonblocking(sock)) {
+        return (usock->state == UNIX_SOCK_STATE_CONNECTED) ? 0 : -EWOULDBLOCK;
+    } else {
+        int w = sleep_enter();
+        if (w != WAKEUP_ANOTHER_THREAD) {
+            // !!! This might corrupt things.. maybe.
+            LOG(WARN, "Connection failed.\n");
+            
+            if (w == WAKEUP_SIGNAL) return -EINTR;
+            if (w == WAKEUP_TIME) return -ETIMEDOUT;
 
-    if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
+        }
+
         return 0;
     }
+}
 
-    // TODO: DGRAM
+/**
+ * @brief unix recvmsg
+ */
+static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
+    unix_socket_t *usock = USOCK(sock);
+    if (msg->msg_iovlen == 0) return 0;
 
-    // !!!: More than one iovec is not supported yet
-    assert(msg->msg_iovlen == 1);
+    mutex_acquire(&usock->lock);
 
-    ssize_t bytes_received = 0;
-    if (sock->type == SOCK_DGRAM) {
-        assert(0 && "SOCK_DGRAM not implemented yet");
-    } else if (sock->type == SOCK_STREAM) {
-        spinlock_acquire(&usock->stream.lck);
-        if (!circbuf_remaining_read(usock->stream.cb) && sock_nonblocking(sock)) {
-            spinlock_release(&usock->stream.lck);
+    assert(msg->msg_iovlen == 1 && "recvmsg multiple iovecs not supported");
+
+    if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
+        mutex_release(&usock->lock);
+        return -ENOTCONN;
+    }
+
+    for (;;) {
+        poll_events_t ev = unix_poll_events_inner(usock);
+        if (ev & POLLIN) break;
+
+        if (sock_nonblocking(sock)) {
+            mutex_release(&usock->lock);
             return -EWOULDBLOCK;
         }
 
-        msg->msg_flags = 0;
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &usock->event, POLLIN);
+        mutex_release(&usock->lock);
+        int ret = poll_wait(w, -1); // TODO timeout
 
-        bytes_received = circbuf_read(usock->stream.cb, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+        poll_exit(w);
+        poll_destroyWaiter(w);
 
-        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-            spinlock_release(&usock->stream.lck);
-            unix_decrementAndFree(usock->peer);
-            return -ECONNRESET;
+        if (ret != 0) {
+            return ret;
         }
 
-        if (bytes_received) poll_signal(&usock->peer->sock->sock_event, POLLOUT);
-        spinlock_release(&usock->stream.lck);
-    } else if (sock->type == SOCK_SEQPACKET) {
-        // SEQPACKET socket
-        // Acquire Rx lock and try to get a packet
-        for (;;) {
-            spinlock_acquire(&usock->pkt.d->rx_lock);
-            if (usock->pkt.d->rx_head) {
-                // We have something in Rx head!
-                
-                // Remove it from Rx head
-                unix_sock_packet_t *p = usock->pkt.d->rx_head;
-                usock->pkt.d->rx_head = p->next;
-                if (!usock->pkt.d->rx_head) usock->pkt.d->rx_tail = NULL;
-                spinlock_release(&usock->pkt.d->rx_lock);
-
-                // Copy it into the iovec buffer
-                size_t sz = min(msg->msg_iov[0].iov_len, p->data_size);
-                if (sz != p->data_size) {
-                    LOG(WARN, "Losing some packet content (iovlen = %d data_size = %d)\n", msg->msg_iov[0].iov_len, p->data_size);
-                    // TODO: Set MSG_TRUNC
-                }
-
-                memcpy(msg->msg_iov[0].iov_base, p->data, sz);
-                bytes_received += sz;
-                
-                kfree(p);
-
-                return bytes_received;
-            }
-
-
-            // Nope.. are we nonblocking?
-            if (sock_nonblocking(sock)) {
-                spinlock_release(&usock->pkt.d->rx_lock);
-                return -EWOULDBLOCK;
-            }
-
-            // Check if our peer has closed
-            if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-                spinlock_release(&usock->pkt.d->rx_lock);
-                unix_decrementAndFree(usock->peer);
-                return -ECONNRESET;
-            }
-
-            // Sleep in the queue
-            LOG(DEBUG, "recvmsg, didn't get anything\n");
-            sleep_inQueue(usock->pkt.d->rx_wait_queue);
-            spinlock_release(&usock->pkt.d->rx_lock);
-            int w = sleep_enter();
-            if (w == WAKEUP_SIGNAL) return -EINTR;
-        }
-    } else {
-        assert(0);
+        mutex_acquire(&usock->lock);
     }
 
-    return bytes_received;
+    // We should have available content
+    // TODO: receive control message
+
+    ssize_t gotten = 0;
+    size_t length = msg->msg_iov[0].iov_len;
+    if (sock->type == SOCK_SEQPACKET || sock->type == SOCK_DGRAM) {
+        size_t pkt_length;
+
+        if (msg->msg_flags & MSG_PEEK) {
+            assert(queue_rb_peek(&usock->pkt.queue, (void**)&pkt_length) == 0);
+        } else {
+            assert(queue_rb_pop(&usock->pkt.queue, (void**)&pkt_length) == 0);
+        }
+
+        if (length < pkt_length) {
+            LOG(WARN, "Truncating SEQPACKET/DGRAM packet.\n");
+            msg->msg_flags |= MSG_TRUNC;
+        } else {
+            length = pkt_length;
+        }
+    }
+
+    ssize_t got = 0;
+    if (msg->msg_flags & MSG_PEEK) {
+        got = ringbuffer_peek(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
+    } else {
+        got = ringbuffer_read(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
+        if (got) poll_signal(&usock->peer->event, POLLOUT);
+    }
+
+    mutex_release(&usock->lock);
+    return got;
 }
 
 
 /**
- * @brief UNIX socket sendmsg method
- * @param sock The socket to send the message on
- * @param msg The message to send
- * @param flags Additional flags
+ * @brief helper
+ */
+static void unix_lock(unix_socket_t *s1, unix_socket_t *s2) {
+    if ((uintptr_t)s1 < (uintptr_t)s2) {
+        mutex_acquire(&s1->lock);
+        mutex_acquire(&s2->lock);
+    } else {
+        mutex_acquire(&s2->lock);
+        mutex_acquire(&s1->lock);
+    }
+}
+
+/**
+ * @brief helper
+ */
+static void unix_unlock(unix_socket_t *s1, unix_socket_t *s2) {
+    // order doesn't strictly matter but good practice
+    if ((uintptr_t)s1 < (uintptr_t)s2) {
+        mutex_release(&s2->lock);
+        mutex_release(&s1->lock);
+    } else {
+        mutex_release(&s1->lock);
+        mutex_release(&s2->lock);
+    }
+}
+
+/**
+ * @brief unix sendmsg
  */
 static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
-    if (!msg->msg_iovlen) return 0;
-    
-    unix_sock_t *usock = USOCK(sock);
+    unix_socket_t *usock = USOCK(sock);
+    if (msg->msg_iovlen == 0) return 0;
 
-    // Ensure target
-    if (sock->type != SOCK_DGRAM) {
-        // Force connected state
-        if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
-            return -ENOTCONN;
-        }
-        
-        if (!usock->peer) {
-            // We are in CONNECTED state but don't have a peer, peer was closed.
-            return -ECONNRESET;
-        }
+    mutex_acquire(&usock->lock);
+
+    assert(msg->msg_iovlen == 1 && "recvmsg multiple iovecs not supported");
+
+    if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
+        mutex_release(&usock->lock);
+        return -ENOTCONN;
     }
 
-    // Make sure we don't have more than one iovec
-    assert(msg->msg_iovlen == 1);
+    // !!! This is racey! Need to redo the locking pattern on this...
+    unix_socket_t *tgt = usock->peer;
+    mutex_release(&usock->lock);
 
-    ssize_t total_sent = 0;
-    if (sock->type == SOCK_DGRAM) {
-        assert(!msg->msg_name && "msg->msg_name support not yet implemented");
-        assert(0 && "SOCK_DGRAM not implemented yet");
-    } else if (sock->type == SOCK_STREAM) {
-        spinlock_acquire(&usock->peer->stream.lck);
-        if (!circbuf_remaining_write(usock->peer->stream.cb) && sock_nonblocking(sock)) {
-            spinlock_release(&usock->peer->stream.lck);
+    // Acquire both locks for super-safety
+    unix_lock(usock, tgt);
+
+    // Wait until space is available
+    for (;;) {
+        if (sock->type == SOCK_STREAM) {
+            poll_events_t ev = unix_poll_events_inner(usock);
+            if (ev & POLLOUT) break;
+        } else {
+            // as message boundaries need to be preserved this doesnt work
+            // we need to have enough content and a non-empty queue
+            if (ringbuffer_remaining_write(tgt->pkt.rb) >= msg->msg_iov[0].iov_len && queue_rb_space(&tgt->pkt.queue)) {
+                break;
+            }
+        }
+
+        if (sock_nonblocking(sock)) {
+            unix_unlock(usock, tgt);
             return -EWOULDBLOCK;
         }
 
-        total_sent = circbuf_write(usock->peer->stream.cb, msg->msg_iov[0].iov_len, (uint8_t*)msg->msg_iov[0].iov_base);
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &usock->event, POLLOUT);
+        unix_unlock(usock, tgt);
+        int ret = poll_wait(w, -1); // TODO timeout
 
-        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-            unix_decrementAndFree(usock->peer);
-            spinlock_release(&usock->peer->stream.lck);
-            return -ECONNRESET;
+        poll_exit(w);
+        poll_destroyWaiter(w);
+
+        if (ret != 0) {
+            return ret;
         }
 
-        poll_signal(&usock->peer->sock->sock_event, POLLIN);
-        spinlock_release(&usock->peer->stream.lck);
-    } else if (sock->type == SOCK_SEQPACKET) {
-        // TODO: tx_wait_queue usage, we need to not overwhelm the socket with information
-
-        // Generate our request
-        unix_sock_packet_t *p = kmalloc(sizeof(unix_sock_packet_t) + msg->msg_iov[0].iov_len);
-        p->data_size = msg->msg_iov[0].iov_len;
-        memcpy(p->data, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
-        p->next = NULL;
-
-        spinlock_acquire(&usock->peer->pkt.d->rx_lock);
-        
-        // Add it to the tail
-        if (usock->peer->pkt.d->rx_tail) {
-            usock->peer->pkt.d->rx_tail->next = p;
-            usock->peer->pkt.d->rx_tail = p;
-        } else {
-            usock->peer->pkt.d->rx_head = usock->peer->pkt.d->rx_tail = p;
-        }
-        
-        // Wakeup a sleeper
-        sleep_wakeupQueue(usock->peer->pkt.d->rx_wait_queue, 1);
-        
-        if (usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-            LOG(ERR, "Peer socket is closed!\n");
-            spinlock_release(&usock->peer->pkt.d->rx_lock);
-            unix_decrementAndFree(usock->peer);
-            return -ECONNRESET;
-        }
-
-
-        // !!!: ah, my geniusness is incomprehensible...
-        poll_signal(&usock->peer->sock->sock_event, POLLIN);
-        spinlock_release(&usock->peer->pkt.d->rx_lock);
-
-
-        total_sent += msg->msg_iov[0].iov_len;
-    } else {
-        assert(0);
+        unix_lock(usock, tgt);
     }
 
-    return total_sent;
+    // !!! we dont need to hold the lock for usock here
+    ssize_t written = ringbuffer_write(tgt->pkt.rb, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
+
+    if (sock->type == SOCK_SEQPACKET || sock->type == SOCK_DGRAM) {
+        assert(written == (ssize_t)msg->msg_iov[0].iov_len);
+        queue_rb_push(&tgt->pkt.queue, (void*)(uintptr_t)written);
+    }
+
+    if (written > 0) poll_signal(&tgt->event, POLLIN);
+    unix_unlock(usock, tgt);
+
+    return written;
 }
 
 /**
- * @brief UNIX poll events method
+ * @brief unix poll events inner
+ */
+static poll_events_t unix_poll_events_inner(unix_socket_t *usock) {
+    poll_events_t revents = 0;
+    if (usock->state == UNIX_SOCK_STATE_LISTEN) {
+        if (!queue_rb_empty(&usock->listen.backlog)) {
+            revents |= POLLIN;
+        }
+
+        if (queue_rb_space(&usock->listen.backlog)) {
+            revents |= POLLOUT;
+        }
+    } else if (usock->state == UNIX_SOCK_STATE_CONNECTING) {
+        // do nothing, as this means that you cant do anything.
+    } else if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+        if (ringbuffer_remaining_read(usock->pkt.rb)) {
+            revents |= POLLIN;
+        }
+
+        if (usock->peer->state != UNIX_SOCK_STATE_CONNECTED) {
+            revents |= POLLHUP;
+        } else {
+            if (ringbuffer_remaining_write(usock->peer->pkt.rb)) {
+                revents |= POLLOUT;
+            }
+        }
+    } else {
+        // closed
+        revents |= POLLHUP;
+    }
+
+    return revents;
+}
+
+/**
+ * @brief unix poll events
  */
 static poll_events_t unix_poll_events(sock_t *sock) {
-    unix_sock_t *usock = USOCK(sock);
-    if (usock->state == UNIX_SOCK_STATE_LISTEN) {
-        return usock->server.conn->size ? POLLIN : 0;
-    }
+    unix_socket_t *usock = USOCK(sock);
 
-    poll_events_t ret = 0;
-
-    if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
-        if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
-            ret = (usock->pkt.d->rx_head ? POLLIN : 0) | POLLOUT;
-        } else {
-            // !!! contention high
-            spinlock_acquire(&usock->stream.lck);
-            if (circbuf_remaining_read(usock->stream.cb)) {
-                ret |= POLLIN;
-            }
-            spinlock_release(&usock->stream.lck);
-
-            spinlock_acquire(&usock->peer->stream.lck);
-            if (circbuf_remaining_write(usock->peer->stream.cb)) {
-                ret |= POLLOUT;
-            }
-            spinlock_release(&usock->peer->stream.lck);
-        }
-
-        if (usock->peer && usock->peer->state == UNIX_SOCK_STATE_CLOSED) {
-            ret |= POLLHUP;
-        }
-    }
+    mutex_acquire(&usock->lock);
+    poll_events_t ret = unix_poll_events_inner(usock);
+    mutex_release(&usock->lock);
 
     return ret;
 }
 
 /**
- * @brief UNIX destroy
- * @param sock The socket to close
+ * @brief unix poll
  */
-static int unix_close(sock_t *sock) {
-    unix_sock_t *usock = USOCK(sock);
-    usock->state = UNIX_SOCK_STATE_CLOSED;
-
-    if (usock->peer) {
-        poll_signal(&usock->peer->sock->sock_event, POLLHUP);
-    }
-
-    unix_decrementAndFree(usock);
-
+static int unix_poll(sock_t *sock, poll_waiter_t *w, poll_events_t e) {
+    unix_socket_t *usock = USOCK(sock);
+    poll_add(w, &usock->event, e);
     return 0;
 }
 
 /**
- * @brief unix getpeername
+ * @brief unix close
  */
-static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
-    struct sockaddr_un *un = (struct sockaddr_un*)addr;
-    un->sun_path[0] = 0;
+static int unix_close(sock_t *sock) {
+    unix_socket_t *usock = USOCK(sock);
+
+    LOG(DEBUG, "unix_close\n");
+
+    mutex_acquire(&usock->lock);
+    if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+        UNIX_RELEASE(usock->peer);
+        poll_signal(&usock->peer->event, POLLHUP);
+    } else {
+        assert(usock->state != UNIX_SOCK_STATE_CONNECTING && "close while connecting is stupid not impl'd");
+    }
+    
+    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CLOSED);
+    mutex_release(&usock->lock);
+
+    UNIX_RELEASE(usock);
     return 0;
 }
 
@@ -638,35 +657,79 @@ static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addr
  * @brief unix getsockname
  */
 static int unix_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
-    unix_sock_t *usock = USOCK(sock);
-    
-    struct sockaddr_un *un = (struct sockaddr_un*)addr;
-    un->sun_family = AF_UNIX;
-    strncpy(un->sun_path, usock->un_path, 108);
-    return 0;
+    return -ENOTSUP;
 }
 
 /**
- * @brief Create a UNIX socket
+ * @brief unix getpeername
  */
-sock_t *unix_socket(int type, int protocol) {
-    if (type != SOCK_SEQPACKET && type != SOCK_STREAM && type != SOCK_DGRAM) return NULL;
+static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
+    return -ENOTSUP;
+}
 
-    // Create UNIX socket data fields
-    unix_sock_t *usock = kzalloc(sizeof(unix_sock_t));
-    atomic_store(&usock->state, UNIX_SOCK_STATE_INIT);
-    refcount_init(&usock->ref, 1);
+/**
+ * @brief unix getsockopt
+ */
+static int unix_getsockopt(sock_t *sock, int level, int option_name, void *option_value, socklen_t *option_len) {
+    return -ENOPROTOOPT;
+}
 
-    if (type == SOCK_SEQPACKET || type == SOCK_DGRAM) {
-        // Initialize data
-        usock->pkt.d = kzalloc(sizeof(unix_packet_data_t));
-        usock->pkt.d->rx_wait_queue = sleep_createQueue("unix rx queue");
-        usock->pkt.d->tx_wait_queue = sleep_createQueue("unix tx queue");
-    } else if (type == SOCK_STREAM) {
-        usock->stream.cb = circbuf_create("unix sock buffer", UNIX_SOCKET_BUFFER_SIZE);
+/**
+ * @brief unix setsockopt
+ */
+static int unix_setsockopt(sock_t *sock, int level, int option_name, const void *option_value, socklen_t option_len) {
+    return -ENOPROTOOPT;
+}
+
+/**
+ * @brief Free a UNIX socket
+ */
+static void unix_free(unix_socket_t *usock) {
+    if (usock->inode) {
+        mutex_acquire(&unix_path_lock);
+        hashmap_remove(unix_path_map, usock->inode);
+        mutex_release(&unix_path_lock);
+
+        inode_release(usock->inode);
+    }
+
+    if (usock->pkt.rb) {
+        ringbuffer_destroy(usock->pkt.rb);
+        
+        if (usock->pkt.queue) {
+            QUEUE_RB_DEINIT(&usock->pkt.queue);
+        }
+    }
+
+    if (usock->listen.backlog) {
+        
+        QUEUE_RB_DEINIT(&usock->listen.backlog);
+    }
+
+    if (usock->path) {
+        kfree(usock->path);
     }
 
 
+}
+
+/**
+ * @brief Create UNIX socket
+ */
+static sock_t *unix_socket(int type, int protocol) {
+    if (type != SOCK_SEQPACKET && type != SOCK_STREAM && type != SOCK_DGRAM) return NULL;
+
+    // create the UNIX socket
+    unix_socket_t *usock = slab_allocate(unix_socket_cache);
+    memset(usock, 0, sizeof(unix_socket_t));
+    MUTEX_INIT(&usock->lock);
+    POLL_EVENT_INIT(&usock->event);
+    UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_INIT);
+    refcount_init(&usock->refs, 1);
+
+    // we can init the inner fields later, during bind() or connect()
+
+    // create the actual socket
     sock_t *s = socket_allocate(AF_UNIX, type, protocol);
     usock->sock = s;
     s->driver = (void*)usock;
@@ -675,36 +738,15 @@ sock_t *unix_socket(int type, int protocol) {
 }
 
 /**
- * @brief Create a new UNIX socket pair
- */
-int unix_socketpair(int type, int protocol, sock_t *output[2]) {
-    sock_t *sck1 = unix_socket(type, protocol);
-    if (!sck1) return -EINVAL;
-    sock_t *sck2 = unix_socket(type, protocol);
-    if (!sck2) return -EINVAL;
-
-    unix_sock_t *usock1 = USOCK(sck1);
-    unix_sock_t *usock2 = USOCK(sck2);
-    
-    UNIX_STATE_CHANGE(usock1, UNIX_SOCK_STATE_CONNECTED);
-    UNIX_STATE_CHANGE(usock2, UNIX_SOCK_STATE_CONNECTED);
-    usock1->peer = usock2;
-    usock2->peer = usock1;
-
-    output[0] = sck1;
-    output[1] = sck2;
-    
-    return 0;
-}
-
-/**
  * @brief Initialize UNIX sockets
  */
 static int unix_init() {
-    unix_path_map = hashmap_create("unix path map", 10);
+    unix_socket_cache = slab_createCache("unix socket cache", SLAB_CACHE_DEFAULT, sizeof(unix_socket_t), 0, NULL, NULL);
+    unix_conn_cache = slab_createCache("unix conn cache", SLAB_CACHE_DEFAULT, sizeof(unix_connection_req_t), 0, NULL, NULL);
+    unix_path_map = hashmap_create_int("unix path map", 10);
+
     socket_register(AF_UNIX, unix_socket);
-    socket_registerPair(AF_UNIX, unix_socketpair);
     return 0;
 }
 
-NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init, socket);
+NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init);

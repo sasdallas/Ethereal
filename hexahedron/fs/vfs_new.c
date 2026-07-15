@@ -1375,8 +1375,7 @@ vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
             // This inode might still be in the process of being created
             while (__atomic_load_n(&inode->state, __ATOMIC_SEQ_CST) & INODE_STATE_NEW) {
                 // !!! depending on how long they are holding this inode for.. might need a waitqueue
-                asm volatile (  "sti\n"
-                                "hlt\n");
+                arch_pause();
             }
 
             return inode;

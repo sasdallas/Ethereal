@@ -568,7 +568,6 @@ void hid_callback(USBEndpoint_t *endp, USBTransferCompletion_t *complete) {
         
         // Look through each input
         if (col->opcode == HID_REPORT_MAIN_COLLECTION) {
-            LOG(DEBUG, "Processing data for collection type=%d\n", col->type);
             hid_processCollectionData(col, report_id, data_ptr, &current_offset, (report_id) ? (complete->length-1)*8 : complete->length * 8);
         }  
     } 

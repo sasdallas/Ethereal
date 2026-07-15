@@ -1,0 +1,18 @@
+include ../make.config
+
+OBJ_DIR = .
+
+C_SRCS = $(shell find . -name "*.c" -type f)
+C_OBJS = $(addprefix $(OBJ_DIR)/,$(C_SRCS:.c=.o))
+
+CFLAGS += $(shell pkg-config --cflags freetype2) -pg
+
+$(OBJ_DIR)/%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+all: $(C_OBJS)
+	$(CC) $(CFLAGS) -o celestial $(C_OBJS) -L$(DESTDIR)$(LIBDIR)/ -lgraphics -lX11 -lfreetype  -lethereal_structures
+
+clean:
+	-rm $(C_OBJS)
+	-rm celestial

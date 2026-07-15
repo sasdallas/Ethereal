@@ -17,8 +17,8 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/task/thread.h>
-#include <kernel/event.h>
 #include <kernel/task/sleep.h>
+#include <kernel/misc/waitqueue.h>
 #include <sys/time.h>
 
 /**** DEFINITIONS ****/
@@ -26,7 +26,8 @@
 /**** TYPES ****/
 
 typedef struct futex {
-    event_t futex_event;
+    spinlock_t lock;
+    wait_queue_t queue;
     volatile size_t waiters;
     volatile size_t wakers;
 } futex_t;

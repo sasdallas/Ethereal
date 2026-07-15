@@ -148,7 +148,7 @@ void process_yield(uint8_t reschedule) {
     // TODO: DESPERATELY move this to context structure.
     // TODO: Lazy FPU
 #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
-    asm volatile ("fxsave (%0)" :: "r"(current_cpu->current_thread->fp_regs));
+    asm volatile ("fxsave64 (%0)" :: "r"(current_cpu->current_thread->fp_regs));
 #endif
 
     // Equivalent to a setjmp, use arch_save_context() to save our context
@@ -156,7 +156,7 @@ void process_yield(uint8_t reschedule) {
         // We are back, and were chosen to be executed. Return
 
     #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
-        asm volatile ("fxrstor (%0)" :: "r"(current_cpu->current_thread->fp_regs));
+        asm volatile ("fxrstor64 (%0)" :: "r"(current_cpu->current_thread->fp_regs));
     #endif
 
         return;
@@ -283,6 +283,10 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->flags = flags;
     process->priority = priority;
     process->state = PROCESS_RUNNING;
+
+    if (parent && parent->flags & PROCESS_TRACE_SYS) {
+        process->flags |= PROCESS_TRACE_SYS;
+    }
 
     if (parent) {
         process->uid = parent->uid;

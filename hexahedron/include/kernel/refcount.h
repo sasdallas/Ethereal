@@ -16,18 +16,17 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-#include <stdatomic.h>
 
 /**** TYPES ****/
 
 /* refcount */
-typedef atomic_int refcount_t;
+typedef int refcount_t;
 
 /**** MACROS ****/
 
 
-#define refcount_inc(ref) ({ atomic_fetch_add(ref, 1); })
-#define refcount_dec(ref) ({ atomic_fetch_sub(ref, 1); })
-#define refcount_init(ref, val) ({ atomic_store(ref, val); })
+#define refcount_inc(ref) ({ __atomic_add_fetch(ref, 1, __ATOMIC_SEQ_CST); })
+#define refcount_dec(ref) ({ __atomic_sub_fetch(ref, 1, __ATOMIC_SEQ_CST); })
+#define refcount_init(ref, val) ({ __atomic_store_n(ref, val, __ATOMIC_SEQ_CST); })
 
 #endif

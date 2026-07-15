@@ -16,6 +16,7 @@
 #include <structs/list.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/ioctl.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <poll.h>
@@ -52,6 +53,11 @@ int celestial_connect(char *sockname) {
     strncpy(un.sun_path, sockname, 108);
 
     if (connect(__celestial_socket, (const struct sockaddr*)&un, sizeof(struct sockaddr_un)) < 0) {
+        return -1;
+    }
+
+    int i = 1;
+    if (ioctl(__celestial_socket, FIONBIO, &i) < 0) {
         return -1;
     }
 
@@ -120,8 +126,14 @@ void *celestial_getResponse(int type) {
         // !!! THIS COULD LOSE DATA
         char data[4096];
         ssize_t r = recv(__celestial_socket, data, 4096, 0);
-        if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return NULL;
+        if (r < 0 && errno == EAGAIN) {
+            continue;
+        }
 
+        if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) {
+            return NULL;
+        }
+        
         // Malloc and move it
         void *m = malloc(((celestial_req_header_t*)data)->size);
         memcpy(m, data, ((celestial_req_header_t*)data)->size);
@@ -174,20 +186,24 @@ void celestial_poll() {
     int p = poll(fds, 1, 0);
     if (p <= 0 || !(fds[0].revents & POLLIN)) return;
 
-    // New data available
-    char data[4096];
-    ssize_t r = recv(__celestial_socket, data, 4096, 0);
-    if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return;
+    while (1) {
+        // New data available
+        char data[4096];
+        ssize_t r = recv(__celestial_socket, data, 4096, 0);
+        
+        // TODO bail out on this
+        if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return;
 
-    // Malloc and move it
-    void *m = malloc(((celestial_req_header_t*)data)->size);
-    memcpy(m, data, ((celestial_req_header_t*)data)->size);
+        // Malloc and move it
+        void *m = malloc(((celestial_req_header_t*)data)->size);
+        memcpy(m, data, ((celestial_req_header_t*)data)->size);
 
-    // Is it an event? Process those immediately
-    if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
-        celestial_handleEvent(m);
-    } else {
-        free(m);
+        // Is it an event? Process those immediately
+        if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
+            celestial_handleEvent(m);
+        } else {
+            free(m);
+        }
     }
 }
 

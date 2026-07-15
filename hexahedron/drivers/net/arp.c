@@ -44,7 +44,8 @@ MUTEX_DEFINE_LOCAL(arp_mutex);
 /* Log NIC */
 #define LOG_NIC(status, nn, ...) LOG(status, "[NIC:%s] ", NIC(nn)->name); dprintf(NOHEADER, __VA_ARGS__)
 
-#define ARP_DEBUG
+/* Enable debug */
+// #define ARP_DEBUG
 
 /**
  * @brief ARP SystemFS read method
@@ -97,18 +98,17 @@ int arp_add_entry(in_addr_t address, uint8_t *mac, int type, nic_t *nic) {
     entry->hwtype = type;
     entry->nic = nic;
 
+    // !!! ram leak if updating entry
     mutex_acquire(&arp_mutex);
     hashmap_set(arp_map, (void*)(uintptr_t)address, (void*)entry);
     list_append(arp_entries, (void*)entry);
 
     // Is someone waiting?
-
-    LOG(DEBUG, "ARP doing wakeup on anyone waiting for %x\n", address);
     if (hashmap_has(arp_waiters, (void*)(uintptr_t)address)) {
-    LOG(DEBUG, "Got one person\n");
         thread_t *thr = hashmap_get(arp_waiters, (void*)(uintptr_t)address);
         sleep_wakeup(thr);
     }
+    
     mutex_release(&arp_mutex);
 
     return 0;
@@ -189,19 +189,33 @@ int arp_search(nic_t *nic, in_addr_t address) {
         return 0;
     }
 
+    // If they want us, give them us!
+    if (nic->ipv4_address == address) {
+        arp_add_entry(address, nic->mac, ARP_TYPE_ETHERNET, nic);
+        return 0;
+    }
+
     if (arp_request(nic, address)) return 1;
-    if (arp_get_entry(address)) return 0;
 
     mutex_acquire(&arp_mutex);
+    
     hashmap_set(arp_waiters, (void*)(uintptr_t)address, current_cpu->current_thread);
-
     sleep_time(1, 0);
+
+    // lose race?
+    if (hashmap_has(arp_map, (void*)(uintptr_t)address)) {
+        hashmap_set(arp_waiters, (void*)(uintptr_t)address, NULL);
+        sleep_exit();
+        mutex_release(&arp_mutex);
+        return 0;
+    }
+
     mutex_release(&arp_mutex);
 
     int w = sleep_enter();
     if (w == WAKEUP_ANOTHER_THREAD) return 0;
 
-    LOG(ERR, "woke up due to time? :(\n");
+    LOG(ERR, "Timed out while requesting ARP\n");
 
     mutex_acquire(&arp_mutex);
     hashmap_remove(arp_map, (void*)(uintptr_t)address);
@@ -281,7 +295,7 @@ static int arp_handle(void *frame, nic_t *nic, size_t size) {
             arp_table_entry_t *exist = arp_get_entry(spa);
             if (!exist || memcmp(packet->sha, exist->hwmac, 6)) {
                 // Cache them
-                arp_add_entry((in_addr_t)packet->spa, packet->sha, ARP_TYPE_ETHERNET, nic);
+                arp_add_entry((in_addr_t)ntohl(packet->spa), packet->sha, ARP_TYPE_ETHERNET, nic);
             }
 
             

@@ -45,6 +45,27 @@ typedef struct wait_queue_node {
                                 (wq)->head = (wq)->tail = NULL;\
                             })
 
+#define WAIT_QUEUE_CONDITION(wq, condition) ({\
+    wait_queue_node_t __node;\
+    int __ret = 0;\
+    while (1) {\
+        waitqueue_add((wq), &__node);\
+        if (condition) {\
+            break;\
+        }\
+        __ret = waitqueue_wait((wq), &__node, -1);\
+        if (__ret != 0) {\
+            break;\
+        }\
+        if (condition) {\
+            break;\
+        }\
+        waitqueue_remove((wq), &__node);\
+    }\
+    waitqueue_remove((wq), &__node);\
+    __ret;\
+})
+
 /**** FUNCTIONS ****/
 
 /**

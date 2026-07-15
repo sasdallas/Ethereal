@@ -262,15 +262,15 @@ int smp_init(smp_info_t *info) {
     // Map local APIC
     lapic_remapped = arch_mmu_remap_physical((uintptr_t)info->lapic_address, PAGE_SIZE, REMAP_PERMANENT);
 
-    // Initialize I/O APIC first
-    pic_init(PIC_TYPE_IOAPIC, (void*)info);
-
     // Initialize the local APIC
     int lapic = lapic_initialize(lapic_remapped);
     if (lapic != 0) {
         LOG(ERR, "Failed to initialize local APIC");
         return -EIO;
     }
+
+    // Now initialize I/O APIC
+    pic_init(PIC_TYPE_IOAPIC, (void*)info);
 
     // Don't use SMP?
     if (info->processor_count == 1 || kargs_has("--disable-smp")) {

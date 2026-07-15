@@ -164,28 +164,8 @@ static syscall_func_t syscall_table[] = {
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SYSCALL", __VA_ARGS__)
 
-/**
- * @brief Pointer validation failed
- * @param ptr The pointer that failed to validate
- * @returns Only if resolved.
- */
-void syscall_pointerValidateFailed(void *ptr) {
-    vmm_fault_information_t i = {
-        .address = (uintptr_t)ptr,
-        .exception_type = VMM_FAULT_NONPRESENT | VMM_FAULT_READ,
-        .from = VMM_FAULT_FROM_USER
-    };
-
-    int r = vmm_fault(&i);
-    if (r == VMM_FAULT_RESOLVED) return;
-
-    kernel_panic_prepare(KERNEL_BAD_ARGUMENT_ERROR);
-
-    printf("*** Process \"%s\" tried to access an invalid pointer (%p)\n", current_cpu->current_process->name, ptr);
-    dprintf(NOHEADER, COLOR_CODE_RED_BOLD "*** Process \"%s\" tried to access an invalid pointer (%p)\n\n" COLOR_CODE_RESET, current_cpu->current_process->name, ptr);
-
-    kernel_panic_finalize();
-}
+extern void syscall_trace_enter(syscall_t *syscall);
+extern void syscall_trace_exit(syscall_t *syscall) ;
 
 
 /**
@@ -207,7 +187,9 @@ void syscall_handle(syscall_t *syscall) {
     ptrace_event(PROCESS_TRACE_SYSCALL);
 
     if (syscall->syscall_number == 999) {
-        syscall->return_value = -EINVAL;
+        // TODO: make this an actual system call and not just, whatever it is.
+        current_cpu->current_process->flags |= PROCESS_TRACE_SYS;
+        syscall->return_value = 0;
         return;
     }
 
@@ -218,14 +200,24 @@ void syscall_handle(syscall_t *syscall) {
         return;
     }
 
+    if (current_cpu->current_process->flags & PROCESS_TRACE_SYS) {
+        syscall_trace_enter(syscall);
+    }
+
     // Call!
     syscall->return_value = (syscall_table[syscall->syscall_number])(
                                 syscall->parameters[0], syscall->parameters[1], syscall->parameters[2],
                                 syscall->parameters[3], syscall->parameters[4]);
 
-                            
-    if ((long)syscall->return_value < 0 && syscall->return_value != -EWOULDBLOCK) {
+                
+#if 0
+    if ((long)syscall->return_value < 0 && syscall->return_value != -EWOULDBLOCK && syscall->return_value != -ENODEV) {
         LOG(WARN, "system call %d failed with error %d\n", syscall->syscall_number, syscall->return_value);
+    }
+#endif
+
+    if (current_cpu->current_process->flags & PROCESS_TRACE_SYS) {
+        syscall_trace_exit(syscall);
     }
 
     return;

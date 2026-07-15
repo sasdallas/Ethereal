@@ -19,6 +19,7 @@
 #include <kernel/drivers/net/nic.h>
 #include <kernel/task/process.h>
 #include <kernel/misc/spinlock.h>
+#include <kernel/misc/waitqueue.h>
 
 /**** DEFINITIONS ****/
 
@@ -154,10 +155,10 @@
 /**** TYPES ****/
 
 typedef struct rtl8169_desc {
-    uint32_t command;           // Command
-    uint32_t vlan;              // VLAN
-    uint32_t buffer_lo;         // Low bits of buffer
-    uint32_t buffer_hi;         // High bits of buffer
+    volatile uint32_t command;           // Command
+    volatile uint32_t vlan;              // VLAN
+    volatile uint32_t buffer_lo;         // Low bits of buffer
+    volatile uint32_t buffer_hi;         // High bits of buffer
 } __attribute__((packed)) rtl8169_desc_t;
 
 typedef struct rtl8169 {
@@ -167,15 +168,18 @@ typedef struct rtl8169 {
     process_t *recv_proc;       // Receive process
     struct thread *thr;         // Waiting thread
 
+    wait_queue_t tx_waiters;    // Tx waitqueue
+    wait_queue_t rx_waiters;    // Rx waitqueue
+
     spinlock_t lock;            // Lock
     
-    uintptr_t tx_buffers;       // Tx buffer region
-    uintptr_t tx_descriptors;   // Tx descriptor regions
-    uint32_t tx_current;        // Current Tx index
+    uintptr_t tx_buffers[RTL8169_TX_DESC_COUNT];
+    uintptr_t tx_descriptors;
+    uint32_t tx_current;
 
-    uintptr_t rx_buffers;       // Rx buffer region
-    uintptr_t rx_descriptors;   // Rx descriptor regions
-    uint32_t rx_current;        // Current Rx index
+    uintptr_t rx_buffers[RTL8169_RX_DESC_COUNT];
+    uintptr_t rx_descriptors;   
+    uint32_t rx_current;
 } rtl8169_t;
 
 #endif

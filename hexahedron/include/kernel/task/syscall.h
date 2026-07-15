@@ -97,7 +97,7 @@ typedef struct sys_pselect_context {
 /**** MACROS ****/
 
 /* Pointer validation */
-// #define SYSCALL_VALIDATE_PTR(ptr) if (!vmm_validate((uintptr_t)(ptr), PAGE_SIZE, VMM_PTR_USER | VMM_PTR_STRICT)) syscall_pointerValidateFailed((void*)ptr);
+// !!! Disabled
 #define SYSCALL_VALIDATE_PTR(ptr) {}
 
 /* Pointer validation (range) */
@@ -114,13 +114,6 @@ struct msghdr;
  * @returns Nothing, but updates @c syscall->return_value
  */
 void syscall_handle(syscall_t *syscall);
-
-/**
- * @brief Pointer validation failed
- * @param ptr The pointer that failed to validate
- * @returns Only if resolved.
- */
-void syscall_pointerValidateFailed(void *ptr);
 
 /**
  * @brief Finish a system call after setting registers

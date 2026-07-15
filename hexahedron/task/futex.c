@@ -40,7 +40,8 @@ mutex_t *futex_mutex = NULL;
  */
 static int futex_initializer(slab_cache_t *cache, void *obj) {
     futex_t *f = obj;
-    EVENT_INIT(&f->futex_event);
+    SPINLOCK_INIT(&f->lock);
+    WAIT_QUEUE_INIT(&f->queue);
     f->waiters = 0;
     f->wakers = 0;
     return 0;
@@ -53,83 +54,81 @@ static int futex_initializer(slab_cache_t *cache, void *obj) {
  * @param time Time to wait on
  */
 int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
+    // get the futex itself
     FUTEX_LOCK();
-
-    if (__atomic_load_n(pointer, memory_order_seq_cst) != val) {
-        FUTEX_UNLOCK();
-        return -EAGAIN;
-    }
-
     uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
     assert(phys);
 
-    futex_t *f = hashmap_get(futex_map, (void*)phys);
-    if (!f) {
-        f = slab_allocate(futex_cache);
-        if (!f) { FUTEX_UNLOCK(); return -ENOMEM; }
-        hashmap_set(futex_map, (void*)phys, f);    
+    futex_t *ftx = NULL;
+    if (!hashmap_has(futex_map, (void*)phys)) {
+        ftx = slab_allocate(futex_cache);
+        hashmap_set(futex_map, (void*)phys, ftx);
+    } else {
+        ftx = hashmap_get(futex_map, (void*)phys);
     }
 
-    event_listener_t listener;
-    EVENT_INIT_LISTENER(&listener);
+    // this ordering should be fine
+    spinlock_acquire(&ftx->lock);
+    FUTEX_UNLOCK();
 
-    while (1) {
-        if (__atomic_load_n(pointer, memory_order_seq_cst) != val) {
-            EVENT_DESTROY_LISTENER(&listener);
-            if (f->waiters == 0) {
-                hashmap_remove(futex_map, (void*)phys);
-                slab_free(futex_cache, f);
-            }
-            FUTEX_UNLOCK();
+    int timeout = -1;
+    if (time) {
+        timeout = time->tv_sec * 1000 + time->tv_nsec / 1000000;
+    }
+
+    // we own the futex lock now, its time to sleepy
+    int ret = 0;
+    ftx->waiters++;
+    for (;;) {
+        wait_queue_node_t n;
+        waitqueue_add(&ftx->queue, &n);
+
+        if (__atomic_load_n(pointer, __ATOMIC_SEQ_CST) != val) {
+            waitqueue_remove(&ftx->queue, &n);
+            spinlock_release(&ftx->lock);
             return -EAGAIN;
         }
 
-        EVENT_ATTACH(&listener, &f->futex_event);        
-        f->waiters++;
-        
-        FUTEX_UNLOCK();
+        spinlock_release(&ftx->lock);
 
-        int ret;
-        if (time) {
-            ret = EVENT_WAIT(&listener, time->tv_sec * 1000 + ((time->tv_nsec + 999999) / 1000000));
-        } else {
-            ret = EVENT_WAIT(&listener, -1);
+        int w = waitqueue_wait(&ftx->queue, &n, timeout);
+
+        spinlock_acquire(&ftx->lock);
+
+        waitqueue_remove(&ftx->queue, &n);
+
+        if (w != 0) {
+            ftx->waiters--;
+            ftx->wakers = min(ftx->waiters, ftx->wakers);
+            ret = w;
+            break;
+        } else if (ftx->wakers != 0) {
+            // we can leave now
+            ftx->wakers--;
+            ftx->waiters--;
+            break;
         }
-
-        FUTEX_LOCK();
-
-        EVENT_DETACH(&listener);
-
-        if (ret < 0) {
-            EVENT_DESTROY_LISTENER(&listener);
-            f->waiters--;
-            if (f->wakers > f->waiters) f->wakers = f->waiters;
-            if (f->waiters == 0) {
-                hashmap_remove(futex_map, (void*)phys);
-                slab_free(futex_cache, f);
-            }
-            FUTEX_UNLOCK();
-            return ret;
-        }
-
-        if (f->wakers == 0) {
-            f->waiters--;
-            continue;
-        }
-
-        f->waiters--;
-        f->wakers--;
-        break;
     }
+    
+    
+    spinlock_release(&ftx->lock);
+    
+    // !!! sillyish
+    FUTEX_LOCK();
 
-    EVENT_DESTROY_LISTENER(&listener);
-    if (f->waiters == 0) {
+    spinlock_acquire(&ftx->lock);
+    if (ftx->waiters == 0) {
         hashmap_remove(futex_map, (void*)phys);
-        slab_free(futex_cache, f);
-    }
+        FUTEX_UNLOCK();
+        spinlock_release(&ftx->lock);
 
-    FUTEX_UNLOCK();
-    return 0;
+        slab_free(futex_cache, ftx);
+    } else {
+        spinlock_release(&ftx->lock);    
+        FUTEX_UNLOCK();
+    }
+    
+    return ret;
 }
 
 /**
@@ -138,25 +137,34 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
  * @param val How many waiters to wakeup
  */
 int futex_wakeup(uint32_t *pointer, uint32_t val) {
+    // get the futex itself
     FUTEX_LOCK();
+    uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
+    assert(phys);
 
-    uintptr_t ptr_phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
-
-    if (!hashmap_has(futex_map, (void*)ptr_phys)) {
+    futex_t *ftx = NULL;
+    if (!hashmap_has(futex_map, (void*)phys)) {
         FUTEX_UNLOCK();
         return 0;
+    } else {
+        ftx = hashmap_get(futex_map, (void*)phys);
     }
 
-    futex_t *f = (futex_t*)hashmap_get(futex_map, (void*)ptr_phys);
-    
-    size_t available = (f->waiters > f->wakers) ? (f->waiters - f->wakers) : 0;
-    size_t to_wakeup = min(available, (size_t)val);
-
-    f->wakers += to_wakeup;
-
-    if (to_wakeup) EVENT_SIGNAL(&f->futex_event);
+    // this ordering should be fine
+    spinlock_acquire(&ftx->lock);
     FUTEX_UNLOCK();
-    return to_wakeup;
+    
+    int ret = ftx->waiters - ftx->wakers;
+    assert(ret >= 0);
+    if (ret > (int)val) {
+        ret = (int)val;
+    }
+
+    ftx->wakers += ret;
+    waitqueue_wakeup(&ftx->queue, ret);
+    spinlock_release(&ftx->lock);
+
+    return ret;
 }
 
 /**

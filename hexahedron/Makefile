@@ -6,7 +6,7 @@ OUT_OBJ = $(OBJ_OUTPUT_DIRECTORY)/hexahedron/
 OUT_BUILD = $(BUILD_OUTPUT_DIRECTORY)/hexahedron
 
 # Edit this to add more source directories. MAKE SURE TO HAVE SUBDIRECTORIES SEPARATE!
-SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/sound drivers/storage debug mem misc gfx fs loader task mm
+SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/storage debug mem misc gfx fs loader task mm
 SOURCE_DIRECTORIES += klib/string klib/stdio klib/stdlib klib/time
 SOURCE_DIRECTORIES += task/syscalls subsystems lock
 
@@ -54,7 +54,7 @@ $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf: $(C_OBJECTS)
 
 	@printf "\n-- Creating symbol map...\n"
 	$(NM) $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf > $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel-symmap.map
-	cp $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel-symmap.map $(INITRD)/
+	cp $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel-symmap.map $(INITRD)/boot/
 
 	$(PYTHON) $(BUILDSCRIPTS_ROOT)/create_bochs_symfile.py $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel-symmap.map $(DESTDIR)$(BOOT_OUTPUT)/bochs.map 
 

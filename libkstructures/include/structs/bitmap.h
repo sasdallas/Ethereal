@@ -28,6 +28,7 @@ void bitmap_set(unsigned long *b, size_t i);
 void bitmap_clear(unsigned long *b, size_t i);
 void bitmap_clear_range(unsigned long *b, size_t start, size_t end);
 void bitmap_fill(unsigned long *b, unsigned char f, size_t n);
+int bitmap_find_first_from(const unsigned long *b, size_t start, size_t n);
 int bitmap_find_first(const unsigned long *b, size_t n);
 
 #endif

@@ -28,6 +28,10 @@ static inline bool queue_rb_empty(queue_rb_t *rb_queue) {
     return ringbuffer_remaining_read(*rb_queue) < sizeof(void*);
 }
 
+static inline bool queue_rb_space(queue_rb_t *rb_queue) {
+    return ringbuffer_remaining_write(*rb_queue) >= sizeof(void*);
+}
+
 static inline void queue_rb_push(queue_rb_t *rb_queue, void *data) {
     ringbuffer_write(*rb_queue, (char*)&data, sizeof(void*));
 }
@@ -35,6 +39,12 @@ static inline void queue_rb_push(queue_rb_t *rb_queue, void *data) {
 static inline int queue_rb_pop(queue_rb_t *rb_queue, void **data) {
     if (queue_rb_empty(rb_queue)) return -1;
     ringbuffer_read(*rb_queue, (char*)data, sizeof(void*));
+    return 0;
+}
+
+static inline int queue_rb_peek(queue_rb_t *rb_queue, void **data) {
+    if (queue_rb_empty(rb_queue)) return -1;
+    ringbuffer_peek(*rb_queue, (char*)data, sizeof(void*));
     return 0;
 }
 

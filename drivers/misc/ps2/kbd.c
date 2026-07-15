@@ -41,7 +41,7 @@ uint8_t ps2_writeKeyboard(uint8_t data) {
  * @brief PS/2 keyboard IRQ
  */
 int ps2_keyboardIRQ(irq_t *irq, void *context) {
-	// Get character from PS/2
+    // Get character from PS/2
 	uint8_t ch = inportb(PS2_DATA);
 
 	int event_type = (ch >= 0x80) ? EVENT_KEY_RELEASE : EVENT_KEY_PRESS;

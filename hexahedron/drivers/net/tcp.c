@@ -97,7 +97,7 @@ typedef struct tcp_tcb {
 
 static void tcp_freeTCB(tcp_tcb_t *tcb);
 #define TCB_HOLD(tcb) refcount_inc(&(tcb)->ref)
-#define TCB_RELEASE(tcb) if (refcount_dec(&(tcb)->ref) == 1) { tcp_freeTCB(tcb); }
+#define TCB_RELEASE(tcb) if (refcount_dec(&(tcb)->ref) == 0) { tcp_freeTCB(tcb); }
 
 #define TCB_LOCK(tcb) mutex_acquire(&(tcb)->lck)
 #define TCB_UNLOCK(tcb) mutex_release(&(tcb)->lck)
@@ -188,7 +188,7 @@ tcp_tcb_t *tcp_findTCB(in_port_t port, in_addr_t remote_host, in_port_t remote_p
 void tcp_initTCB(tcp_tcb_t *tcb);
 
 /* Log method */
-#if 0
+#if 1
 #define LOG(status, ...) dprintf_module(status, "NET:TCP", __VA_ARGS__)
 #else
 #define LOG(...)
@@ -425,7 +425,7 @@ static tcp_worker_t *tcp_findWorker(tcp_tcb_t *tcb, unsigned char request_type) 
     return best;
 }
 
-/**
+/**d
  * @brief Send worker a request
  */
 static void tcp_requestWorker(tcp_worker_t *worker, tcp_tcb_t *tcb, unsigned char request_type, void *request, size_t request_size) {
@@ -461,8 +461,6 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
         tcp_reset(NULL, ntohl(ip_pkt->src_addr), tcp_pkt);
         return;
     }
-
-    LOG(INFO, "TCP worker processing packet (in state %d)\n", request->tcb->state);
 
     tcp_tcb_t *tcb = request->tcb;
     TCB_LOCK(tcb);
@@ -586,7 +584,10 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
         }
 
         case TCP_STATE_SYN_RECEIVED: {
-            assert(tcp_pkt->flags == TCP_ACK);
+            if (tcp_pkt->flags != TCP_ACK) {
+                tcp_reset(tcb, ntohl(ip_pkt->src_addr), tcp_pkt);
+                break;
+            }
 
             tcb->send_window.sndnxt = ntohl(tcp_pkt->ack);
             tcb->send_window.sndwnd = ntohs(tcp_pkt->window_size);
@@ -614,31 +615,36 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
                 break;
             }
 
+            if (tcp_pkt->flags & TCP_ACK) {
+                tcb->send_window.sndwnd = ntohs(tcp_pkt->window_size);
+                tcb->send_window.snduna = ntohl(tcp_pkt->ack);
+            }
+
             if (tcp_pkt->flags & TCP_PSH || tcp_pkt->flags & TCP_ACK) {
                 // Calculate payload size
                 size_t payload_len = ntohs(ip_pkt->length) - sizeof(ipv4_packet_t) - (tcp_pkt->data_offset * 4);
                 
                 if (payload_len > 0) {
                     char *payload = (char*)tcp_pkt + (tcp_pkt->data_offset * 4);
+                    if (ntohl(tcp_pkt->seq) != tcb->recv_window.rcvnxt) {
+                        dprintf(WARN, "Out of order packet (expected SEQ %d got %d)\n", tcb->recv_window.rcvnxt, ntohl(tcp_pkt->seq));
+                        tcp_acknowledge(tcb);
+                        break;   
+                    }
 
                     TCB_LOCK_RCV(tcb);
                     ssize_t written = ringbuffer_write(tcb->recv_window.buffer, payload, payload_len);
                     tcb->recv_window.rcvwnd -= written;
+                    tcb->recv_window.rcvnxt += payload_len;
                     TCB_UNLOCK_RCV(tcb);
                     
                     // Only advance rcvnxt and ACK if we successfully wrote all data
                     if (written == (ssize_t)payload_len) {
-                        tcb->recv_window.rcvnxt += payload_len;
                         tcp_acknowledge(tcb);
                         poll_signal(&tcb->wndev, POLLIN);
                     } else {
                         LOG(WARN, "Receive buffer full, discarding %zu bytes\n", payload_len - written);
                         tcp_reset(tcb, ntohl(ip_pkt->src_addr), tcp_pkt);
-                    }
-                } else {
-                    if (tcp_pkt->flags & TCP_ACK) {
-                        tcb->send_window.sndwnd = ntohs(tcp_pkt->window_size);
-                        tcb->send_window.snduna = ntohl(tcp_pkt->ack);
                     }
                 }
             } else if (tcp_pkt->flags & TCP_FIN) {
@@ -763,6 +769,7 @@ void tcp_worker(void *arg) {
             EVENT_DESTROY_LISTENER(&l);
             continue;
         }
+        
 
         tcp_worker_request_t *request;
         assert(queue_rb_pop(&worker->request_queue, (void**)&request) == 0);
@@ -1116,7 +1123,6 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         ringbuffer_write(tcb->send_window.buffer, (char*)iov->iov_base, to_send);
         remaining -= to_send;
         written += to_send;
-        LOG(DEBUG, "Wrote %d bytes to TCB need_flush=%d\n", written, tcb->awaiting_flush);
     }
 
 
@@ -1193,8 +1199,6 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         } else {
             to_read = ringbuffer_read(tcb->recv_window.buffer, (char*)iov->iov_base, to_read);
             tcb->recv_window.rcvwnd += to_read;
-
-            LOG(DEBUG, "Read %d bytes.\n", to_read);
         }
 
         remaining -= to_read;

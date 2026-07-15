@@ -1,1 +1,0 @@
-A copy of linux-6.16 is provided to enable the usage of linux kernel headers in mlibc

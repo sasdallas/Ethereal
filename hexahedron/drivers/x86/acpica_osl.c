@@ -251,14 +251,17 @@ void AcpiOsReleaseLock(ACPI_SPINLOCK Handle, ACPI_CPU_FLAGS Flags) {
 /* INTERRUPT FUNCTIONS */
 /* Hexahedron uses a different IRQ handler style, so we have to use a handler */
 
-#define MAX_ACPI_INTERRUPT_HANDLERS 16
+#define MAX_ACPI_INTERRUPT_HANDLERS 64
 
 // Store data & handlers
 ACPI_OSD_HANDLER ACPI_interruptHandlers[MAX_ACPI_INTERRUPT_HANDLERS];
+void *ACPI_interruptContexts[MAX_ACPI_INTERRUPT_HANDLERS];
 
 int ACPICA_InterruptHandler(irq_t *irq, void *context) {
-    if (ACPI_interruptHandlers[irq->num]) {
-        ACPI_interruptHandlers[irq->num](context);
+    uintptr_t num = (uintptr_t)context;
+
+    if (ACPI_interruptHandlers[num] != NULL) {
+        ACPI_interruptHandlers[num](ACPI_interruptContexts[num]);
     }
 
     return IRQ_HANDLED;
@@ -279,10 +282,11 @@ ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 InterruptLevel, ACPI_OSD_HANDLE
     }
 
     ACPI_interruptHandlers[InterruptLevel] = Handler;
+    ACPI_interruptContexts[InterruptLevel] = Context;
 
     irq_number_t vect;
     assert(irq_allocate(global_domain, InterruptLevel, NULL, &vect) == 0);
-    assert(irq_register(vect, ACPICA_InterruptHandler, IRQ_FLAG_SHARED, Context, NULL) == 0);
+    assert(irq_register(vect, ACPICA_InterruptHandler, IRQ_FLAG_SHARED, (void*)(uintptr_t)InterruptLevel, NULL) == 0);
 
     return AE_OK;
 }

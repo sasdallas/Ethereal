@@ -35,15 +35,13 @@
 #include <kernel/fs/vfs_new.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/fs/shared.h>
-
-#include <kernel/fs/vfs_new.h>
 #include <kernel/fs/initrd.h>
+#include <kernel/fs/devfs.h>
 
 // Drivers
 #include <kernel/drivers/video.h>
 #include <kernel/drivers/font.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/drivers/sound/mixer.h>
 #include <kernel/drivers/usb/usb.h>
 
 // Graphics
@@ -53,6 +51,7 @@
 // Misc.
 #include <kernel/misc/ksym.h>
 #include <kernel/misc/args.h>
+#include <kernel/misc/waitqueue.h>
 
 // Tasking
 #include <kernel/task/process.h>
@@ -85,7 +84,7 @@ void kernel_mountRamdisk(generic_parameters_t *parameters) {
     generic_module_desc_t *mod = parameters->module_start;
 
     while (mod) {
-        if (mod->cmdline && !strncmp(mod->cmdline, "type=initrd", 9)) {
+        if (1 || (mod->cmdline && !strncmp(mod->cmdline, "type=initrd", 9))) {
             // Found it
             ram_start = (void*)mod->mod_start;
             ram_size = mod->mod_end - mod->mod_start;
@@ -270,7 +269,6 @@ void kmain() {
     INIT_RUN_PHASE(PHASE_KERN_EARLY);
 
     // Now, initialize the VFS.
-    vfs_init();
     vfs2_init();
 
     // Run the system phase
@@ -331,6 +329,21 @@ void kmain() {
     // Run drivers phase
     INIT_RUN_PHASE(PHASE_DRIVER);
 
+    // Begin rootfs
+    // !!! This is temporary code
+    if (kargs_has("root")) {
+        char *r = kargs_get("root");
+        char *fs = kargs_get("rootfs");
+
+        // mount a device fs temporarily
+        // !!!! THIS IS A HACK!!!!
+        vfs2_mkdir("/device", 0755, NULL);
+        vfs2_mount(vfs_getFilesystem("devfs"), "device", "device", 0, NULL);
+
+        // Default to ext2 if no root filesystem was specified
+        vfs_changeGlobalRoot(vfs_getFilesystem(fs?fs:"ext2"), r, 0, NULL);
+    }
+
     // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
 
@@ -342,6 +355,9 @@ void kmain() {
 
     // Alright, we are done booting, print post-boot stats
     kernel_statistics();
+
+    // DEBUG CHECK to ensure that locking patterns were valid!
+    assert(hal_getInterruptState() == HAL_INTERRUPTS_ENABLED);
 
     char *possible_inits[] = {
         "/sbin/init",

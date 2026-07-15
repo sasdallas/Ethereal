@@ -85,7 +85,10 @@ int icmp_handle(nic_t *nic, void *frame, size_t size) {
         pkt->code = 0;
         pkt->checksum = 0;
         pkt->checksum = htons(icmp_checksum(pkt, ntohs(ip_packet->length) - sizeof(ipv4_packet_t)));
-        assert(ipv4_send(nic, ntohl(ip_packet->src_addr), IPV4_PROTOCOL_ICMP, pkt, ntohs(ip_packet->length) - sizeof(ipv4_packet_t)) >= 0);
+        ssize_t r = ipv4_send(nic, ntohl(ip_packet->src_addr), IPV4_PROTOCOL_ICMP, pkt, ntohs(ip_packet->length) - sizeof(ipv4_packet_t));
+        if (r < 0) {
+            LOG(ERR, "ipv4_send failed with error code %d\n", r);
+        }
         kfree(pkt);
     } else if (packet->type == ICMP_ECHO_REPLY && packet->code == 0) {
         // We should notify the socket that wanted this

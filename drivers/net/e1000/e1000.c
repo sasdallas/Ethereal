@@ -82,18 +82,17 @@ static inline uint32_t e1000_receiveCommand(e1000_t *nic, uint16_t reg) {
  * @brief EEPROM detection
  * @param nic NIC
  */
-int e1000_detectEEPROM(e1000_t *nic) {
+bool e1000_detectEEPROM(e1000_t *nic) {
     // TODO: Certain models do not support EEPROM, don't waste time.
     E1000_SENDCMD(E1000_REG_EEPROM, 1); // EEPROM reads a word at EE_ADDR and stores in EE_DATA
 
     // Wait for the DONE bit to be set
     for (int i = 0; i < 2000; i++) {
         uint32_t eeprom = E1000_RECVCMD(E1000_REG_EEPROM);
-        if (eeprom & 0x10) return 1;
-        LOG(DEBUG, "EEPROM detect %08x\n", eeprom);
+        if (eeprom & 0x10) return true;
     }
 
-    return 0;
+    return false;
 }
 
 /**
@@ -176,12 +175,11 @@ void e1000_txinit(e1000_t *nic) {
     // Now we actually need to allocate our Tx descriptors (i.e. setting up their bits, addresses, etc)
     for (int i = 0; i < E1000_NUM_TX_DESC; i++) {
         // Map in an address
-        nic->tx_virt[i] = dma_map(PAGE_SIZE); // TODO: Are we sure about this?
+        nic->tx_virt[i] = dma_map(PAGE_SIZE*2); // TODO: Are we sure about this?
         nic->tx_descs[i].addr = arch_mmu_physical(NULL, nic->tx_virt[i]);
-        memset((void*)nic->tx_virt[i], 0, PAGE_SIZE);
 
         // Mark as EOP
-        nic->tx_descs[i].status = 0;
+        nic->tx_descs[i].status = 0xff;
         nic->tx_descs[i].cmd = E1000_CMD_EOP;
     } 
 
@@ -197,16 +195,15 @@ void e1000_txinit(e1000_t *nic) {
     E1000_SENDCMD(E1000_REG_TXDESCHEAD, 0);
     E1000_SENDCMD(E1000_REG_TXDESCTAIL, 0);
 
-    // todo: E1000E?
-    uint32_t tctl = E1000_RECVCMD(E1000_REG_TCTRL);
-
-    // Setup collection threshold
-    tctl &= ~(0xFF << E1000_TCTL_CT_SHIFT);
-    tctl |= (15 << E1000_TCTL_CT_SHIFT);
+    // Intel I219: Enable Tx queue
+    E1000_SENDCMD(E1000_REG_TXDCTL, E1000_RECVCMD(E1000_REG_TXDCTL) | (1 << 25));
+    while (!(E1000_RECVCMD(E1000_REG_TXDCTL) & (1 << 25))) {
+        LOG(DEBUG, "waiting for TXDCTL to enable (0x%x)\n", E1000_RECVCMD(E1000_REG_TXDCTL));
+        arch_pause(); 
+    }
 
     // Enable
-    tctl |= E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_RTLC;
-    E1000_SENDCMD(E1000_REG_TCTRL, tctl);
+    E1000_SENDCMD(E1000_REG_TCTRL, E1000_TCTL_EN | E1000_TCTL_PSP);
     E1000_SENDCMD(0x410, 0x60200a);
 }
 
@@ -221,9 +218,8 @@ void e1000_rxinit(e1000_t *nic) {
     // Now we actually need to allocate our Rx descriptors (i.e. setting up their bits, addresses, etc)
     for (int i = 0; i < E1000_NUM_RX_DESC; i++) {
         // Map in an address
-        nic->rx_virt[i] = dma_map(PAGE_SIZE); // TODO: Are we sure about this?
+        nic->rx_virt[i] = dma_map(PAGE_SIZE*2); // TODO: Are we sure about this?
         nic->rx_descs[i].addr = arch_mmu_physical(NULL, nic->rx_virt[i]);
-        memset((void*)nic->rx_virt[i], 0, PAGE_SIZE);
         nic->rx_descs[i].status = 0;
     } 
 
@@ -239,6 +235,12 @@ void e1000_rxinit(e1000_t *nic) {
     E1000_SENDCMD(E1000_REG_RXDESCHEAD, 0);
     E1000_SENDCMD(E1000_REG_RXDESCTAIL, E1000_NUM_RX_DESC - 1);
     
+    // Intel I219: Enable Rx queue
+    E1000_SENDCMD(E1000_REG_RXDCTL, E1000_RECVCMD(E1000_REG_RXDCTL) | (1 << 25));
+    while (!(E1000_RECVCMD(E1000_REG_RXDCTL) & (1 << 25))) {
+        arch_pause(); 
+    }
+
     // Setup RCTRL
     E1000_SENDCMD(E1000_REG_RCTRL,
         E1000_RCTL_EN |
@@ -248,7 +250,8 @@ void e1000_rxinit(e1000_t *nic) {
         E1000_RCTL_BAM |
         (3 << 16) |
         E1000_RCTL_SECRC |
-        (1 << 25));
+        (1 << 25) |
+        (3 << 16));
 }
 
 
@@ -296,9 +299,6 @@ void e1000_setLinkUp(e1000_t *nic) {
     ctrl |= E1000_CTRL_SLU | (2 << 8); // (2 << 8) for gigabit
     ctrl &= ~(E1000_CTRL_LRST| E1000_CTRL_PHY_RST);
     E1000_SENDCMD(E1000_REG_CTRL, ctrl);
-
-    // Is linked?
-    nic->link = ((E1000_RECVCMD(E1000_REG_STATUS) & (1 << 1)));
 }
 
 /**
@@ -307,58 +307,49 @@ void e1000_setLinkUp(e1000_t *nic) {
 static void e1000_receiverThread(void *data) {
     e1000_t *nic = (e1000_t*)data;
 
-    // If Rx descriptors have been updated then the head will be different
-    int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
-
     for (;;) {
-        arch_pause();
+        spinlock_acquire(&nic->rcv_lck);
 
-        if (head == nic->rx_current) {
-            // Same as before.. Try reading it one more time
+        int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
+        int packets_processed = 0;
+
+        while (nic->rx_current != head) {
+            volatile e1000_rx_desc_t *d = &nic->rx_descs[nic->rx_current];
+
+            // give the NIC a bit of time to process whats happening
+            while (!(d->status & 0x01)) {
+                asm volatile ("pause" ::: "memory");
+            }
+
+            if ((d->errors & 0x97) == 0) {
+                nic->n->stats.rx_packets++;
+                nic->n->stats.rx_bytes += d->length;
+                spinlock_release(&nic->rcv_lck);
+                ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->n, d->length);
+                spinlock_acquire(&nic->rcv_lck);
+            } else {
+                nic->n->stats.rx_dropped++;
+            }
+
+            d->status = 0;
+            packets_processed++;
+
+            nic->rx_current++;
+            if (nic->rx_current >= E1000_NUM_RX_DESC) {
+                nic->rx_current = 0;
+            }
+
             head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
         }
 
-        if (head != nic->rx_current) {
-            // Sweet, we have packets.
-            while (nic->rx_descs[nic->rx_current].status & 0x01) {
-                // Let ethernet take care of this
-                if (!(nic->rx_descs[nic->rx_current].errors & 0x97)) {
-                    // Handle this packet
-                    nic->n->stats.rx_dropped++;
-                    nic->n->stats.rx_bytes += nic->rx_descs[nic->rx_current].length;
-                    ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->n, nic->rx_descs[nic->rx_current].length);
-                } else {
-                    LOG(WARN, "Packet has error bits set: 0x%x\n", nic->rx_descs[nic->rx_current].errors);
-                    nic->n->stats.rx_dropped++;
-                }
-
-                // Reset status
-                nic->rx_descs[nic->rx_current].status = 0;
-
-                // rollover
-                nic->rx_current++;
-                if (nic->rx_current >= E1000_NUM_RX_DESC) {
-                    nic->rx_current = 0;
-                }
-
-                // Are we at the end?
-                if (nic->rx_current == head) {
-                    // Try again..
-                    head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
-                    if (nic->rx_current == head) {
-                        // Yes, break out
-                        break;   
-                    }
-                }
-
-                // Update tail
-                E1000_SENDCMD(E1000_REG_RXDESCTAIL, nic->rx_current);
-
-                // Clear STATUS
-                uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-                arch_pause();
-            }
+        if (packets_processed > 0) {
+            int next_rx_tail = (nic->rx_current) ? nic->rx_current - 1 : E1000_NUM_RX_DESC - 1;
+            E1000_SENDCMD(E1000_REG_RXDESCTAIL, next_rx_tail);
         }
+
+        sleep_prepare();
+        spinlock_release(&nic->rcv_lck);
+        sleep_enter();
     }
 }
 
@@ -369,38 +360,52 @@ static ssize_t e1000_send(nic_t *n, size_t size, char *buffer) {
     // Get E1000
     e1000_t *nic = n->driver;
 
-    // Lock the E1000, we're gonna mess with it
-    spinlock_acquire(nic->lock);
+    int tx_current = __atomic_fetch_add(&nic->tx_current, 1, __ATOMIC_SEQ_CST) % E1000_NUM_TX_DESC;
 
-    // Copy the payload into the Tx buffer
-    memcpy((void*)nic->tx_virt[nic->tx_current], buffer, size);
+    volatile e1000_tx_desc_t *d = (e1000_tx_desc_t*)(&nic->tx_descs[tx_current]);
+    while (d->status == 0) {
+        process_yield(1);
+    }
 
-    // Configure Tx descriptor
-    nic->tx_descs[nic->tx_current].length = size;
-    nic->tx_descs[nic->tx_current].cmd = E1000_CMD_EOP | E1000_CMD_IFCS | E1000_CMD_RS | E1000_CMD_RPS;
-    nic->tx_descs[nic->tx_current].status = 0;
-    nic->tx_descs[nic->tx_current].css = 0;
-    nic->tx_descs[nic->tx_current].special = 0;
+    void *tx_buffer = (void*)nic->tx_virt[tx_current];
+    memcpy(tx_buffer, buffer, size);
 
-    // Increment index
-    nic->tx_current++;
-    if (nic->tx_current == E1000_NUM_TX_DESC) nic->tx_current = 0; // Reset
+    d->length = size;
+    d->status = 0;
+    d->cmd = E1000_CMD_EOP | E1000_CMD_IFCS | E1000_CMD_RS;
 
-    E1000_SENDCMD(E1000_REG_TXDESCTAIL, nic->tx_current);
-
-    // Clear status
-    uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-    (void)status;
-
-    // Update statistics
-    n->stats.tx_packets++;
-    n->stats.tx_bytes += size;
-
-    // Release
-    spinlock_release(nic->lock);
+    if (tx_current == __atomic_fetch_add(&nic->tx_current2, 1, __ATOMIC_SEQ_CST) % E1000_NUM_TX_DESC) {
+        E1000_SENDCMD(E1000_REG_TXDESCTAIL, (tx_current+1) % E1000_NUM_TX_DESC);
+    }
     return size;
 }
 
+
+/**
+ * @brief E1000 tasklet
+ */
+void e1000_tasklet(void *context) {
+    e1000_t *nic = (e1000_t*)context;
+
+    uint32_t icr = E1000_RECVCMD(E1000_REG_ICR);
+    if (icr) {
+        if (icr & E1000_ICR_LSC) {
+            nic->n->state = ((E1000_RECVCMD(E1000_REG_STATUS) & (1 << 1))) ? NIC_STATE_UP : NIC_STATE_DOWN;
+        }
+        
+        if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
+            spinlock_acquire(&nic->rcv_lck);
+            sleep_wakeup(nic->receiver->main_thread);
+            spinlock_release(&nic->rcv_lck);
+        } 
+
+        if (icr & (E1000_ICR_RXO | E1000_ICR_RXSEQ)) {
+            LOG(ERR, "RX error (0x%x)\n", icr);
+        }
+    }
+}
+
+tasklet_t tsk;
 
 /**
  * @brief E1000 IRQ handler
@@ -410,31 +415,18 @@ int e1000_irq(irq_t *irq, void *context) {
     // Get the NIC
     e1000_t *nic = (e1000_t*)context;
 
-    // Does the NIC have anything to say?
-    uint32_t icr = E1000_RECVCMD(E1000_REG_ICR);
-    if (icr) {
-        uint32_t status = E1000_RECVCMD(E1000_REG_STATUS);
-        // LOG(INFO, "IRQ detected - ICR: %08x STATUS: %08x\n", icr, status); 
-        
-        if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
-            // TODO: Seems to cause issues when IRQs are allocated
-            // sleep_wakeup(nic->receiver->main_thread);
-        } 
+    tasklet_insert(&tsk);
 
-        E1000_SENDCMD(E1000_REG_ICR, icr);
-        return IRQ_HANDLED;
-    } else {
-        // in chained dispatch handler
-        return IRQ_NOT_SOURCE;
-    }
+    return IRQ_HANDLED;
 }
 
 /**
  * @brief Initialize method for an E1000 device
  * @param dev Device
  * @param type NIC type (device ID)
+ * @param is_e1000e Is E1000E
  */
-void e1000_init(pci_device_t *dev, uint16_t type) {
+void e1000_init(pci_device_t *dev, uint16_t type, bool is_e1000e) {
     // First, we should enable PCI I/O space and MMIO space access
     uint16_t cmd = pci_readConfigOffset(dev->bus, dev->slot, dev->function, PCI_COMMAND_OFFSET, 2);
     cmd |= PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
@@ -446,13 +438,12 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     memset(nic, 0, sizeof(e1000_t));
     nic->pci_device = dev;              // PCI
     nic->nic_type = type;               // Device ID
-    nic->lock = spinlock_create("e1000 lock");
+    SPINLOCK_INIT(&nic->rcv_lck);
 
     // Get the BAR of the device
     pci_bar_t *bar = pci_readBAR(dev->bus, dev->slot, dev->function, 0);
     if (!bar) {
         LOG(WARN, "E1000 device does not have a BAR0.. ok?\n");
-        spinlock_destroy(nic->lock);
         kfree(nic);
         return;
     }
@@ -481,7 +472,11 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     irq_register(irq->vector, e1000_irq, IRQ_FLAG_SHARED, (void*)nic, NULL);
 
     // Detect an EEPROM
-    nic->eeprom = e1000_detectEEPROM(nic);
+    if (is_e1000e == false) {
+        nic->eeprom = e1000_detectEEPROM(nic);
+    } else {
+        nic->eeprom = false;
+    }
 
     // Read the MAC address
     uint8_t mac[6];
@@ -492,7 +487,6 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     snprintf(name, 128, "enp%ds%d", dev->bus, dev->slot);
 
     nic->n = nic_create(name, NIC_TYPE_ETHERNET, &e1000_nic_ops, mac, (void*)nic);
-
     LOG(INFO, "E1000 found with MAC " MAC_FMT "\n", MAC(mac));
 
     // Reset the E1000 controller
@@ -501,7 +495,8 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
 
     // Link up
     e1000_setLinkUp(nic);
-    LOG(DEBUG, "Link up on NIC (status %d)\n", nic->link);
+    nic->n->state = ((E1000_RECVCMD(E1000_REG_STATUS) & (1 << 1))) ? NIC_STATE_UP : NIC_STATE_DOWN;
+    LOG(DEBUG, "Link is %s\n", nic->n->state == NIC_STATE_UP ? "UP" : "DOWN");
 
     // Clear the statistical counters
     for (int i = 0; i < 128; i++) E1000_SENDCMD(0x5200 + i * 4, 0);
@@ -525,11 +520,12 @@ void e1000_init(pci_device_t *dev, uint16_t type) {
     (void)status;
 
     // Enable IRQs
-    E1000_SENDCMD(E1000_REG_IMASK, E1000_ICR_LSC | E1000_ICR_RXO | E1000_ICR_RXT0 | E1000_ICR_TXQE | E1000_ICR_TXDW | E1000_ICR_ACK | E1000_ICR_RXDMT0 | E1000_ICR_SRPD);
+    TASKLET_INIT(&tsk, "e1000", e1000_tasklet, nic);
+    E1000_SENDCMD(E1000_REG_ICR, 0xFFFFFFFF);
+    E1000_SENDCMD(E1000_REG_IMASK, 0xFFFFFFFF);
 
     // Set MTU
     nic->n->mtu = 1500;
-    nic->n->state = nic->link ? NIC_STATE_UP : NIC_STATE_DOWN;
 
     nic->receiver = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
     scheduler_insertThread(nic->receiver->main_thread);
@@ -542,7 +538,6 @@ _cleanup:
 
     // Unmap MMIO
     mmio_unmap(nic->mmio, bar->size);
-    spinlock_destroy(nic->lock);
     kfree(nic);
 }
 
@@ -550,26 +545,59 @@ _cleanup:
  * @brief Scan method
  */
 int e1000_scan(pci_device_t *dev, void *data) {
-    e1000_init(dev, dev->pid);
+    e1000_init(dev, dev->devid, false);
     return 0;
 }
+
+
+/**
+ * @brief Scan method (E1000E-series)
+ */
+int e1000e_scan(pci_device_t *dev, void *data) {
+    e1000_init(dev, dev->devid, true);
+    return 0;
+}
+
 
 /**
  * @brief Driver initialization method
  */
 int driver_init(int argc, char **argv) {
-    pci_id_mapping_t id_map[] = {
-        { .vid = VENDOR_ID_INTEL, .pid = { E1000_DEVICE_EMU, E1000_DEVICE_I217, E1000_DEVICE_82577LM, E1000_DEVICE_82574L, E1000_DEVICE_82545EM, E1000_DEVICE_82543GC, PCI_NONE }},
+    pci_id_mapping_t e1000_id_map[] = {
+        { .vid = VENDOR_ID_INTEL, .devid = {
+            E1000_DEVICE_EMU,
+            E1000_DEVICE_82574L,
+            E1000_DEVICE_82545EM,
+            E1000_DEVICE_82543GC,
+            PCI_NONE }},
         PCI_ID_MAPPING_END
     };
 
-    pci_scan_parameters_t params = {
+    pci_scan_parameters_t e1000_params = {
         .class_code = 0,
         .subclass_code = 0,
-        .id_list = id_map,
+        .id_list = e1000_id_map,
     };
 
-    pci_scanDevice(e1000_scan, &params, NULL);
+    pci_scanDevice(e1000_scan, &e1000_params, NULL);
+
+    pci_id_mapping_t e1000e_id_map[] = {
+        { .vid = VENDOR_ID_INTEL, .devid = {
+            E1000_DEVICE_82577LM,
+            E1000_DEVICE_I217,
+            0x15d8,
+            PCI_NONE }},
+        PCI_ID_MAPPING_END
+    };
+
+    pci_scan_parameters_t e1000e_params = {
+        .class_code = 0,
+        .subclass_code = 0,
+        .id_list = e1000e_id_map,
+    };
+
+    pci_scanDevice(e1000e_scan, &e1000e_params, NULL);
+
     return 0;
 }
 

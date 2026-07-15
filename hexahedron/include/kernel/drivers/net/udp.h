@@ -17,6 +17,8 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/drivers/net/ipv4.h>
+#include <structs/ringbuffer.h>
+#include <kernel/refcount.h>
 
 /**** TYPES ****/
 
@@ -28,9 +30,33 @@ typedef struct udp_packet {
     uint8_t data[];                 // UDP data
 } __attribute__((packed)) udp_packet_t;
 
+typedef struct udp_packet_info {
+    in_addr_t src_addr;
+    in_port_t src_port;
+    uint16_t length;
+} udp_packet_info_t;
+
 typedef struct udp_sock {
-    uint16_t port;                  // Port bound to this socket
-} udp_sock_t;
+    mutex_t lock;
+    poll_event_t event;
+    refcount_t refs; // !!! overkill
+
+    struct sockaddr_in conn;
+    uint32_t addr;
+    uint16_t port;
+
+    struct {
+        // actual packet data
+        ringbuffer_t *data;
+
+        // circular buffer of info but cooler
+        udp_packet_info_t *info;
+        unsigned int info_head;
+        unsigned int info_tail;
+        unsigned int info_size;
+    } pkts;
+} udp_socket_t;
+
 
 /**** FUNCTIONS ****/
 

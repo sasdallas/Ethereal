@@ -55,6 +55,28 @@ void bitmap_fill(unsigned long *b, unsigned char f, size_t n) {
     if (n % BITMAP_BITS) b[w - 1] = (1UL << (n % BITMAP_BITS)) - 1;
 }
 
+
+int bitmap_find_first_from(const unsigned long *b, size_t start, size_t n) {
+    if (start >= n) {
+        return -1;
+    }
+
+    for (size_t i = start / BITMAP_BITS; i < (n + BITMAP_BITS - 1) / BITMAP_BITS; ++i) {
+        unsigned long word = ~b[i];
+
+        if (i == start / BITMAP_BITS) {
+            word &= (~0UL << (start % BITMAP_BITS));
+        }
+
+        if (word) {
+            size_t b = i * BITMAP_BITS + __builtin_ctzll(word);
+            return (b < n) ? (int)b : -1;
+        }
+    }
+    
+    return -1;
+}
+
 int bitmap_find_first(const unsigned long *b, size_t n) {
     for (size_t i = 0, w = (n + BITMAP_BITS - 1) / BITMAP_BITS; i < w; ++i) {
         if (~b[i]) {

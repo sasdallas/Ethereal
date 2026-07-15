@@ -49,11 +49,13 @@ void tasklet_process() {
         ts->prev = ts->next = NULL;
         ts->active = false;
 
+        void *ctx_saved = ts->tasklet_ctx;
+
         // Execute using this mess cause fuck readability
         TASKLET_ENTER(); // << prevents threads from preempting the tasklet
         
         TASKLET_UNLOCK();
-        ts->cb(ts->tasklet_ctx);
+        ts->cb(ctx_saved);
         TASKLET_LOCK();
         
         TASKLET_EXIT();

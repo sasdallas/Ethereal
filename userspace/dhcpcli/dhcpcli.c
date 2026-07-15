@@ -241,7 +241,7 @@ int dhcp_receive(int sock, dhcp_packet_t *outpkt, dhcp_options_t *outopt) {
     }
 
     if ((size_t)r < sizeof(dhcp_packet_t) - 256) {
-        printf("Invalid DHCP offer received (bad length %d expected at least %d)\n", (size_t)r, sizeof(dhcp_packet_t) - 256);
+        printf("Invalid DHCP packet received (bad length %d expected at least %d)\n", (size_t)r, sizeof(dhcp_packet_t) - 256);
         return 1;
     }
 
@@ -250,7 +250,7 @@ int dhcp_receive(int sock, dhcp_packet_t *outpkt, dhcp_options_t *outopt) {
 
 
     if (outpkt->magic != htonl(DHCP_MAGIC)) {
-        printf("Invalid DHCP offer received (bad magic 0x%x expected 0x%x)\n", outpkt->magic, htonl(DHCP_MAGIC));
+        printf("Invalid DHCP packet received (bad magic 0x%x expected 0x%x)\n", outpkt->magic, htonl(DHCP_MAGIC));
         return 1;
     }
 
@@ -453,6 +453,22 @@ int main(int argc, char *argv[]) {
     strncpy(local.name, info.nic_name, sizeof(local.name));
 
     if (ioctl(nic, IO_NIC_ADD_ROUTE, &local) < 0) {
+        perror("IO_NIC_ADD_ROUTE");
+        goto _cleanup;
+    }
+
+    // Add one more loop for loopback device
+    net_route_t loopback = {
+        .dest = pkt.yiaddr,
+        .gateway = 0,
+        .mask = 0xFFFFFFFF,
+        .flags = RT_FLAG_UP,
+        .metric = 1000
+    };
+
+    strncpy(loopback.name, "lo", sizeof(loopback.name));
+
+    if (ioctl(nic, IO_NIC_ADD_ROUTE, &loopback) < 0) {
         perror("IO_NIC_ADD_ROUTE");
         goto _cleanup;
     }

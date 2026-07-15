@@ -22,7 +22,7 @@ static char __tmp_buffer[17] = { 0 };
 uint32_t ntohl(uint32_t netlong) { return ((netlong & 0xFF000000) >> 24) | ((netlong & 0xFF0000) >> 8) | ((netlong & 0xFF00) << 8) | ((netlong & 0xFF) << 24); }
 uint16_t ntohs(uint16_t netshort) { return ((netshort & 0xFF) << 8) | ((netshort & 0xFF00) >> 8); }
 
-uint32_t htonl(uint32_t hostlong) { return ((hostlong & 0xFF) << 24) | (((hostlong & 0xFF00) >> 8) << 16) | (((hostlong & 0xFF0000) >> 16) << 8) | (((hostlong & 0xFF000000) >> 24)); }
+uint32_t htonl(uint32_t netlong) { return ((netlong & 0xFF000000) >> 24) | ((netlong & 0xFF0000) >> 8) | ((netlong & 0xFF00) << 8) | ((netlong & 0xFF) << 24); }
 uint16_t htons(uint16_t hostshort) { return ((hostshort & 0xFF) << 8) | (((hostshort & 0xFF00) >> 8)); }
 
 static char __inet_ntoa_buf[256] = { 0 };

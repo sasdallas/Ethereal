@@ -44,6 +44,8 @@
 #define DEVFS_MAJOR_CONSOLE         19  // Console device, like /device/log or /device/fbcon
 #define DEVFS_MAJOR_VIDEO           20  // Video framebuffer
 #define DEVFS_MAJOR_SHARED          21  // Shared device
+#define DEVFS_MAJOR_GPU             22  // GPU device
+#define DEVFS_MAJOR_AUDIO           23  // Audio device
 
 /**** TYPES ****/
 
@@ -52,8 +54,18 @@ struct devfs_node;
 typedef struct devfs_ops {
     int (*open)(struct devfs_node *file, unsigned long flags);
     int (*close)(struct devfs_node *file);
-    ssize_t (*read)(struct devfs_node *file, loff_t off, size_t size, char *buffer);
-    ssize_t (*write)(struct devfs_node *file, loff_t off, size_t size, const char *buffer);
+    
+    // As an expansion to this, if you need flags.
+    union {
+        ssize_t (*read)(struct devfs_node *file, loff_t off, size_t size, char *buffer);
+        ssize_t (*read_ext)(struct devfs_node *file, loff_t off, size_t size, char *buffer, int flags);
+    };
+    
+    union {
+        ssize_t (*write)(struct devfs_node *file, loff_t off, size_t size, const char *buffer);
+        ssize_t (*write_ext)(struct devfs_node *file, loff_t off, size_t size, const char *buffer, int flags);
+    };
+
     int (*ioctl)(struct devfs_node *file, unsigned long request, void *argp);
     int (*lseek)(struct devfs_node *file, loff_t off, int whence, loff_t *pos); // just return the new position to set to
     poll_events_t (*poll_events)(struct devfs_node *file);

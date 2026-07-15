@@ -238,7 +238,7 @@ int xhci_resetPort(xhci_t *xhci, int port, volatile xhci_port_regs_t *regs) {
 
     int usb3 = (xhci->ports[port].rev_major == 3);
     while (!(((usb3 && (regs->portsc & XHCI_PORTSC_WRC))) || ((!usb3 && (regs->portsc & XHCI_PORTSC_PRC))))) {
-        arch_pause_single();
+        arch_pause();
     }
 
     clock_sleep(3);
@@ -620,7 +620,7 @@ int xhci_initController(pci_device_t *device) {
     // Run controller
     LOG(DEBUG, "Starting xHCI controller...\n");
     xhci->op->usbcmd |= XHCI_USBCMD_RS;
-    while (xhci->op->usbsts & XHCI_USBSTS_HCH) arch_pause_single();
+    while (xhci->op->usbsts & XHCI_USBSTS_HCH) arch_pause();
     LOG(INFO, "xHCI controller started\n");
 
     // Prepare controller

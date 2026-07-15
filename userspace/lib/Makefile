@@ -2,7 +2,7 @@
 include ./make.config
 
 # List of libraries to compile
-LIBS = ethereal graphics celestial keyboard ansi pthread widget version
+LIBS = ethereal graphics celestial keyboard ansi pthread widget version symphony neutron
 
 LIBS_TARGETS_INSTALL := $(patsubst %, install-%, $(LIBS))
 LIBS_TARGETS_CLEAN := $(patsubst %, clean-%, $(LIBS))

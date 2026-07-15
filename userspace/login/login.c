@@ -41,7 +41,7 @@ void version() {
 }
 
 void show_prompt() {
-    char hostname[256];
+    char hostname[256] = { 0 };
     gethostname(hostname, 256);
 
     write(1, hostname, strlen(hostname));
@@ -81,6 +81,7 @@ void prompt_loop() {
         tcgetattr(STDIN_FILENO, &old);
         tcgetattr(STDIN_FILENO, &new);
         new.c_lflag |= (ECHO | ICANON);
+        new.c_oflag |= ONLCR;
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &new);
 
         if (!fgets(username, 512, stdin)) {

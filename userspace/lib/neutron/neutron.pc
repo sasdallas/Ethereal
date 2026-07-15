@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=/usr/lib
+includedir=/usr/include
+
+Name: neutron
+Description: Neutron GUI library
+Requires:
+Requires.private:
+Version: 1.0.0
+Libs: -L${libdir} -lcelestial -lfreetype2 -lgraphics -lstructures -lethereal 
+Libs.private: 
+Cflags: -I${includedir} 
