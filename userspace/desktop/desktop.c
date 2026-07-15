@@ -57,22 +57,6 @@ char *wallpaper = DEFAULT_WALLPAPER;
 void config_load();
 
 /**
- * @brief User frame callback
- */
-static void anim_uframe(gfx_context_t *ctx, gfx_anim_t *anim) {
-    gfx_render(ctx);
-    celestial_flip(background_window);
-} 
-
-
-/**
- * @brief User frame callback
- */
-static void anim_end(gfx_context_t *ctx, gfx_anim_t *anim) {
-    gfx_destroySprite(anim->sprite);
-} 
-
-/**
  * @brief Reload signal
  * 
  * Desktop uses SIGUSR2 to signal a reload

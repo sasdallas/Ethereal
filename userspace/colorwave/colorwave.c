@@ -37,13 +37,14 @@ int main(int argc, char *argv[]) {
     wid_t wid = celestial_createWindow(CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE, 300, 300);
     window_t *win = celestial_getWindow(wid);
     celestial_setTitle(win, "Color Wave");
+    celestial_setResizeEnabled(win, true);
 
     double t = 0.0;
 
     while (celestial_running()) {
-        for (uint32_t y = 0; y < 150; y++) {
-            celestial_poll();
-            gfx_drawRectangleFilled(celestial_getGraphicsContext(win), &GFX_RECT(0, y*2, 300, 2), color_gradient(y, t));
+        celestial_poll();
+        for (uint32_t y = 0; y < win->height/2; y++) {
+            gfx_drawRectangleFilled(celestial_getGraphicsContext(win), &GFX_RECT(0, y*2, win->width, 2), color_gradient(y, t));
         }
 
         gfx_render(celestial_getGraphicsContext(win));
