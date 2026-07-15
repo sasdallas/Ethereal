@@ -103,7 +103,7 @@ int gfx_setFontSize(gfx_font_t *font, size_t size) {
  */
 static gfx_color_t gfx_freetypeBlend(gfx_color_t bottom, gfx_color_t top, uint8_t mask) {
     // Calculate alpha
-    float a = mask / 256.0;
+    float a = mask / 255.0;
 
     // Use it to mask the rest of the valules
     uint8_t a_new = GFX_RGB_A(bottom) * (1.0 - a) + GFX_RGB_A(top) * a;
@@ -135,14 +135,18 @@ int gfx_renderCharacter(struct gfx_context *ctx, gfx_font_t *font, uint32_t ch, 
     int cur_y = _y - slot->bitmap_top;
     int cur_x = _x + slot->bitmap_left;
 
-
-
     for (int y = cur_y; y < cur_y + slot->bitmap.rows; y++) {
-        uint32_t *buf = (ctx->flags & CTX_NO_BACKBUFFER ? &GFX_PIXEL_REAL(ctx, cur_x, y) : &GFX_PIXEL(ctx, cur_x, y));
-        for (int x = cur_x; x < cur_x + slot->bitmap.width; x++) {
-            *buf = gfx_freetypeBlend(*buf, color, slot->bitmap.buffer[(y-cur_y) * slot->bitmap.width + (x-cur_x)]);
+        if (y < 0 || y >= (int)ctx->height) continue;
 
-            buf++;
+        for (int x = cur_x; x < cur_x + slot->bitmap.width; x++) {
+            if (x < 0 || x >= (int)ctx->width) continue;
+
+            int bitmap_y = y - cur_y;
+            int bitmap_x = x - cur_x;
+            uint8_t alpha_mask = slot->bitmap.buffer[bitmap_y * slot->bitmap.pitch + bitmap_x];
+
+            uint32_t *pxl = (ctx->flags & CTX_NO_BACKBUFFER) ? &GFX_PIXEL_REAL(ctx, x, y) : &GFX_PIXEL(ctx,x,y);
+            *pxl = gfx_freetypeBlend(*pxl, color, alpha_mask);
         }
     }
 
@@ -207,9 +211,9 @@ int gfx_renderStringShadow(gfx_context_t *ctx, gfx_font_t *font, char *str, int 
                 if (x < 0 || x >= (int)ctx->width) continue;
 
                 if (ctx->flags & CTX_NO_BACKBUFFER) {
-                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.width + (x-shadow_x)]);
+                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.pitch + (x-shadow_x)]);
                 } else {
-                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.width + (x-shadow_x)]);
+                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), shadow_color, slot->bitmap.buffer[(y-shadow_y) * slot->bitmap.pitch + (x-shadow_x)]);
                 }
             }
         }
@@ -223,9 +227,9 @@ int gfx_renderStringShadow(gfx_context_t *ctx, gfx_font_t *font, char *str, int 
                 if (x < 0 || x >= (int)ctx->width) continue;
 
                 if (ctx->flags & CTX_NO_BACKBUFFER) {
-                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.pitch + (x-render_x)]);
                 } else {
-                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.pitch + (x-render_x)]);
                 }
             }
         }
@@ -290,9 +294,9 @@ int gfx_renderString(gfx_context_t *ctx, gfx_font_t *font, char *str, int _x, in
                 if (x < 0 || x >= (int)ctx->width) continue;
 
                 if (ctx->flags & CTX_NO_BACKBUFFER) {
-                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                    GFX_PIXEL_REAL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL_REAL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.pitch + (x-render_x)]);
                 } else {
-                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.width + (x-render_x)]);
+                    GFX_PIXEL(ctx, x, y) = gfx_freetypeBlend(GFX_PIXEL(ctx, x, y), color, slot->bitmap.buffer[(y-render_y) * slot->bitmap.pitch + (x-render_x)]);
                 }
             }
         }
