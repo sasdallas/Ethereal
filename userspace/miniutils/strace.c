@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <ethereal/user.h>
 
+#include <sys/fcntl.h>
 #include <ctype.h>
 #include <sys/socket.h>
 
@@ -128,6 +129,23 @@ char *syscall_table[] = {
     [SYS_FUTEX_WAIT] = "futex_wait",
     [SYS_FUTEX_WAKE] = "futex_wake",
     [SYS_OPENAT] = "openat",
+    [SYS_RENAMEAT] = "renameat",
+    [SYS_LINKAT] = "linkat",
+    [SYS_SYMLINKAT] = "symlinkat",
+    [SYS_FCHMODAT] = "fchmodat",
+    [SYS_MKNODAT] = "mknodat",
+    [SYS_FLOCK] = "flock",
+    [SYS_UMASK] = "umask",
+    [SYS_CLOCK_GETTIME] = "clock_gettime",
+    [SYS_CLOCK_SETTIME] = "clock_settime",
+    [SYS_FSYNC] = "fsync",
+    [SYS_PREAD] = "pread",
+    [SYS_PWRITE] = "pwrite",
+    [SYS_GETRLIMIT] = "getrlimit",
+    [SYS_SETRLIMIT] = "setrlimit",
+    [SYS_PAUSE] = "pause",
+    [SYS_FCHOWNAT] = "fchownat",
+    [SYS_FACCESSAT] = "faccessat"
 };
 
 /* Printer prototypes */
@@ -140,6 +158,7 @@ void ioctl_print(struct user_regs_struct *uregs);
 void open_print(struct user_regs_struct *uregs);
 void lstat_print(struct user_regs_struct *uregs);
 void mmap_print(struct user_regs_struct *uregs);
+void fcntl_print(struct user_regs_struct *uregs);
 
 /* Number of system calls */
 const int num_syscalls = sizeof(syscall_table) / sizeof(char*);
@@ -164,7 +183,8 @@ struct printer_list_entry {
     { .system_call = SYS_SOCKET, .p = socket_print, .use_hex = 0 },
     { .system_call = SYS_OPEN, .p = open_print, .use_hex = 0 },
     { .system_call = SYS_LSTAT, .p = lstat_print, .use_hex = 0 },
-    { .system_call = SYS_MMAP, .p = mmap_print, .use_hex = 1 }
+    { .system_call = SYS_MMAP, .p = mmap_print, .use_hex = 1 },
+    { .system_call = SYS_FCNTL, .p = fcntl_print, .use_hex = 0 },
 };
 
 /* Printer lookup table */
@@ -535,4 +555,32 @@ void mmap_print(struct user_regs_struct *uregs) {
     if (first) printf("%d", m.flags);
 
     printf(", \033[36m%d\033[0m, \033[36m%lld\033[0m)", m.filedes, (long long)m.off);
+}
+
+void fcntl_print(struct user_regs_struct *uregs) {
+    int op = uregs->rsi;
+
+    char *op_s = NULL;
+#define FC_CASE(c) case (c): op_s = #c; break;
+    switch (op) {
+        FC_CASE(F_DUPFD);
+        FC_CASE(F_GETFD);
+        FC_CASE(F_SETFD);
+        FC_CASE(F_GETFL);
+        FC_CASE(F_SETFL);
+        FC_CASE(F_SETOWN);
+        FC_CASE(F_GETOWN);
+        FC_CASE(F_SETSIG);
+        FC_CASE(F_GETSIG);
+        FC_CASE(F_GETLK);
+        FC_CASE(F_SETLK);
+        FC_CASE(F_DUPFD_CLOEXEC);
+    }
+#undef FC_CASE
+
+    if (op_s) {
+        syscall_printf("fcntl(%d, %s, %d)", uregs->rdi, op_s, uregs->r10);
+    } else {
+        syscall_printf("fcntl(%d, 0x%x, %d)", uregs->rdi, op, uregs->r10);
+    }
 }
