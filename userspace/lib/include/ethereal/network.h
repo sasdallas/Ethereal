@@ -17,6 +17,7 @@
 /**** INCLUDES ****/
 #include <arpa/inet.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /**** DEFINITIONS ****/
 
@@ -36,6 +37,7 @@ typedef struct nic_info {
     in_addr_t nic_ipv4_addr;            // NIC IPv4 address
     in_addr_t nic_ipv4_subnet;          // NIC IPv4 subnet
     in_addr_t nic_ipv4_gateway;         // NIC IPv4 gateway
+    bool up;                            // Whether the NIC is up or not
 } nic_info_t;
 
 typedef struct net_route {

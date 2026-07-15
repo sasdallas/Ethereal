@@ -19,6 +19,9 @@
 #include <immintrin.h>
 #endif
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 /**
  * @brief Create a new sprite object
  * @param width The width of the sprite
@@ -153,8 +156,33 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file) {
         return gfx_loadSpriteBMP(sprite, file);
     }
 
-    // Unknown
-    return 1;
+    // TODO: write image loaders instead of using stbi and or put ts in the public domain
+    int width, height, channels;
+    stbi_uc *img = stbi_load_from_file(file, &width, &height, &channels, 4);
+    if (img == NULL) {
+        // Unknown
+        return 1;
+    }
+
+    uint32_t *native_bitmap = malloc(sizeof(uint32_t) * width * height);
+    for (int i = 0; i < width * height; i++) {
+        uint8_t r = img[i * 4 + 0];
+        uint8_t g = img[i * 4 + 1];
+        uint8_t b = img[i * 4 + 2];
+        uint8_t a = img[i * 4 + 3];
+
+        uint32_t color = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+        native_bitmap[i] = __gfx_premultiply(color);
+    }
+
+    stbi_image_free(img);
+    
+    sprite->bitmap = (uint32_t*)native_bitmap;
+    sprite->width = width;
+    sprite->height = height;
+    sprite->alpha = SPRITE_ALPHA_BLEND;
+
+    return 0;
 }
 
 /**

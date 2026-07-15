@@ -241,7 +241,7 @@ ssize_t systemfs_kernel_uptime(systemfs_node_t *node) {
     unsigned long seconds, subseconds;
     clock_relative(0, 0, &seconds, &subseconds);
     return systemfs_printf(node,
-        "%lu.%016lu\n", seconds, subseconds
+        "%lu.%lu\n", seconds, subseconds
     );
 }
 

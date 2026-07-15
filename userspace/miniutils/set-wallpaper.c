@@ -35,16 +35,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Modify /tmp/wallpaper
-    FILE *wp_file = fopen("/tmp/wallpaper", "w+");
+    // Modify /comm/wallpaper
+    FILE *wp_file = fopen("/comm/wallpaper", "w+");
 
     if (!wp_file) {
-        fprintf(stderr, "set-wallpaper: Error opening /tmp/wallpaper: %s\n", strerror(errno));
+        fprintf(stderr, "set-wallpaper: Error opening /comm/wallpaper: %s\n", strerror(errno));
         return 1;
     }
 
     if (fwrite(buf, strlen(buf), 1, wp_file) != 1) {
-        fprintf(stderr, "set-wallpaper: Error writing to /tmp/wallpaper: %s\n", strerror(errno));
+        fprintf(stderr, "set-wallpaper: Error writing to /comm/wallpaper: %s\n", strerror(errno));
         return 1;
     }
 

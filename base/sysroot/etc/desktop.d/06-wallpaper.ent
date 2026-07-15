@@ -1,0 +1,4 @@
+[Desktop]
+Name="Change Wallpaper"
+Icon=/usr/share/icons/24/Application.bmp
+Exec="wallpaper-chooser"

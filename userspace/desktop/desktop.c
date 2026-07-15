@@ -62,9 +62,9 @@ void config_load();
  * Desktop uses SIGUSR2 to signal a reload
  */
 void reload_signal(int signum) {
-    // Refresh signal means we should check /tmp/wallpaper to see if it 1. exists and 2. has a valid wallpaper
+    // Refresh signal means we should check /comm/wallpaper to see if it 1. exists and 2. has a valid wallpaper
     fprintf(stderr, "Reloading desktop environment\n");
-    FILE *wallpaper_file = fopen("/tmp/wallpaper", "r");
+    FILE *wallpaper_file = fopen("/comm/wallpaper", "r");
     if (wallpaper_file) {
         char tmp_buffer[256] = { 0 };
         fread(tmp_buffer, 256, 1, wallpaper_file);
@@ -169,6 +169,15 @@ void config_load() {
     char *wp = ini_get(ini, "wallpaper", "file");
     if (wp) wallpaper = wp;
     else fprintf(stderr, "Missing directive: section=\"wallpaper\" value=\"file\"\n");
+
+    // Save this wallpaper in /comm/wallpaper
+    FILE *f = fopen("/comm/wallpaper", "w+");
+    if (f) {
+        fprintf(f, "%s\n", wp);
+        fclose(f);
+    } else {
+        fprintf(stderr, "Failed to open /comm/wallpaper: %s\n", strerror(errno));
+    }
 
     // TODO: More stuff
     hashmap_free(ini->sections);

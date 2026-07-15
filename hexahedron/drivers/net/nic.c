@@ -92,6 +92,7 @@ static int nic_ioctl(devfs_node_t *node, unsigned long request, void *param) {
             info->nic_ipv4_gateway = htonl(nic->ipv4_gateway);
             info->nic_ipv4_subnet = htonl(nic->ipv4_subnet);
             info->nic_mtu = nic->mtu;
+            info->up = (nic->state == NIC_STATE_UP);
             memcpy(info->nic_mac, nic->mac, 6);
             return 0;
 

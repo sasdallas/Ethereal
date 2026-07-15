@@ -318,6 +318,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (info.up == false) {
+        DHCP_ERR("Interface is down\n");
+        return 1;
+    }
+
     DHCP_LOG("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", info.nic_mac[0], info.nic_mac[1], info.nic_mac[2], info.nic_mac[3], info.nic_mac[4], info.nic_mac[5]);
 
     // Configure a socket

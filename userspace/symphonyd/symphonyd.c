@@ -18,6 +18,7 @@
 #include <structs/hashmap.h>
 #include <ethereal/shared.h>
 #include <ethereal/audio.h>
+#include <getopt.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -580,7 +581,62 @@ int probe_devices() {
     return 0;
 }
 
+void version() {
+    printf("symphonyd version 1.0.0\n");
+    printf("Copyright (C) 2026 The Ethereal Development Team\n");
+    exit(EXIT_FAILURE);
+}
+
+void usage() {
+    printf("Usage: symphonyd [-hvd]\n");
+    printf("Ethereal audio server and mixer\n\n");
+    printf(" -d, --daemon       Daemonize application\n");
+    printf(" -h, --help         Show this help message\n");
+    printf(" -v, --version      Print versioning information\n");
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char *argv[]) {
+    struct option options[] = {
+        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h' },
+        { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
+        { .name = "daemon", .has_arg = no_argument, .flag = NULL, .val = 'd' },
+        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
+    };
+
+    int ch;
+    int index;
+    int daemon = 0;
+    while ((ch = getopt_long(argc, argv, "hvd", (const struct option*)options, &index)) != -1) {
+
+        if (!ch && options[index].flag == NULL) {
+            ch = options[index].val;
+        }
+
+        switch (ch) {
+            case 'd': 
+                daemon = 1;
+                break;
+
+            case 'v':
+                version();
+                break;
+
+            case 'h':
+            default:
+                usage();
+                break;
+        }
+    }
+
+    if (daemon) {
+        if (fork()) {
+            return 0;
+        }
+    }
+    
+
+
     TRACE_INFO("symphonyd v%d.%d.%d\n", SYMPHONY_VERSION_MAJOR, SYMPHONY_VERSION_MINOR, SYMPHONY_VERSION_LOWER);
 
     // Prepare socket
