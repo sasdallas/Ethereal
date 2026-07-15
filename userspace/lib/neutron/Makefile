@@ -7,7 +7,7 @@ OBJ_DIR = $(OBJ_OUTPUT_DIRECTORY)/userspace/
 install:
 	-mkdir $(OBJ_DIR)
 	OBJ_DIR=$(OBJ_DIR) make -C neutron -f Makefile.ethereal all install
-	cp neutron.pc $(DESTDIR)$(LIBDIR)/pkg-config
+	cp neutron.pc $(DESTDIR)$(LIBDIR)/pkgconfig/
 	OBJ_DIR=$(OBJ_DIR) make -C neutron -f Makefile.ethereal DEMO
 
 clean:
