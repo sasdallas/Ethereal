@@ -5,6 +5,8 @@ external/freetype/freetype-2.4.9/
 ser_output.txt
 ser_output2.txt
 .gdb_history
+.gdbinit
+bochsrc.txt
 *.img
 drivers/test
 drivers/test/*
