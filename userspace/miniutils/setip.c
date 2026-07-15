@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
 
     // Print info if user wants it
     if (print_info) {
-        printf("%s state UP mtu %d\n", info.nic_name, info.nic_mtu);
+        printf("%s state %s mtu %d\n", info.nic_name, info.up ? "UP" : "DOWN", info.nic_mtu);
         printf("\tlink/ether %02x:%02x:%02x:%02x:%02x:%02x\n", info.nic_mac[0], info.nic_mac[1], info.nic_mac[2], info.nic_mac[3], info.nic_mac[4], info.nic_mac[5]);
         
         struct in_addr in;
