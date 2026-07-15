@@ -3,8 +3,8 @@ include ./make.config
 
 # List of apps to compile
 APPS = init miniutils dhcpcli terminal termemu desktop etherealver font-viewer show-dialog tray
-APPS += toast-server colorwave plasma memvisualize login-gui getty login file-browser celestialv2
-APPS += celestial_old
+APPS += toast-server colorwave plasma memvisualize login-gui getty login file-browser celestial
+APPS += celestial_old symphonyd
 
 APPS_TARGETS_INSTALL := $(patsubst %, install?%, $(APPS))
 APPS_TARGETS_CLEAN := $(patsubst %, clean?%, $(APPS))
