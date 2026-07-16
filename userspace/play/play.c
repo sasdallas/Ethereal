@@ -39,9 +39,6 @@ typedef struct {
     uint32_t data_size;
 } __attribute__((packed)) wav_header_t;
 
-static int force = 0;
-static int verbose = 0;
-
 void usage() {
     printf("Usage: play [OPTION] [WAV_FILE]\n");
     exit(EXIT_FAILURE);
@@ -56,23 +53,11 @@ void version() {
 void stream_audio(int wav_fd, wav_header_t *wav, symphony_buffer_id_t buffer_id) {
     size_t input_samples_per_block = 1024 * wav->num_channels;
     int16_t *input_staging = malloc(input_samples_per_block * sizeof(int16_t));
-    if (!input_staging) {
-        perror("malloc input_staging");
-        exit(EXIT_FAILURE);
-    }
-
     double step_ratio = (double)wav->sample_rate / 48000.0;
     size_t output_samples_per_block = (1024.0 / step_ratio) * wav->num_channels;
     int16_t *output_staging = malloc(output_samples_per_block * sizeof(int16_t));
-    if (!output_staging) {
-        perror("malloc output_staging");
-        free(input_staging);
-        exit(EXIT_FAILURE);
-    }
-
-    if (verbose) {
-        printf("start stream: (%d Hz, %d channels) resampled to 48000Hz\n", wav->sample_rate, wav->num_channels);
-    }
+    
+    printf("start stream: (%d Hz, %d channels) resampled to 48000Hz\n", wav->sample_rate, wav->num_channels);
 
     if (symphony_start(buffer_id) < 0) {
         fprintf(stderr, "play: failed to start playback: %s\n", strerror(errno));
@@ -128,25 +113,17 @@ int main(int argc, char *argv[]) {
     symphony_buffer_id_t buffer_id;
 
     static struct option long_options[] = {
-        { "force",     no_argument, 0, 'f' },
         { "help",      no_argument, 0, 'h' },
         { "version",   no_argument, 0, 'V' },
-        { "verbose",   no_argument, 0, 'v' },
         { 0, 0, 0, 0 }
     };
 
     while ((opt = getopt_long(argc, argv, "fhVv", long_options, NULL)) != -1) {
         switch (opt) {
-            case 'f':
-                force = 1;
-                break;
             case 'h':
                 usage();
             case 'V':
                 version();
-            case 'v':
-                verbose = 1;
-                break;
             default:
                 fprintf(stderr, "Usage: %s [-fv] <wav_file>\n", argv[0]);
                 return EXIT_FAILURE;
@@ -170,17 +147,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Standard checking, bypassed only if force flag is explicitly provided
-    if (!force) {
-        if (strncmp(wav.riff_id, "RIFF", 4) != 0 || 
-            strncmp(wav.wave_id, "WAVE", 4) != 0 || 
-            wav.audio_format != 1 || 
-            wav.bits_per_sample != 16) {
-            fprintf(stderr, "play: unsupported format (Must be uncompressed 16-bit PCM)\n");
-            close(wav_fd);
-            return EXIT_FAILURE;
-        }
+    if (strncmp(wav.riff_id, "RIFF", 4) != 0 || strncmp(wav.wave_id, "WAVE", 4) != 0 || wav.audio_format != 1 ||  wav.bits_per_sample != 16) {
+        fprintf(stderr, "play: unsupported format (Must be uncompressed 16-bit PCM)\n");
+        close(wav_fd);
+        return EXIT_FAILURE;
     }
+    
 
     if (symphony_connect() < 0) {
         fprintf(stderr, "play: connection to Symphony daemon failed\n");
