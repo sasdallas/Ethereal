@@ -356,10 +356,22 @@ int celestial_sendRequest(void *req, size_t size);
 void *celestial_getResponse(int type);
 
 /**
+ * @brief Poll for events with timeout
+ * @param timeout The timeout to wait for
+ */
+void celestial_pollTimeout(int timeout);
+
+/**
  * @brief Poll for events
  * If events are available, the corresponding event handler will be called.
  */
 void celestial_poll();
+
+/**
+ * @brief Wait for an event on any windows
+ * Returns immediately on event
+ */
+void celestial_pollIndefinite();
 
 /**
  * @brief Query to see if anything is available on the socket (or in queued)
