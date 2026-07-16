@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/input.c
+ * @file userspace/celestial/input_ethereal.c
  * @brief Input system for celestial
  * 
  * 

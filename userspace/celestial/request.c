@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/request.c
+ * @file userspace/celestial/request.c
  * @brief Celestial request framework
  * 
  * Provides the actual code behind CREATE_WINDOW and whatnot

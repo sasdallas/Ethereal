@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/backend/renderer_ethereal.c
+ * @file userspace/celestial/backend/renderer_ethereal.c
  * @brief Celestial renderer
  * 
  * Runs in its own thread and collects @c render_request_t objects

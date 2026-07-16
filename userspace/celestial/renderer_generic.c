@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/renderer_generic.c
+ * @file userspace/celestial/renderer_generic.c
  * @brief Generic renderer functions
  * 
  * 

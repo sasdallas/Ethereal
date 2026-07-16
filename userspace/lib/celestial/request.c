@@ -158,10 +158,10 @@ void *celestial_getResponse(int type) {
 }
 
 /**
- * @brief Poll for events
- * If events are available, the corresponding event handler will be called.
+ * @brief Poll for events with timeout
+ * @param timeout The timeout to wait for
  */
-void celestial_poll() {
+void celestial_pollTimeout(int timeout) {
     // Anything in queue?
     if (celestial_resp_queue && celestial_resp_queue->length) {
         node_t *n = list_popleft(celestial_resp_queue);
@@ -183,7 +183,7 @@ void celestial_poll() {
     fds[0].fd = __celestial_socket;
     fds[0].events = POLLIN;
 
-    int p = poll(fds, 1, 0);
+    int p = poll(fds, 1, timeout);
     if (p <= 0 || !(fds[0].revents & POLLIN)) return;
 
     while (1) {
@@ -205,6 +205,22 @@ void celestial_poll() {
             free(m);
         }
     }
+}
+
+/**
+ * @brief Poll for events
+ * If events are available, the corresponding event handler will be called.
+ */
+void celestial_poll() {
+    celestial_pollTimeout(0);
+}
+
+/**
+ * @brief Wait for an event on any windows
+ * Returns immediately on event
+ */
+void celestial_pollIndefinite() {
+    celestial_pollTimeout(-1);
 }
 
 /**

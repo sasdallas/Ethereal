@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/input_generic.c
+ * @file userspace/celestial/input_generic.c
  * @brief Generic input library
  * 
  * 

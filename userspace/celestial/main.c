@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/main.c
+ * @file userspace/celestial/main.c
  * @brief Celestial main
  * 
  * 

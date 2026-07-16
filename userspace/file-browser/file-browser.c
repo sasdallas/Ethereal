@@ -201,6 +201,9 @@ void open_application(fb_entry_t *ent) {
 
 // about dialog
 void about_pressed(nt_widget_t *w, nt_signal_t *s, void *data) {
+    // HACK: need to update the main window once to allow the menu to unrender itself
+    nt_window_update(nt_widget_get_window(w));
+
     nt_dialog_t *dlg = nt_dialog_create(file_browser_window, "About File Browser", 350, 190);
     
     nt_widget_t *img = nt_image_create_from_image(nt_icon_get("folder", NULL, 48));

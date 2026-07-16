@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/celestial.h
+ * @file userspace/celestial/celestial.h
  * @brief Celestial
  * 
  * 

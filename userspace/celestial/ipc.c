@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/ipc.c
+ * @file userspace/celestial/ipc.c
  * @brief Handles the IPC
  * 
  * 

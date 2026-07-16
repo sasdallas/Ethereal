@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/damage.c
+ * @file userspace/celestial/damage.c
  * @brief Damage component
  * 
  * 

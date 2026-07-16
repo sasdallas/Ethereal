@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestialv2/window.c
+ * @file userspace/celestial/window.c
  * @brief Window components
  * 
  * 
@@ -401,6 +401,8 @@ void window_resize(wm_window_t *win, int nx, int ny, int w, int h) {
         TRACE_DEBUG("pending resize already\n");
         return;
     }
+
+    TRACE_DEBUG("window_resize(%d,%d,%d,%d)\n", nx, ny, w, h);
 
     // aight, do the thing
     window_hold(win);
