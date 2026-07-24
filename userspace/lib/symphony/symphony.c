@@ -224,7 +224,7 @@ symphony_buffer_id_t symphony_addBuffer(uint16_t stream_id, audio_format_t forma
     }
 
     symphony_packet_add_buffer_t pkt = {
-        .stream_id = SYMPHONY_STREAM(0,0),
+        .stream_id = stream_id,
         .channels = channels,
         .sample_rate = sample_rate,
         .format = format,

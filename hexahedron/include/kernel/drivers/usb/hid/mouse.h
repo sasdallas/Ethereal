@@ -16,16 +16,24 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
-
-/**** DEFINITIONS ****/
-
-#define HID_
+#include <stdbool.h>
 
 /**** TYPES ****/
 
 typedef struct USBHidMouseState {
     uint32_t rel_x;
     uint32_t rel_y; 
+
+    struct {
+        bool valid;
+        uint32_t min_x;
+        uint32_t max_x;
+        uint32_t abs_x;
+        uint32_t min_y;
+        uint32_t max_y;
+        uint32_t abs_y; 
+    } abs;
+
     uint8_t buttons;
     int scroll;
 } USBHidMouseState_t;

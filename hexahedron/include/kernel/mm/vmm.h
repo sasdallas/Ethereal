@@ -69,7 +69,6 @@ typedef uint64_t vmm_flags_t;
 typedef struct vmm_file {
     vfs_file_t *node;
     off_t offset;                           // offset of the file
-    char *path;                             // path of the file
 } vmm_file_t;
 
 typedef struct vmm_memory_range {
@@ -302,5 +301,13 @@ static inline mmu_flags_t vmm_toMMU(int prot) {
     
     return ret;
 }
+
+/**
+ * @brief Schedule core dump creation of process
+ * @param thr The process to core dump
+ * @param regs Registers at coredump
+ * @returns 0 on success
+ */
+int coredump_process(struct thread *thr, void *regs);
 
 #endif

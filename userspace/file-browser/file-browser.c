@@ -159,7 +159,7 @@ void collect_files() {
         fb_entry_t *fent = &fb_ent_list[fb_ent_count];
         strncpy(fent->d_name,  ent->d_name, 256);
         
-        if (stat(ent->d_name, &fent->st) < 0) {
+        if (lstat(ent->d_name, &fent->st) < 0) {
             TRIGGER_ERROR_PERROR("stat");
             return;
         }

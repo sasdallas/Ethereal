@@ -21,7 +21,7 @@ install-headers: make_dirs
 	fi
 
 	cd $(OBJ_DIR2); \
-	meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=true -Dprefix=$(PREFIX) -Ddefault_library=both -Dlinux_kernel_headers=$(DESTDIR)/usr/include/ $(MLIBC_DIR); \
+	meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=true -Dprefix=$(PREFIX) -Ddefault_library=both $(MLIBC_DIR); \
 	ninja install; \
 	cd $(LIBC_DIR); 
 
@@ -29,10 +29,9 @@ install:
 	# Install mlibc
 	set -e; \
 	cd $(OBJ_DIR); \
-	LDFLAGS="" CFLAGS="-nostdlib" meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=false -Dprefix=$(PREFIX) -Ddefault_library=both -Dlinux_kernel_headers=$(DESTDIR)/usr/include/  --reconfigure $(MLIBC_DIR); \
+	LDFLAGS="" CFLAGS="-nostdlib" meson setup --cross-file=$(LIBC_DIR)/ethereal_cross.txt -Dheaders_only=false -Dprefix=$(PREFIX) -Ddefault_library=both  --reconfigure $(MLIBC_DIR); \
 	ninja install; \
 	cd $(LIBC_DIR)
 
 clean:
 	-rm -rf $(OBJ_DIR)
-	-rm -rf linux-6.16

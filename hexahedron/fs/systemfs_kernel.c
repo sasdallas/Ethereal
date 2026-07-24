@@ -54,7 +54,7 @@ ssize_t systemfs_proc_maps(systemfs_node_t *n) {
             (r->mmu_flags & MMU_FLAG_NOEXEC) ? '-' : 'x',
             (r->vmm_flags & VM_FLAG_SHARED) ? '-' : 'p',
             r->vmm_flags & VM_FLAG_FILE ? r->file.offset : 0,
-            r->vmm_flags & VM_FLAG_FILE ? r->file.path : "[anonymous]");
+            r->vmm_flags & VM_FLAG_FILE ? r->file.node->path : "[anonymous]");
         
         r = r->next;
     }
@@ -70,12 +70,12 @@ ssize_t systemfs_proc_mem_usage(systemfs_node_t *n) {
 
     vmm_metrics_t *met = &p->ctx->space->metrics;
     return systemfs_printf(n,
-        "TotalMemoryUsage:%d kB\n"
-        "TotalMemoryResident:%d kB\n"
-        "AnonUsage:%d kB\n"
-        "AnonResident:%d kB\n"
-        "FileUsage:%d kB\n"
-        "FileResident:%d kB\n",
+        "TotalMemoryUsage:%lu kB\n"
+        "TotalMemoryResident:%lu kB\n"
+        "AnonUsage:%lu kB\n"
+        "AnonResident:%lu kB\n"
+        "FileUsage:%lu kB\n"
+        "FileResident:%lu kB\n",
         (met->anon_usage + met->file_usage) / 1024,
         (met->anon_resident + met->file_resident) / 1024,
         (met->anon_usage) / 1024,
@@ -143,6 +143,28 @@ ssize_t systemfs_proc_times(systemfs_node_t *n) {
 }
 
 /**
+ * @brief cmdline
+ */
+ssize_t systemfs_proc_cmdline(systemfs_node_t *n) {
+    process_t *p = n->priv;
+
+    if (p->cmdline == NULL) {
+        // Kernel process
+        return systemfs_printf(n, "%s", p->name);
+    }
+
+    
+    ssize_t ret = 0;
+    char **cmd = p->cmdline;
+    while (*cmd) {
+        ret += systemfs_printf(n, "%s\0", *cmd);
+        cmd++;
+    }
+
+    return ret;
+}
+
+/**
  * @brief Create process systemfs node
  * @param proc The process to creat eit for
  */
@@ -160,6 +182,7 @@ extern slab_cache_t *systemfs_node_cache;
     systemfs_registerSimple(n, "maps", systemfs_proc_maps, NULL, proc);
     systemfs_registerSimple(n, "mem_usage", systemfs_proc_mem_usage, NULL, proc);
     systemfs_registerSimple(n, "times", systemfs_proc_times, NULL, proc);
+    systemfs_registerSimple(n, "cmdline", systemfs_proc_cmdline, NULL, proc);
     return n;
 }
 

@@ -668,7 +668,7 @@ int celestial_running() {
 int celestial_setMouseCapture(window_t *win, int captured) {
     celestial_req_set_mouse_capture_t req = {
         .magic = CELESTIAL_MAGIC,
-        .size = sizeof(celestial_req_set_window_visible_t),
+        .size = sizeof(celestial_req_set_mouse_capture_t),
         .type = CELESTIAL_REQ_SET_MOUSE_CAPTURE,
         .wid = win->wid,
         .capture = captured,

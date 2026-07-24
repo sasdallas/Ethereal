@@ -58,14 +58,14 @@
 #define EVENT_KEY_PRESS                 0x01
 
 /* Mouse event types */
-#define EVENT_MOUSE_UPDATE              0x04    // We really only have one event for this system.
-                                                // The packet sent contains the buttons held, X and Y coordinates, and whatever else could be needed
+#define EVENT_MOUSE_RELATIVE            0x00
+#define EVENT_MOUSE_ABSOLUTE            0x01
+
 
 /* Mouse button modifiers */
 #define MOUSE_BUTTON_LEFT               0x01    // Left button
 #define MOUSE_BUTTON_RIGHT              0x02    // Right button
 #define MOUSE_BUTTON_MIDDLE             0x04    // Middle button
-#define MOUSE_BUTTON_WHEEL
 
 /* Mouse scroll direction */
 #define MOUSE_SCROLL_NONE               0
@@ -96,8 +96,21 @@ typedef struct key_event {
 typedef struct mouse_event {
     int event_type;         // Type of event
     uint32_t buttons;       // Buttons currently being pushed
-    int x_difference;       // X difference
-    int y_difference;       // Y difference
+
+    union {
+        struct {
+            int x_difference;
+            int y_difference;
+        } rel;
+    
+        struct {
+            int x;
+            int y;
+            int min_x; int min_y;
+            int max_x; int max_y;
+        } abs;
+    };
+    
     uint8_t scroll;         // Scroll direction
 } mouse_event_t;
 
@@ -112,13 +125,18 @@ typedef struct mouse_event {
 int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode);
 
 /**
- * @brief Write a new event to the mouse interface
- * @param event_type The type of event to write
+ * @brief Write a new mouse event
+ * @param event Mouse event
+ */
+int periphfs_sendMouseEvent(mouse_event_t *event);
+
+/**
+ * @brief Write a new relative mouse event to the mouse interface
  * @param buttons Buttons being pressed
  * @param x_diff The X difference in the mouse
  * @param y_diff The Y difference in the mouse
  * @param scroll Scroll direction
  */
-int periphfs_sendMouseEvent(int event_type, uint32_t buttons, int x_diff, int y_diff, uint8_t scroll);
+int periphfs_sendMouseEventRelative(uint32_t buttons, int x_diff, int y_diff, uint8_t scroll);
 
 #endif

@@ -124,10 +124,6 @@ int main(int argc, char *argv[]) {
         ty += 10;
         draw_progress_bar(kheap_usage, total_phys_memory, ty);
         ty += 40;
-        // render_centered("MMIO", ty);
-        // ty += 10;
-        // draw_progress_bar(mmio_usage, total_phys_memory, ty);
-        // ty += 40;
 
         struct timeval tvs;
         gettimeofday(&tvs, NULL);

@@ -12,6 +12,7 @@
  */
 
 #include "celestial.h"
+#include <unistd.h>
 
 #define DAMAGE_COLLAPSE_THRESHOLD 64
 

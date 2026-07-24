@@ -78,7 +78,8 @@ typedef struct process {
     char *name;
     int exit_status;
     int exit_reason;
-    vfs_file_t *exe_image;              // Executable image
+    vfs_file_t *exe_image;
+    char **cmdline;
 
     // IDs
     pid_t pid;                          // Process ID

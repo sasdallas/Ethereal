@@ -13,7 +13,7 @@
 
 #include <kernel/task/process.h>
 
-long sys_ftruncate(int fd, off_t length) {
+long sys_ftruncate(int fd, size_t length) {
     if (!FD_VALIDATE(fd)) return -EBADF;
-    return vfs_truncate(FD(fd)->inode, (size_t)length); 
+    return vfs_truncate(FD(fd)->inode, length); 
 }

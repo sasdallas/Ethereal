@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 
 int main(int argc, char *argv[]) {
     DIR *d = opendir("/system/processes");
@@ -63,12 +64,12 @@ int main(int argc, char *argv[]) {
         uintptr_t file_total;
         uintptr_t file_res;
         fscanf(f,
-            "TotalMemoryUsage:%d kB\n"
-            "TotalMemoryResident:%d kB\n"
-            "AnonUsage:%d kB\n"
-            "AnonResident:%d kB\n"
-            "FileUsage:%d kB\n"
-            "FileResident:%d kB\n",
+            "TotalMemoryUsage:%lu kB\n"
+            "TotalMemoryResident:%lu kB\n"
+            "AnonUsage:%lu kB\n"
+            "AnonResident:%lu kB\n"
+            "FileUsage:%lu kB\n"
+            "FileResident:%lu kB\n",
             &virt, &real, &anon_total, &anon_res, &file_total, &file_res
         );
 

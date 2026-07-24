@@ -14,7 +14,6 @@
  */
 
 
-// Polyhedron
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -24,7 +23,6 @@
 #include <kernel/arch/x86_64/hal.h>
 #include <kernel/arch/x86_64/cpu.h>
 #include <kernel/arch/x86_64/smp.h>
-#include <kernel/arch/x86_64/mem.h>
 #include <kernel/arch/x86_64/interrupt.h>
 
 // General
@@ -58,7 +56,6 @@ generic_parameters_t *parameters = NULL;
  * @brief Say hi! Prints the versioning message and ASCII art to NOHEADER dprintf
  */
 void arch_say_hello(int is_debug) {
-
     if (!is_debug) {
         printf("Hexahedron %d.%d.%d-%s-%s (codename \"%s\")\n", 
                     __kernel_version_major, 
@@ -106,18 +103,7 @@ extern uintptr_t __kernel_start, __kernel_end;
     for (int frame = 0; stk && frame < depth; frame++) {
         dprintf(NOHEADER, COLOR_CODE_RED " 0x%016llX ", ip);
 
-        // Check to see if fault was in a driver
-        if (ip >= MEM_DRIVER_REGION && ip <= MEM_DRIVER_REGION + MEM_DRIVER_REGION_SIZE) {
-            // Fault in a driver - try to get it
-            loaded_driver_t *data = driver_findByAddress(ip);
-            if (data) {
-                // We could get it
-                dprintf(NOHEADER, COLOR_CODE_RED    " (in driver '%s', loaded at %016llX)\n", data->metadata->name, data->load_address);
-            } else {
-                // We could not
-                dprintf(NOHEADER, COLOR_CODE_RED    " (in an unknown driver)\n");
-            }
-        } else if (ip <= MEM_USERSPACE_REGION_END && ip >= 0x1000) {
+        if (ip <= MMU_USERSPACE_END && ip >= 0x1000) {
             dprintf(NOHEADER, COLOR_CODE_RED    " (in userspace)\n");
         } else if (ip <= (uintptr_t)&__kernel_end && ip >= (uintptr_t)&__kernel_start) {
             // In the kernel, check the name

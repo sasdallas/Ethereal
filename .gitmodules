@@ -1,6 +1,6 @@
 [submodule "libc/mlibc"]
 	path = libc/mlibc
-	url = https://github.com/sasdallas/mlibc
+	url = https://github.com/managarm/mlibc
 	branch = master
 [submodule "external/essence/essence"]
 	path = external/essence/essence

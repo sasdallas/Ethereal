@@ -263,7 +263,7 @@ void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
     // First, destroy the range if it was allocated
     vmm_freePages(space, range, 0, (range->end - range->start) / PAGE_SIZE);
 
-    if (range->vmm_flags & VM_FLAG_FILE && range->file.node) {
+    if (range->vmm_flags & VM_FLAG_FILE) {
         file_release(range->file.node);
     }
 

@@ -36,6 +36,11 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
         vmm_memory_range_t *nrange = vmm_createRange(range->start, range->end, range->vmm_flags, range->mmu_flags);
         vmm_insertRange(new_ctx->space, nrange);
 
+        if (range->vmm_flags & VM_FLAG_FILE) {
+            file_hold(range->file.node);
+            nrange->file = range->file;
+        }
+
         // Copy the data
         for (uintptr_t i = nrange->start; i < nrange->end; i += PAGE_SIZE) {
             if ((arch_mmu_read_flags(NULL, i) & MMU_FLAG_PRESENT) == 0) {
@@ -50,7 +55,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
                 continue;
             }
-
+#define DISABLE_COW
 #ifndef DISABLE_COW
             // Retain the physical page
             if (nrange->vmm_flags & VM_FLAG_SHARED) {

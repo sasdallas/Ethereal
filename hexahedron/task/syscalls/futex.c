@@ -20,7 +20,7 @@ long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time
     return futex_wait(pointer, val, time);
 }
 
-long sys_futex_wake(uint32_t *pointer) {
+long sys_futex_wake(uint32_t *pointer, int wakeup) {
     SYSCALL_VALIDATE_PTR(pointer);
-    return futex_wakeup(pointer, INT_MAX);
+    return futex_wakeup(pointer, wakeup);
 }

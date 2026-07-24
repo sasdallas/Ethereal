@@ -112,7 +112,7 @@ int celestial_setHandler(window_t *win, uint32_t event, celestial_event_handler_
  */
 void celestial_handleEvent(void *event) {
     celestial_event_header_t *hdr = (celestial_event_header_t*)event;
-    
+
     // Check if we got a window
     window_t *win = celestial_getWindow(hdr->wid);
     if (!win) { free(event); return; }

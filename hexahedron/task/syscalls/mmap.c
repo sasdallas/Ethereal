@@ -71,14 +71,13 @@ long sys_mmap(sys_mmap_context_t *context) {
         vmm_file_t f = {
             .node = fd,
             .offset = off,
-            .path = NULL
         };
 
         if (f.node->inode->flags & INODE_FLAG_MMAP_UNSUPPORTED) {
             return -ENOTSUP;
         }
 
-        SYSCALL_LOG(DEBUG, "mmap process %p %d 0x%x 0x%x %s\n", addr, len, vm_flags, mmu_flags, f.path);
+        SYSCALL_LOG(DEBUG, "mmap process %p %d 0x%x 0x%x %s\n", addr, len, vm_flags, mmu_flags, fd->path);
 
         r = vmm_map(addr, len, vm_flags, mmu_flags, &f);
     } else {

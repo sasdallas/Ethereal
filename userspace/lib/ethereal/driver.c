@@ -17,23 +17,19 @@
 #include <errno.h>
 #include <string.h>
 
-DEFINE_SYSCALL3(load_driver, SYS_LOAD_DRIVER, char*, int, char**);
-DEFINE_SYSCALL1(unload_driver, SYS_UNLOAD_DRIVER, pid_t);
-DEFINE_SYSCALL2(get_driver, SYS_GET_DRIVER, pid_t, ethereal_driver_t*);
-
 pid_t ethereal_loadDriver(char *filename, int priority, char **argv) {
-    __sets_errno(__syscall_load_driver(filename, priority, argv));
+    __sets_errno(SYSCALL3(SYS_LOAD_DRIVER, filename, priority, argv));
 }
 
 int ethereal_unloadDriver(pid_t id) {
-    __sets_errno(__syscall_unload_driver(id));
+    __sets_errno(SYSCALL1(SYS_UNLOAD_DRIVER, id));
 }
 
 ethereal_driver_t *ethereal_getDriver(pid_t id) {
     ethereal_driver_t *driver = malloc(sizeof(ethereal_driver_t));
     memset(driver, 0, sizeof(ethereal_driver_t));
 
-    long r = __syscall_get_driver(id, driver);
+    long r = SYSCALL2(SYS_GET_DRIVER, id, driver);
 
     if (r < 0) {
         errno = -r;

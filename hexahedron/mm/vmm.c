@@ -174,6 +174,18 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             new_range2->next = new_range;
             new_range->prev = new_range2;
 
+            if (r->vmm_flags & VM_FLAG_FILE) {
+                new_range->file = r->file;
+                new_range2->file = r->file;
+
+                new_range2->file.offset += start - r->start;
+                new_range->file.offset += end - r->start;
+
+                // both of these need another ref on the file
+                file_hold(new_range->file.node);
+                file_hold(new_range2->file.node);
+            }
+
             // Now apply operation to new_range2
             if (op_type == VM_OP_SET_FLAGS) {
                 for (uintptr_t i = new_range2->start; i < new_range2->end; i += PAGE_SIZE) {
@@ -206,6 +218,12 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             new_range->prev = r;
             r->next = new_range;
             r->end = start;
+            
+            if (r->vmm_flags & VM_FLAG_FILE) {
+                new_range->file = r->file;
+                new_range->file.offset += start - r->start;
+                file_hold(new_range->file.node);
+            }
 
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;
@@ -231,6 +249,8 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
                 goto _next_range;
             }
 
+            uintptr_t old_start = r->start;
+
             vmm_memory_range_t *new_range = vmm_createRange(r->start, end, r->vmm_flags, r->mmu_flags);
             if (r->prev) r->prev->next = new_range;
             else space->range = new_range;
@@ -238,6 +258,13 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             new_range->next = r;
             r->prev = new_range;
             r->start = end;
+
+
+            if (r->vmm_flags & VM_FLAG_FILE) {
+                new_range->file = r->file;
+                r->file.offset += end - old_start;
+                file_hold(new_range->file.node);
+            }
 
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;

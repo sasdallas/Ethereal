@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+extern char *ptsname(int fd);
+
 int main(int argc, char *argv[]) {
     printf("%s\n", ptsname(1));
     return 0;

@@ -22,10 +22,15 @@
 #include <kernel/refcount.h>
 #include <structs/queue_rb.h>
 #include <stdint.h>
-#include <sys/socket.h>
 #include <sys/un.h>
 
 /**** TYPES ****/
+
+struct ucred {
+	pid_t pid;
+	uid_t uid;
+	gid_t gid;
+};
 
 typedef enum {
     UNIX_SOCK_STATE_INIT,

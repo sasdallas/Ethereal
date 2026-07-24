@@ -21,6 +21,10 @@ long sys_gethostname(char *name, size_t size) {
 
     memcpy(name, __hostname, (size > __hostnamelen) ? __hostnamelen : size);
 
+    if (__hostnamelen < size) {
+        name[__hostnamelen] = 0;
+    }
+
     if (size < __hostnamelen) return -ENAMETOOLONG;
     return 0;
 }

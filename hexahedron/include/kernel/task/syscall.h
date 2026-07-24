@@ -29,7 +29,6 @@
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
-#include <sys/epoll.h>
 #include <ethereal/driver.h>
 #include <ethereal/shared.h>
 #include <unistd.h>
@@ -140,7 +139,7 @@ long sys_access(const char *path, int amode);
 long sys_chmod(const char *path, mode_t mode);
 long sys_fcntl(int fd, int cmd, int extra);
 long sys_unlinkat(int dirfd, const char *path, int flags);
-long sys_ftruncate(int fd, off_t length);
+long sys_ftruncate(int fd, size_t length);
 void *sys_brk(void *addr);
 pid_t sys_fork();
 off_t sys_lseek(int fd, off_t offset, int whence);
@@ -182,9 +181,6 @@ long sys_socketpair(int domain, int type, int protocol, int output[2]);
 long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data);
 long sys_umount(const char *mountpoint);
 long sys_pipe(int fildes[2]);
-long sys_epoll_create(int size);
-long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
-long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask);
 long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *termp, const struct winsize *winp);
 uid_t sys_getuid();
 int sys_setuid(uid_t uid);
@@ -206,7 +202,7 @@ long sys_setitimer(int which, const struct itimerval *value, struct itimerval *o
 long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data);
 long sys_read_entries(int handle, void *buffer, size_t max_size);
 long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time);
-long sys_futex_wake(uint32_t *pointer);
+long sys_futex_wake(uint32_t *pointer, int wakeup);
 long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode);
 long sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags); 
 long sys_symlinkat(const char *target_path, int dirfd, const char *link_path);

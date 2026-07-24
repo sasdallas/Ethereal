@@ -51,7 +51,7 @@ void add_task(struct task *out, char *pid) {
     snprintf(path, 128, "%s/status", pid);
 
     FILE *f = fopen(path, "r");
-    if (!f) { perror("fopen"); exit(1); }
+    if (!f) { return; }
 
     fscanf(f, "ProcessName:%s\n", out->name);
     fclose(f);

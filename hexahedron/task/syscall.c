@@ -47,7 +47,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_FSTAT]             = (syscall_func_t)(uintptr_t)sys_fstat,
     [SYS_LSTAT]             = (syscall_func_t)(uintptr_t)sys_lstat,
     [SYS_IOCTL]             = (syscall_func_t)(uintptr_t)sys_ioctl,
-    [SYS_READDIR]           = (syscall_func_t)(uintptr_t)NULL, // dead system call
+    /* gap */
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
     [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
@@ -57,7 +57,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)sys_fcntl,
     [SYS_UNLINKAT]          = (syscall_func_t)(uintptr_t)sys_unlinkat,
     [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
-    [SYS_BRK]               = (syscall_func_t)(uintptr_t)sys_brk,
+    /* gap */
     [SYS_FORK]              = (syscall_func_t)(uintptr_t)sys_fork,
     [SYS_LSEEK]             = (syscall_func_t)(uintptr_t)sys_lseek,
     [SYS_GETTIMEOFDAY]      = (syscall_func_t)(uintptr_t)sys_gettimeofday,
@@ -107,9 +107,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_EXIT_THREAD]       = (syscall_func_t)(uintptr_t)sys_exit_thread,
     [SYS_JOIN_THREAD]       = (syscall_func_t)(uintptr_t)sys_join_thread,
     [SYS_KILL_THREAD]       = (syscall_func_t)(uintptr_t)sys_kill_thread,
-    [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)sys_epoll_create,
-    [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)sys_epoll_ctl,
-    [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)sys_epoll_pwait,
+    [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)NULL,
+    [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)NULL,
+    [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)NULL,
     [SYS_OPENPTY]           = (syscall_func_t)(uintptr_t)sys_openpty,
     [SYS_GETUID]            = (syscall_func_t)(uintptr_t)sys_getuid,
     [SYS_SETUID]            = (syscall_func_t)(uintptr_t)sys_setuid,
@@ -501,20 +501,6 @@ long sys_umount(const char *mountpoint) {
 long sys_pipe(int fildes[2]) {
     SYSCALL_VALIDATE_PTR(fildes);
     return pipe_create(fildes);
-}
-
-/**** EPOLL ****/
-
-long sys_epoll_create(int size) {
-    return -ENOTSUP;
-}
-
-long sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
-    return -ENOTSUP;
-}
-
-long sys_epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const sigset_t *sigmask) {
-    return -ENOTSUP;
 }
 
 /**** SCHED ****/

@@ -11,6 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
+#define _GNU_SOURCE
 #include <kernel/task/process.h>
 
 static int __stat_common(vfs_file_t *f, struct stat *statbuf) {

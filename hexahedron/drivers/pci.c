@@ -13,10 +13,11 @@
 
 #include <kernel/drivers/pci.h>
 #include <kernel/subsystems/irq.h>
+#include <kernel/arch/arch.h>
+#include <kernel/fs/systemfs.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
-#include <kernel/arch/arch.h>
 #include <kernel/init.h>
 #include <assert.h>
 #include <string.h>
@@ -35,6 +36,9 @@ pci_bus_t pci_bus_list[PCI_MAX_BUS];
 
 /* Macro to get PCI devices */
 #define PCI_DEVICE(bus, slot, func) (&(pci_bus_list[bus].slots[slot].functions[func]))
+
+/* Systemfs node */
+systemfs_node_t *pci_dir;
 
 /**
  * @brief Read a specific offset from the PCI configuration space
@@ -1026,3 +1030,49 @@ int pci_freeInterrupts(pci_device_t *dev) {
     kfree(irqs); // TODO: unregister all IRQs
     return 0;
 }
+
+/**
+ * @brief PCI readback
+ */
+ssize_t systemfs_pci_read(systemfs_node_t *node) {
+    pci_device_t *dev = node->priv;
+    return systemfs_printf(node,
+        "Location:%d:%d.%d\n"
+        "VendorId:0x%x\n"
+        "DeviceId:0x%x\n"
+        "ClassCode:%d\n"
+        "SubClassCode:%d\n",
+        dev->bus, dev->slot, dev->function,
+        dev->vid, dev->devid,
+        dev->class_code, dev->subclass_code
+    );
+}
+
+/**
+ * @brief PCI SystemFS scana
+ */
+static int pci_sysfsScan(pci_device_t *dev, void *context) {
+    char name[128];
+    snprintf(name, 128, "%d:%d.%d", dev->bus, dev->slot, dev->function);
+    
+    systemfs_registerSimple(pci_dir, name, systemfs_pci_read, NULL, dev);
+    return 0;
+}
+
+/**
+ * @brief PCI init SystemFS
+ */
+int pci_initFS() {
+    pci_dir = systemfs_createDirectory(systemfs_root, "pci");
+
+    pci_scan_parameters_t params = {
+        .id_list = NULL,
+        .class_code = 0,
+        .subclass_code = 0
+    };
+
+    pci_scanDevice(pci_sysfsScan, &params, NULL);
+    return 0;
+}
+
+FS_INIT_ROUTINE(pci_fs, INIT_FLAG_DEFAULT, pci_initFS, systemfs);

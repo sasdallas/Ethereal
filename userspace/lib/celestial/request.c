@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <string.h>
+#include <assert.h>
 
 /* Celestial socket */
 int __celestial_socket = -1;
@@ -134,6 +135,8 @@ void *celestial_getResponse(int type) {
             return NULL;
         }
         
+        assert(((celestial_req_header_t*)data)->size < 4096);
+
         // Malloc and move it
         void *m = malloc(((celestial_req_header_t*)data)->size);
         memcpy(m, data, ((celestial_req_header_t*)data)->size);
@@ -194,6 +197,8 @@ void celestial_pollTimeout(int timeout) {
         // TODO bail out on this
         if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return;
 
+        assert(((celestial_req_header_t*)data)->size < 4096);
+        
         // Malloc and move it
         void *m = malloc(((celestial_req_header_t*)data)->size);
         memcpy(m, data, ((celestial_req_header_t*)data)->size);

@@ -77,11 +77,19 @@ int vmm_fault(vmm_fault_information_t *info) {
         if (r->vmm_flags & VM_FLAG_FILE) {
             // Map a page in
             // TODO: Page cache which will make this a lot easier
-            assert(r->file.node->ops->mmap);
-
             void *addr = (void*)PAGE_ALIGN_DOWN(info->address);
             uintptr_t offset = r->file.offset + ((uintptr_t)addr - r->start);
-            int res = file_mmap(r->file.node, addr, PAGE_SIZE, offset, r->mmu_flags);
+            vfs_file_t *file = r->file.node;
+            
+            mmu_flags_t mmu_flags = r->mmu_flags;
+
+            // Send anything with a private mapping directly to the CoW code
+            if ((r->vmm_flags & VM_FLAG_SHARED) == 0) {
+                mmu_flags &= ~(MMU_FLAG_WRITE);
+            }
+
+            assert(r->file.node->ops->mmap);
+            int res = file_mmap(r->file.node, addr, PAGE_SIZE, offset, mmu_flags);
             if (res) {
                 LOG(ERR, "Mapping a page in failed (error code %d)\n", res);
                 mutex_release(sp->mut);

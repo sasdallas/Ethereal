@@ -15,7 +15,7 @@
 #include <kernel/drivers/clock.h>
 
 int gettimeofday(struct timeval *tp, void *tzp) { return clock_gettimeofday(tp, tzp); }
-int settimeofday(struct timeval *tp, void *tzp) { return clock_settimeofday(tp, tzp); }
+int settimeofday(const struct timeval *tp, const struct timezone *tzp) { return clock_settimeofday((struct timeval*)tp, (void*)tzp); }
 
 time_t time(time_t *tloc) {
     struct timeval tv;

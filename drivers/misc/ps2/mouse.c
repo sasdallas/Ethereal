@@ -101,7 +101,7 @@ int mouse_irq(irq_t *irq, void *context) {
                         (ps2_mouse_packet[0] & PS2_MOUSE_DATA_MIDDLEBTN ? MOUSE_BUTTON_MIDDLE : 0);
 
     if (buttons == ps2_last_buttons && !x_diff && !y_diff && !scroll) return IRQ_HANDLED;
-    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, x_diff, y_diff, scroll);
+    periphfs_sendMouseEventRelative(buttons, x_diff, y_diff, scroll);
     ps2_last_buttons = buttons;
     return IRQ_HANDLED;
 }

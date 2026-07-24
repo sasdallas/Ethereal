@@ -237,7 +237,7 @@ void create_background() {
     return;
 
 _fallback:
-    gfx_clear(bg_ctx, GFX_RGB(0, 0, 0));
+    gfx_clear(bg_ctx, GFX_RGB(255,255,255));
     gfx_render(bg_ctx);
     celestial_flip(background_window);
 }

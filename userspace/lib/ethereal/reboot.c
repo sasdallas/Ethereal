@@ -15,8 +15,6 @@
 #include <sys/syscall.h>
 #include <errno.h>
 
-DEFINE_SYSCALL1(reboot, SYS_REBOOT, int);
-
 int ethereal_reboot(int operation) {
-    __sets_errno(__syscall_reboot(operation));
+    __sets_errno(SYSCALL1(SYS_REBOOT, operation));
 }

@@ -39,8 +39,8 @@ tree_t *process_tree = NULL;
 list_t *process_list = NULL;
 spinlock_t process_list_lock = SPINLOCK_INITIALIZER;
 
-/* PID bitmap */
-uint32_t *pid_bitmap = NULL;
+/* Last used PID */
+static int process_last_pid = 1;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:PROCESS", __VA_ARGS__)
@@ -103,7 +103,7 @@ void __attribute__((noreturn)) process_switchNextThread() {
     }
 
     // Setup page directory
-    vmm_switch(current_cpu->current_process->ctx);
+    vmm_switch(current_cpu->current_thread->ctx);
 
     // On your mark...
     arch_prepare_switch(current_cpu->current_thread);
@@ -206,26 +206,7 @@ void process_yield(uint8_t reschedule) {
  * @brief Allocate a new PID from the PID bitmap
  */
 pid_t process_allocatePID() {
-    if (pid_bitmap == NULL) {
-        // Create bitmap
-        pid_bitmap = kmalloc(PROCESS_PID_BITMAP_SIZE);
-        memset(pid_bitmap, 0, PROCESS_PID_BITMAP_SIZE);
-    }
-
-    for (uint32_t i = 0; i < PROCESS_PID_BITMAP_SIZE; i++) {
-        for (uint32_t j = 0; j < sizeof(uint32_t) * 8; j++) {
-            // Check each bit in the PID bitmap
-            if (!(pid_bitmap[i] & (1 << j))) {
-                // This is a free PID, allocate and return it
-                pid_bitmap[i] |= (1 << j);
-                return (i * (sizeof(uint32_t) * 8)) + j;
-            }
-        }
-    }
-
-    // Out of PIDs
-    kernel_panic_extended(SCHEDULER_ERROR, "process", "*** Out of process PIDs.\n");
-    return 0;
+    return __atomic_fetch_add(&process_last_pid, 1, __ATOMIC_RELAXED);
 }
 
 /**
@@ -233,11 +214,7 @@ pid_t process_allocatePID() {
  * @param pid The PID to free
  */
 void process_freePID(pid_t pid) {
-    if (!pid_bitmap) return; // ???
-
-    // To get the index in the bitmap, round down PID
-    int bitmap_idx = (pid / 32) * 32;
-    pid_bitmap[bitmap_idx] &= ~(1 << (pid - bitmap_idx));
+    // TODO: PID recycling properly
 }
 
 /**
@@ -520,6 +497,7 @@ void process_destroy(process_t *proc) {
 extern void systemfs_proc_destroy(process_t *proc);
     systemfs_proc_destroy(proc);
 
+    kfree(proc->cmdline);
     kfree(proc->wd_path);
 
     // Now we are a zombie
@@ -720,6 +698,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     kfree(current_cpu->current_process->name);
     current_cpu->current_process->name = strdup(argv[0]);
     current_cpu->current_process->exe_image = file; // no need to hold an extra reference to file as it will be destroyed on process_destroy
+    current_cpu->current_process->cmdline = argv;
 
     // Do common execution
     assert(process_executeCommon(&interp_img) == 0);
@@ -791,8 +770,6 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
 
     // Cleanup memory before beginning execution
     uintptr_t interp_entry = interp_img.entrypoint;
-    for (int i = 0; i < argc; i++) kfree(argv[i]);
-    kfree(argv);
     for (int i = 0; i < envc; i++) kfree(envp[i]);
     kfree(envp);
     elf_destroyImage(&interp_img);

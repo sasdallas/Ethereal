@@ -253,6 +253,14 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
             case 4: val = (uint32_t)(*(uint32_t*)(p+1)); break;
         }
 
+        // Sign extend
+        int32_t signed_val = val;
+        if (report_size == 1 && (val & 0x80)) {
+            signed_val |= 0xFFFFFF00;
+        } else if (report_size == 2 && (val & 0x8000)) {
+            signed_val |= 0xFFFF0000;
+        }
+
         // Process the opcode
         if (opcode.desc_type == HID_REPORT_MAIN) {
             switch (opcode.opcode) {
@@ -292,10 +300,10 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
             switch (opcode.opcode) {
                 case HID_REPORT_GLOBAL_USAGE_PAGE: state->usage_page = HID_CAST_REPORT_SIZE(0, val); break;
                 case HID_REPORT_GLOBAL_UNIT: state->unit = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: state->logical_maximum = HID_CAST_REPORT_SIZE(0, (uint8_t)val); break;
-                case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: state->logical_minimum = HID_CAST_REPORT_SIZE(1, (int8_t)val); break;
-                case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: state->physical_maximum = HID_CAST_REPORT_SIZE(0, (uint8_t)val); break;
-                case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: state->physical_minimum = HID_CAST_REPORT_SIZE(1, val); break;
+                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: state->logical_maximum = signed_val; break;
+                case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: state->logical_minimum = signed_val; break;
+                case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: state->physical_maximum = signed_val; break;
+                case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: state->physical_minimum = signed_val; break;
                 case HID_REPORT_GLOBAL_UNIT_EXPONENT: state->unit_exponent = HID_CAST_REPORT_SIZE(0, val); break;
                 case HID_REPORT_GLOBAL_REPORT_SIZE: state->report_size = HID_CAST_REPORT_SIZE(0, val); break;
                 case HID_REPORT_GLOBAL_REPORT_ID: state->report_id = HID_CAST_REPORT_SIZE(0, val); state->has_report_id = 1; break;
@@ -518,14 +526,17 @@ void hid_processCollectionData(USBHidCollection_t *collection, uint8_t report_id
                     if (collection->driver && collection->driver->array) collection->driver->array(collection, item, item->usage_page, usage_id + logical_val);
                 } else {
                     // Determine physical
-                    int64_t physical_val = (item->phys_max - item->phys_min) * (logical_val - item->logical_min) / (item->logical_max - item->logical_min) + item->phys_min;
+                    int64_t physical_val = logical_val;
+                    if (item->logical_max != item->logical_min) {
+                        physical_val = (item->phys_max - item->phys_min) * (logical_val - item->logical_min) / (item->logical_max - item->logical_min) + item->phys_min;
+                    }
 
                     if (item->flags & HID_INPUT_FLAG_RELATIVE) {
                         // Relative variable
                         if (collection->driver && collection->driver->relative) collection->driver->relative(collection, item, item->usage_page, usage_id + i, physical_val);
                     } else {
                         // Absolute variable
-                        if (collection->driver && collection->driver->absolute) collection->driver->absolute(collection, item, item->usage_page, usage_id + i, physical_val); 
+                        if (collection->driver && collection->driver->absolute) collection->driver->absolute(collection, item, item->usage_page, usage_id + i, physical_val);
                     }
                 }
 
@@ -558,7 +569,7 @@ void hid_callback(USBEndpoint_t *endp, USBTransferCompletion_t *complete) {
     if (hid->uses_report_id) {
         report_id = *data_ptr;
         data_ptr++;
-        assert(report_id); //
+        assert(report_id);
     }
 
 

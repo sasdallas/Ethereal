@@ -11,6 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
+#define _GNU_SOURCE
 #include <kernel/task/process.h>
 #include <kernel/fs/vfs_new.h>
 

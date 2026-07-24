@@ -120,7 +120,7 @@ static int socket_validateMsg(struct msghdr *message) {
         SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov, message->msg_iovlen * sizeof(struct iovec));
 
         // For each iov
-        for (unsigned i = 0; i < message->msg_iovlen; i++) {
+        for (int i = 0; i < message->msg_iovlen; i++) {
             SYSCALL_VALIDATE_PTR_SIZE(message->msg_iov[i].iov_base, message->msg_iov[i].iov_len);
         }
     }

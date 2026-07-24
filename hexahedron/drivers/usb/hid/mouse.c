@@ -59,7 +59,25 @@ USB_STATUS usb_mouseFinishReport(USBHidCollection_t *collection) {
     if (mouse->scroll < 0) scroll = MOUSE_SCROLL_DOWN;
 
     // TODO: Scrolling support
-    periphfs_sendMouseEvent(EVENT_MOUSE_UPDATE, buttons, mouse->rel_x, mouse->rel_y, scroll);
+    if (mouse->abs.valid) {
+        mouse_event_t e = {
+            .event_type = EVENT_MOUSE_ABSOLUTE,
+            .abs = {
+                .min_x = mouse->abs.min_x,
+                .max_x = mouse->abs.max_x,
+                .min_y = mouse->abs.min_y,
+                .max_y = mouse->abs.max_y,
+                .x = mouse->abs.abs_x,
+                .y = mouse->abs.abs_y,
+            },
+            .buttons = buttons,
+            .scroll = scroll
+        };
+
+        periphfs_sendMouseEvent(&e);
+    } else {
+        periphfs_sendMouseEventRelative(buttons, mouse->rel_x, mouse->rel_y, scroll);
+    }
 
     return USB_SUCCESS;
 }
@@ -75,8 +93,32 @@ USB_STATUS usb_mouseFinishReport(USBHidCollection_t *collection) {
 USB_STATUS usb_mouseProcessAbsolute(struct USBHidCollection *collection, struct USBHidReportItem *item, uint16_t usage_page, uint32_t usage_id, int64_t value) {
     // TODO: absmouse support
     USBHidMouseState_t *mouse = (USBHidMouseState_t*)collection->d;
-    
+
     switch (usage_page) {
+        case 0x01: {
+            // LOG(DEBUG, "mouseProcessAbsolute usage_page=%x usage_id=%x value=%d\n", usage_page, usage_id, value);
+            mouse->abs.valid = true;
+            switch (usage_id) {
+                case 0x30:
+                    mouse->abs.abs_x = value;
+                    mouse->abs.min_x = item->phys_min;
+                    mouse->abs.max_x = item->phys_max;
+                    break;
+
+                case 0x31:
+                    mouse->abs.abs_y = value;
+                    mouse->abs.min_y = item->phys_min;
+                    mouse->abs.max_y = item->phys_max;
+                    break;
+
+                default:
+                    LOG(WARN, "Unsuported absolute mouse usage %x on page 0x01\n", usage_id);
+                    return USB_FAILURE;
+            }
+
+            break;
+        }
+
         case 0x09:
             if (value) mouse->buttons |= (1 << (usage_id-1));
             else mouse->buttons &= ~(1 << (usage_id-1));

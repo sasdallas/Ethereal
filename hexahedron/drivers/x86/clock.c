@@ -178,7 +178,7 @@ inline size_t clock_getTSCSpeed() {
  * @brief Gets the tick count (CPU timestamp counter / TSC speed)
  */
 uint64_t clock_readTicks() {
-    return clock_readTSC() / clock_getTSCSpeed();
+    return clock_readTSC() / tsc_mhz;
 }
 
 /**

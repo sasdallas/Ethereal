@@ -1116,7 +1116,7 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     // The TCB is locked and the send window is ready, write as much as possible to it
     ssize_t written = 0;
     size_t remaining = ringbuffer_remaining_write(tcb->send_window.buffer);
-    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
+    for (int i = 0; i < msg->msg_iovlen; i++) {
         if (!remaining) break;
         struct iovec *iov = &msg->msg_iov[i];
         ssize_t to_send = min(iov->iov_len, remaining);
@@ -1188,7 +1188,7 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     ssize_t read = 0;
     size_t remaining = ringbuffer_remaining_read(tcb->recv_window.buffer);
     assert(((flags & MSG_PEEK) == 0) || msg->msg_iovlen == 1);
-    for (unsigned i = 0; i < msg->msg_iovlen; i++) {
+    for (int i = 0; i < msg->msg_iovlen; i++) {
         if (!remaining) break;
         struct iovec *iov = &msg->msg_iov[i];
         ssize_t to_read = min(iov->iov_len, remaining);
