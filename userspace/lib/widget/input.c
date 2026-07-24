@@ -12,6 +12,7 @@
  */
 
 #include <ethereal/widget.h>
+#include <sys/time.h>
 
 /* TEMPORARY: Default font for text */
 gfx_font_t *input_default_font = NULL;
@@ -74,13 +75,7 @@ static void input_renderCommon(widget_t *widget, gfx_context_t *ctx) {
  * @brief Render method
  */
 void input_render(widget_t *widget, gfx_context_t *ctx, int32_t x, int32_t y) {
-    // widget_input_t *input = (widget_input_t*)widget->impl;
-
-    gfx_rect_t r = { .x = x, .y = y, .width = widget->width, .height = widget->height };
-    gfx_drawRoundedRectangleGradient(ctx, &GFX_RECT(r.x, r.y, r.width, r.height), 4, GFX_GRADIENT_HORIZONTAL, GFX_RGB(0xE2, 0xE3, 0xEA), GFX_RGB(0xDB, 0xDF, 0xE6));
-    gfx_drawRoundedRectangle(ctx, &GFX_RECT(r.x+1, r.y+1, r.width-2, r.height-2), 4, GFX_RGB(255, 255, 255));
-    gfx_drawRectangleFilled(ctx, &GFX_RECT(r.x+2, r.y, r.width-4, 1), GFX_RGB(0xab, 0xad, 0xa3));
-
+    input_renderCommon(widget, ctx);
 }
 
 static void input_enter(widget_t *widget, gfx_context_t *ctx, int32_t x, int32_t y) {
@@ -167,11 +162,9 @@ static void input_key(widget_t *widget, gfx_context_t *ctx, keyboard_event_t *ev
 }
 
 static void input_clickAway(widget_t *widget, gfx_context_t *ctx) {
-    
     widget_input_t *input = (widget_input_t*)widget->impl;
     input->focused = false;
     input_renderCommon(widget, ctx);
-
 }
 
 /**
@@ -214,7 +207,7 @@ widget_t *input_create(widget_t *frame, int type, char *placeholder, size_t widt
     w->key = input_key;
     w->click_away = input_clickAway;
     w->update = input_update;
-    list_append(frame->children, w);
+    if (frame) list_append(frame->children, w);
     return w;
 }
 

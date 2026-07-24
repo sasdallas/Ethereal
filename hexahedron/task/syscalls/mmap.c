@@ -77,15 +77,11 @@ long sys_mmap(sys_mmap_context_t *context) {
             return -ENOTSUP;
         }
 
-        SYSCALL_LOG(DEBUG, "mmap process %p %d 0x%x 0x%x %s\n", addr, len, vm_flags, mmu_flags, fd->path);
-
         r = vmm_map(addr, len, vm_flags, mmu_flags, &f);
     } else {
         r = vmm_map(addr, len, vm_flags, mmu_flags);
     }
 
-
-    // SYSCALL_LOG(INFO, "mmap(%p, %d, 0x%x, 0x%x, %d, %d) = %p\n", context->addr, context->len, context->prot, context->flags, context->filedes, context->off, r);
     if (!r) {
         SYSCALL_LOG(ERR, "Out of memory for allocation at address %p length 0x%x\n", addr, len);
         return -ENOMEM;
