@@ -22,7 +22,7 @@
 
 /* Cell width and height */
 #define CELL_WIDTH          8
-#define CELL_HEIGHT         17
+#define CELL_HEIGHT         16
 
 /* Cell foreground/background */
 #define CELL_FG_UNHIGHLIGHTED   GFX_RGB(255, 255, 255)
@@ -33,7 +33,7 @@
 /**** TYPES ****/
 
 typedef struct term_cell {
-    char ch;                // The character in the cell
+    uint32_t ch;            // The character in the cell
     uint8_t highlighted;    // Cell is highlighted
     gfx_color_t fg;         // Foreground
     gfx_color_t bg;         // Background

@@ -25,8 +25,11 @@
 #include <getopt.h>
 #include <ethereal/celestial.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
+#include <sys/time.h>
 #include <structs/queue.h>
 #include <assert.h>
+#include <ft2build.h>
 
 /* Graphics context */
 static gfx_context_t *ctx = NULL;
@@ -60,9 +63,14 @@ int pty_master = -1;
 int pty_slave = -1;
 int keyboard_fd = -1;
 
+/* Die */
+bool die = false;
+
+term_cell_t *last_rendered = NULL;
+
 /* Colors */
 gfx_color_t terminal_fg = GFX_RGB(255, 255, 255);
-gfx_color_t terminal_bg = GFX_RGB(0, 0, 0);
+gfx_color_t terminal_bg = GFX_RGBA(0, 0, 0, 0xf2);
 ansi_t *terminal_ansi = NULL;
 
 /* Keyboard structure */
@@ -76,17 +84,15 @@ uint16_t drag_start_x, drag_start_y = 0;
 uint16_t drag_last_x, drag_last_y = 0;
 int is_dragging = 0;
 
+/* Child PID */
+pid_t child_pid;
+
 /* Writer queue */
 queue_t writer_queue;
 pthread_t writer;
 pthread_cond_t writer_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
 struct writer_data { char data[256]; size_t size; };
-
-/* Last redraw */
-#define NOW() ({ struct timeval tv; gettimeofday(&tv, NULL); ((uint64_t)tv.tv_sec * 1000000 + (uint64_t)tv.tv_usec); })
-#define INTERVAL 33330
-static uint64_t last_redraw = 0;
 
 /* Cell macro */
 #define CELL(x, y) (&(cell_array[((y) * terminal_width) + (x)]))
@@ -162,7 +168,35 @@ void render_cell(term_cell_t *cell, int x, int y) {
     gfx_font_t *f = (cell->bold ? terminal_font_bold : terminal_font);
     gfx_rect_t r = { .x = x * CELL_WIDTH, .y = y * CELL_HEIGHT, .width = CELL_WIDTH, .height = CELL_HEIGHT };
     gfx_drawRectangleFilled(ctx, &r, bg);
-    gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y+13, fg);
+    
+    // some characters dont render quite right on our fontset, so we draw them in
+    if (cell->ch >= 0x2580 && cell->ch <= 0x259F) {
+        if (cell->ch == 0x2588) {
+            // full block
+            gfx_rect_t h = { r.x, r.y, CELL_WIDTH, CELL_HEIGHT };
+            gfx_drawRectangleFilled(ctx, &h, fg);
+        } else if (cell->ch == 0x2584) {
+            // lower half block
+            gfx_rect_t h = { r.x, r.y + (CELL_HEIGHT/2), CELL_WIDTH, CELL_HEIGHT/2 };
+            gfx_drawRectangleFilled(ctx, &h, fg);
+        } else if (cell->ch == 0x2580) {
+            // upper half block
+            gfx_rect_t h = { r.x, r.y, CELL_WIDTH, CELL_HEIGHT/2 };
+            gfx_drawRectangleFilled(ctx, &h, fg);
+        } else if (cell->ch >= 0x2589 && cell->ch <= 0x258F) {
+            // left partial block
+            int wide = (r.width * (8 - (cell->ch - 0x2588))) / 8;
+            gfx_rect_t h = { r.x, r.y, wide, r.height};
+            gfx_drawRectangleFilled(ctx, &h, fg);
+        } else {
+            // shade block
+            gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y+13, fg);
+            last_rendered = cell;
+        }
+    } else {
+        gfx_renderCharacter(ctx, f, cell->ch, r.x, r.y+13, fg);
+        last_rendered = cell;
+    }
 }
 
 /**
@@ -197,7 +231,7 @@ void terminal_setfg(gfx_color_t fg) { terminal_fg = fg; }
  * @brief Set background color in terminal
  * @param bg The background to set
  */
-void terminal_setbg(gfx_color_t bg) { terminal_bg = bg; }
+void terminal_setbg(gfx_color_t bg) { terminal_bg = (bg & ~0xff000000) | (0xf2 << 24); }
 
 /**
  * @brief Terminal backspace method
@@ -323,10 +357,68 @@ void terminal_scrollUp(int up) {
 void mark_drag(uint16_t end_x, uint16_t end_y, int highlight);
 
 /**
- * @brief Write character to the terminal
- * @param ch The character to write to the terminal
+ * @brief UTF decoder
  */
-static void terminal_write(char ch) {
+static int terminal_decodeCodepoint(unsigned char ch, uint32_t *cp_out) {
+    static int utf_state = 0;
+    static uint32_t utf_codepoint = 0;
+
+    if (utf_state == 0) {
+        if (ch < 0x80) {
+            *cp_out = (uint32_t)ch;
+            return 1;
+        } else if ((ch & 0xE0) == 0xC0) {
+            utf_codepoint = ch & 0x1F;
+            utf_state = 1;
+            return 0;
+        } else if ((ch & 0xF0) == 0xE0) {
+            utf_codepoint = ch & 0x0F;
+            utf_state = 2;
+            return 0;
+        } else if ((ch & 0xF8) == 0xF0) {
+            utf_codepoint = ch & 0x07;
+            utf_state = 3;
+            return 0;
+        } else {
+            *cp_out = (uint32_t)'?';
+            return 1;
+        }
+    } else {
+        if ((ch & 0xC0) == 0x80) {
+            utf_codepoint = (utf_codepoint << 6) | (ch & 0x3F);
+            utf_state--;
+            if (utf_state == 0) {
+                
+                if (utf_codepoint > 0x10FFFF || (utf_codepoint >= 0xD800 && utf_codepoint <= 0xDFFF)) {
+                    *cp_out = '?';
+                } else {
+                    *cp_out = utf_codepoint;
+                }
+
+                return 1;
+            } else {
+                return 0;
+            }
+        } else {
+            utf_state = 0;
+            *cp_out = '?';
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Write character to the terminal
+ * @param ch_in The character to write to the terminal
+ */
+static void terminal_write(char ch_in) {
+    uint32_t ch;
+    if (terminal_decodeCodepoint(ch_in, &ch) == 0) {
+        return; // need more input
+    }
+    
     if (is_dragging) {
         is_dragging = 0;
         mark_drag(drag_last_x, drag_last_y, 0);
@@ -387,7 +479,7 @@ static void terminal_write(char ch) {
 
 _update_cursor:
 
-    if (cursor_x >= terminal_width && (ch != '\t')) {
+    if (cursor_x >= terminal_width) {
         // clamp
         cursor_x = terminal_width-1;
         cursor_hold = 1;
@@ -427,8 +519,8 @@ void terminal_createPTY(char *startup_program) {
 
     ioctl(pty_master, TIOCSWINSZ, &size);
 
-    pid_t cpid = fork();
-    if (!cpid) {
+    child_pid = fork();
+    if (!child_pid) {
         // Spawn startup program
         setsid();
 
@@ -757,6 +849,24 @@ void *input_thread(void *p) {
 }
 
 /**
+ * @brief close handler
+ */
+static void close_handler(window_t *win, uint32_t event_type, void *event) {
+    kill(child_pid, SIGKILL);
+    die = true;
+}
+
+/**
+ * @brief Check for child exit
+ */
+void check_child_exit() {
+    int w = waitpid(child_pid, NULL, WNOHANG);
+    if (w != child_pid) return;
+
+    die = true;
+}
+
+/**
  * @brief Main method
  */
 int main(int argc, char *argv[]) {
@@ -798,7 +908,7 @@ int main(int argc, char *argv[]) {
         ctx = gfx_createFullscreen(CTX_DEFAULT);
     } else {
         // Initialize the graphics context for celestial
-        wid_t wid = celestial_createWindow(0, 640, 476);
+        wid_t wid = celestial_createWindow(0x40, 82*CELL_WIDTH, 30*CELL_HEIGHT);
         win = celestial_getWindow(wid);
         celestial_setTitle(win, "Terminal");
         celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
@@ -806,9 +916,10 @@ int main(int argc, char *argv[]) {
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_ENTER, mouse_cursor_set);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_EXIT, mouse_cursor_set);
         celestial_setHandler(win, CELESTIAL_EVENT_UNFOCUSED, mouse_cursor_set);
-        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_DRAG, mouse_drag_handler);
-        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_drag_handler);
-        celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_drag_handler);
+        // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_DRAG, mouse_drag_handler);
+        // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_drag_handler);
+        // celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_drag_handler);
+        celestial_setHandler(win, CELESTIAL_EVENT_WINDOW_CLOSE, close_handler);
         ctx = celestial_getGraphicsContext(win);
     }
 
@@ -874,7 +985,11 @@ int main(int argc, char *argv[]) {
     kbd = keyboard_create();
 
     // Create the PTY
-    terminal_createPTY("essence");
+    if (argc-optind) {
+        terminal_createPTY(argv[optind]);
+    } else {
+        terminal_createPTY("essence");
+    }
 
     // Spawn input thread
     pthread_create(&writer, NULL, input_thread, NULL);
@@ -883,7 +998,7 @@ int main(int argc, char *argv[]) {
     // The idea for this mechanism of redraw came from my research of ToaruOS
     int tty_last = 0;
     int flip_now = 0;
-    for (;;) {
+    while (!die) {
         flip_now = 0;
 
         // Get events
@@ -893,33 +1008,37 @@ int main(int argc, char *argv[]) {
             { .fd = pty_master, .events = POLLIN, .revents = 0 }
         };
 
-        p = poll(fds, 2, tty_last ? 10 : 300);
+        p = poll(fds, 2, -1);
         if (p < 0) return 1;
-
+        
+        // child?
+        check_child_exit();
 
         // Keyboard events?
-        if (fds[0].revents & POLLIN && fullscreen) {
-            key_event_t evp;
-            ssize_t r = read(keyboard_fd, &evp, sizeof(key_event_t));
-            if (r != sizeof(key_event_t)) continue;
+        if (fds[0].revents & POLLIN) {
+            if (fullscreen) {
+                key_event_t evp;
+                ssize_t r = read(keyboard_fd, &evp, sizeof(key_event_t));
+                if (r != sizeof(key_event_t)) continue;
 
-            keyboard_event_t *ev = keyboard_event(kbd, &evp);
-            
-            if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
-                if (ev->ascii == '\b') ev->ascii = 0x7F;
-                terminal_process(ev);
-            }
+                keyboard_event_t *ev = keyboard_event(kbd, &evp);
                 
-            free(ev);
-        } else if (fds[0].revents & POLLIN) {
-            celestial_poll();
+                if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
+                    if (ev->ascii == '\b') ev->ascii = 0x7F;
+                    terminal_process(ev);
+                }
+                    
+                free(ev);
+            } else {
+                celestial_poll();
+            }
         }
 
+        // Check for data on PTY
         if (fds[1].revents & POLLIN) {
-            // We have data on PTY
-            char buf[4096];
+            char buf[4097];
             ssize_t r = read(pty_master, buf, 4096);
-            if (r) {
+            if (r > 0) {
                 buf[r] = 0;
                 
                 for (int i = 0; i < r; i++) {
@@ -933,11 +1052,7 @@ int main(int argc, char *argv[]) {
             tty_last = 0;
         }
 
-        uint64_t ticks = NOW();
-        if (ticks > last_redraw + INTERVAL || flip_now) {
-            last_redraw = ticks;
-            terminal_render();
-        }
+        terminal_render();
     }
 
     return 0;
