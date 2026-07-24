@@ -16,6 +16,7 @@
 #include <ethereal/version.h>
 #include <graphics/gfx.h>
 #include <assert.h>
+#include <unistd.h>
 
 #define DEFAULT_BACKGROUND "/usr/share/wallpapers/lines.bmp"
 
