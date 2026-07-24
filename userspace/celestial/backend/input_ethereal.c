@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestial/input_ethereal.c
+ * @file userspace/celestia2/input.c
  * @brief Input system for celestial
  * 
  * 
@@ -41,15 +41,15 @@ void *mouse_thread(void *arg) {
         if (!ret) continue;
 
 
-        event.x_difference *= 2;
-        event.y_difference *= 2;
+        event.rel.x_difference *= 2;
+        event.rel.y_difference *= 2;
 
         // TRACE_DEBUG("Mouse event dx %d dy %d\n", event.x_difference, event.y_difference);
         int mouse_x;
         int mouse_y;
         input_get_mouse_pos(&mouse_x, &mouse_y);
-        int nx = mouse_x + event.x_difference;
-        int ny = mouse_y - event.y_difference; // must be inverted
+        int nx = mouse_x + event.rel.x_difference;
+        int ny = mouse_y - event.rel.y_difference; // must be inverted
 
         int scroll = 0;
         if (event.scroll == MOUSE_SCROLL_UP) scroll = 1;

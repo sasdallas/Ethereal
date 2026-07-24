@@ -423,16 +423,16 @@ int mouse_update() {
     if (!r) return 0;
 
     // Parse the mouse event
-    if (event.event_type != EVENT_MOUSE_UPDATE) return 0;
+    if (event.event_type != EVENT_MOUSE_RELATIVE) return 0;
 
     last_mouse_x = WM_MOUSEX;
     last_mouse_y = WM_MOUSEY;
-    mouse_rel_x = event.x_difference;
-    mouse_rel_y = event.y_difference;
+    mouse_rel_x = event.rel.x_difference;
+    mouse_rel_y = event.rel.y_difference;
 
     // Update X and Y
-    WM_MOUSEX += event.x_difference * 3;
-    WM_MOUSEY -= event.y_difference * 3; // TODO: Maybe add kernel flag to invert this or do it in driver
+    WM_MOUSEX += event.rel.x_difference * 3;
+    WM_MOUSEY -= event.rel.y_difference * 3; // TODO: Maybe add kernel flag to invert this or do it in driver
 
     // Update buttons
     if (WM_MOUSE_BUTTONS != event.buttons) {
