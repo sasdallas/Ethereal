@@ -11,6 +11,7 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
+#define _GNU_SOURCE
 #include <termios.h>
 #include <pwd.h>
 #include <stdio.h>
