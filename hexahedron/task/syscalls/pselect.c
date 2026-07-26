@@ -65,10 +65,9 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         int ready = vfs_poll(FD(fd), waiter, needed, &out);
         if (ready == 1) {
             // Wow we have a hit oh my goodness
-            if (out & SELECT_READ_EVENTS) FD_SET(fd, &rfds);
-            if (out & SELECT_WRITE_EVENTS) FD_SET(fd, &wfds);
-            if (out & SELECT_ERROR_EVENTS) FD_SET(fd, &efds);
-            ret++;
+            if (out & SELECT_READ_EVENTS) {FD_SET(fd, &rfds); ret++;}
+            if (out & SELECT_WRITE_EVENTS) {FD_SET(fd, &wfds); ret++;}
+            if (out & SELECT_ERROR_EVENTS) {FD_SET(fd, &efds); ret++;}
         }
     }
 
@@ -124,10 +123,9 @@ long sys_pselect(sys_pselect_context_t *ctx) {
         poll_events_t out = f->ops->poll_events(f) & needed;
         if (out) {
             // Wow we have a hit oh my goodness
-            if (out & SELECT_READ_EVENTS) FD_SET(fd, &rfds);
-            if (out & SELECT_WRITE_EVENTS) FD_SET(fd, &wfds);
-            if (out & SELECT_ERROR_EVENTS) FD_SET(fd, &efds);
-            ret++;
+            if (out & SELECT_READ_EVENTS) {FD_SET(fd, &rfds); ret++;}
+            if (out & SELECT_WRITE_EVENTS) {FD_SET(fd, &wfds); ret++;}
+            if (out & SELECT_ERROR_EVENTS) {FD_SET(fd, &efds); ret++;}
         }        
     }
 
