@@ -639,14 +639,13 @@ static void terminal_process(keyboard_event_t *event) {
  */
 void kbd_handler(window_t *win, uint32_t event_type, void *event) {
     celestial_event_key_t *key = (celestial_event_key_t*)event;
-    keyboard_event_t *ev = keyboard_event(kbd, &key->ev);
+    keyboard_event_t ev;
+    keyboard_event2(kbd, &key->ev, &ev);
                 
-    if (ev->type == KEYBOARD_EVENT_PRESS) {
-        if (ev->ascii == '\b') ev->ascii = 0x7F;
-        terminal_process(ev);
+    if (ev.type == KEYBOARD_EVENT_PRESS) {
+        if (ev.ascii == '\b') ev.ascii = 0x7F;
+        terminal_process(&ev);
     }
-    
-    free(ev);
 }
 
 /**
@@ -1021,14 +1020,13 @@ int main(int argc, char *argv[]) {
                 ssize_t r = read(keyboard_fd, &evp, sizeof(key_event_t));
                 if (r != sizeof(key_event_t)) continue;
 
-                keyboard_event_t *ev = keyboard_event(kbd, &evp);
+                keyboard_event_t ev;
+                keyboard_event2(kbd, &evp, &ev);
                 
-                if (ev && ev->type == KEYBOARD_EVENT_PRESS) {
-                    if (ev->ascii == '\b') ev->ascii = 0x7F;
-                    terminal_process(ev);
+                if (ev.type == KEYBOARD_EVENT_PRESS) {
+                    if (ev.ascii == '\b') ev.ascii = 0x7F;
+                    terminal_process(&ev);
                 }
-                    
-                free(ev);
             } else {
                 celestial_poll();
             }
