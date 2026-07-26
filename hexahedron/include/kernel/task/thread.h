@@ -21,6 +21,7 @@
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>
 #include <kernel/subsystems/timemonitor.h>
+#include <sys/signal.h>
 #include <sys/types.h>
 
 /**** DEFINITIONS ****/
@@ -72,7 +73,7 @@ typedef struct thread {
 
     // SIGNALS
     spinlock_t siglock;
-    proc_signal_t signals[NSIG];
+    proc_signal_t signals[_NSIG];
     sigset_t pending_signals;
     sigset_t blocked_signals;
     sigset_t forced_signals;
@@ -92,6 +93,7 @@ typedef struct thread {
                                             // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
                                             // NOTE: except the actual object itself, until the process exits.
     spinlock_t joiner_lck;                  // Joiner lock
+    int priority;
 } thread_t;
 
 
