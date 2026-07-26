@@ -12,7 +12,7 @@
  */
 
 #include <kernel/task/process.h>
-#include <kernel/fs/vfs.h>
+#include <kernel/fs/vfs_new.h>
 
 long sys_pread(int fd, void *buf, size_t nbyte, off_t offset) {
     vfs_file_t *f = GET_FD_OR_ERROR(fd);

@@ -119,3 +119,14 @@ extern void sleep_callback(uint64_t t);
     assert(t);
     return t;
 }
+
+/**
+ * @brief Scheduler timer callback
+ */
+void scheduler_irq() {
+    if (current_cpu->current_thread && (current_cpu->current_thread->flags & THREAD_STATUS_STOPPED) == 0) {
+        if (current_cpu->current_process == current_cpu->idle_process || current_cpu->sched.queue->length) {
+            current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
+        }
+    }
+}
