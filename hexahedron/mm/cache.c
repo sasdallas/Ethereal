@@ -38,7 +38,6 @@ mutex_t cache_list_lock = MUTEX_INITIALIZER;
 char cache_period = 0;
 
 /* sync event */
-static page_entry_t *dirty_list = NULL;
 static mutex_t dirty_lock = MUTEX_INITIALIZER; 
 static page_cache_t *dirty_cache_list = NULL;
 static event_t sync_event;
@@ -132,7 +131,7 @@ static pmm_page_t *cache_get(page_cache_t *cache, loff_t offset) {
             unsigned long index;
             page_entry_t *e;
             xa_foreach(&cache->xa, index, e) {
-                LOG(ERR, "Index %d: Page %p/%p (page->offset = %d)\n", index, e, e->page, e->page->offset);
+                LOG(ERR, "Index %d: Page %p/%p (page->offset = %d, page->inode = %p)\n", index, e, e->page, e->page->offset, e->page->inode);
             }
 
             assert(0);
@@ -173,6 +172,7 @@ static int cache_place(vfs_inode_t *inode, loff_t offset, pmm_page_t *page) {
  */
 static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
     CACHE_FINISH_READ(cache);
+    int r = 0;
     while (PAGE_IS_LOADING(page)) {
         event_listener_t l;
         EVENT_INIT_LISTENER(&l);
@@ -185,15 +185,15 @@ static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
             return 0;
         }
 
-        int r = EVENT_WAIT(&l, -1);
+        r = EVENT_WAIT(&l, -1);
  
         EVENT_DETACH(&l);
         EVENT_DESTROY_LISTENER(&l);
-        if (r < 0) return r;
+        if (r < 0) break;
     }
 
     CACHE_START_READ(cache);
-    return 0;
+    return r;
 }
 
 /**
@@ -527,6 +527,41 @@ void cache_destroy(vfs_inode_t *inode) {
 
     // HACK: Sync the cache now to remove all the dirty pages
     cache_syncInode(inode);
+
+    // !!!: this is a hack
+    // basically the cache has no way of knowing whether the inode is actively being processed by the syncer thread
+    // this is because i am bad at designing a dirty cache system
+    // however this is fine because we have hacks, this just defers the syncer thread to process it next sync IF its not possible to pop it.
+    CACHE_START_WRITE(c);
+    
+    if (c->dirty.next != NULL) {
+        mutex_acquire(&dirty_lock);
+
+        // Try to see if we are in the dirty list. We need to take ourselves out if we are.
+        // !!! I don't like this and its still racey
+        page_cache_t *dirty = dirty_cache_list;
+        page_cache_t *prev = NULL;
+        bool removed = false;
+        while (dirty) {
+            if (dirty == c) {
+                if (prev) prev->dirty.next = dirty->dirty.next;
+                else dirty_cache_list = dirty->dirty.next;
+                removed = true;
+                break;
+            }
+
+            prev = dirty;
+            dirty = dirty->dirty.next;
+        }
+
+        mutex_release(&dirty_lock);
+
+        if (!removed) {
+            assert(0 && "worst-case scenario not handled");
+        }
+    }
+
+    CACHE_FINISH_WRITE(c);
 
     // when ready, we destroy all pages
     unsigned long idx;
