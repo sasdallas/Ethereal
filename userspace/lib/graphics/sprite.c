@@ -283,7 +283,10 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
         // Render normally like plebeians
         for (uint32_t _x = rect->x; _x < rect->x + rect->width; _x++) {
             if (x + _x < _left || x + _x > _right || y + _y < _top || y + _y > _bottom) continue;
-            GFX_PIXEL(ctx, _x + x, _y + y) = gfx_alphaBlend(SPRITE_PIXEL(sprite, _x, _y), GFX_PIXEL(ctx, _x + x, _y + y));
+            uint32_t *pix = &GFX_PIXEL(ctx, x + _x, y + _y);
+            uint32_t src_pixel = SPRITE_PIXEL(sprite, _x, _y);
+
+            *pix = gfx_alphaBlend(src_pixel, *pix);;
         }
 #endif
     }
@@ -303,11 +306,13 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
 int gfx_renderSpriteAlpha(gfx_context_t *ctx, sprite_t *sprite, int x, int y, uint8_t alpha) {
     gfx_rect_t full_rect = { .x = 0, .y = 0, .width = sprite->width, .height = sprite->height };
 
+    uint32_t _left = GFX_MIN(x, 0);
     uint32_t _top = GFX_MAX(y, 0);
     uint32_t _right = GFX_MIN(x + sprite->width, GFX_WIDTH(ctx) - 1);
     uint32_t _bottom = GFX_MIN(y + sprite->height, GFX_HEIGHT(ctx) - 1);
 
 #if (defined(__i386__) || defined(__x86_64__)) && !defined(__NO_SSE)
+    (void)_left;
     __m128i mask00ff = _mm_set1_epi16(0x00FF);
     __m128i mask0080 = _mm_set1_epi16(0x0080);
     __m128i mask0101 = _mm_set1_epi16(0x0101);

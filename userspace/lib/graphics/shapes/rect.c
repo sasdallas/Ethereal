@@ -24,13 +24,15 @@
  * @param rect The rectangle to draw
  * @param color The color to draw it as
  */
-void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color) {
+void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t _color) {
 	if (!rect || !ctx) return;
 
 	int32_t x = rect->x;
     int32_t y = rect->y;
     int32_t width = rect->width;
     int32_t height = rect->height;
+
+	gfx_color_t color = __gfx_premultiply(_color);
 
 	// Draw the two vertical sides
 	for (uint16_t _y = 0; _y < height; _y++) {
@@ -61,7 +63,7 @@ void gfx_drawRectangle(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t co
  * @param rect The rectangle to draw
  * @param color The color to draw it as
  */
-void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t color) {
+void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_color_t _color) {
     if (!rect || !ctx) return;
 
     int32_t x = rect->x;
@@ -73,6 +75,8 @@ void gfx_drawRectangleFilled(struct gfx_context *ctx, gfx_rect_t *rect, gfx_colo
 	int32_t _top    = GFX_MAX(y, 0);
 	int32_t _right  = GFX_MIN(x + width,  ctx->width - 1);
 	int32_t _bottom = GFX_MIN(y + height, ctx->height - 1);
+
+	gfx_color_t color = __gfx_premultiply(_color);
 
 	for (uint16_t _y = 0; _y < height; ++_y) {
 		for (uint16_t _x = 0; _x < width; ++_x) {

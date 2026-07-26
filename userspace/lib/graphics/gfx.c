@@ -131,8 +131,10 @@ void gfx_render(gfx_context_t *ctx) {
  * @param ctx The context to clear the buffer of
  * @param color The color to use while clearing
  */
-void gfx_clear(gfx_context_t *ctx, gfx_color_t color) {
+void gfx_clear(gfx_context_t *ctx, gfx_color_t _color) {
     if (!ctx) return;
+
+    gfx_color_t color = __gfx_premultiply(_color);
 
     if (ctx->flags & CTX_NO_BACKBUFFER) {
         for (uint32_t y = 0; y < ctx->height; y++) {
