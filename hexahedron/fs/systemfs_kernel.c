@@ -87,8 +87,14 @@ ssize_t systemfs_proc_mem_usage(systemfs_node_t *n) {
 /**
  * @brief helper
  */
-static char systemfs_proc_to_state(process_state_t s) {
-    switch (s) {
+static char systemfs_proc_to_state(process_t *p) {
+    // !!! p->state doesn't reflect main thread state 
+    uint32_t sts = p->main_thread->status;
+    if (sts & THREAD_STATUS_SLEEPING) {
+        return 'S';
+    }
+
+    switch (p->state) {
         case PROCESS_RUNNING:
             return 'R';
         case PROCESS_SLEEPING:
@@ -119,7 +125,7 @@ ssize_t systemfs_proc_status(systemfs_node_t *n) {
         "State:%c\n",
         p->name, p->pid, p->pgid,
         p->uid, p->euid, p->gid, p->egid,
-        p->sid, systemfs_proc_to_state(p->state));
+        p->sid, systemfs_proc_to_state(p));
 }
 
 /**
@@ -157,7 +163,7 @@ ssize_t systemfs_proc_cmdline(systemfs_node_t *n) {
     ssize_t ret = 0;
     char **cmd = p->cmdline;
     while (*cmd) {
-        ret += systemfs_printf(n, "%s\0", *cmd);
+        ret += systemfs_printf(n, "%s%c", *cmd, '\0');
         cmd++;
     }
 
@@ -195,6 +201,7 @@ void systemfs_proc_destroy(process_t *proc) {
     systemfs_unregister(n, "maps");
     systemfs_unregister(n, "times");
     systemfs_unregister(n, "mem_usage");
+    systemfs_unregister(n, "cmdline");
     systemfs_free(n);
 }
 

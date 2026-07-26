@@ -332,8 +332,10 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         spinlock_release(&process_list_lock);
     }
 
+    // Create the SystemFS runtime
 extern systemfs_node_t *systemfs_proc_create(process_t *proc);
     process->proc_sysfs = systemfs_proc_create(process);
+
     return process;
 }
 
@@ -497,7 +499,12 @@ void process_destroy(process_t *proc) {
 extern void systemfs_proc_destroy(process_t *proc);
     systemfs_proc_destroy(proc);
 
-    kfree(proc->cmdline);
+    if (proc->cmdline) {
+        int i = 0;
+        while (proc->cmdline[i]) kfree(proc->cmdline[i++]);
+        kfree(proc->cmdline);
+    }
+    
     kfree(proc->wd_path);
 
     // Now we are a zombie
@@ -640,6 +647,8 @@ int process_executeCommon(elf_image_t *img) {
  * @todo There's a lot of pointless directory switching for some reason - need to fix
  */
 int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
+    process_t *proc = current_cpu->current_process;
+
     // Execute dynamic loader
     // First, try to open the interpreter that's in PT_INTERP
     elf_image_t file_img;
@@ -695,10 +704,17 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
 
     // Setup new name
     // TODO: This should be a *pointer* to argv[0], not a duplicate.
-    kfree(current_cpu->current_process->name);
-    current_cpu->current_process->name = strdup(argv[0]);
-    current_cpu->current_process->exe_image = file; // no need to hold an extra reference to file as it will be destroyed on process_destroy
-    current_cpu->current_process->cmdline = argv;
+    kfree(proc->name);
+    proc->name = strdup(argv[0]);
+    proc->exe_image = file; // no need to hold an extra reference to file as it will be destroyed on process_destroy
+    
+    // duplicate argv
+    char **cmdline = kmalloc((argc+1) * sizeof(char*));
+    for (int i = 0; i < argc; i++) {
+        cmdline[i] = strdup(argv[i]);
+    }
+    cmdline[argc] = NULL;
+    proc->cmdline = cmdline;
 
     // Do common execution
     assert(process_executeCommon(&interp_img) == 0);
@@ -770,6 +786,8 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
 
     // Cleanup memory before beginning execution
     uintptr_t interp_entry = interp_img.entrypoint;
+    for (int i = 0; i < argc; i++) kfree(argv[i]);
+    kfree(argv);
     for (int i = 0; i < envc; i++) kfree(envp[i]);
     kfree(envp);
     elf_destroyImage(&interp_img);

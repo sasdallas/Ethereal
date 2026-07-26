@@ -182,7 +182,7 @@ static int systemfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
                 systemfs_node_t *ch = node->value;
                 strncpy(ctx->name, ch->name, NAME_MAX);
                 ctx->ino = ch->attr.ino;
-                // TODO d_type
+                ctx->type = (ch->attr.type == VFS_DIRECTORY) ? DT_DIR : DT_REG;
                 list_destroy(hk, false);
                 mutex_release(&n->lck);
                 return 0;
