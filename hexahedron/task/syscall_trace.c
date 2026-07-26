@@ -410,6 +410,9 @@ void syscall_trace_enter(syscall_t *s) {
     } else if (s->syscall_number == SYS_SETSOCKOPT) {
         sys_setopt_context_t *c = (typeof(c))s->parameters[0];
         snprintf(sysbuf, 512, fmt, c->socket, c->level, c->option_name, c->option_value, c->option_len);
+    } else if (s->syscall_number == SYS_PSELECT) {
+        sys_pselect_context_t *c = (typeof(c))s->parameters[0];
+        snprintf(sysbuf, 512, fmt, c->nfds, c->readfds, c->writefds, c->errorfds, c->timeout, c->sigmask);
     } else {
         snprintf(sysbuf, 512, fmt, s->parameters[0], s->parameters[1], s->parameters[2], s->parameters[3], s->parameters[4]);
     }
