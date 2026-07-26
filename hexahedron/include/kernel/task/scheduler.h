@@ -49,14 +49,14 @@ void scheduler_init();
 void scheduler_initCPU();
 
 /**
- * @brief Queue in a new thread
+ * @brief Queue in a new thread (after completing sleep)
  * @param thread The thread to queue in
  * @returns 0 on success
  */
 int scheduler_insertThread(thread_t *thread);
 
 /**
- * @brief Yield a thread
+ * @brief Yield a thread (called before context switching to new thread)
  */
 void scheduler_yield(thread_t *old);
 
@@ -65,5 +65,10 @@ void scheduler_yield(thread_t *old);
  * @returns A pointer to the next thread
  */
 thread_t *scheduler_get();
+
+/**
+ * @brief Scheduler timer callback
+ */
+void scheduler_irq();
 
 #endif
