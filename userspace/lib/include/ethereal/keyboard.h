@@ -60,9 +60,20 @@ typedef struct keyboard {
 keyboard_t *keyboard_create();
 
 /**
+ * @brief Convert a key event from /device/keyboard to a keyboard event
+ * @param keyboard The keyboard object
+ * @param event The peripheral filesystem event object
+ * @param event_out The event output
+ * @returns 0 on success
+ */
+int keyboard_event2(keyboard_t *kbd, void *event, keyboard_event_t *ev);
+
+/**
  * @brief Convert a key event from /device/keyboard to a scancode to a keyboard event
  * @param keyboard The keyboard object
  * @param event The event object
+ * 
+ * @deprecated THIS INTERFACE IS DEPRECATED. Use @c keyboard_event2
  */
 keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event);
 

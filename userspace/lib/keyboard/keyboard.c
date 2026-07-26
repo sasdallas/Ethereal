@@ -88,7 +88,7 @@ keyboard_t *keyboard_create() {
  * @brief Process extended scancodes
  * @param ev The event to process in (scancode will be updated)
  */
-static keyboard_event_t *keyboard_eventProcessExtended(keyboard_event_t *ev) {
+static int keyboard_eventProcessExtended(keyboard_event_t *ev) {
     switch (ev->scancode) {
         case PS2_SCANCODE_RIGHT_CTRL:
             ev->scancode = SCANCODE_RIGHT_CTRL;
@@ -128,16 +128,17 @@ static keyboard_event_t *keyboard_eventProcessExtended(keyboard_event_t *ev) {
             break;
     }
 
-    return ev;
+    return 0;
 }
 
 /**
- * @brief Convert a key event from /device/keyboard to a scancode to a keyboard event
+ * @brief Convert a key event from /device/keyboard to a keyboard event
  * @param keyboard The keyboard object
- * @param event The event object
+ * @param event The peripheral filesystem event object
+ * @param event_out The event output
+ * @returns 0 on success
  */
-keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
-    keyboard_event_t *ev = malloc(sizeof(keyboard_event_t));
+int keyboard_event2(keyboard_t *kbd, void *event, keyboard_event_t *ev) {
     key_event_t *ev_src = (key_event_t*)event;
 
     // PS/2 extended keycode?
@@ -148,7 +149,7 @@ keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
         ev->ascii = '\0';
         ev->type = ev_src->event_type == EVENT_KEY_PRESS ? KEYBOARD_EVENT_PRESS : KEYBOARD_EVENT_RELEASE;
         ev->mods = kbd->mods;
-        return ev;
+        return 0;
     }
 
     // Is this part of an extension?
@@ -244,11 +245,27 @@ keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
                 // TODO: Keyboard layouts here!
             }
 
-            return ev;
+            return 0;
     }
 
 
     ev->ascii = 0;
+    return 0;
+}
+
+/**
+ * @brief Convert a key event from /device/keyboard to a scancode to a keyboard event
+ * @param keyboard The keyboard object
+ * @param event The event object
+ */
+keyboard_event_t *keyboard_event(keyboard_t *kbd, void *event) {
+    keyboard_event_t *ev = malloc(sizeof(keyboard_event_t));
+    int r = keyboard_event2(kbd, event, ev);
+    if (r != 0) {
+        free(ev);
+        return NULL;
+    }
+
     return ev;
 }
 
