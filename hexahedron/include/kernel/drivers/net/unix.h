@@ -57,6 +57,9 @@ typedef struct unix_socket {
     poll_event_t event;
     struct ucred cred;          // credentials for SO_PEERCRED
 
+    struct sockaddr_un bound;   // bound address
+    struct sockaddr_un dfl;     // connected/default route for DGRAM
+
     struct {
         ringbuffer_t *rb;
         queue_rb_t queue; // for SEQPACKET/DGRAM

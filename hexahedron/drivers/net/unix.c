@@ -47,7 +47,7 @@ static void unix_free(unix_socket_t *usock);
 
 /* Sizes */
 #define UNIX_DEFAULT_RB_SIZE        256 * 1024
-#define UNIX_DEFAULT_QUEUE_SIZE     256
+#define UNIX_DEFAULT_QUEUE_SIZE     512 // Double rb because each pkt is length followed by unix socket pointer
 
 /* Update cred */
 #define UNIX_UPDATE_CRED(usock)     (usock)->cred.pid = current_cpu->current_process->pid;\
@@ -118,6 +118,15 @@ static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t ad
 
     usock->inode = i;
     usock->path = strdup(path);
+    memcpy(&usock->bound, sockaddr, min(addrlen, sizeof(struct sockaddr_un)));
+
+    // Create socket datastructures if they dont exist
+    if (usock->pkt.rb == NULL) {
+        usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+        if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
+            QUEUE_RB_INIT(&usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
+        }
+    }
 
     mutex_release(&usock->lock);
 
@@ -272,7 +281,6 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
  * @brief unix connect
  */
 static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
-    if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET) return -EOPNOTSUPP;
     if (addrlen < sizeof(struct sockaddr_un)) {
         LOG(ERR, "Tried to connect but passed an address length of %d\n", addrlen);
         return -EINVAL;
@@ -282,8 +290,13 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     mutex_acquire(&usock->lock);
 
     if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
-        mutex_release(&usock->lock);
-        return -EISCONN;
+        if (sock->type == SOCK_DGRAM) {
+            UNIX_RELEASE(usock->peer);
+            usock->peer = NULL;
+        } else {
+            mutex_release(&usock->lock);
+            return -EISCONN;
+        }
     }
 
     if (usock->state == UNIX_SOCK_STATE_CONNECTING) {
@@ -292,8 +305,10 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     }
 
     if (usock->state != UNIX_SOCK_STATE_INIT) {
-        mutex_release(&usock->lock);
-        return -EINVAL;
+        if (sock->type != SOCK_DGRAM) {
+            mutex_release(&usock->lock);
+            return -EINVAL;
+        }
     }
 
     // Create the datastructures for the socket, if they dont exist
@@ -332,6 +347,18 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     if (!serv) {
         mutex_release(&usock->lock);
         return -ENOTSOCK;
+    }
+
+    // DGRAM sockets dont need to be acknowledged
+    if (sock->type == SOCK_DGRAM) {
+        UNIX_HOLD(serv);
+        memcpy(&usock->dfl, sockaddr, min(addrlen, sizeof(struct sockaddr_un)));
+        
+        usock->peer = serv;
+        UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CONNECTED);
+        
+        mutex_release(&usock->lock);
+        return 0;
     }
 
     // create a connection request
@@ -408,11 +435,16 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     unix_socket_t *usock = USOCK(sock);
     if (msg->msg_iovlen == 0) return 0;
 
+    // No socket types support this yet unfortunately
+    if (msg->msg_name != NULL) {
+        LOG(ERR, "msg_name is not supported in recvmsg!\n");
+    }
+
     mutex_acquire(&usock->lock);
 
     assert(msg->msg_iovlen == 1 && "recvmsg multiple iovecs not supported");
 
-    if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
+    if (usock->state != UNIX_SOCK_STATE_CONNECTED && sock->type != SOCK_DGRAM) {
         mutex_release(&usock->lock);
         return -ENOTCONN;
     }
@@ -439,6 +471,10 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         mutex_acquire(&usock->lock);
+
+        if ((unix_poll_events_inner(usock) & POLLIN) == 0) {
+            LOG(INFO, "why were we woken up?\n");
+        }
     }
 
     // We should have available content
@@ -468,7 +504,9 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         got = ringbuffer_peek(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
     } else {
         got = ringbuffer_read(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
-        if (got) poll_signal(&usock->peer->event, POLLOUT);
+        if (got && (usock->state == UNIX_SOCK_STATE_CONNECTED)) {
+            poll_signal(&usock->peer->event, POLLOUT);
+        }
     }
 
     mutex_release(&usock->lock);
@@ -480,6 +518,11 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @brief helper
  */
 static void unix_lock(unix_socket_t *s1, unix_socket_t *s2) {
+    if (s1 == s2) {
+        mutex_acquire(&s1->lock);
+        return;
+    }
+
     if ((uintptr_t)s1 < (uintptr_t)s2) {
         mutex_acquire(&s1->lock);
         mutex_acquire(&s2->lock);
@@ -504,24 +547,74 @@ static void unix_unlock(unix_socket_t *s1, unix_socket_t *s2) {
 }
 
 /**
+ * @brief resolve target for sendmsg
+ */
+static int unix_resolve(unix_socket_t *usock, struct msghdr *msg, unix_socket_t **tgt) {
+    if (usock->sock->type != SOCK_DGRAM) {
+        goto _peer;
+    }
+
+    if (msg->msg_name) {
+        if (msg->msg_namelen < sizeof(struct sockaddr_un)) {
+            LOG(ERR, "Invalid namelen %d\n", msg->msg_namelen);
+            return -EINVAL;
+        }
+
+        struct sockaddr_un *un = msg->msg_name;
+        
+        vfs_file_t *f;
+        int r = vfs_open(un->sun_path, O_WRONLY, &f);
+        if (r != 0) {
+            return r;
+        }
+
+        mutex_acquire(&unix_path_lock);
+        unix_socket_t *serv = hashmap_get(unix_path_map, f->inode);
+        if (serv) UNIX_HOLD(serv);
+        mutex_release(&unix_path_lock);
+        
+        vfs_close(f);
+
+        if (serv) {
+            *tgt = serv;
+            return 0;
+        }
+    }
+
+_peer:
+    if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
+        return -ENOTCONN;
+    }
+
+    *tgt = usock->peer;
+    UNIX_HOLD(usock->peer);
+    return 0;
+}
+
+/**
  * @brief unix sendmsg
  */
 static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     unix_socket_t *usock = USOCK(sock);
     if (msg->msg_iovlen == 0) return 0;
 
-    mutex_acquire(&usock->lock);
-
-    assert(msg->msg_iovlen == 1 && "recvmsg multiple iovecs not supported");
-
-    if (usock->state != UNIX_SOCK_STATE_CONNECTED) {
-        mutex_release(&usock->lock);
-        return -ENOTCONN;
+    // Other socket don't suport this yet
+    if (sock->type != SOCK_DGRAM) {
+        assert(msg->msg_name == NULL);
     }
 
+    mutex_acquire(&usock->lock);
+
+    assert(msg->msg_iovlen == 1 && "sendmsg multiple iovecs not supported");
+
     // !!! This is racey! Need to redo the locking pattern on this...
-    unix_socket_t *tgt = usock->peer;
+    unix_socket_t *tgt;
+    int r = unix_resolve(usock, msg, &tgt);
     mutex_release(&usock->lock);
+
+    if (r != 0) {
+        return r;
+    }
 
     // Acquire both locks for super-safety
     unix_lock(usock, tgt);
@@ -567,9 +660,14 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         queue_rb_push(&tgt->pkt.queue, (void*)(uintptr_t)written);
     }
 
-    if (written > 0) poll_signal(&tgt->event, POLLIN);
+    if (written > 0) {
+        poll_signal(&tgt->event, POLLIN);
+    }
+    
     unix_unlock(usock, tgt);
 
+    // tgt gets a reference regardless
+    UNIX_RELEASE(tgt);
     return written;
 }
 
@@ -588,16 +686,18 @@ static poll_events_t unix_poll_events_inner(unix_socket_t *usock) {
         }
     } else if (usock->state == UNIX_SOCK_STATE_CONNECTING) {
         // do nothing, as this means that you cant do anything.
-    } else if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+    } else if (usock->pkt.rb != NULL) {
         if (ringbuffer_remaining_read(usock->pkt.rb)) {
             revents |= POLLIN;
         }
 
-        if (usock->peer->state != UNIX_SOCK_STATE_CONNECTED) {
-            revents |= POLLHUP;
-        } else {
-            if (ringbuffer_remaining_write(usock->peer->pkt.rb)) {
-                revents |= POLLOUT;
+        if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
+            if (usock->peer->state != UNIX_SOCK_STATE_CONNECTED) {
+                revents |= POLLHUP;
+            } else {
+                if (ringbuffer_remaining_write(usock->peer->pkt.rb)) {
+                    revents |= POLLOUT;
+                }
             }
         }
     } else {
@@ -738,6 +838,37 @@ static sock_t *unix_socket(int type, int protocol) {
 }
 
 /**
+ * @brief unix socketpair
+ */
+static int unix_socketpair(int type, int protocol, sock_t* output[2]) {
+    sock_t *a = unix_socket(type, protocol);
+    sock_t *b = unix_socket(type, protocol);
+    
+    unix_socket_t *au = USOCK(a);
+    unix_socket_t *bu = USOCK(b);
+
+    au->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+    bu->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+    if (type == SOCK_DGRAM || type == SOCK_SEQPACKET) {
+        QUEUE_RB_INIT(&au->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
+        QUEUE_RB_INIT(&bu->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
+    }
+
+    au->state = UNIX_SOCK_STATE_CONNECTED;
+    bu->state = UNIX_SOCK_STATE_CONNECTED;
+
+    au->peer = bu;
+    bu->peer = au;
+
+    UNIX_HOLD(au);
+    UNIX_HOLD(bu);
+
+    output[0] = a;
+    output[1] = b;
+    return 0;
+}
+
+/**
  * @brief Initialize UNIX sockets
  */
 static int unix_init() {
@@ -746,6 +877,7 @@ static int unix_init() {
     unix_path_map = hashmap_create_int("unix path map", 10);
 
     socket_register(AF_UNIX, unix_socket);
+    socket_registerPair(AF_UNIX, unix_socketpair);
     return 0;
 }
 

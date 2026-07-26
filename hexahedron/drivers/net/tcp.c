@@ -425,7 +425,7 @@ static tcp_worker_t *tcp_findWorker(tcp_tcb_t *tcb, unsigned char request_type) 
     return best;
 }
 
-/**d
+/**
  * @brief Send worker a request
  */
 static void tcp_requestWorker(tcp_worker_t *worker, tcp_tcb_t *tcb, unsigned char request_type, void *request, size_t request_size) {
