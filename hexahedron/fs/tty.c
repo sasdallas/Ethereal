@@ -116,31 +116,30 @@ static ssize_t tty_write(devfs_node_t *file, loff_t off, size_t size, const char
     tty_t *tty = file->priv;
 
     int e;
-    // Process the TTY write
     size_t written = 0;
     while (written < size) {
         char ch = buffer[written];
 
         // Is output processing enabled?
         if (tty->tios.c_oflag & OPOST) {
-            // Yeah, handle it.
-            if (tty->tios.c_oflag & OLCUC ) ch = toupper(ch);
-            if (tty->tios.c_oflag & ONLCR && ch == '\n') {
+            if (tty->tios.c_oflag & OLCUC) ch = toupper(ch);
+            
+            if ((tty->tios.c_oflag & ONLCR) && ch == '\n') {
                 e = tty->write(tty, "\r\n", 2);
                 if (e < 0) return e;
                 written++;
                 continue;
             }
 
-            if (tty->tios.c_oflag & OCRNL && ch == '\r') {
-                e = tty->write(tty, "\r\n", 2);
+            if ((tty->tios.c_oflag & OCRNL) && ch == '\r') {
+                e = tty->write(tty, "\n", 1);
                 if (e < 0) return e;
                 written++;
                 continue;
             }
         }
 
-        e = tty->write(tty, &((char*)buffer)[written], 1);
+        e = tty->write(tty, &ch, 1);
         if (e < 0) return e;
         written++;
     }
