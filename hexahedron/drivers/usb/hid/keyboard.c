@@ -38,6 +38,9 @@ uint16_t hid_modifier_to_ps2_scancode[] = {
     0xe01d, 0x59, 0xe038, 0xe05c
 };
 
+#define HID_TO_PS2_SCANCODE_COUNT (sizeof(hid_to_ps2_scancode) / sizeof(hid_to_ps2_scancode[0]))
+#define HID_KEYBOARD_STATE_COUNT (sizeof(((USBHidKeyboardState_t*)0)->current_keyboard_state))
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB:HID:KEYBOARD", __VA_ARGS__)
 
@@ -66,19 +69,19 @@ USB_STATUS usb_keyboardBeginReport(USBHidCollection_t *collection) {
 USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
     USBHidKeyboardState_t *kbd = (USBHidKeyboardState_t*)collection->d;
     
-    for (size_t i = 0; i < 8; i++) {
-        if (kbd->last_keyboard_state[i] > sizeof(hid_to_ps2_scancode)) {
+    for (size_t i = 0; i < HID_KEYBOARD_STATE_COUNT; i++) {
+        if (kbd->last_keyboard_state[i] >= HID_TO_PS2_SCANCODE_COUNT) {
             LOG(WARN, "Unrecognized/unsupported scancode %02x\n", kbd->last_keyboard_state[i]);
             continue;
         }
 
-        if (kbd->current_keyboard_state[i] > sizeof(hid_to_ps2_scancode)) {
+        if (kbd->current_keyboard_state[i] >= HID_TO_PS2_SCANCODE_COUNT) {
             LOG(WARN, "Unrecognized/unsupported scancode %02x\n", kbd->current_keyboard_state[i]);
             continue;
         }
 
         if (kbd->last_keyboard_state[i] != kbd->current_keyboard_state[i]) {
-            if (!memchr(kbd->last_keyboard_state, kbd->current_keyboard_state[i], 8)) {
+            if (!memchr(kbd->last_keyboard_state, kbd->current_keyboard_state[i], HID_KEYBOARD_STATE_COUNT)) {
                 uint16_t sc = hid_to_ps2_scancode[kbd->current_keyboard_state[i]];
                 if (sc > UINT8_MAX) {
                     periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, 0xE0); // PS/2 extended
@@ -87,7 +90,7 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
                 periphfs_sendKeyboardEvent(EVENT_KEY_PRESS, hid_to_ps2_scancode[kbd->current_keyboard_state[i]] & 0xFF);
             }
 
-            if (!memchr(kbd->current_keyboard_state, kbd->last_keyboard_state[i], 8)) {
+            if (!memchr(kbd->current_keyboard_state, kbd->last_keyboard_state[i], HID_KEYBOARD_STATE_COUNT)) {
                 uint16_t sc = hid_to_ps2_scancode[kbd->last_keyboard_state[i]];
                 if (sc > UINT8_MAX) {
                     periphfs_sendKeyboardEvent(EVENT_KEY_RELEASE, 0xE0); // PS/2 extended
@@ -118,8 +121,8 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
     }
 
     // Reset modifiers
-    memcpy(kbd->last_keyboard_state, kbd->current_keyboard_state, 8);
-    memset(kbd->current_keyboard_state, 0, 8);
+    memcpy(kbd->last_keyboard_state, kbd->current_keyboard_state, HID_KEYBOARD_STATE_COUNT);
+    memset(kbd->current_keyboard_state, 0, HID_KEYBOARD_STATE_COUNT);
     kbd->last_modifiers = kbd->modifiers;
     kbd->modifiers = 0x0;
     kbd->idx = 0;
@@ -139,7 +142,7 @@ USB_STATUS usb_keyboardFinishReport(USBHidCollection_t *collection) {
 USB_STATUS usb_keyboardProcessAbsolute(struct USBHidCollection *collection, struct USBHidReportItem *item, uint16_t usage_page, uint32_t usage_id, int64_t value) {
     if (usage_page != 0x7) { LOG(ERR, "Unsupported HID usage page: %04x\n", usage_page); return USB_FAILURE; }
     if (usage_id < 0xe0 || usage_id > 0xe7) {
-        LOG(WARN, "Unexpected absolute data with usage ID: 0x%x\n");
+        LOG(WARN, "Unexpected absolute data with usage ID: 0x%x\n", usage_id);
         return USB_FAILURE;
     }
 
@@ -165,6 +168,9 @@ USB_STATUS usb_keyboardProcessArray(struct USBHidCollection *collection, struct 
 
     // These are all data
     USBHidKeyboardState_t *kbd = (USBHidKeyboardState_t*)collection->d;
+
+    if (!array) return USB_SUCCESS;
+    if (kbd->idx >= HID_KEYBOARD_STATE_COUNT) return USB_SUCCESS;
 
     kbd->current_keyboard_state[kbd->idx++] = array;
     return USB_SUCCESS;

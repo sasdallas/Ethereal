@@ -34,7 +34,6 @@ static int tabs = 0;
 
 /* i hate C */
 #pragma GCC diagnostic ignored "-Wsign-compare"
-#define HID_CAST_REPORT_SIZE(s, val) ((s) ? (signed)(val) : (unsigned)(val))
 
 /* Push/pop usage from stack */
 #define HID_USAGE_PUSH(ls, u) ({ ls.usage_stack[ls.usage_stack_len] = (u); ls.usage_stack_len++; assert(ls.usage_stack_len < HID_MAX_USAGE_STACK); })
@@ -58,6 +57,14 @@ void hid_printOpcode(USBHidParserState_t *parser, USBHidOpcode_t opc, uint32_t v
         dprintf(NOHEADER, "\t");
     }
 
+    // Sign extend
+    int32_t signed_val;
+    switch (report_size) {
+        case 1: signed_val = (int8_t)val;  break;
+        case 2: signed_val = (int16_t)val; break;
+        default: signed_val = (int32_t)val; break;
+    }
+
     if (opc.desc_type == HID_REPORT_MAIN) {
         switch (opc.opcode) {
             case HID_REPORT_MAIN_INPUT:
@@ -75,7 +82,7 @@ void hid_printOpcode(USBHidParserState_t *parser, USBHidOpcode_t opc, uint32_t v
         }
 
         if (opc.opcode == HID_REPORT_MAIN_COLLECTION) {
-            uint8_t collection = HID_CAST_REPORT_SIZE(0, val);
+            uint8_t collection = val;
             switch (collection) {
                 case HID_REPORT_COLLECTION_PHYSICAL:
                     dprintf(NOHEADER, "(Physical)\n"); break;
@@ -104,31 +111,31 @@ void hid_printOpcode(USBHidParserState_t *parser, USBHidOpcode_t opc, uint32_t v
         }
     } else if (opc.desc_type == HID_REPORT_GLOBAL)  {
         switch (opc.opcode) {
-            case HID_REPORT_GLOBAL_USAGE_PAGE: dprintf(NOHEADER, "UsagePage(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: dprintf(NOHEADER, "LogicalMinimum(%d)\n", HID_CAST_REPORT_SIZE(1, (int8_t)val)); break;
-            case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: dprintf(NOHEADER, "LogicalMaximum(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: dprintf(NOHEADER, "PhysicalMinimum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: dprintf(NOHEADER, "PhysicalMaximum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_GLOBAL_UNIT_EXPONENT: dprintf(NOHEADER, "UnitExponent(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_UNIT: dprintf(NOHEADER, "Unit(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_REPORT_SIZE: dprintf(NOHEADER, "ReportSize(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_REPORT_ID: dprintf(NOHEADER, "ReportId(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_GLOBAL_REPORT_COUNT: dprintf(NOHEADER, "ReportCount(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
+            case HID_REPORT_GLOBAL_USAGE_PAGE: dprintf(NOHEADER, "UsagePage(%d)\n", val); break;
+            case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: dprintf(NOHEADER, "LogicalMinimum(%d)\n", signed_val); break;
+            case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: dprintf(NOHEADER, "LogicalMaximum(%d or %d)\n", val, signed_val); break;
+            case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: dprintf(NOHEADER, "PhysicalMinimum(%d)\n", signed_val); break;
+            case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: dprintf(NOHEADER, "PhysicalMaximum(%d)\n", signed_val); break;
+            case HID_REPORT_GLOBAL_UNIT_EXPONENT: dprintf(NOHEADER, "UnitExponent(%d)\n", val); break;
+            case HID_REPORT_GLOBAL_UNIT: dprintf(NOHEADER, "Unit(%d)\n", val); break;
+            case HID_REPORT_GLOBAL_REPORT_SIZE: dprintf(NOHEADER, "ReportSize(%d)\n", val); break;
+            case HID_REPORT_GLOBAL_REPORT_ID: dprintf(NOHEADER, "ReportId(%d)\n", val); break;
+            case HID_REPORT_GLOBAL_REPORT_COUNT: dprintf(NOHEADER, "ReportCount(%d)\n", val); break;
             case HID_REPORT_GLOBAL_PUSH: dprintf(NOHEADER, "Push()\n"); break;
             case HID_REPORT_GLOBAL_POP: dprintf(NOHEADER, "Pop()\n"); break;
             default: dprintf(NOHEADER, "??? (0x%x)\n", opc.opcode); break;
         }
     } else if (opc.desc_type == HID_REPORT_LOCAL) {
         switch (opc.opcode) {
-            case HID_REPORT_LOCAL_USAGE: dprintf(NOHEADER, "UsageId(0x%x)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_LOCAL_USAGE_MAXIMUM: dprintf(NOHEADER, "UsageMaximum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_LOCAL_USAGE_MINIMUM: dprintf(NOHEADER, "UsageMinimum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_LOCAL_DESIGNATOR_IDX: dprintf(NOHEADER, "DesignatorIndex(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_LOCAL_DESIGNATOR_MINIMUM: dprintf(NOHEADER, "DesignatorMinimum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_LOCAL_DESIGNATOR_MAXIMUM: dprintf(NOHEADER, "DesignatorMaximum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_LOCAL_STRING_INDEX: dprintf(NOHEADER, "StringIndex(%d)\n", HID_CAST_REPORT_SIZE(0, val)); break;
-            case HID_REPORT_LOCAL_STRING_MINIMUM: dprintf(NOHEADER, "StringMinimum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
-            case HID_REPORT_LOCAL_STRING_MAXIMUM: dprintf(NOHEADER, "StringMaximum(%d)\n", HID_CAST_REPORT_SIZE(1, val)); break;
+            case HID_REPORT_LOCAL_USAGE: dprintf(NOHEADER, "UsageId(0x%x)\n", val); break;
+            case HID_REPORT_LOCAL_USAGE_MAXIMUM: dprintf(NOHEADER, "UsageMaximum(%d)\n", signed_val); break;
+            case HID_REPORT_LOCAL_USAGE_MINIMUM: dprintf(NOHEADER, "UsageMinimum(%d)\n", signed_val); break;
+            case HID_REPORT_LOCAL_DESIGNATOR_IDX: dprintf(NOHEADER, "DesignatorIndex(%d)\n", val); break;
+            case HID_REPORT_LOCAL_DESIGNATOR_MINIMUM: dprintf(NOHEADER, "DesignatorMinimum(%d)\n", signed_val); break;
+            case HID_REPORT_LOCAL_DESIGNATOR_MAXIMUM: dprintf(NOHEADER, "DesignatorMaximum(%d)\n", signed_val); break;
+            case HID_REPORT_LOCAL_STRING_INDEX: dprintf(NOHEADER, "StringIndex(%d)\n", val); break;
+            case HID_REPORT_LOCAL_STRING_MINIMUM: dprintf(NOHEADER, "StringMinimum(%d)\n", signed_val); break;
+            case HID_REPORT_LOCAL_STRING_MAXIMUM: dprintf(NOHEADER, "StringMaximum(%d)\n", signed_val); break;
             case HID_REPORT_LOCAL_DELIMETER: dprintf(NOHEADER, "Delimeter\n"); break;
             default: dprintf(NOHEADER, "??? (0x%x)\n", opc.opcode); break;
         }
@@ -254,11 +261,11 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
         }
 
         // Sign extend
-        int32_t signed_val = val;
-        if (report_size == 1 && (val & 0x80)) {
-            signed_val |= 0xFFFFFF00;
-        } else if (report_size == 2 && (val & 0x8000)) {
-            signed_val |= 0xFFFF0000;
+        int32_t signed_val;
+        switch (report_size) {
+            case 1:  signed_val = (int8_t)val;  break;
+            case 2:  signed_val = (int16_t)val; break;
+            default: signed_val = (int32_t)val; break;
         }
 
         // Process the opcode
@@ -298,16 +305,27 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
             }
         } else if (opcode.desc_type == HID_REPORT_GLOBAL) {
             switch (opcode.opcode) {
-                case HID_REPORT_GLOBAL_USAGE_PAGE: state->usage_page = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_UNIT: state->unit = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: state->logical_maximum = signed_val; break;
+                case HID_REPORT_GLOBAL_USAGE_PAGE: state->usage_page = val; break;
+                case HID_REPORT_GLOBAL_UNIT: state->unit = val; break;
+                
+                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: {
+                    // The interpretation of this is different depending on LogicalMinimum
+                    if (state->logical_minimum < 0) {
+                        state->logical_maximum = signed_val;
+                    } else {
+                        state->logical_maximum = val;
+                    }
+                    
+                    break;
+                }
+                
                 case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: state->logical_minimum = signed_val; break;
                 case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: state->physical_maximum = signed_val; break;
                 case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: state->physical_minimum = signed_val; break;
-                case HID_REPORT_GLOBAL_UNIT_EXPONENT: state->unit_exponent = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_REPORT_SIZE: state->report_size = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_REPORT_ID: state->report_id = HID_CAST_REPORT_SIZE(0, val); state->has_report_id = 1; break;
-                case HID_REPORT_GLOBAL_REPORT_COUNT: state->report_count = HID_CAST_REPORT_SIZE(0, val); break;
+                case HID_REPORT_GLOBAL_UNIT_EXPONENT: state->unit_exponent = val; break;
+                case HID_REPORT_GLOBAL_REPORT_SIZE: state->report_size = val; break;
+                case HID_REPORT_GLOBAL_REPORT_ID: state->report_id = val; state->has_report_id = 1; break;
+                case HID_REPORT_GLOBAL_REPORT_COUNT: state->report_count = val; break;
 
                 default:
                     LOG(ERR, "Unrecognized global opcode: 0x%x\n", opcode.opcode);
@@ -315,9 +333,9 @@ USBHidCollection_t *hid_parseCollection(USBHidDevice_t *dev, USBHidParserState_t
             }
         } else if (opcode.desc_type == HID_REPORT_LOCAL) {
             switch (opcode.opcode) {
-                case HID_REPORT_LOCAL_USAGE: HID_USAGE_PUSH(local_state, HID_CAST_REPORT_SIZE(0, val)); break;
-                case HID_REPORT_LOCAL_USAGE_MAXIMUM: local_state.usage_maximum = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_LOCAL_USAGE_MINIMUM: local_state.usage_minimum = HID_CAST_REPORT_SIZE(0, val); break;
+                case HID_REPORT_LOCAL_USAGE: HID_USAGE_PUSH(local_state, val); break;
+                case HID_REPORT_LOCAL_USAGE_MAXIMUM: local_state.usage_maximum = val; break;
+                case HID_REPORT_LOCAL_USAGE_MINIMUM: local_state.usage_minimum = val; break;
             
                 // TODO: Store the rest
             }
@@ -389,6 +407,14 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
             case 4: val = (uint32_t)(*(uint32_t*)(p+1)); break;
         }
 
+        // Sign extend
+        int32_t signed_val;
+        switch (report_size) {
+            case 1:  signed_val = (int8_t)val;  break;
+            case 2:  signed_val = (int16_t)val; break;
+            default: signed_val = (int32_t)val; break;
+        }
+
         hid_printOpcode(state, opcode, val, report_size);
 
         if (opcode.desc_type == HID_REPORT_MAIN) {
@@ -405,16 +431,27 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
             }
         } else if (opcode.desc_type == HID_REPORT_GLOBAL) {
             switch (opcode.opcode) {
-                case HID_REPORT_GLOBAL_USAGE_PAGE: state->usage_page = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_UNIT: state->unit = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: state->logical_maximum = (int8_t)val; break;
-                case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: state->logical_minimum = (int8_t)val; break;
-                case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: state->physical_maximum = (int32_t)val; break;
-                case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: state->physical_minimum = (int32_t)val; break;
-                case HID_REPORT_GLOBAL_UNIT_EXPONENT: state->unit_exponent = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_REPORT_SIZE: state->report_size = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_GLOBAL_REPORT_ID: state->report_id = HID_CAST_REPORT_SIZE(0, val); state->has_report_id = 1; break;
-                case HID_REPORT_GLOBAL_REPORT_COUNT: state->report_count = HID_CAST_REPORT_SIZE(0, val); break;
+                case HID_REPORT_GLOBAL_USAGE_PAGE: state->usage_page = val; break;
+                case HID_REPORT_GLOBAL_UNIT: state->unit = val; break;
+                
+                case HID_REPORT_GLOBAL_LOGICAL_MAXIMUM: {
+                    // The interpretation of this is different depending on LogicalMinimum
+                    if (state->logical_minimum < 0) {
+                        state->logical_maximum = signed_val;
+                    } else {
+                        state->logical_maximum = val;
+                    }
+                    
+                    break;
+                }
+
+                case HID_REPORT_GLOBAL_LOGICAL_MINIMUM: state->logical_minimum = signed_val; break;
+                case HID_REPORT_GLOBAL_PHYSICAL_MAXIMUM: state->physical_maximum = signed_val; break;
+                case HID_REPORT_GLOBAL_PHYSICAL_MINIMUM: state->physical_minimum = signed_val; break;
+                case HID_REPORT_GLOBAL_UNIT_EXPONENT: state->unit_exponent = val; break;
+                case HID_REPORT_GLOBAL_REPORT_SIZE: state->report_size = val; break;
+                case HID_REPORT_GLOBAL_REPORT_ID: state->report_id = val; state->has_report_id = 1; break;
+                case HID_REPORT_GLOBAL_REPORT_COUNT: state->report_count = val; break;
 
                 case HID_REPORT_GLOBAL_PUSH: assert(0); // TODO
                 case HID_REPORT_GLOBAL_POP: assert(0); // TODO
@@ -426,9 +463,9 @@ list_t *hid_parseReportDescriptor(USBHidDevice_t *device, uint8_t *data, size_t 
             }
         } else if (opcode.desc_type == HID_REPORT_LOCAL) {
             switch (opcode.opcode) {
-                case HID_REPORT_LOCAL_USAGE: HID_USAGE_PUSH(local_state, HID_CAST_REPORT_SIZE(0, val)); break;
-                case HID_REPORT_LOCAL_USAGE_MAXIMUM: local_state.usage_maximum = HID_CAST_REPORT_SIZE(0, val); break;
-                case HID_REPORT_LOCAL_USAGE_MINIMUM: local_state.usage_minimum = HID_CAST_REPORT_SIZE(0, val); break;
+                case HID_REPORT_LOCAL_USAGE: HID_USAGE_PUSH(local_state, val); break;
+                case HID_REPORT_LOCAL_USAGE_MAXIMUM: local_state.usage_maximum = val; break;
+                case HID_REPORT_LOCAL_USAGE_MINIMUM: local_state.usage_minimum = val; break;
             
                 default:
                     printf("HID bad/unknown local opcode 0x%x\n", opcode.opcode);
@@ -500,7 +537,10 @@ void hid_processCollectionData(USBHidCollection_t *collection, uint8_t report_id
         if (item->opcode == HID_REPORT_MAIN_COLLECTION) {
             hid_processCollectionData((USBHidCollection_t*)item, report_id, data_ptr, &bit_offset, data_size);
         } else if (item->opcode == HID_REPORT_MAIN_INPUT) {
-            if (report_id && report_id != item->report_id) continue;
+            if (report_id && report_id != item->report_id) {
+                continue;
+            }
+
             uint32_t usage_id = item->usage_id ? item->usage_id : item->usage_min; 
 
             if (!collection->driver || !(item->usage_id || item->usage_max || item->usage_min)) {
@@ -522,8 +562,13 @@ void hid_processCollectionData(USBHidCollection_t *collection, uint8_t report_id
 
                 if (!(item->flags & HID_INPUT_FLAG_VARIABLE)) {
                     // Array
-                    // LOG(DEBUG, "Sending array data: %d\n", usage_id + logical_val);
-                    if (collection->driver && collection->driver->array) collection->driver->array(collection, item, item->usage_page, usage_id + logical_val);
+                    uint32_t array_usage = logical_val;
+                    if (item->usage_min || item->logical_min) {
+                        array_usage = item->usage_min + (logical_val - item->logical_min);
+                    }
+
+                    // LOG(DEBUG, "Sending array data: %d\n", array_usage);
+                    if (collection->driver && collection->driver->array) collection->driver->array(collection, item, item->usage_page, array_usage);
                 } else {
                     // Determine physical
                     int64_t physical_val = logical_val;
