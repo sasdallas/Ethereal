@@ -246,7 +246,7 @@ uint16_t udp_checksum(uint32_t src_ip, uint32_t dest_ip, void *udp_pkt, uint16_t
     }
 
     if (count > 0) {
-        sum += *(const uint8_t *)udp_ptr;
+        sum += *(uint8_t *)udp_ptr;
     }
 
     while (sum >> 16) {
@@ -290,6 +290,8 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             return -ENOMEM; // ???
         }
 
+        udpsock->addr = nic_route(0)->ipv4_address; // hack
+
         udpsock->port = (uint16_t)prt;
         hashmap_set(udp_map, (void*)(uintptr_t)udpsock->port, udpsock);
         mutex_release(&udp_lock);
@@ -319,7 +321,7 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     memcpy(pkt->data, msg->msg_iov[0].iov_base, sz);
 
-    // pkt->checksum = udp_checksum(htonl(udpsock->addr), tgt->sin_addr.s_addr, pkt, sz + sizeof(udp_packet_t));
+    pkt->checksum = udp_checksum(htonl(udpsock->addr), tgt->sin_addr.s_addr, pkt, sz + sizeof(udp_packet_t));
 
     nic_t *nic = nic_route(udpsock->addr);
     assert(nic && "???");
