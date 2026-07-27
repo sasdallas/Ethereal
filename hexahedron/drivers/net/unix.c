@@ -518,32 +518,14 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @brief helper
  */
 static void unix_lock(unix_socket_t *s1, unix_socket_t *s2) {
-    if (s1 == s2) {
-        mutex_acquire(&s1->lock);
-        return;
-    }
-
-    if ((uintptr_t)s1 < (uintptr_t)s2) {
-        mutex_acquire(&s1->lock);
-        mutex_acquire(&s2->lock);
-    } else {
-        mutex_acquire(&s2->lock);
-        mutex_acquire(&s1->lock);
-    }
+    MUTEX_LOCK_BOTH(&s1->lock, &s2->lock);
 }
 
 /**
  * @brief helper
  */
 static void unix_unlock(unix_socket_t *s1, unix_socket_t *s2) {
-    // order doesn't strictly matter but good practice
-    if ((uintptr_t)s1 < (uintptr_t)s2) {
-        mutex_release(&s2->lock);
-        mutex_release(&s1->lock);
-    } else {
-        mutex_release(&s1->lock);
-        mutex_release(&s2->lock);
-    }
+    MUTEX_RELEASE_BOTH(&s1->lock, &s2->lock);
 }
 
 /**
