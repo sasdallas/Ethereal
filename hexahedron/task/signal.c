@@ -80,7 +80,7 @@ const __signal_handler signal_default_action[] = {
  */
 int signal_sendThread(struct thread *thr, int signal) {
     if (signal < 0 || signal >= NSIG) return -EINVAL;
-    LOG(DEBUG, "Sending signal %d to thread (handler = %p)\n", signal, thr->signals[signal].handler);
+    // LOG(DEBUG, "Sending signal %d to thread (handler = %p)\n", signal, thr->signals[signal].handler);
 
     proc_signal_t *sig = &THREAD_SIGNAL(thr, signal);
 

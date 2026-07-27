@@ -14,15 +14,15 @@
 #include <kernel/task/process.h>
 #include <kernel/debug.h>
 
-#define UNSUPPORTED (O_NOCTTY | O_DSYNC | O_ASYNC | O_DIRECT | O_SYNC | O_RSYNC | O_LARGEFILE | O_NOATIME | O_TMPFILE)
+#define UNSUPPORTED (O_NOCTTY | O_DSYNC | O_ASYNC | O_DIRECT | O_SYNC | O_RSYNC | O_LARGEFILE | O_NOATIME)
 
 int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     if (!strcmp(pathname, " ") || !strlen(pathname)) {
         return -ENOENT;
     }
 
-    if (flags & UNSUPPORTED) {
-        SYSCALL_LOG(WARN, "open(%s, 0x%x, 0x%x) has unsupported flags\n", pathname, flags, mode);
+    if ((flags & ~(O_ACCMODE)) & UNSUPPORTED || ((flags & O_TMPFILE) == O_TMPFILE)) {
+        SYSCALL_LOG(WARN, "open(%s, 0x%x, 0x%x) has unsupported flags (0x%x)\n", pathname, flags, mode, UNSUPPORTED);
     }
 
     // Try and get it open
