@@ -92,8 +92,12 @@ void __attribute__((noreturn)) process_switchNextThread() {
     if (current_cpu->current_process == current_cpu->idle_process) {
         timemonitor_updateIdleExit();
     }
+    
+    // Entering critical section
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
     // Update CPU variables
+    thread_t *prev = current_cpu->current_thread;
     current_cpu->current_thread = next_thread;
     current_cpu->current_process = next_thread->parent;
     
@@ -111,8 +115,9 @@ void __attribute__((noreturn)) process_switchNextThread() {
     // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
 
-    arch_load_context(&current_cpu->current_thread->context); // Didn't bother switching context
-    __builtin_unreachable();
+    // Go!
+    arch_switch_context(prev, next_thread, false);
+    assert(0);
 }
 
 /**
@@ -124,13 +129,13 @@ void __attribute__((noreturn)) process_switchNextThread() {
  * @param reschedule Whether to readd the process back to the queue, meaning it can return whenever and isn't waiting on something
  */
 void process_yield(uint8_t reschedule) {
-    // Calculate times on context switch
-    timemonitor_updateContextSwitch();
-
     // If the idle process is being rescheduled handle that
     if (current_cpu->current_process == current_cpu->idle_process) {
-        current_cpu->current_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
-        return process_switchNextThread();
+        reschedule = 0;
+        timemonitor_updateIdleExit();
+    } else {
+        // Calculate times on context switch
+        timemonitor_updateContextSwitch();
     }
 
     // Do we even have a thread?
@@ -144,32 +149,20 @@ void process_yield(uint8_t reschedule) {
         return thread_exit();
     }
 
-    // Thread no longer has any time to execute. Save FPU registers
-    // TODO: DESPERATELY move this to context structure.
-    // TODO: Lazy FPU
-#if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
-    asm volatile ("fxsave64 (%0)" :: "r"(current_cpu->current_thread->fp_regs));
-#endif
-
-    // Equivalent to a setjmp, use arch_save_context() to save our context
-    if (arch_save_context(&current_cpu->current_thread->context) == 1) {
-        // We are back, and were chosen to be executed. Return
-
-    #if defined(__ARCH_I386__) || defined(__ARCH_X86_64__)
-        asm volatile ("fxrstor64 (%0)" :: "r"(current_cpu->current_thread->fp_regs));
-    #endif
-
-        return;
-    }
-    
     // Get current thread
     thread_t *prev = current_cpu->current_thread;
+
+    // Can't be rescheduling
+    if (prev->status & THREAD_STATUS_SLEEPING) reschedule = 0;
 
     // Get next thread in queue
     thread_t *next_thread = scheduler_get();
     if (!next_thread) {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
+
+    // Entering a critical section now
+    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
     // Clear resched flag so we dont get preempted in here
     next_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
@@ -181,25 +174,32 @@ void process_yield(uint8_t reschedule) {
     // Entering idle process
     if (current_cpu->current_process == current_cpu->idle_process) {
         timemonitor_updateIdleEntry();
+    } else {
+        timemonitor_updateThreadSwitchIn();
     }
 
     // Setup page directory
     vmm_switch(current_cpu->current_thread->ctx);
 
-    // On your mark... (load kstack)
+    // Final preparations
     arch_prepare_switch(current_cpu->current_thread);
-
-    // Get set..
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
 
-    // Acquire the lock - arch_yield will release the lock
-    spinlock_acquire(current_cpu->sched.lock);
-    if (prev && reschedule && !(prev->status & THREAD_STATUS_SLEEPING)) {
-        list_append_node(current_cpu->sched.queue, &prev->sched_node);
+    // TODO: DESPERATELY move this to context structure.
+    // TODO: Lazy FPU
+    asm volatile ("fxsave64 (%0)" :: "r"(prev->fp_regs));
+    thread_t *yield = arch_switch_context(prev, next_thread, reschedule);
+    asm volatile ("fxrstor (%0)" :: "r"(current_cpu->current_thread->fp_regs));
+
+    // Return thread to its queue safely
+    if (yield) {
+        spinlock_acquire(current_cpu->sched.lock);
+        list_append_node(current_cpu->sched.queue, &yield->sched_node);
+        spinlock_release(current_cpu->sched.lock);
     }
 
-    arch_yield(prev, current_cpu->current_thread);
-    __builtin_unreachable();
+    // Restore interrupts now
+    hal_setInterruptState(state);
 }
 
 /**
@@ -248,9 +248,8 @@ process_t *process_getFromPID(pid_t pid) {
  * @param parent The parent of the process
  * @param name The name of the process (will be strdup'd)
  * @param flags The flags to use for the process
- * @param priority The priority of the process
  */
-static process_t *process_createStructure(process_t *parent, char *name, unsigned int flags, unsigned int priority) {
+static process_t *process_createStructure(process_t *parent, char *name, unsigned int flags) {
     process_t *process = kmalloc(sizeof(process_t));
     memset(process, 0, sizeof(process_t));
 
@@ -258,7 +257,6 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     process->parent = parent;
     process->name = strdup(name);
     process->flags = flags;
-    process->priority = priority;
     process->state = PROCESS_RUNNING;
 
     if (parent && parent->flags & PROCESS_TRACE_SYS) {
@@ -366,11 +364,11 @@ thread_t *process_createThread(process_t *proc, uintptr_t entry, unsigned int fl
  * @returns Process structure
  */
 process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data){
-    process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL, priority);
-    proc->main_thread = process_createThread(proc, (uintptr_t)&arch_enter_kthread, THREAD_FLAG_KERNEL);
+    process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL);
+    proc->main_thread = process_createThread(proc, (uintptr_t)entrypoint, THREAD_FLAG_KERNEL);
 
+    // arch_thread_entry will pop the context
     THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, data);
-    THREAD_PUSH_STACK(SP(proc->main_thread->context), void*, entrypoint);
 
     return proc;
 }
@@ -395,7 +393,7 @@ static void kernel_idle() {
  */
 process_t *process_spawnIdleTask() {
     // Create new process
-    process_t *idle = process_createStructure(NULL, "idle", PROCESS_KERNEL, PRIORITY_LOW);
+    process_t *idle = process_createStructure(NULL, "idle", PROCESS_KERNEL);
     
     // !!!: Hack
     process_freePID(idle->pid);
@@ -406,6 +404,7 @@ process_t *process_spawnIdleTask() {
 
     // Create a new thread
     idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
+    THREAD_PUSH_STACK(SP(idle->main_thread->context), uintptr_t, 0);
 
     timemonitor_updateProcessStart(idle->main_thread);
     return idle;
@@ -464,7 +463,6 @@ void process_destroyZombie(process_t *proc) {
  */
 void process_destroy(process_t *proc) {
     assert(proc->nthreads == 0);
-    LOG(DEBUG, "Destroying process \"%s\" (%p)...\n", proc->name, proc);
 
     if (proc->exe_image) vfs_close(proc->exe_image);
     inode_release(proc->wd_node);
@@ -526,7 +524,7 @@ extern void systemfs_proc_destroy(process_t *proc);
  */
 process_t *process_spawnInit() {
     // Create a new process
-    process_t *init = process_createStructure(NULL, "init", 0, PRIORITY_HIGH);
+    process_t *init = process_createStructure(NULL, "init", 0);
     init->sid = 1;
     init->pgid = 1;
 
@@ -547,10 +545,9 @@ process_t *process_spawnInit() {
  * @param parent Parent process, or NULL if not needed
  * @param name The name of the process
  * @param flags The flags of the process
- * @param priority The priority of the process 
  */
-process_t *process_create(process_t *parent, char *name, int flags, int priority) {
-    return process_createStructure(parent, name, flags, priority);
+process_t *process_create(process_t *parent, char *name, int flags) {
+    return process_createStructure(parent, name, flags);
 }
 
 /**
@@ -991,10 +988,12 @@ void process_exit(process_t *process, int status_code) {
 pid_t process_fork() {
     // First we create our child pprocess
     process_t *parent = current_cpu->current_process;   
-    process_t *child = process_create(parent, parent->name, parent->flags, parent->priority);
+    process_t *child = process_create(parent, parent->name, parent->flags);
     child->main_thread = process_createThread(child, (uintptr_t)NULL, THREAD_FLAG_CHILD);
 
     // Configure context of child thread
+    // !!!: Have to bypass the existing thread logic in order to create this thread.
+    // !!!: arch_restore_context() will execute thread_entrypoint in order to accomplish this
     IP(child->main_thread->context) = (uintptr_t)&arch_restore_context;
     SP(child->main_thread->context) = child->main_thread->kstack;
     BP(child->main_thread->context) = SP(child->main_thread->context);
@@ -1121,6 +1120,8 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
     // Well, unfortunately we have to steal the hack from fork() and use arch_restore_context
 
     // Configure context of child thread
+    // !!!: Have to bypass the existing thread logic in order to create this thread.
+    // !!!: arch_restore_context() will execute thread_entrypoint in order to accomplish this
     IP(thr->context) = (uintptr_t)&arch_restore_context;
     SP(thr->context) = thr->kstack;
     BP(thr->context) = thr->kstack;
@@ -1163,10 +1164,9 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
  * @returns The new thread
  */
 thread_t *process_createKernelThread(process_t *process, unsigned int flags, void *entry, void *arg) {
-    thread_t *thr = process_createThread(process, (uintptr_t)&arch_enter_kthread, flags | THREAD_FLAG_KERNEL);
+    thread_t *thr = process_createThread(process, (uintptr_t)entry, flags | THREAD_FLAG_KERNEL);
 
     THREAD_PUSH_STACK(SP(thr->context), void*, arg);
-    THREAD_PUSH_STACK(SP(thr->context), void*, entry);
 
     return thr;
 }

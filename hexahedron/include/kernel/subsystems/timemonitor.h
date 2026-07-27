@@ -107,4 +107,9 @@ void timemonitor_updateSleepEnter();
  */
 void timemonitor_updateSleepExit();
 
+/**
+ * @brief Update thread switch in
+ */
+void timemonitor_updateThreadSwitchIn();
+
 #endif

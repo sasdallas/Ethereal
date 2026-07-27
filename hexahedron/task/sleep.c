@@ -41,9 +41,8 @@ static struct internal_time_queue_entry *head = &dummy;
 
 /**
  * @brief Wakeup sleepers callback
- * @param ticks Current clock ticks
  */
-void sleep_callback(uint64_t ticks) {
+void sleep_callback() {
     if (!spinlock_tryAcquire(&time_lock)) {
         return;
     }

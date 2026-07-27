@@ -14,6 +14,12 @@
 .section .text
 .align 8
 
+/* change these if you modify the thread structure */
+#define CONTEXT_OFFSET          0xA8    // thread->context
+#define STATUS_OFFSET           0x10    // thread->status
+#define THREAD_STATUS_SLEEPING  0x08
+#define SLEEP_LOCK_OFFSET       0x74    // thread->sleep.lock.lock
+
 .global arch_start_execution
 arch_start_execution:
     /* Clear RBP to a known value for debug */
@@ -36,107 +42,14 @@ arch_start_execution:
     swapgs
     iretq
 
-
-.global arch_save_context
-arch_save_context:
-    /*
-        Layout of the context structure:
-        - RSP: 0
-        - RBP: 8
-        - RBX: 16
-        - R12: 24
-        - R13: 32
-        - R14: 40
-        - R15: 48
-        - FSBASE: 56
-        - RIP: 64
-    */
-
-    /* Load RSP */
-    leaq 8(%rsp), %rax
-    movq %rax, 0(%rdi)
-    
-    /* Load other variables */
-    movq %rbp, 8(%rdi)
-    movq %rbx, 16(%rdi)
-    movq %r12, 24(%rdi)
-    movq %r13, 32(%rdi)
-    movq %r14, 40(%rdi)
-    movq %r15, 48(%rdi)
-
-    /* We need to read from the FSBASE MSR - 0xC0000100 */
-    movq $0xC0000100, %rcx
-    rdmsr
-
-    /* RDMSR splits into low bits in EAX, high bits in EDX */
-    movl %eax, 56(%rdi)
-    movl %edx, 60(%rdi)
-
-    /* Now read EIP */
-    movq (%rsp), %rax
-    movq %rax, 64(%rdi)
-
-    /* Clear EAX for return value */
-    xor %rax, %rax
-    retq
-
-.global arch_load_context
-arch_load_context:
-    /*
-        Layout of the context structure:
-        - RSP: 0
-        - RBP: 8
-        - RBX: 16
-        - R12: 24
-        - R13: 32
-        - R14: 40
-        - R15: 48
-        - FSBASE: 56
-        - RIP: 64
-    */
-    movq 0(%rdi), %rsp
-    movq 8(%rdi), %rbp
-    movq 16(%rdi), %rbx
-    movq 24(%rdi), %r12
-    movq 32(%rdi), %r13
-    movq 40(%rdi), %r14
-    movq 48(%rdi), %r15
-
-
-    /* Restore FSBASE */
-    movl 56(%rdi), %eax
-    movl 60(%rdi), %edx
-    movq $0xC0000100, %rcx
-    wrmsr
-
-    /* Set RAX to 1 for return value */
-    mov $1, %rax
-
-    /* Jump to RIP */
-    jmpq *64(%rdi)
-
-/* Enter kernel thread */
-.global arch_enter_kthread
-arch_enter_kthread:
-    /* Pop function */
-    popq %rsi
-
-    /* Pop data into RDI */
-    popq %rdi
-
-    // The kernel is stupid and doesn't usually align our stack
-    // So align the stack to 16-byte boundary (SSE instructions and whatnot need this)
-    and $0xFFFFFFFFFFFFFFF0, %rsp
-
-    /* Jump */
-    xor %rbp, %rbp
-    jmpq *%rsi
-
 /* Restore context from stack */
 .global arch_restore_context
 arch_restore_context:
-    popw %ax
+    // fork and createUserThread need to bypass
+    movq %rax, %rdi
+    call thread_entrypoint
 
+    popw %ax
 
     popq %r8
     popq %r9
@@ -152,7 +65,7 @@ arch_restore_context:
     popq %rsi
     popq %rdx
     popq %rcx
-    popq %rbx 
+    popq %rbx
     popq %rax
 
     // Skip over error code and int no
@@ -176,42 +89,77 @@ __unlock_thread:
 .no_need:
     ret
 
-.global arch_yield
-arch_yield:
-    // We have a decent amount of work to do here
-    // thread->status (0x10), thread->sleep (0x50), thread->sleep.lock (0x74), thread->context (0xA0)
-    // prev in %rdi and dest in %rsi
+// main context switcher
+// called at the very end of yield
+.global arch_switch_context
+arch_switch_context:
+    /* previous thread in RDI, next in RSI, requeue flag in RDX, irq state in RCX */
 
-    /* Load destination context */
-    addq $0xA8, %rsi
-    movq 0(%rsi), %rsp
-    movq 8(%rsi), %rbp
-    movq 16(%rsi), %rbx
-    movq 24(%rsi), %r12
-    movq 32(%rsi), %r13
-    movq 40(%rsi), %r14
-    movq 48(%rsi), %r15
+    /* save */
+    movq %rdx, %r11
+    test %rdi, %rdi
+    jz .start_load
 
+    /* save the old thread's context */
+    leaq 8(%rsp), %rax // reads the RSP from the stack
+    movq %rax, (CONTEXT_OFFSET+0)(%rdi)
+    movq %rbp, (CONTEXT_OFFSET+8)(%rdi)
+    movq %rbx, (CONTEXT_OFFSET+16)(%rdi)
+    movq %r12, (CONTEXT_OFFSET+24)(%rdi)
+    movq %r13, (CONTEXT_OFFSET+32)(%rdi)
+    movq %r14, (CONTEXT_OFFSET+40)(%rdi)
+    movq %r15, (CONTEXT_OFFSET+48)(%rdi)
+    movq $0xC0000100, %rcx
+    rdmsr
+    movl %eax, (CONTEXT_OFFSET+56)(%rdi)
+    movl %edx, (CONTEXT_OFFSET+60)(%rdi)
+    movq (%rsp), %rax // reads IP from the stack
+    movq %rax, (CONTEXT_OFFSET+64)(%rdi)
 
-    /* Now we are off the thread's stack */
+.start_load:
+
+    /* begin loading new thread's context */
+    movq (CONTEXT_OFFSET+0)(%rsi), %rsp
+    movq (CONTEXT_OFFSET+8)(%rsi), %rbp
+    movq (CONTEXT_OFFSET+16)(%rsi), %rbx
+    movq (CONTEXT_OFFSET+24)(%rsi), %r12
+    movq (CONTEXT_OFFSET+32)(%rsi), %r13
+    movq (CONTEXT_OFFSET+40)(%rsi), %r14
+    movq (CONTEXT_OFFSET+48)(%rsi), %r15
+    
+    /* the thread's sleep queue can now be unlocked */
+    test %rdi, %rdi
+    jz .done_unlock
     call __unlock_thread
 
-    // Unlock the CPU's queue
-    movq %gs:0x90, %rax // %gs:0x90 = sched_cpu_t
-    movb $0, %cl
-    lock xchgb %cl, 0xC(%rax) // unlock the current CPU's queue 
+.done_unlock:
 
-    /* Restore FSBASE */
-    movl 56(%rsi), %eax
-    movl 60(%rsi), %edx
+    /* restore fsbase */
+    movl (CONTEXT_OFFSET+56)(%rsi), %eax
+    movl (CONTEXT_OFFSET+60)(%rsi), %edx
     movq $0xC0000100, %rcx
     wrmsr
 
-    /* Set RAX to 1 for return value */
-    mov $1, %rax
+    /* this is the RIP to get back to */
+    movq (CONTEXT_OFFSET+64)(%rsi), %rcx
 
-    /* Jump to RIP */
-    jmpq *64(%rsi)
+    /* depending on reschedule flag, return thread in RAX */
+    xorq %rax, %rax
+    test %r11, %r11
+    cmovnzq %rdi, %rax
+
+    /* jump into the new thread */
+    pushq %rcx
+    ret
+
+.global arch_thread_entry
+.extern thread_entrypoint
+arch_thread_entry:
+    movq %rax, %rdi
+    call thread_entrypoint
+    popq %rdi // context
+    popq %rsi // function
+    jmpq *%rsi
 
 .global arch_handle_threadexit
 .extern thread_safeExit
@@ -232,3 +180,9 @@ arch_handle_threadexit:
     movq %rsi, %rdi
     jmp thread_safeExit
 
+.global arch_execute_safe
+arch_execute_safe:
+    movq %rdx, %rsp
+    andq $0xFFFFFFFFFFFFFFF0, %rsp
+    xchg %rdi, %rsi
+    callq %rsi

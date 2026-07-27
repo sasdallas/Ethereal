@@ -47,9 +47,22 @@ static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, i
     thr->flags = flags;
     thr->tid = __atomic_add_fetch(&last_tid, 1, __ATOMIC_RELAXED);
     thr->sched_node.value = thr;
-
-    // Thread ticks aren't updated because they should ONLY be updated when scheduler_insertThread is called
+    
     return thr;
+}
+
+/**
+ * @brief Thread entrypoint
+ * Due to the handoff method in @c arch_switch_context this is required. New threads will jump to @c arch_thread_entry
+ * and that will then jump over here.
+ */
+__attribute__((no_caller_saved_registers)) void thread_entrypoint(thread_t *previous, void (*entrypoint)()) {
+    if (previous != NULL) {
+        scheduler_insertThread(previous);
+    }
+
+    // Begin new threads with interrupts enabled
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 }
 
 /**
@@ -86,8 +99,16 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
         thr->stack = thr->kstack;
     }
 
-    // Initialize thread context
-    arch_initialize_context(thr, entrypoint, thr->stack);
+    // Push the entrypoint to the stack
+    THREAD_PUSH_STACK(thr->stack, uintptr_t, entrypoint);
+
+    // For threads that aren't kernel threads a context must be pushed
+    if ((thr->flags & THREAD_FLAG_KERNEL) == 0) {
+        THREAD_PUSH_STACK(thr->stack, uintptr_t, 0x0);
+    }
+
+    // Initialize the handler context
+    arch_initialize_context(thr, (uintptr_t)&arch_thread_entry, thr->stack);
 
     // Switch back
     vmm_switch(prev_ctx);
@@ -113,7 +134,7 @@ int thread_destroy(thread_t *thr) {
 /**
  * @brief Safe internal-exit
  */
-void thread_safeExit(thread_t *arg) {
+__attribute__((no_caller_saved_registers)) void thread_safeExit(thread_t *arg) {
     thread_t *t = (thread_t*)arg;
     __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
     __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
@@ -123,7 +144,6 @@ void thread_safeExit(thread_t *arg) {
         reaper_push(t->parent);
     }
 
-    PREEMPT_ENABLE();
     process_switchNextThread();
 }
 
@@ -139,6 +159,6 @@ void thread_exit() {
 
     // Shitty hack, go!
     // !!!: TODO Replace this stupid hack with something better. The idea of using a func is fine but using the idle process is silly
-    PREEMPT_DISABLE();
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
     arch_handle_threadexit(current_cpu->idle_process->main_thread, t);
 }

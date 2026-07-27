@@ -179,3 +179,11 @@ void timemonitor_updateIrqExit() {
     current_cpu->times.times[CPU_TIME_IRQ] += ns - current_cpu->times.last_measurement;
     current_cpu->times.last_measurement = ns;
 }
+
+
+/**
+ * @brief Update thread switch in
+ */
+void timemonitor_updateThreadSwitchIn() {
+    current_cpu->current_thread->times.last_update_time = timemonitor_getNanoseconds();
+}

@@ -227,7 +227,7 @@ _start:
     movl $(__mmu_initial_page_region - KERNEL_LOAD_ADDRESS), %edi
     movl %edi, %cr3
 
-    // Enable PAE, it is required for long mode.
+    // CR4.PAE
     mov %cr4, %eax
     or $32, %eax
     mov %eax, %cr4

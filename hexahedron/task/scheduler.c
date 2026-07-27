@@ -88,8 +88,8 @@ thread_t *scheduler_get() {
         return current_cpu->idle_process->main_thread;
     }
 
-extern void sleep_callback(uint64_t t);
-    sleep_callback(0);
+extern void sleep_callback();
+    sleep_callback();
 
     spinlock_acquire(current_cpu->sched.lock);
     
@@ -124,7 +124,7 @@ extern void sleep_callback(uint64_t t);
  * @brief Scheduler timer callback
  */
 void scheduler_irq() {
-    if (current_cpu->current_thread && (current_cpu->current_thread->flags & THREAD_STATUS_STOPPED) == 0) {
+    if (current_cpu->current_thread && (current_cpu->current_thread->flags & THREAD_FLAG_NO_PREEMPT) == 0) {
         if (current_cpu->current_process == current_cpu->idle_process || current_cpu->sched.queue->length) {
             current_cpu->current_thread->flags |= THREAD_FLAG_NEEDS_RESCHED;
         }

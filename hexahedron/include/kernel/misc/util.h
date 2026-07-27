@@ -91,6 +91,36 @@
 /* caller */
 #define CALLER __builtin_return_address(0)
 
+/* double-lock helpers */
+#define LOCK_BOTH(lock_fn, a, b) ({\
+    if ((uintptr_t)(a) == (uintptr_t)(b)) {\
+        lock_fn ( (a) );\
+    } else if ((uintptr_t)(a) < (uintptr_t)(b)) {\
+        lock_fn ( (a) );\
+        lock_fn ( (b) );\
+    } else {\
+        lock_fn ( (b) );\
+        lock_fn ( (a) );\
+    }\
+})
+
+#define UNLOCK_BOTH(unlock_fn, a, b) ({\
+    if ((uintptr_t)(a) == (uintptr_t)(b)) {\
+        unlock_fn ( (a) );\
+    } else if ((uintptr_t)(a) < (uintptr_t)(b)) {\
+        unlock_fn ( (b) );\
+        unlock_fn ( (a) );\
+    } else {\
+        unlock_fn ( (a) );\
+        unlock_fn ( (b) );\
+    }\
+})
+
+#define SPINLOCK_LOCK_BOTH(a, b) LOCK_BOTH(spinlock_acquire, a, b)
+#define SPINLOCK_UNLOCK_BOTH(a, b) UNLOCK_BOTH(spinlock_release, a, b)
+#define MUTEX_LOCK_BOTH(a, b) LOCK_BOTH(mutex_acquire, a, b)
+#define MUTEX_RELEASE_BOTH(a, b) UNLOCK_BOTH(mutex_release, a, b)
+
 /* container_of macro */
 #define CONTAINER_OF(ptr, type, member) ({ \
     void *__mptr = (void*)(ptr); \

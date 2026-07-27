@@ -16,6 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <stdbool.h>
 #include <kernel/arch/arch.h>
 
 /**** TYPES ****/
@@ -46,29 +47,13 @@ struct thread;
 __attribute__((noreturn)) void arch_start_execution(uintptr_t entrypoint, uintptr_t stack);
 
 /**
- * @brief Save the current thread context
- * 
- * Equivalent to the C function for setjmp
+ * @brief Switch context to another thread
+ * @param prev The previous thread being switched away from
+ * @param new The new thread to switch to
+ * @param requeue Whether to queue the old thread back in
+ * @returns The thread to queue back in or NULL
  */
-__attribute__((returns_twice)) int arch_save_context(struct arch_context *context);
-
-/**
- * @brief Load the current thread context
- * @param context The context to switch to
- * 
- * Equivalent to the C function for longjmp
- */
-__attribute__((noreturn)) void arch_load_context(struct arch_context *context);
-
-/**
- * @brief Yield
- * 
- * Thank you to @hyenasky for the idea of BOTH unlocks
- * When you want to yield, leave the current CPU's queue locked after adding in the previous thread.
- * After getting off of the previous stack in use, this will unlock the scheduler's queue.
- * It will also unlock the prev sleep queue
- */
-__attribute__((noreturn)) void arch_yield(struct thread *prev, struct thread *next);
+struct thread *arch_switch_context(struct thread *prev, struct thread *new, bool requeue);
 
 /**
  * @brief Arch handle threadexit
@@ -81,13 +66,11 @@ __attribute__((noreturn)) void arch_yield(struct thread *prev, struct thread *ne
 __attribute__((noreturn)) void arch_handle_threadexit(struct thread *idle_thread, struct thread *this_thread);
 
 /**
- * @brief Enter kernel thread
- *
- * Pop these from the stack in this order:
- * 1. kthread pointer
- * 2. data value
+ * @brief Enter thread
+ * 
+ * Argument and function are on the stack
  */
-extern void arch_enter_kthread();
+extern void arch_thread_entry();
 
 /**
  * @brief Restore context from @c registers_t structure
