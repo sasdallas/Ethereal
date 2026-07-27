@@ -95,7 +95,6 @@ typedef struct process {
 
     // SCHEDULER INFORMATION
     unsigned int flags;                 // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
-    unsigned int priority;              // Scheduler priority, see scheduler.h
     volatile process_state_t state;     // Process state
 
     // QUEUE INFORMATION
@@ -196,9 +195,8 @@ process_t *process_spawnInit();
  * @param parent Parent process, or NULL if not needed
  * @param name The name of the process
  * @param flags The flags of the process
- * @param priority The priority of the process 
  */
-process_t *process_create(process_t *parent, char *name, int flags, int priority);
+process_t *process_create(process_t *parent, char *name, int flags);
 
 /**
  * @brief Create a kernel process with a single thread
