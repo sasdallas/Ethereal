@@ -1,1 +1,4 @@
-freetype-2.14.3*
+*.tar.xz
+freetype-2.14.3
+freetype-2.4.9*
+build-freetype

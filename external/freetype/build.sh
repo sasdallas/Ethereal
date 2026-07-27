@@ -4,21 +4,27 @@
 
 set -e
 
+export FT_VERSION=2.14.3
+
 if [[ -d build-freetype ]]; then
-    echo Assuming Freetype is up to date
+
+    cd build-freetype
+    make DESTDIR=$2 -j4 install
+    cd ..
+
     exit 0
 fi 
 
 # Download freetype
-if [ ! -f freetype-2.14.3.tar.xz ]; then
-    wget "https://downloads.sourceforge.net/freetype/freetype-2.14.3.tar.xz"
+if [ ! -f freetype-$FT_VERSION.tar.xz ]; then
+    wget "https://downloads.sourceforge.net/freetype/freetype-$FT_VERSION.tar.xz"
 fi
 
-tar -xf freetype-2.14.3.tar.xz
+tar -xf freetype-$FT_VERSION.tar.xz
 
 # Patch freetype
-cd freetype-2.14.3
-patch -p1 < ../freetype.patch
+cd freetype-$FT_VERSION
+patch -p1 < ../freetype-$FT_VERSION.patch
 cd ..
 
 
@@ -26,8 +32,8 @@ cd ..
 mkdir build-freetype || true
 cd build-freetype
 rm -rf * || true
-chmod +x ../freetype-2.14.3/configure
-../freetype-2.14.3/configure --host=$1-ethereal --prefix=/usr --build=x86_64-linux-gnu --without-zlib --enable-shared
+chmod +x ../freetype-$FT_VERSION/configure
+../freetype-$FT_VERSION/configure --host=$1-ethereal --prefix=/usr --build=x86_64-linux-gnu --without-zlib --enable-shared
 make -j4
 make DESTDIR=$2 install
 cd ..
