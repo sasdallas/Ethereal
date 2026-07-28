@@ -18,6 +18,7 @@
 /**** INCLUDES ****/
 
 #include <stdint.h>
+#include <kernel/misc/util.h>
 
 /**** DEFINITIONS ****/
 
@@ -36,10 +37,8 @@
 // Hub types
 #define USB_DESC_HUB            0x29
 
-// TODO: Find a better way to define 0 bits
-
 // Endpoint bitmasks
-#define USB_ENDP_NUMBER         0x0F
+#define USB_ENDP_NUMBER_MASK    0x0F
 #define USB_ENDP_USAGE          0x30
 
 // Endpoint usage types
@@ -47,13 +46,13 @@
 #define USB_ENDP_FEEDBACK           0x10        // Feedback endpoint
 #define USB_ENDP_FEEDBACK_IMPL      0x30        // Feedback implicit endpoint
 
-// Endpoint transfer types - recommended to use USB_ENDP_IS_...
-#define USB_ENDP_TRANSFER_CONTROL   0x00        // !!!: DO NOT USE AS THIS IS AN INVALID BITMASK
-#define USB_ENDP_TRANSFER_ISOCH     0x01        // Isochronous endpoint
-#define USB_ENDP_TRANSFER_BULK      0x02        // Bulk endpoint
-#define USB_ENDP_TRANSFER_INT       0x03        // Interrupt endpoint
+// Endpoint transfer types
+#define USB_ENDP_TRANSFER_CONTROL   0x00
+#define USB_ENDP_TRANSFER_ISOCH     0x01
+#define USB_ENDP_TRANSFER_BULK      0x02
+#define USB_ENDP_TRANSFER_INT       0x03
 
-/* Endpoint directions - to be used with USB_ENDP_GET_DIRECTION() only! */
+/* Endpoint directions - to be used with USB_ENDP_DIRECTION() only! */
 #define USB_ENDP_DIRECTION_OUT      0x00        // OUT endpoint
 #define USB_ENDP_DIRECTION_IN       0x80        // IN endpoint
 
@@ -102,6 +101,7 @@ typedef struct USBDeviceDescriptor {
     uint8_t     bNumConfigurations; // Number of possible configurations
 } USBDeviceDescriptor_t;
 
+STATIC_ASSERT(sizeof(USBDeviceDescriptor_t) == 18);
 
 /**
  * @brief Interface descriptor
@@ -120,22 +120,27 @@ typedef struct USBInterfaceDescriptor {
     uint8_t     iInterface;         // Index of STRING descriptor describing this interface
 } USBInterfaceDescriptor_t;
 
+STATIC_ASSERT(sizeof(USBInterfaceDescriptor_t) == 9);
+
 /**
  * @brief Configuration descriptor
  * 
  * At the end of this resides wTotalLength - bLength interface/endpoint descriptors that you can read
  */
 typedef struct USBConfigurationDescriptor {
-    uint8_t     bLength;                // Size of this descriptor in bytes
-    uint8_t     bDescriptorType;        // USB_DESC_CONF
+    uint8_t     bLength;                                // Size of this descriptor in bytes
+    uint8_t     bDescriptorType;                        // USB_DESC_CONF
 
-    uint16_t    wTotalLength;           // Total combined length in bytes of all descriptors returned with the request for this descriptor
-    uint8_t     bNumInterfaces;         // Number of interfaces supported by this configuration
-    uint8_t     bConfigurationValue;    // Used as an argument in USB_REQ_SET_CONFIGURATION
-    uint8_t     iConfiguration;         // Index of STRING descriptor describing this configuration
-    uint8_t     bmAttributes;           // Bitmap of attributes (see USB_CONF_...)
-    uint8_t     bMaxPower;              // Maximum power consumption in units of 2mA
+    uint16_t    wTotalLength __attribute__((packed));   // Total length
+    
+    uint8_t     bNumInterfaces;                         // Number of interfaces supported by this configuration
+    uint8_t     bConfigurationValue;                    // Used as an argument in USB_REQ_SET_CONFIGURATION
+    uint8_t     iConfiguration;                         // Index of STRING descriptor describing this configuration
+    uint8_t     bmAttributes;                           // Bitmap of attributes (see USB_CONF_...)
+    uint8_t     bMaxPower;                              // Maximum power consumption in units of 2mA
 } USBConfigurationDescriptor_t;
+
+STATIC_ASSERT(sizeof(USBConfigurationDescriptor_t) == 9);
 
 /**
  * @brief Endpoint descriptor
@@ -146,9 +151,11 @@ typedef struct USBEndpointDescriptor {
 
     uint8_t     bEndpointAddress;   // Address of the endpoint on the USB device (bit 7 is direction, bits 0-3 are the endpoint number)
     uint8_t     bmAttributes;       // Endpoint attributes
-    uint16_t    wMaxPacketSize;     // Maximum packet size
+    uint16_t    wMaxPacketSize __attribute__((packed)); 
     uint8_t     bInterval;          // Interval for polling a device during a transfer
 } USBEndpointDescriptor_t;
+
+STATIC_ASSERT(sizeof(USBEndpointDescriptor_t) == 7);
 
 /**
  * @brief String descriptor (for language)
@@ -160,6 +167,8 @@ typedef struct USBStringLanguagesDescriptor {
     uint16_t    wLangID[];          // Language IDs
 } USBStringLanguagesDescriptor_t;
 
+STATIC_ASSERT(sizeof(USBStringLanguagesDescriptor_t) == 2);
+
 /**
  * @brief String descriptor
  */
@@ -169,6 +178,8 @@ typedef struct USBStringDescriptor {
 
     uint8_t     bString[];          // Unicode string
 } USBStringDescriptor_t;
+
+STATIC_ASSERT(sizeof(USBStringDescriptor_t) == 2);
 
 /**
  * @brief Hub descriptor
@@ -183,17 +194,22 @@ typedef struct USBHubDescriptor {
     
     // The remaining two fields of the hub descriptor are DeviceRemovable and PortPwrControlMask.
     // These take the size of bNbrPorts bits and are not included
-} USBHubDescriptor_t;
+} __attribute__((packed)) USBHubDescriptor_t;
+
+STATIC_ASSERT(sizeof(USBHubDescriptor_t) == 7);
 
 /**** MACROS ****/
 
-#define USB_ENDP_GET_NUMBER(endp) (((endp)->desc.bEndpointAddress & 0x0F) * 2 + !!((endp)->desc.bEndpointAddress & 0x80))
+#define USB_ENDP_TYPE(endp) ((endp)->desc.bmAttributes & 0x3)
+#define USB_ENDP_DIRECTION(endp) ((endp)->desc.bEndpointAddress & 0x80)
+#define USB_ENDP_NUMBER(endp) (((endp)->desc.bEndpointAddress & 0x0F) * 2 + !!((endp)->desc.bEndpointAddress & 0x80))
 
+// legacy APIs
 #define USB_ENDP_IS_INTERRUPT(endp) (((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_INT) == USB_ENDP_TRANSFER_INT)
 #define USB_ENDP_IS_BULK(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_BULK))
 #define USB_ENDP_IS_ISOCH(endp) (!(USB_ENDP_IS_INTERRUPT(endp)) && ((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_ISOCH))
 #define USB_ENDP_IS_CONTROL(endp) (((endp)->desc.bmAttributes & USB_ENDP_TRANSFER_INT) == 0x0)
-
-#define USB_ENDP_GET_DIRECTION(endp) ((endp)->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN)
+#define USB_ENDP_GET_NUMBER(endp) USB_ENDP_NUMBER(endp)
+#define USB_ENDP_GET_DIRECTION(endp) USB_ENDP_DIRECTION(endp)
 
 #endif

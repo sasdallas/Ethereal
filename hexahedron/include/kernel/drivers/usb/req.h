@@ -67,4 +67,6 @@ typedef struct USBDeviceRequest {
     uint16_t    wLength;                // Number of bytes if there is a DATA stage
 } USBDeviceRequest_t;
 
+STATIC_ASSERT(sizeof(USBDeviceRequest_t) == 8);
+
 #endif

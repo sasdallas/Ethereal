@@ -28,10 +28,8 @@ and every time a new device is initialized, it will cycle through the existing l
 which is discussed later. As well as that, usb_registerDriver will also scan through all controllers, their devices, and those devices' interfaces,
 and call your driver's dev_init method on each of them (just return USB_FAILURE if the device is invalid)
 
-NOTE:   If a driver was already registered to a device, then depending on your driver's setting for weak bind (which by default is 0),
-        it may be unloaded from its existing driver and then loaded onto the new driver. Please set your driver as a weak bind if it is a generic driver.
-
-NOTE2:  There is a small bit of priority besides weak binds. Providing find parameters will cause a higher tendency for your driver to get the device
+NOTE:   If a driver was already registered to a device, then depending on your driver's setting for weight (which by default is 0),
+        it may be unloaded from its existing driver and then loaded onto the new driver. 
 
 This approach can be slow, so timeouts can be used, and if the driver wants to wait for multithreading you can just sleep until one is plugged in.
 

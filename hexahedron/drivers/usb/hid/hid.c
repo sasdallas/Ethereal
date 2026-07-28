@@ -51,6 +51,15 @@ static list_t *hid_driver_list = NULL;
 /* HID driver list mutex */
 static mutex_t *hid_driver_mutex = NULL;
 
+/* HID driver operations */
+USB_STATUS hid_initializeDevice(USBInterface_t *intf);
+bool hid_matchDevice(USBDriver_t *driver, USBInterface_t *intf);
+USBDriverOps_t hid_driver_ops = {
+    .init = hid_initializeDevice,
+    .deinit = NULL, // TODO
+    .match = hid_matchDevice
+};
+
 void hid_printOpcode(USBHidParserState_t *parser, USBHidOpcode_t opc, uint32_t val, uint8_t report_size) {
     LOG(DEBUG, "PARSER: ");
     for (int i = 0; i < tabs; i++) {
@@ -798,6 +807,17 @@ USB_STATUS hid_initializeDevice(USBInterface_t *intf) {
 }
 
 /**
+ * @brief HID match device
+ */
+bool hid_matchDevice(USBDriver_t *driver, USBInterface_t *intf) {
+    if (intf->desc.bInterfaceClass == 3) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
  * @brief Register and initialize HID drivers
  */
 void hid_init() {
@@ -807,10 +827,10 @@ void hid_init() {
 
     // Register USB driver
     USBDriver_t *d = usb_createDriver();
-    d->name = strdup("USB HID Driver");
-    d->dev_init = hid_initializeDevice;
+    d->name = "USB HID Driver";
+    d->ops = &hid_driver_ops;
     d->find = NULL;
-    d->weak_bind = 0;
+    d->weight = 10;
     usb_registerDriver(d);
 }
 

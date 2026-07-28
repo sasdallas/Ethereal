@@ -16,6 +16,7 @@
 
 /**** INCLUDES ****/
 #include <stdint.h>
+#include <stdbool.h>
 #include <kernel/drivers/usb/dev.h>
 #include <kernel/drivers/usb/status.h>
 
@@ -59,6 +60,23 @@ typedef USB_STATUS (*driver_dev_init_t)(USBInterface_t *intf);
  */
 typedef USB_STATUS (*driver_dev_deinit_t)(USBInterface_t *intf);
 
+struct USBDriver;
+
+/**
+ * @brief USB driver opsstruct USBDriver
+ */
+typedef struct USBDriverOps {
+    // Initialize a device
+    USB_STATUS (*init)(USBInterface_t *intf);
+    
+    // Deinitialize a device
+    USB_STATUS (*deinit)(USBInterface_t *intf);
+
+    // Match device, returns true if driver is compatible
+    bool (*match)(struct USBDriver *driver, USBInterface_t *intf);
+} USBDriverOps_t;
+
+
 /**
  * @brief USB driver structure
  * 
@@ -66,20 +84,18 @@ typedef USB_STATUS (*driver_dev_deinit_t)(USBInterface_t *intf);
  * you MUST register your driver with the framework. Call @c usb_registerDriver and have your @c dev_init method return a USB
  * status code (as defined in the USB header file, @c USB_SUCCESS or whatnot)
  * 
+ * This driver structure gets duplicated so you can store device-specific information in the S field
+ * 
  * Bind settings must be configured to handle collisions. 
  * @warning There is a small bit of priority besides weak binds. Providing find parameters will cause a higher tendency for your driver to get the device
  */
 typedef struct USBDriver {
     char *name;                         // Optional name
-    driver_dev_init_t dev_init;         // Device initialize method
-    driver_dev_deinit_t dev_deinit;     // Device deinitialize method
+    int weight;                         // Used to calculate the most optimal drievr
+    USBDriverOps_t *ops;                // Driver operations
     USBDriverFindParameters_t *find;    // Optional find parameters.
 
     void *s;                            // Driver-specific structure
-
-    // BIND SETTINGS
-    // Collisions are not handled very well yet. However, certain drivers can set themselves as a weak bind.
-    int weak_bind;                      // Weak bind. If another driver tries to claim a device the device will be deinitialized from this driver and reinitialized on the new one.
 } USBDriver_t;
 
 /**** VARIABLES ****/

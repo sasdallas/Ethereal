@@ -96,16 +96,18 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev);
 USB_STATUS usb_deinitializeDevice(USBDevice_t *dev);
 
 /**
- * @brief Create a new USB device structure for initialization
+ * @brief Create a new USB device
+ * 
+ * This is just to create the structure of the device, it does not initialize anything.
+ * Call @c usb_initializeDevice to initialize the device
+ * 
  * @param controller The controller
+ * @param ops The operations for the device
  * @param port The device port
  * @param speed The device speed
- * 
- * @param shutdown The HC device shutdown method
- * @param control The HC control request method
- * @param interrupt The HC interrupt request method
+ * @param priv Private device pointer
  */
-USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_shutdown_t shutdown, hc_control_t control, hc_interrupt_t interrupt);
+USBDevice_t *usb_createDevice(USBController_t *controller, USBDeviceOps_t *ops, uint32_t port, uint32_t speed, void *priv);
 
 /**
  * @brief Destroy a USB device

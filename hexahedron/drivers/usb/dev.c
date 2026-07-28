@@ -26,29 +26,28 @@
 #define LOG(status, ...) dprintf_module(status, "USB:DEV", __VA_ARGS__)
 
 /**
- * @brief Create a new USB device structure for initialization
+ * @brief Create a new USB device
+ * 
+ * This is just to create the structure of the device, it does not initialize anything.
+ * Call @c usb_initializeDevice to initialize the device
+ * 
  * @param controller The controller
+ * @param ops The operations for the device
  * @param port The device port
  * @param speed The device speed
- * 
- * @param shutdown The HC device shutdown method
- * @param control The HC control request method
- * @param interrupt The HC interrupt request method
+ * @param priv Private device pointer
  */
-USBDevice_t *usb_createDevice(USBController_t *controller, uint32_t port, int speed, hc_shutdown_t shutdown, hc_control_t control, hc_interrupt_t interrupt) {
+USBDevice_t *usb_createDevice(USBController_t *controller, USBDeviceOps_t *ops, uint32_t port, uint32_t speed, void *priv) {
     USBDevice_t *dev = kmalloc(sizeof(USBDevice_t));
     memset(dev, 0, sizeof(USBDevice_t));
 
     dev->c = controller;
-    dev->shutdown = shutdown;
-    dev->control = control;
-    dev->interrupt = interrupt;
+    dev->ops = ops;
     dev->port = port;
     dev->speed = speed;
+    dev->dev = priv;
 
-    // By default, during initialization the USB device expects to receive an address of 0
     dev->address = 0;
-
     dev->config_list = list_create("usb config list");
 
     return dev;
@@ -139,6 +138,36 @@ void usb_destroyDevice(USBController_t *controller, USBDevice_t *dev) {
 }
 
 /**
+ * @brief USB device control request method
+ * @param device The device to request
+ * @param req The request
+ * @param buf The buffer to use
+ * @returns Transfer status
+ */
+USB_TRANSFER_STATUS usb_controlRequest(USBDevice_t *device, USBDeviceRequest_t *req, void *buffer) {
+    USBTransfer_t *transfer = kmalloc(sizeof(USBTransfer_t));
+    transfer->req = *req;
+
+    transfer->endpoint = 0;
+    transfer->status = USB_TRANSFER_IN_PROGRESS;
+    transfer->length = req->wLength;
+    transfer->data = buffer;
+    
+    // Now send the device control request
+    USB_TRANSFER_STATUS r = device->ops->control(device->c, device, transfer);
+    if (r != USB_TRANSFER_SUCCESS) {
+        // TODO: re-architect this entire status system
+        LOG(ERR, "Control request failed with error code %d\n", r);
+        return r;
+    }
+
+    // Cleanup and return whether the transfer was successful
+    USB_TRANSFER_STATUS status = transfer->status;
+    kfree(transfer);
+    return status;
+}
+
+/**
  * @brief USB device request method
  * 
  * @param device The device
@@ -151,32 +180,33 @@ void usb_destroyDevice(USBController_t *controller, USBDevice_t *dev) {
  * 
  * @returns The request status, in terms of @c USB_TRANSFER_xxx
  */
-int usb_requestDevice(USBDevice_t *device, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data) {
-    if (!device) return -1;
-
-    // Create a new device request
-    USBDeviceRequest_t *req = kmalloc(sizeof(USBDeviceRequest_t));
-    req->bmRequestType = type;
-    req->bRequest = request;
-    req->wIndex = index;
-    req->wValue = value;
-    req->wLength = length;
+USB_TRANSFER_STATUS usb_requestDevice(USBDevice_t *device, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data) {
+    assert(device->ops->control);
 
     // Create a new transfer
     USBTransfer_t *transfer = kmalloc(sizeof(USBTransfer_t));
-    transfer->req = req;
+    transfer->req.bmRequestType = type;
+    transfer->req.bRequest = request;
+    transfer->req.wIndex = index;
+    transfer->req.wValue = value;
+    transfer->req.wLength = length;
+    
     transfer->endpoint = 0;
     transfer->status = USB_TRANSFER_IN_PROGRESS;
     transfer->length = length;
     transfer->data = data;
     
     // Now send the device control request
-    if (device->control) device->control(device->c, device, transfer);
+    USB_TRANSFER_STATUS r = device->ops->control(device->c, device, transfer);
+    if (r != USB_TRANSFER_SUCCESS) {
+        // TODO: re-architect this entire status system
+        LOG(ERR, "Control request failed with error code %d\n", r);
+        return r;
+    }
 
     // Cleanup and return whether the transfer was successful
-    int status = transfer->status;
+    USB_TRANSFER_STATUS status = transfer->status;
     kfree(transfer);
-    kfree(req);
     return status;
 }
 
@@ -347,15 +377,17 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     // Set the maximum packet size
     dev->mps = dev->device_desc.bMaxPacketSize0;
 
-    if (dev->evaluate) {
+    if (dev->ops->evaluate) {
         // Evaluate the endpoint context (and update the internal Input Context mps)
-        if (dev->evaluate(dev->c, dev) != USB_SUCCESS) {
+        USB_STATUS status = dev->ops->evaluate(dev->c, dev);
+
+        if (status != USB_SUCCESS) {
             LOG(ERR, "Device initialization failed - Evaluate command did not succeed\n");
-            return 1;
+            return status;
         }
     }
 
-    if (!dev->setaddr && !dev->evaluate) {
+    if (!dev->ops->evaluate) {
         // Get an address for it 
         uint32_t address = dev->c->last_address;
         dev->c->last_address++;
@@ -395,35 +427,7 @@ USB_STATUS usb_initializeDevice(USBDevice_t *dev) {
     // Add it to the device list of the controller
     list_append(dev->c->devices, dev);
 
-    // // Read the language IDs supported by this device
-    // uint8_t lang_length;
-
-    // // We need bLength so only read 1 byte
-    // if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV, 
-    //             USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, 1, &lang_length) != USB_TRANSFER_SUCCESS) 
-    // {
-    //     LOG(ERR, "Device initialization failed - could not get language codes\n");
-    //     return USB_FAILURE;
-    // }
-
-    // // Now we can read the full descriptor
-    // dev->langs = kmalloc(lang_length);
-
-    // if (usb_requestDevice(dev, USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
-    //             USB_REQ_GET_DESC, (USB_DESC_STRING << 8) | 0, 0, lang_length, dev->langs) != USB_TRANSFER_SUCCESS)
-    // {
-    //     LOG(ERR, "Device initialization failed - could not get all language codes\n");
-    //     return USB_FAILURE;
-    // }
-
-    // for (int i = 0; i < (dev->langs->bLength - 2) / 2; i++) {
-    //     LOG(DEBUG, "Supports language code: 0x%02x\n", dev->langs->wLangID[i]);
-    //     if (dev->langs->wLangID[i] & USB_LANGID_ENGLISH) {
-    //         // We don't support Unicode yet
-    //         dev->chosen_language = dev->langs->wLangID[i];
-    //     }
-    // }
-
+    // TODO
     dev->chosen_language = 0x409;
 
     // Done! We've got the device language codes. Now we've unlocked usb_getStringIndex
@@ -515,16 +519,16 @@ USB_STATUS usb_deinitializeDevice(USBDevice_t *dev) {
 
         foreach(intf_node, conf->interface_list) {
             USBInterface_t *intf = (USBInterface_t*)intf_node->value;
-            if (!intf || !intf->driver || !intf->driver->dev_deinit) continue;
+            if (!intf || !intf->driver || !intf->driver->ops->deinit) continue;
 
-            if (intf->driver->dev_deinit(intf) != USB_SUCCESS) {
+            if (intf->driver->ops->deinit(intf) != USB_SUCCESS) {
                 LOG(WARN, "Driver '%s' failed to deinitialize\n", intf->driver->name);
             }
         }
     }
 
-    if (dev->shutdown) {
-        dev->shutdown(dev->c, dev);
+    if (dev->ops->shutdown) {
+        dev->ops->shutdown(dev->c, dev);
     }
 
     return USB_SUCCESS;

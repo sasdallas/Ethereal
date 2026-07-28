@@ -31,7 +31,7 @@
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data) {
+USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data) {
     if (!dev) return USB_FAILURE;
 
     if (usb_requestDevice(dev, type | USB_RT_DEV, request, value, index, length, data) != USB_TRANSFER_SUCCESS) {
@@ -53,7 +53,7 @@ USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uintptr_t type, uintptr_t
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data) {
+USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data) {
     if (!intf || !intf->dev) return USB_FAILURE;
 
     if (usb_requestDevice(intf->dev, type | USB_RT_INTF, request, value, index | intf->desc.bInterfaceNumber, length, data) != USB_TRANSFER_SUCCESS) {
@@ -75,7 +75,7 @@ USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uintptr_t type, ui
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data) {
+USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data) {
     if (!endp || !endp->intf || !endp->intf->dev) return USB_FAILURE;
 
     if (usb_requestDevice(endp->intf->dev, type | USB_RT_ENDP, request, value, index | endp->desc.bEndpointAddress, length, data) != USB_TRANSFER_SUCCESS) {
@@ -97,7 +97,7 @@ USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uintptr_t type, uint
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransfer(USBDevice_t *dev, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data){
+USB_STATUS usb_controlTransfer(USBDevice_t *dev, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data){
     if (!dev) return USB_FAILURE;
 
     if (usb_requestDevice(dev, type, request, value, index, length, data) != USB_TRANSFER_SUCCESS) {
@@ -118,7 +118,7 @@ USB_STATUS usb_controlTransfer(USBDevice_t *dev, uintptr_t type, uintptr_t reque
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_getDescriptor(USBDevice_t *dev, uintptr_t request_type, uintptr_t type, uintptr_t index, uintptr_t length, void *desc) {
+USB_STATUS usb_getDescriptor(USBDevice_t *dev, uint8_t request_type, uint8_t type, uint16_t index, uint16_t length, void *desc) {
     return usb_controlTransferDevice(dev, USB_RT_D2H | USB_RT_DEV | request_type, USB_REQ_GET_DESC, type, index, length, desc);
 }
 
@@ -141,8 +141,7 @@ USB_STATUS usb_getStringDevice(USBDevice_t *device, int idx, uint16_t lang, char
     // Request the descriptor
     uint8_t bLength;
 
-    if (usb_getDescriptor(device, USB_RT_STANDARD, (USB_DESC_STRING << 8) | idx, lang, 1, &bLength) != USB_TRANSFER_SUCCESS)
-    {
+    if (usb_getDescriptor(device, USB_RT_STANDARD, (USB_DESC_STRING << 8) | idx, lang, 1, &bLength) != USB_SUCCESS) {
         LOG(WARN, "Failed to get string index %i for device\n", idx);
         return USB_FAILURE;
     }
@@ -151,8 +150,7 @@ USB_STATUS usb_getStringDevice(USBDevice_t *device, int idx, uint16_t lang, char
     // Now read the full descriptor
     USBStringDescriptor_t *desc = kmalloc(bLength);
 
-    if (usb_getDescriptor(device, USB_RT_STANDARD, (USB_DESC_STRING << 8) | idx, lang, bLength, desc) != USB_TRANSFER_SUCCESS)
-    {
+    if (usb_getDescriptor(device, USB_RT_STANDARD, (USB_DESC_STRING << 8) | idx, lang, bLength, desc) != USB_SUCCESS) {
         LOG(WARN, "Failed to get string index %i for device\n", idx);
         kfree(desc);
         return USB_FAILURE;
@@ -186,8 +184,8 @@ USB_STATUS usb_getStringDevice(USBDevice_t *device, int idx, uint16_t lang, char
  * @returns USB_SUCCESS on success
  */
 USB_STATUS usb_configureEndpoint(USBDevice_t *device, USBEndpoint_t *endp) {
-    if (device->confendp) {
-        if (device->confendp(device->c, device, endp) != USB_SUCCESS) {
+    if (device->ops->endpoint) {
+        if (device->ops->endpoint(device->c, device, endp) != USB_SUCCESS) {
             LOG(ERR, "Error configuring endpoint for device\n");
             return USB_FAILURE;
         }
@@ -202,8 +200,20 @@ USB_STATUS usb_configureEndpoint(USBDevice_t *device, USBEndpoint_t *endp) {
  * @param transfer The transfer to perform
  * @returns USB transfer status
  */
-int usb_interruptTransfer(USBDevice_t *device, USBTransfer_t *transfer) {
-    if (!device->interrupt) return USB_TRANSFER_FAILED;
-    device->interrupt(device->c, device, transfer);
+USB_TRANSFER_STATUS usb_interruptTransfer(USBDevice_t *device, USBTransfer_t *transfer) {
+    if (!device->ops->interrupt) return USB_TRANSFER_FAILED;
+    device->ops->interrupt(device->c, device, transfer);
+    return transfer->status;
+}
+
+/**
+ * @brief Perform USB bulk transfer (syncronous)
+ * @param device The USB device to perform the transfer on
+ * @param transfer The transfer to perform
+ * @returns USB transfer status
+ */
+USB_TRANSFER_STATUS usb_bulkTransfer(USBDevice_t *device, USBTransfer_t *transfer) {
+    if (!device->ops->bulk) return USB_TRANSFER_FAILED;
+    device->ops->bulk(device->c, device, transfer);
     return transfer->status;
 }

@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <kernel/drivers/usb/desc.h>
 #include <kernel/drivers/usb/req.h>
+#include <kernel/drivers/usb/status.h>
 #include <structs/list.h>
 
 /**** DEFINITIONS ****/
@@ -28,10 +29,12 @@
 #define USB_HIGH_SPEED      0x02    // High speed
 #define USB_SUPER_SPEED     0x03    // Super speed
 
-// Transfer statuses
-#define USB_TRANSFER_IN_PROGRESS    0
-#define USB_TRANSFER_FAILED         1
-#define USB_TRANSFER_SUCCESS        2
+// TODO not use this
+typedef enum {
+    USB_TRANSFER_IN_PROGRESS,
+    USB_TRANSFER_SUCCESS,
+    USB_TRANSFER_FAILED
+} USB_TRANSFER_STATUS;
 
 // Maximum address
 #define USB_MAX_ADDRESS     127     // Each controller can have at most 127 devices
@@ -96,10 +99,10 @@ typedef void (*usb_int_callback_t)(USBEndpoint_t *endp, struct USBTransferComple
  */
 typedef struct USBTransfer {
     uint32_t endpoint;              // Endpoint number
-    USBDeviceRequest_t *req;        // Device request  
-    void *data;                     // Data
+    USBDeviceRequest_t req;         // Device request  
+    void *data;                     // Buffer data
     uint32_t length;                // Length of the data
-    int status;                     // Transfer status (USB_TRANSFER_...)
+    USB_TRANSFER_STATUS status;     // Transfer status (USB_TRANSFER_...)
     USBEndpoint_t *endp;            // Endpoint structure
     usb_int_callback_t callback;    // (Optional) Transfer callback for interrupt transfers
     void *parameter;                // Specific transfer parameter, this is for your reference
@@ -164,6 +167,15 @@ typedef int (*hc_evaluate_t)(struct USBController *controller, struct USBDevice 
  */
 typedef int (*hc_shutdown_t)(struct USBController *controller, struct USBDevice *dev);
 
+typedef struct USBDeviceOps {
+    USB_TRANSFER_STATUS (*control)(struct USBController *, struct USBDevice *, USBTransfer_t *);
+    USB_TRANSFER_STATUS (*interrupt)(struct USBController *, struct USBDevice *, USBTransfer_t *);
+    USB_TRANSFER_STATUS (*bulk)(struct USBController *, struct USBDevice *, USBTransfer_t *);
+    USB_STATUS (*endpoint)(struct USBController *, struct USBDevice *, struct USBEndpoint *);
+    USB_STATUS (*evaluate)(struct USBController *, struct USBDevice *); // TODO: replace with address op
+    USB_STATUS (*shutdown)(struct USBController *, struct USBDevice *);
+} USBDeviceOps_t;
+
 /**
  * @brief Main USB device structure
  * 
@@ -191,18 +203,22 @@ typedef struct USBDevice {
     uint16_t chosen_language;               // Chosen language for Hexahedron to use by default
 
     // Host controller methods
-    hc_shutdown_t       shutdown;           // Shutdown the device
-    hc_address_t        setaddr;            // Address the device (OPTIONAL)
-    hc_endpoint_t       confendp;           // Configure endpoint (OPTIONAL)
-    hc_evaluate_t       evaluate;           // Evaluate context (OPTIONAL)
-    hc_control_t        control;            // Control transfer request
-    hc_interrupt_t      interrupt;          // Interrupt transfer request
+    USBDeviceOps_t *ops;
 
     // Other
     void *dev;                              // Controller-defined device structure
 } USBDevice_t;
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief USB device control request method
+ * @param device The device to request
+ * @param req The request
+ * @param buf The buffer to use
+ * @returns Transfer status
+ */
+USB_TRANSFER_STATUS usb_controlRequest(USBDevice_t *device, USBDeviceRequest_t *req, void *buffer);
 
 /**
  * @brief USB device request method
@@ -217,8 +233,6 @@ typedef struct USBDevice {
  * 
  * @returns The transfer status (not USB_STATUS)
  */
-int usb_requestDevice(USBDevice_t *device, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data);
-
-
+USB_TRANSFER_STATUS usb_requestDevice(USBDevice_t *device, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data);
 
 #endif

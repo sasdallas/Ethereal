@@ -34,7 +34,7 @@
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data);
+USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data);
 
 /**
  * @brief Perform a control transfer on an interface
@@ -48,7 +48,7 @@ USB_STATUS usb_controlTransferDevice(USBDevice_t *dev, uintptr_t type, uintptr_t
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data);
+USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data);
 
 /**
  * @brief Perform a control transfer on an endpoint
@@ -62,7 +62,7 @@ USB_STATUS usb_controlTransferInterface(USBInterface_t *intf, uintptr_t type, ui
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data);
+USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data);
 
 /**
  * @brief Perform a control transfer
@@ -76,7 +76,7 @@ USB_STATUS usb_controlTransferEndpoint(USBEndpoint_t *endp, uintptr_t type, uint
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_controlTransfer(USBDevice_t *dev, uintptr_t type, uintptr_t request, uintptr_t value, uintptr_t index, uintptr_t length, void *data);
+USB_STATUS usb_controlTransfer(USBDevice_t *dev, uint8_t type, uint8_t request, uint16_t value, uint16_t index, uint16_t length, void *data);
 
 
 /**
@@ -90,7 +90,7 @@ USB_STATUS usb_controlTransfer(USBDevice_t *dev, uintptr_t type, uintptr_t reque
  * 
  * @returns USB_SUCCESS on success
  */
-USB_STATUS usb_getDescriptor(USBDevice_t *dev, uintptr_t request_type, uintptr_t type, uintptr_t index, uintptr_t length, void *desc);
+USB_STATUS usb_getDescriptor(USBDevice_t *dev, uint8_t request_type, uint8_t type, uint16_t index, uint16_t length, void *desc);
 
 /**
  * @brief Read a string from the USB device
@@ -121,6 +121,54 @@ USB_STATUS usb_configureEndpoint(USBDevice_t *device, USBEndpoint_t *endp);
  * @param transfer The transfer to perform
  * @returns USB transfer status
  */
-int usb_interruptTransfer(USBDevice_t *device, USBTransfer_t *transfer);
+USB_TRANSFER_STATUS usb_interruptTransfer(USBDevice_t *device, USBTransfer_t *transfer);
+
+/**
+ * @brief Perform USB bulk transfer (syncronous)
+ * @param device The USB device to perform the transfer on
+ * @param transfer The transfer to perform
+ * @returns USB transfer status
+ */
+USB_TRANSFER_STATUS usb_bulkTransfer(USBDevice_t *device, USBTransfer_t *transfer);
+
+/**
+ * @brief Receive bytes from a bulk transfer endpoint
+ * @param device The device to receive from
+ * @param endp The endpoint to receive from
+ * @param data The data buffer to receive into
+ * @param size The amount of data to transfer
+ */
+static inline USB_TRANSFER_STATUS usb_bulkReceive(USBDevice_t *device, USBEndpoint_t *endp, void *data, size_t data_size) {
+    USBTransfer_t bulk_xfer = {
+        .data = data,
+        .endp = endp,
+        .endpoint = USB_ENDP_NUMBER(endp),
+        .length = data_size,
+        .parameter = NULL,
+        .status = USB_TRANSFER_IN_PROGRESS
+    };
+
+    return usb_bulkTransfer(device, &bulk_xfer);
+}
+
+/**
+ * @brief Send bytes to a bulk transfer endpoint
+ * @param device The device to send to
+ * @param endp The endpoint to send to
+ * @param data The data buffer to send from
+ * @param size The amount of data to transfer
+ */
+static inline USB_TRANSFER_STATUS usb_bulkSend(USBDevice_t *device, USBEndpoint_t *endp, void *data, size_t data_size) {
+    USBTransfer_t bulk_xfer = {
+        .data = data,
+        .endp = endp,
+        .endpoint = USB_ENDP_NUMBER(endp),
+        .length = data_size,
+        .parameter = NULL,
+        .status = USB_TRANSFER_IN_PROGRESS
+    };
+
+    return usb_bulkTransfer(device, &bulk_xfer);
+}
 
 #endif
