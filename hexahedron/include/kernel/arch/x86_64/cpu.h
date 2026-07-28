@@ -242,23 +242,4 @@ uint8_t cpu_getFamily();
  */
 char *cpu_getBrandString();
 
-/**
- * @brief x86_64: Check if 5-level paging is supported
- */
-int cpu_pml5supported();
-
-/**
- * @brief x86_64: Get the maximum linear-address width supported by the CPU
- * 
- * CPUID check of 0x80000008
- */
-uint32_t cpu_getMaxLinearAddress();
-
-/**
- * @brief Initialize the CPU floating point unit
- * 
- * This feels weirdly out of place being in cpu.c, but who cares.
- */
-void cpu_fpuInitialize();
-
 #endif

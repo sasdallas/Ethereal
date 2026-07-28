@@ -46,21 +46,14 @@
 #include <kernel/misc/spinlock.h>
 #include <kernel/misc/args.h>
 #include <kernel/misc/util.h>
-
 #include <kernel/debug.h>
-
+#include <kernel/smp.h>
 #include <string.h>
 #include <stddef.h>
 #include <errno.h>
 
 /* SMP data */
 static smp_info_t *smp_data = NULL;
-
-/* CPU data */
-processor_t processor_data[MAX_CPUS] = {0};
-
-/* CPU count */
-int processor_count = 1;
 
 /* Local APIC mmio address */
 uintptr_t lapic_remapped = 0;
@@ -74,11 +67,8 @@ uintptr_t _ap_stack_base = 0;
 /* Trampoline variables */
 extern uintptr_t _ap_bootstrap_start, _ap_bootstrap_end;
 
-/* AP startup flag. This will change when the AP finishes starting */
-static volatile int ap_startup_finished = 0;
-
-/* AP shutdown flag. This will change when the AP finishes shutting down. */
-static volatile int ap_shutdown_finished = 0;
+/* Mask of APs done stopping */
+procmask_t ap_stopped_mask = PROCMASK_INITIALIZER;
 
 /* TLB shootdown */
 struct tlb_shootdown_request {
@@ -139,11 +129,11 @@ static int smp_getLocalAPICID() {
  * @param ap The core to store information on
  */
 void smp_collectAPInfo(int ap) {
-    processor_data[ap].cpu_manufacturer = cpu_getVendorName();
-    strncpy(processor_data[ap].cpu_model, cpu_getBrandString(), 48);
-    processor_data[ap].cpu_model_number = cpu_getModelNumber();
-    processor_data[ap].cpu_family = cpu_getFamily();
-    current_cpu->lapic_id = smp_getLocalAPICID();
+    strncpy(processor_data[ap].info.vendor, cpu_getVendorName(), CPU_MAX_VENDOR);
+    strncpy(processor_data[ap].info.model, cpu_getBrandString(), CPU_MAX_MODEL);
+    processor_data[ap].info.model_number = cpu_getModelNumber();
+    processor_data[ap].info.family = cpu_getFamily();
+    processor_data[ap].lapic_id = smp_getLocalAPICID();
 }
 
 /**
@@ -154,7 +144,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     // Load new stack
     asm volatile ("movq %0, %%rsp" :: "m"(_ap_stack_base));
 
-
+    // Get the CPU ID
     int id = last_cpu_number++;
 
     // Set GSbase
@@ -185,6 +175,9 @@ extern void hal_installIDT();
     // Map the SMP TLB shootdown event
     irq_map(percpu_domain, 124, 124, NULL);
     irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
+
+    // Enable interrupts
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
     
     // Before the local APIC timer is initialized we must have tasklets
     tasklet_init();
@@ -193,20 +186,11 @@ extern void hal_installIDT();
     lapic_initialize(lapic_remapped);
 
     // Now collect information
-    smp_collectAPInfo(smp_getCurrentCPU());
+    smp_collectAPInfo(smp_currentCPU());
 
-    // Spawn idle task
-    current_cpu->idle_process = process_spawnIdleTask();
-
-    // Allow BSP to continue
-    LOG(DEBUG, "CPU%i online and ready\n", smp_getCurrentCPU());
-    ap_startup_finished = 1;
-
-    current_cpu->sched.state = SCHEDULER_STATE_INACTIVE;
-    scheduler_initCPU();
-    
-    // Switch
-    process_switchNextThread();
+    // Jump to generic
+    smp_apEntry();
+    for (;;);
 }
 
 
@@ -224,19 +208,16 @@ static void smp_delay(unsigned int delay) {
  * @param lapic_id The ID of the local APIC to start
  */
 void smp_startAP(uint8_t lapic_id) {
-    LOG(DEBUG, "Starting CPU%d\n", lapic_id);
-    ap_startup_finished = 0;
+    int new_cpu = last_cpu_number;
+    LOG(DEBUG, "Starting CPU%d with local APIC ID 0x%x\n", new_cpu, lapic_id);
 
     // Copy the bootstrap code. The AP might've messed with it.
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)&_ap_bootstrap_start, (uintptr_t)&_ap_bootstrap_end - (uintptr_t)&_ap_bootstrap_start);
 
     // Allocate a stack for the AP
     _ap_stack_base = (uintptr_t)vmm_map(NULL, PAGE_SIZE * 2, VM_FLAG_ALLOC, MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
-
     memset((void*)(_ap_stack_base), 0, PAGE_SIZE);
-
     _ap_stack_base += (PAGE_SIZE);
-
 
     // Send the INIT signal
     lapic_sendInit(lapic_id);
@@ -246,8 +227,11 @@ void smp_startAP(uint8_t lapic_id) {
     lapic_sendStartup(lapic_id, SMP_AP_BOOTSTRAP_PAGE);
 
     // Wait for AP to finish and set the startup flag
-    LOG(DEBUG, "Waiting for CPU%d to finish startup\n", lapic_id);
-    do { asm volatile ("pause" ::: "memory"); } while (!ap_startup_finished);
+    LOG(DEBUG, "Waiting for CPU%d to finish startup\n", new_cpu);
+    
+    do {
+        arch_pause_single();
+    } while (!procmask_test(&smp_online_cpus, new_cpu));
 }
 
 /**
@@ -256,7 +240,7 @@ void smp_startAP(uint8_t lapic_id) {
  * @returns 0 on success, non-zero is failure
  */
 int smp_init(smp_info_t *info) {
-    if (!info) return -EINVAL;
+    // Store this information for later
     smp_data = info;
 
     // Map local APIC
@@ -312,26 +296,22 @@ int smp_init(smp_info_t *info) {
     irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
 
     processor_count = smp_data->processor_count;
-    arch_get_generic_parameters()->cpu_count = smp_getCPUCount();
+    arch_get_generic_parameters()->cpu_count = processor_count;
 
 _finish_collection:
     LOG(INFO, "SMP initialization completed successfully - %i CPUs available to system\n", processor_count);
-    if (processor_count > 1) vmm_postSMP();
+    
+    if (processor_count > 1) {
+        vmm_postSMP();
+    }
 
     return 0;
 }
 
 /**
- * @brief Get the amount of CPUs present in the system
+ * @brief Get the current CPU ID (not APIC ID)
  */
-int smp_getCPUCount() {
-    return processor_count;
-}
-
-/**
- * @brief Get the current CPU's APIC ID
- */
-inline int smp_getCurrentCPU() {
+int smp_getCurrentCPU() {
     return current_cpu->cpu_id;
 }
 
@@ -339,7 +319,7 @@ inline int smp_getCurrentCPU() {
  * @brief Acknowledge core shutdown (called by ISR)
  */
 void smp_acknowledgeCoreShutdown() {
-    ap_shutdown_finished = 1;
+    procmask_set(&ap_stopped_mask, smp_getCurrentCPU());
 }
 
 /**
@@ -350,20 +330,19 @@ void smp_acknowledgeCoreShutdown() {
  */
 void smp_disableCores() {
     if (smp_data == NULL || processor_count == 1) return;
-    // LOG(INFO, "Disabling cores - please wait...\n");
 
     for (int i = 0; i < smp_data->processor_count; i++) {
         if (smp_data->lapic_ids[i] != current_cpu->lapic_id) {
             lapic_sendNMI(smp_data->lapic_ids[i], 0); // The interrupt vector here doesnt matter as an NMI is sent regardless
-
-            // do { asm volatile ("pause"); } while (!ap_shutdown_finished);
-            ap_shutdown_finished = 0;
+            
+            do {
+                arch_pause_single();
+            } while (!procmask_test(&ap_stopped_mask, i));
         }
     }
 
 extern spinlock_t debug_lock;
     spinlock_release(&debug_lock);
-
 }
 
 

@@ -28,6 +28,9 @@
 // IMPORTANT: This value controls the maximum amount of CPUs Hexahedron supports
 #define MAX_CPUS            32
 
+/* Default target scheduler */
+#define KERNEL_DEFAULT_SCHEDULER "dumb"
+
 /**** EXPOSED ****/
 
 /* This just exposes things exposed in config.c, which is remade every build. */

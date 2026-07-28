@@ -78,6 +78,9 @@ typedef struct thread {
     sigset_t blocked_signals;
     sigset_t forced_signals;
 
+    // SCHEDULER
+    void *sched;
+
     // OTHER
     vmm_context_t *ctx;                     // Context
     struct _registers *regs;                // Registers of the thread

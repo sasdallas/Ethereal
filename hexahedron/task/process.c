@@ -64,7 +64,7 @@ void process_init() {
     process_list = list_create("process list");
 
     // Initialize scheduler
-    scheduler_init();
+    sched_init();
 
     // Initialize futexes
     futex_init();
@@ -83,7 +83,7 @@ void process_init() {
  */
 void __attribute__((noreturn)) process_switchNextThread() {
     // Get next thread in queue
-    thread_t *next_thread = scheduler_get();
+    thread_t *next_thread = sched_get();
     if (!next_thread) {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
@@ -156,7 +156,7 @@ void process_yield(uint8_t reschedule) {
     if (prev->status & THREAD_STATUS_SLEEPING) reschedule = 0;
 
     // Get next thread in queue
-    thread_t *next_thread = scheduler_get();
+    thread_t *next_thread = sched_get();
     if (!next_thread) {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
@@ -192,12 +192,10 @@ void process_yield(uint8_t reschedule) {
     asm volatile ("fxrstor (%0)" :: "r"(current_cpu->current_thread->fp_regs));
 
     // Return thread to its queue safely
-    if (yield) {
-        spinlock_acquire(current_cpu->sched.lock);
-        list_append_node(current_cpu->sched.queue, &yield->sched_node);
-        spinlock_release(current_cpu->sched.lock);
+    if (yield != NULL) {
+        sched_yield(yield);
     }
-
+    
     // Restore interrupts now
     hal_setInterruptState(state);
 }
@@ -358,12 +356,11 @@ thread_t *process_createThread(process_t *proc, uintptr_t entry, unsigned int fl
  * @brief Create a kernel process with a single thread
  * @param name The name of the kernel process
  * @param flags The flags of the kernel process
- * @param priority Process priority
  * @param entrypoint The entrypoint of the kernel process
  * @param data User-specified data
  * @returns Process structure
  */
-process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data){
+process_t *process_createKernel(char *name, unsigned int flags, kthread_t entrypoint, void *data){
     process_t *proc = process_create(NULL, name, flags | PROCESS_KERNEL);
     proc->main_thread = process_createThread(proc, (uintptr_t)entrypoint, THREAD_FLAG_KERNEL);
 
@@ -1018,7 +1015,7 @@ pid_t process_fork() {
 
     // Insert new thread
     timemonitor_updateProcessStart(child->main_thread);
-    scheduler_insertThread(child->main_thread);
+    sched_insert(child->main_thread);
 
     return child->pid;
 }
@@ -1149,7 +1146,7 @@ pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void
     THREAD_PUSH_STACK(SP(thr->context), struct _registers, r);
 
     timemonitor_updateProcessStart(thr);
-    scheduler_insertThread(thr);
+    sched_insert(thr);
 
     return thr->tid;
 }

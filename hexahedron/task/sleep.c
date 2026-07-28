@@ -172,7 +172,7 @@ int sleep_wakeupReason(struct thread *thread, int reason) {
     __atomic_store_n(&thread->sleep.wakeup_reason, reason, __ATOMIC_SEQ_CST);
 
     spinlock_release(&thread->sleep.lock);
-    scheduler_insertThread(thread);
+    sched_insert(thread);
     return 0;
 }
 

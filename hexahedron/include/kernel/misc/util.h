@@ -52,6 +52,7 @@
 #define __STATIC_ASSERT2(cond, file, line) __STATIC_ASSERT3(cond, file, line)
 #define STATIC_ASSERT(cond) __STATIC_ASSERT2(cond, __FILE__, __LINE__)
 
+#define MUST_BE_AT_OFFSET(type, stmt, offset) STATIC_ASSERT(__builtin_offsetof(type, stmt) == offset)
 
 #define HEXDUMP(ptr, size)                                                      \
     do {                                                                         \

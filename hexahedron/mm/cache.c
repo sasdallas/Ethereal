@@ -1029,10 +1029,10 @@ void cache_pruner(void *arg) {
  * @brief Initialize cache pruner
  */
 int cache_prunerInit() {
-    process_t *cache_pruner_proc = process_createKernel("cache pruner", PROCESS_KERNEL, PRIORITY_MED, cache_pruner, NULL);
-    scheduler_insertThread(cache_pruner_proc->main_thread);
-    process_t *cache_syncer_proc = process_createKernel("cache syncer", PROCESS_KERNEL, PRIORITY_MED, cache_syncer, NULL);
-    scheduler_insertThread(cache_syncer_proc->main_thread);
+    process_t *cache_pruner_proc = process_createKernel("cache pruner", PROCESS_KERNEL, cache_pruner, NULL);
+    sched_insert(cache_pruner_proc->main_thread);
+    process_t *cache_syncer_proc = process_createKernel("cache syncer", PROCESS_KERNEL, cache_syncer, NULL);
+    sched_insert(cache_syncer_proc->main_thread);
     return 0;
 }
 

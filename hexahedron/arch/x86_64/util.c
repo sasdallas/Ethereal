@@ -113,10 +113,10 @@ static ssize_t arch_cpu_systemfs(systemfs_node_t *n) {
 		"CurrentProcess:%s\n",
 			cpu->cpu_id,
 			cpu->lapic_id,
-			cpu->cpu_model,
-			cpu->cpu_manufacturer,
-			cpu->cpu_family,
-			cpu->cpu_model_number,
+			cpu->info.model,
+			cpu->info.vendor,
+			cpu->info.family,
+			cpu->info.model_number,
 			cpu->current_context->dir,
 			cpu->current_process ? cpu->current_process->name : "N/A");
 }

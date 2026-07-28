@@ -21,8 +21,8 @@
 #include <time.h>
 
 #include <kernel/task/thread.h>
-#include <kernel/task/scheduler.h>
 #include <kernel/task/sleep.h>
+#include <kernel/task/sched.h>
 #include <kernel/task/fd.h>
 #include <kernel/task/signal.h>
 #include <kernel/task/timer.h>
@@ -202,12 +202,11 @@ process_t *process_create(process_t *parent, char *name, int flags);
  * @brief Create a kernel process with a single thread
  * @param name The name of the kernel process
  * @param flags The flags of the kernel process
- * @param priority Process priority
  * @param entrypoint The entrypoint of the kernel process
  * @param data User-specified data
  * @returns Process structure
  */
-process_t *process_createKernel(char *name, unsigned int flags, unsigned int priority, kthread_t entrypoint, void *data);
+process_t *process_createKernel(char *name, unsigned int flags, kthread_t entrypoint, void *data);
 
 /**
  * @brief Execute a new ELF binary for the current process (execve)

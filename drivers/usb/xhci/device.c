@@ -2,6 +2,7 @@
  * @file drivers/usb/xhci/device.c
  * @brief xHCI device
  * 
+ * @todo THIS CODE IS EXTREMELY MESSY, UNSAFE, AND LEAK-PRONE.
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
@@ -20,6 +21,22 @@
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI", "[XHCI:DEV ] " __VA_ARGS__);
+
+static USB_TRANSFER_STATUS xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer);
+static USB_TRANSFER_STATUS xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer);
+static USB_TRANSFER_STATUS xhci_bulk(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer);
+static USB_STATUS xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint_t *endpoint);
+static USB_STATUS xhci_evaluate(USBController_t *controller, USBDevice_t *device);
+static USB_STATUS xhci_shutdown(USBController_t *controller, USBDevice_t *device);
+
+USBDeviceOps_t xhci_device_ops = {
+    .control = xhci_control,
+    .interrupt = xhci_interrupt,
+    .bulk = xhci_bulk,
+    .endpoint = xhci_configure,
+    .evaluate = xhci_evaluate,
+    .shutdown = xhci_shutdown
+};
 
 /**
  * @brief Create a new transfer ring
@@ -89,7 +106,7 @@ int xhci_waitForTransfer(xhci_endpoint_t *endp) {
 /**
  * @brief Perform a control transfer on an xHCI port
  */
-int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
+static USB_TRANSFER_STATUS xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
     if (!controller || !device || !transfer || !device->dev) return USB_TRANSFER_FAILED;
     xhci_device_t *dev = (xhci_device_t*)(device->dev);
     mutex_acquire(dev->endpoints[0].m);
@@ -99,11 +116,11 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     // NOTE: A few sources say that you need to wait for a successful transfer before enqueueing STATUS. I don't care.
 
     xhci_setup_stage_trb_t setup_trb = {
-        .bmRequestType = transfer->req->bmRequestType,
-        .bRequest = transfer->req->bRequest,
-        .wIndex = transfer->req->wIndex,
-        .wLength = transfer->req->wLength,
-        .wValue = transfer->req->wValue,
+        .bmRequestType = transfer->req.bmRequestType,
+        .bRequest = transfer->req.bRequest,
+        .wIndex = transfer->req.wIndex,
+        .wLength = transfer->req.wLength,
+        .wValue = transfer->req.wValue,
         .transfer_length = 8,
         .interrupter = 0,
         .idt = 1,
@@ -116,9 +133,9 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
     };
 
     // Assign TRT
-    if (transfer->req->bmRequestType & USB_RT_D2H && transfer->length) {
+    if (transfer->req.bmRequestType & USB_RT_D2H && transfer->length) {
         setup_trb.trt = 3; // Input
-    } else if (transfer->req->bmRequestType & USB_RT_H2D && transfer->length) {
+    } else if (transfer->req.bmRequestType & USB_RT_H2D && transfer->length) {
         setup_trb.trt = 2; // Output
     } else {
         setup_trb.trt = 0; // No data stage
@@ -133,7 +150,7 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
             .transfer_length = transfer->length,
             .td_size = 0,
             .interrupter = 0,
-            .dir = !!(transfer->req->bmRequestType & USB_RT_D2H),
+            .dir = !!(transfer->req.bmRequestType & USB_RT_D2H),
             .ch = 0,
             .ioc = 0,
             .idt = 0,
@@ -149,15 +166,14 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
         .interrupter = 0,
         .ch = 0,
         .ioc = 1,
-        .dir = !((transfer->req->wLength > 0) && (transfer->req->bmRequestType & USB_RT_D2H)),
+        .dir = !((transfer->req.wLength > 0) && (transfer->req.bmRequestType & USB_RT_D2H)),
     };
 
     xhci_enqueueTransferTRB(dev->endpoints[0].tr, (xhci_trb_t*)&status_trb);
     
     // Ring ring
-    XHCI_DOORBELL(dev->parent, dev->slot_id) = 1;
-
     __atomic_store_n(&dev->endpoints[0].flag, 0, __ATOMIC_SEQ_CST);
+    XHCI_DOORBELL(dev->parent, dev->slot_id) = 1;
 
     // Wait for transfer to complete
     if (xhci_waitForTransfer(&dev->endpoints[0])) {
@@ -175,9 +191,98 @@ int xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t
 }
 
 /**
+ * @brief Interrupt transfer method
+ * @param controller USB controller
+ * @param device USB device
+ * @param transfer USB transfer
+ */
+static USB_TRANSFER_STATUS xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
+    xhci_device_t *dev = (xhci_device_t*)device->dev;
+
+    // Get the endpoint they want to transfer to
+    uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
+    xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
+    if (!ep->tr || !ep->m) {
+        LOG(ERR, "Endpoint %d is not configured\n", ep_num);
+        return USB_TRANSFER_FAILED;
+    }
+
+    mutex_acquire(ep->m);
+
+    xhci_normal_trb_t trb;
+    memset(&trb, 0, sizeof(xhci_normal_trb_t));
+
+    trb.type = XHCI_TRB_TYPE_NORMAL;
+    trb.buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->data);
+    trb.len = transfer->length;
+    trb.ioc = 1;
+    trb.isp = 1;
+    
+    xhci_enqueueTransferTRB(ep->tr, (xhci_trb_t*)&trb);
+
+    // Pending interrupt transfer points to this
+    ep->pending_int = transfer;
+
+    mutex_release(ep->m);
+
+    // Ring doorbell
+    XHCI_DOORBELL(dev->parent, dev->slot_id) = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
+
+    transfer->status = USB_TRANSFER_IN_PROGRESS;
+    return USB_TRANSFER_IN_PROGRESS;
+}
+
+/**
+ * @brief Bulk transfer implementation
+ */
+static USB_TRANSFER_STATUS xhci_bulk(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
+    xhci_device_t *dev = (xhci_device_t*)device->dev;
+
+    uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
+    xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
+    
+    if (!ep->tr || !ep->m) {
+        LOG(ERR, "Endpoint %d is not configured for BULK transfer\n", ep_num);
+        return USB_TRANSFER_FAILED;
+    }
+
+    // Lock endpoint
+    mutex_acquire(ep->m);
+
+    // Build the TRB
+    xhci_normal_trb_t trb;
+    memset(&trb, 0, sizeof(xhci_normal_trb_t));
+
+    assert(transfer->length < 65536 && "TODO");
+
+    trb.type = XHCI_TRB_TYPE_NORMAL;
+    trb.buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->data);
+    trb.len = transfer->length;
+    trb.ioc = 1;
+    trb.isp = 1;
+    
+    xhci_enqueueTransferTRB(ep->tr, (xhci_trb_t*)&trb);
+    __atomic_store_n(&ep->flag, 0, __ATOMIC_SEQ_CST);
+    XHCI_DOORBELL(dev->parent, dev->slot_id) = ep_num;
+
+    // TODO asyncronous
+    if (xhci_waitForTransfer(ep)) {
+        LOG(ERR, "Detected a transfer failure during BULK transfer on EP %d\n", ep_num);
+        mutex_release(ep->m);
+        transfer->status = USB_TRANSFER_FAILED;
+        return USB_TRANSFER_FAILED;
+    }
+
+    mutex_release(ep->m);
+    transfer->status = USB_TRANSFER_SUCCESS;
+    return USB_TRANSFER_SUCCESS;
+}
+
+
+/**
  * @brief Evaluate xHCI context
  */
-int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
+static USB_STATUS xhci_evaluate(USBController_t *controller, USBDevice_t *device) {
     xhci_device_t *dev = (xhci_device_t*)(device->dev);
     if (device->mps == dev->endpoints[0].mps) return USB_SUCCESS; // No need
 
@@ -214,7 +319,7 @@ int xhci_evaluateContext(USBController_t *controller, USBDevice_t *device) {
  * @param device USB device
  * @param endpoint USB endpoint
  */
-int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint_t *endpoint) {
+static USB_STATUS xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint_t *endpoint) {
     xhci_device_t *dev = (xhci_device_t*)device->dev;
 
     mutex_acquire(dev->mutex);
@@ -243,7 +348,7 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
     }
 
     // Determine endpoint number + setup endpoint
-    uint8_t endp_num = (((endpoint->desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + !!(endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN));
+    uint8_t endp_num = (((endpoint->desc.bEndpointAddress & USB_ENDP_NUMBER_MASK) * 2) + !!(endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN));
     xhci_endpoint_t *ep = &(dev->endpoints[endp_num]);
 
     ep->m = mutex_create("xhci endpoint mutex");
@@ -351,53 +456,11 @@ int xhci_configure(USBController_t *controller, USBDevice_t *device, USBEndpoint
 }
 
 /**
- * @brief Interrupt transfer method
- * @param controller USB controller
- * @param device USB device
- * @param transfer USB transfer
- */
-int xhci_interrupt(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
-    xhci_device_t *dev = (xhci_device_t*)device->dev;
-
-    // Get the endpoint they want to transfer to
-    uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
-    xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
-    if (!ep->tr || !ep->m) {
-        LOG(ERR, "Endpoint %d is not configured\n", ep_num);
-        return USB_FAILURE;
-    }
-
-    mutex_acquire(ep->m);
-
-    xhci_normal_trb_t trb;
-    memset(&trb, 0, sizeof(xhci_normal_trb_t));
-
-    trb.type = XHCI_TRB_TYPE_NORMAL;
-    trb.buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->data);
-    trb.len = transfer->length;
-    trb.ioc = 1;
-    trb.isp = 1;
-    
-    xhci_enqueueTransferTRB(ep->tr, (xhci_trb_t*)&trb);
-
-    // Pending interrupt transfer points to this
-    ep->pending_int = transfer;
-
-    mutex_release(ep->m);
-
-    // Ring doorbell
-    XHCI_DOORBELL(dev->parent, dev->slot_id) = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
-
-    transfer->status = USB_TRANSFER_IN_PROGRESS;
-    return USB_TRANSFER_IN_PROGRESS;
-}
-
-/**
  * @brief Shutdown the xHCI USB device
  * @param controller USB controller
  * @param device USB device
  */
-int xhci_shutdown(USBController_t *controller, USBDevice_t *device) {
+static USB_STATUS xhci_shutdown(USBController_t *controller, USBDevice_t *device) {
     xhci_device_t *dev = (xhci_device_t*)device->dev;
 
     xhci_disable_slot_trb_t slot;
@@ -478,7 +541,6 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
     xhci->slots[dev->slot_id-1] = dev;
 
     // Initialize input context
-    // TODO: DO NOT WASTE TWO WHOLE PAGES
     dev->input_ctx = (xhci_input_context_t*)dma_map(4096); // TODO: We can determine target size from xHC
     dev->input_ctx_phys = arch_mmu_physical(NULL, (uintptr_t)dev->input_ctx);
     memset((void*)dev->input_ctx, 0, 4096);
@@ -586,12 +648,8 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
             break;
     }
 
-    USBDevice_t *usbdev = usb_createDevice(xhci->controller, port, speed, NULL, xhci_control, xhci_interrupt);   
-    usbdev->dev = (void*)dev;
-    usbdev->evaluate = xhci_evaluateContext;
-    usbdev->shutdown = xhci_shutdown;
-    usbdev->confendp = xhci_configure;
-    dev->dev = usbdev;
+
+    USBDevice_t *usbdev = usb_createDevice(xhci->controller, &xhci_device_ops, port, speed, dev);
 
     if (usb_initializeDevice(usbdev) != USB_SUCCESS) {
         // TODO: FREE MEMORY

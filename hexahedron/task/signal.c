@@ -117,7 +117,7 @@ int signal_sendThread(struct thread *thr, int signal) {
     if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
         // Wakeup bro
         thr->parent->state = PROCESS_RUNNING;
-        scheduler_insertThread(thr);
+        sched_insert(thr);
     }
 
     return 0;
@@ -282,7 +282,7 @@ int signal_sendThreadForce(thread_t *thr, int signal) {
     if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
         // Wakeup bro
         thr->parent->state = PROCESS_RUNNING;
-        scheduler_insertThread(thr);
+        sched_insert(thr);
     }
 
     spinlock_release(&thr->siglock);

@@ -323,8 +323,8 @@ int rtl8139_init(pci_device_t *device) {
     nic->n->mtu = 1500;
 
     // Start thread
-    nic->receive_proc = process_createKernel("rtl8139 receiver", PROCESS_KERNEL, PRIORITY_MED, rtl8139_thread, (void*)nic);
-    scheduler_insertThread(nic->receive_proc->main_thread);
+    nic->receive_proc = process_createKernel("rtl8139 receiver", PROCESS_KERNEL, rtl8139_thread, (void*)nic);
+    sched_insert(nic->receive_proc->main_thread);
     return 0;
 
 _cleanup:

@@ -131,8 +131,8 @@ int timer_set(struct process *process, int which, struct itimerval *value) {
     if (!timer_queue) {
         // Initialize everything
         timer_queue = list_create("timer queue");
-        timer_process = process_createKernel("timer_process", PROCESS_KERNEL, PRIORITY_MED, timer_kthread, NULL);
-        scheduler_insertThread(timer_process->main_thread);
+        timer_process = process_createKernel("timer_process", PROCESS_KERNEL, timer_kthread, NULL);
+        sched_insert(timer_process->main_thread);
     }
 
     spinlock_acquire(&timer_lock);

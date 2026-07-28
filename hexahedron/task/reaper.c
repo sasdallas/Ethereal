@@ -59,8 +59,8 @@ void reaper_push(process_t *proc) {
  */
 int reaper_init() {
     EVENT_INIT(&reap_event);
-    process_t *reaper = process_createKernel("reaper", PROCESS_KERNEL, PRIORITY_HIGH, reaper_proc, NULL);
-    scheduler_insertThread(reaper->main_thread);
+    process_t *reaper = process_createKernel("reaper", PROCESS_KERNEL, reaper_proc, NULL);
+    sched_insert(reaper->main_thread);
 
     return 0;
 }

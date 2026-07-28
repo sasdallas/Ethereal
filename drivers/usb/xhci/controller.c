@@ -269,29 +269,36 @@ void xhci_tasklet(void *context) {
                     xhci->ports[trb->port_id - 1].rev_major = 0;
                 } else {
                     // Wakeup poller thread
-                    __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
-                    if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+                    xhci->need_port_update = true;
+                    waitqueue_wakeup(&xhci->port_waiters, 1);
                 }
             } else {
                 // Wakeup poller thread
-                __atomic_store_n(&xhci->port_status_changed, 1, __ATOMIC_SEQ_CST);
-                if (xhci->poller) sleep_wakeup(xhci->poller->main_thread);
+                xhci->need_port_update = true;
+                waitqueue_wakeup(&xhci->port_waiters, 1);
             }
         } else if (t->type == XHCI_EVENT_COMMAND_COMPLETION) {
             xhci_command_completion_trb_t *trb = (xhci_command_completion_trb_t*)t;
-            LOG(INFO, "Command completion event detected (completed TRB %016llX with cc %d type=%d slot_id=%d vfid=%d)\n", trb->ctrb, trb->cc, trb->type, trb->slot_id, trb->vfid);
             memcpy(&xhci->ctr, trb, sizeof(xhci_command_completion_trb_t));
             __atomic_store_n(&xhci->flag, 1, __ATOMIC_SEQ_CST);
         } else if (t->type == XHCI_EVENT_TRANSFER) {
             xhci_transfer_completion_trb_t *trb = (xhci_transfer_completion_trb_t*)t;
             if (trb->completion_code != 1 && trb->completion_code != 13) LOG(INFO, "Transfer completed on slot %d endp %d cc %d\n", trb->slot_id, trb->endpoint_id, trb->completion_code);
-            
-            // Is it directed to the CONTROL endpoint?
+                        
+            // Transfer is finished on this endpoint
+            xhci_endpoint_t *ep;
             if (trb->endpoint_id == 1) {
-                memcpy(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].ctr, trb, sizeof(xhci_transfer_completion_trb_t));
-                __atomic_store_n(&xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1].flag, 1, __ATOMIC_SEQ_CST);
-            } else if (xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id].pending_int) {
-                USBTransfer_t *pending = xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id].pending_int;
+                ep = &xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id-1];
+            } else {
+                ep = &xhci->slots[trb->slot_id-1]->endpoints[trb->endpoint_id];
+            }
+
+            memcpy(&ep->ctr, trb, sizeof(xhci_transfer_completion_trb_t));
+            __atomic_store_n(&ep->flag, 1, __ATOMIC_SEQ_CST);
+            
+            if (ep->pending_int) {
+                USBTransfer_t *pending = ep->pending_int;
+                ep->pending_int = NULL;
 
                 // Check code
                 if (trb->completion_code != 1 && trb->completion_code != 13) {
@@ -396,17 +403,11 @@ void xhci_thread(void *context) {
     xhci_t *xhci = (xhci_t*)context;
 
     // Bug (QEMU): We run an initial pass on xHCI devices since (while the controller is *supposed* to send us Port Status Change TRBs, it doesn't.)
-    xhci->port_status_changed = 1;
+    xhci->need_port_update = true;
 
     for (;;) {
-        uint8_t expected = 1;
-        while (!__atomic_compare_exchange_n(&xhci->port_status_changed, &expected, 0, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
-            arch_pause();
-            process_yield(1);
-            expected = 1;
-        }
-
-        LOG(DEBUG, "It's poll time\n");
+        WAIT_QUEUE_CONDITION(&xhci->port_waiters, xhci->need_port_update == true);
+        xhci->need_port_update = false;
 
         for (unsigned i = 0; i < xhci->cap->max_ports; i++) {
             if (xhci->ports[i].rev_major) {
@@ -526,6 +527,8 @@ int xhci_initController(pci_device_t *device) {
     // Make xHCI structure
     xhci_t *xhci = kzalloc(sizeof(xhci_t));
     xhci->dev = device;
+    
+    WAIT_QUEUE_INIT(&xhci->port_waiters);
     TASKLET_INIT(&xhci->tsklet, "xHCI tasklet", xhci_tasklet, xhci);
 
     // Read in BAR0
@@ -627,8 +630,8 @@ int xhci_initController(pci_device_t *device) {
     xhci->controller = usb_createController((void*)xhci);
 
     // Spawn poller thread
-    xhci->poller = process_createKernel("xhci poller", PROCESS_KERNEL, PRIORITY_LOW, xhci_thread, (void*)xhci);
-    scheduler_insertThread(xhci->poller->main_thread);
+    xhci->poller = process_createKernel("xhci poller", PROCESS_KERNEL, xhci_thread, (void*)xhci);
+    sched_insert(xhci->poller->main_thread);
 
     // Controller initialized successfully
     xhci_controller_count++;
@@ -647,7 +650,6 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     __atomic_store_n(&xhci->flag, 0, __ATOMIC_SEQ_CST);
 
     // Enqueue, please.
-    LOG(DEBUG, "Sending xHC command %p\n", trb);
     xhci_enqueueCommandTRB(xhci, trb);
 
     // Ring ring
@@ -672,7 +674,6 @@ xhci_command_completion_trb_t* xhci_sendCommand(xhci_t *xhci, xhci_trb_t *trb) {
     }
 
     xhci_command_completion_trb_t *ctrb = &xhci->ctr;
-    LOG(DEBUG, "TRB complete\n");
 
     if (!TRB_SUCCESS(ctrb)) {
         LOG(ERR, "TRB failed with completion code: %d\n", ctrb->cc);

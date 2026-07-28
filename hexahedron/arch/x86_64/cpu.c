@@ -75,7 +75,7 @@ char *cpu_getVendorName() {
         return "Intel";
     }
 
-    return "???";
+    return "Unknown Vendor";
 }
 
 /**
@@ -83,7 +83,7 @@ char *cpu_getVendorName() {
  */
 uint8_t cpu_getModelNumber() {
     uint32_t eax, unused;
-    __cpuid(0, eax, unused, unused, unused);
+    __cpuid(1, eax, unused, unused, unused);
     return (eax >> 4) & 0x0F;
 }
 
@@ -92,7 +92,7 @@ uint8_t cpu_getModelNumber() {
  */
 uint8_t cpu_getFamily() {
     uint32_t eax, unused;
-    __cpuid(0, eax, unused, unused, unused);
+    __cpuid(1, eax, unused, unused, unused);
     return (eax >> 8) & 0x0F;
 }
 
@@ -117,29 +117,4 @@ char *cpu_getBrandString() {
 
     // !!!: this is ugly
     return strdup(brand);
-}
-
-/**
- * @brief x86_64: Check if 5-level paging is supported
- */
-int cpu_pml5supported() {
-    // TODO: Add more checks - there's an Intel whitepaper on this that has about 5 more checks.
-
-    // CPUID with EAX=07 will check this
-    uint32_t ecx, unused;
-    __cpuid(0x07, unused, unused, ecx, unused);
-    return ecx & CPUID_FEAT_ECX_PML5;
-}
-
-/**
- * @brief x86_64: Get the maximum linear-address width supported by the CPU
- * 
- * CPUID check of 0x80000008
- */
-uint32_t cpu_getMaxLinearAddress() {
-    // CPUID with EAX=0x80000008 will check this
-    uint32_t unused;
-    CPUID_INTELADDRSIZE_EAX eax;
-    __cpuid(CPUID_INTELADDRSIZE, eax, unused, unused, unused);
-    return eax.bits.linear_address_bits;
 }

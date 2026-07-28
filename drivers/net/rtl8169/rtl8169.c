@@ -488,8 +488,8 @@ int rtl8169_init(pci_device_t *device) {
     }
 
     // Make receive kernel thread
-    nic->recv_proc = process_createKernel("rtl8169 receiver", PROCESS_KERNEL, PRIORITY_LOW, rtl8169_thread, (void*)nic);
-    scheduler_insertThread(nic->recv_proc->main_thread);
+    nic->recv_proc = process_createKernel("rtl8169 receiver", PROCESS_KERNEL, rtl8169_thread, (void*)nic);
+    sched_insert(nic->recv_proc->main_thread);
 
     // Set MTU
     nic->n->mtu = 1500;

@@ -654,6 +654,6 @@ STATIC_ASSERT(sizeof(xhci_slot_context_t) == 0x20);
 
 /**** MACROS ****/
 #define TRB_SUCCESS(trb) ((trb)->cc == 1)
-#define XHCI_ENDPOINT_NUMBER_FROM_DESC(desc) (((desc.bEndpointAddress & USB_ENDP_NUMBER) * 2) + (desc.bEndpointAddress & USB_ENDP_DIRECTION_IN ? 1 : 0))
+#define XHCI_ENDPOINT_NUMBER_FROM_DESC(desc) (((desc.bEndpointAddress & USB_ENDP_NUMBER_MASK) * 2) + (desc.bEndpointAddress & USB_ENDP_DIRECTION_IN ? 1 : 0))
 
 #endif

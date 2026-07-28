@@ -253,8 +253,8 @@ void memleak_thread(void *context) {
  * @brief Spawn memory leak thread
  */
 int memleak_initThread() {
-    memleak_proc = process_createKernel("kmemleak scanner", PROCESS_KERNEL, PRIORITY_LOW, memleak_thread, NULL);
-    scheduler_insertThread(memleak_proc->main_thread);
+    memleak_proc = process_createKernel("kmemleak scanner", PROCESS_KERNEL, memleak_thread, NULL);
+    sched_insert(memleak_proc->main_thread);
     return 0;
 }
 

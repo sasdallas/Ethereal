@@ -159,11 +159,6 @@ int lapic_irq(irq_t *irq, void *context) {
     return IRQ_HANDLED;
 }
 
-// reschedule cb
-void reschedule_cb(void *ctx) {
-    scheduler_irq();
-}
-
 /**
  * @brief Local APIC timer IRQ
  */
@@ -323,11 +318,6 @@ int lapic_initialize(uintptr_t lapic_address) {
     // Create the timer device
     timer_device_t *lapic_device = timer_createDevice("local apic timer", &lapic_ops, 100, NULL); 
     timer_selectDevice(lapic_device);
-    
-    // Now that's ready
-    timer_event_t *ev = kmalloc(sizeof(timer_event_t));
-    timer_init(ev, reschedule_cb, NULL, 10000000, true, "reschedule");
-    timer_insert(ev);
 
     // Finished!
     return 0;

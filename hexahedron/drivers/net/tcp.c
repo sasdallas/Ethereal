@@ -801,7 +801,7 @@ void tcp_initWorker(int num) {
     worker->requests = 0;
     if (tcp_process) {
         worker->thr = process_createKernelThread(tcp_process, 0, tcp_worker, worker);
-        scheduler_insertThread(worker->thr);
+        sched_insert(worker->thr);
     }
 }
 
@@ -1495,9 +1495,9 @@ static int tcp_init() {
 static int tcp_init_workers() {
     // abuse the process system
     tcp_initWorker(0);
-    tcp_process = process_createKernel("tcp worker", PROCESS_KERNEL, PRIORITY_HIGH, tcp_worker, &tcp_workers[0]);
+    tcp_process = process_createKernel("tcp worker", PROCESS_KERNEL, tcp_worker, &tcp_workers[0]);
     tcp_workers[0].thr = tcp_process->main_thread;
-    scheduler_insertThread(tcp_process->main_thread);
+    sched_insert(tcp_process->main_thread);
 
     for (int i = 1; i < TCP_THREADS; i++) {
         tcp_initWorker(i);

@@ -527,8 +527,8 @@ void e1000_init(pci_device_t *dev, uint16_t type, bool is_e1000e) {
     // Set MTU
     nic->n->mtu = 1500;
 
-    nic->receiver = process_createKernel("e1000_receiver", PROCESS_KERNEL, PRIORITY_MED, e1000_receiverThread, (void*)nic);
-    scheduler_insertThread(nic->receiver->main_thread);
+    nic->receiver = process_createKernel("e1000_receiver", PROCESS_KERNEL, e1000_receiverThread, (void*)nic);
+    sched_insert(nic->receiver->main_thread);
 
     // All done
     return;

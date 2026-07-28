@@ -58,7 +58,7 @@ static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, i
  */
 __attribute__((no_caller_saved_registers)) void thread_entrypoint(thread_t *previous, void (*entrypoint)()) {
     if (previous != NULL) {
-        scheduler_insertThread(previous);
+        sched_insert(previous);
     }
 
     // Begin new threads with interrupts enabled

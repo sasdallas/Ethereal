@@ -28,6 +28,7 @@ typedef struct __procmask {
 typedef __procmask_t procmask_t;
 
 /**** MACROS ****/
+#define PROCMASK_INITIALIZER { 0 }
 
 #define procmask_setall(mask) bitmap_fill((mask)->bm, 0xFF, MAX_CPUS)
 #define procmask_clear(mask) bitmap_fill((mask)->bm, 0, MAX_CPUS)

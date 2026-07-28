@@ -27,7 +27,13 @@
 #include <kernel/subsystems/timer.h>
 #include <kernel/subsystems/irq.h>
 #include <kernel/subsystems/timemonitor.h>
+#include <kernel/misc/util.h>
 #include <kernel/tasklet.h>
+
+/**** DEFINITIONS ****/
+
+#define CPU_MAX_MODEL           48
+#define CPU_MAX_VENDOR          48
 
 /**** TYPES ****/
 
@@ -42,8 +48,16 @@ typedef struct scheduler_cpu {
     spinlock_t *lock;           // Lock
 } scheduler_cpu_t;
 
-typedef struct _processor {
-    int cpu_id;                             // CPU ID
+typedef struct processor_info {
+    char vendor[CPU_MAX_VENDOR];
+    char model[CPU_MAX_MODEL];
+    int family;
+    int model_number;
+    int revision;
+} processor_info_t;
+
+typedef struct processor {
+    int cpu_id;                             // CPU ID (zero-based and linear)
     struct vmm_context *current_context;    // Current page directory
     struct thread *current_thread;          // Current thread of the process
 
@@ -53,21 +67,19 @@ typedef struct _processor {
 #if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
 
 #ifdef __ARCH_X86_64__
-    uintptr_t kstack;                       // (0x40) Kernel-mode stack loaded in TSS
-    uintptr_t ustack;                       // (0x48) Usermode stack, saved in SYSCALL entrypoint    
+    uintptr_t kstack;                       // (0x28) Kernel-mode stack loaded in TSS
+    uintptr_t ustack;                       // (0x30) Usermode stack, saved in SYSCALL entrypoint    
 #endif
 
     int lapic_id;
-
-    /* CPU basic information */
-    char cpu_model[48];
-    const char *cpu_manufacturer;
-    int cpu_model_number;
-    int cpu_family;
 #endif
     
+    // Generic processor info
+    processor_info_t info;
+
     scheduler_cpu_t sched;                  // Scheduler data (POSITION SENSITIVE!)
-    
+    void *sched_data;
+
     volatile uint32_t irq_bitmap;           // Per-CPU IRQ bitmap
     irq_table_t *irq_table;                 // IRQ table (FOR PERCPU INTERRUPTS ONLY!!)
     uint64_t idle_time;                     // Time the processor has spent idling
@@ -77,18 +89,24 @@ typedef struct _processor {
     cpu_times_t times;                      // CPU times
 } processor_t;
 
-/* External variables defined by architecture */
+/* Ensure these are right */
+#ifdef __ARCH_X86_64__
+MUST_BE_AT_OFFSET(processor_t, kstack, 0x28);
+MUST_BE_AT_OFFSET(processor_t, ustack, 0x30);
+#endif
+
+/* In kernel SMP */
 extern processor_t processor_data[];
 extern int processor_count;
 
 /**
  * @brief Architecture-specific method of determining current core
  * 
- * i386: We use a macro that retrieves the current data from processor_data
+ * intellisense: Yes, I use VS code, and no it can't parse __seg_gs. To be clear you shouldnt actually do this
  * x86_64: We use the GSbase to get it
  */
 
-#if defined(__ARCH_I386__) || defined(__INTELLISENSE__)
+#if defined(__INTELLISENSE__)
 #define current_cpu ((processor_t*)&(processor_data[arch_current_cpu()]))
 #elif defined(__ARCH_X86_64__)
 static processor_t __seg_gs * const current_cpu = 0;

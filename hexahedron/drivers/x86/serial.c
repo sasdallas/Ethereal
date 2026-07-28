@@ -307,9 +307,9 @@ void serial_reinitializePort(serial_port_t *port, struct termios *tios) {
  */
 static int serial_spawn() {
     if (serial_getPort(1) || serial_getPort(3)) {
-        process_t *proc = process_createKernel("serial_thread_ac", PROCESS_KERNEL, PRIORITY_MED, serial_thread, (void*)(uintptr_t)0x3f8);
+        process_t *proc = process_createKernel("serial_thread_ac", PROCESS_KERNEL, serial_thread, (void*)(uintptr_t)0x3f8);
         serial_thread_ac = proc->main_thread;
-        scheduler_insertThread(serial_thread_ac);
+        sched_insert(serial_thread_ac);
 
         irq_number_t vect;
         irq_allocate(global_domain, 4, NULL, &vect);
@@ -317,9 +317,9 @@ static int serial_spawn() {
     }
     
     if (serial_getPort(2) || serial_getPort(4)) {
-        process_t *proc = process_createKernel("serial_thread_bd", PROCESS_KERNEL, PRIORITY_MED, serial_thread, (void*)(uintptr_t)0x2f8);
+        process_t *proc = process_createKernel("serial_thread_bd", PROCESS_KERNEL, serial_thread, (void*)(uintptr_t)0x2f8);
         serial_thread_bd = proc->main_thread;
-        scheduler_insertThread(serial_thread_bd);
+        sched_insert(serial_thread_bd);
 
         irq_number_t vect;
         irq_allocate(global_domain, 3, NULL, &vect);
