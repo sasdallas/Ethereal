@@ -16,6 +16,8 @@
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 #include <kernel/arch/arch.h>
+#include <kernel/misc/util.h>
+#include <kernel/task/process.h>
 #include <stdatomic.h>
 #include <assert.h>
 
@@ -28,12 +30,7 @@ spinlock_t *spinlock_create(char *name) {
     spinlock_t *ret = kmalloc(sizeof(spinlock_t));
     ret->cpu = -1;
     ret->name = name;
-    
-    // Because atomics and its consequences have been a disaster for the human race,
-    // we must use atomic_flag_clear to set this variable.
-    // https://stackoverflow.com/questions/31526556/initializing-an-atomic-flag-in-a-mallocd-structure
     atomic_flag_clear(&(ret->lock));
-
     return ret;
 }
 
@@ -60,6 +57,24 @@ void spinlock_acquire(spinlock_t *spinlock) {
 
     spinlock->state = state;
     spinlock->cpu = arch_current_cpu();
+}
+
+/**
+ * @brief Lock a spinlock (does nothing to interrupt state)
+ * @param spinlock The spinlock to lock
+ */
+void spinlock_acquireRaw(spinlock_t *spinlock) {
+    while (atomic_flag_test_and_set_explicit(&(spinlock->lock), memory_order_acquire)) {
+        arch_pause_single();
+    }
+}
+
+/**
+ * @brief Release a raw spinlock
+ * @param spinlock The spinlock to release
+ */
+void spinlock_releaseRaw(spinlock_t *spinlock) {
+    atomic_flag_clear_explicit(&(spinlock->lock), memory_order_release);
 }
 
 /**

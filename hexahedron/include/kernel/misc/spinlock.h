@@ -65,4 +65,16 @@ int spinlock_tryAcquire(spinlock_t *spinlock);
  */
 void spinlock_release(spinlock_t *spinlock);
 
+/**
+ * @brief Lock a spinlock (does nothing to interrupt state)
+ * @param spinlock The spinlock to lock
+ */
+void spinlock_acquireRaw(spinlock_t *spinlock);
+
+/**
+ * @brief Release a raw spinlock
+ * @param spinlock The spinlock to release
+ */
+void spinlock_releaseRaw(spinlock_t *spinlock);
+
 #endif
