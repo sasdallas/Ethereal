@@ -109,7 +109,7 @@ int xhci_waitForTransfer(xhci_endpoint_t *endp) {
 static USB_TRANSFER_STATUS xhci_control(USBController_t *controller, USBDevice_t *device, USBTransfer_t *transfer) {
     if (!controller || !device || !transfer || !device->dev) return USB_TRANSFER_FAILED;
     xhci_device_t *dev = (xhci_device_t*)(device->dev);
-    mutex_acquire(dev->endpoints[0].m);
+    spinlock_acquireRaw(&dev->endpoints[0].lock);
     
     // Start building the TRB chain
     // Control transactions: SETUP -> DATA -> STATUS
@@ -178,14 +178,14 @@ static USB_TRANSFER_STATUS xhci_control(USBController_t *controller, USBDevice_t
     // Wait for transfer to complete
     if (xhci_waitForTransfer(&dev->endpoints[0])) {
         LOG(ERR, "Detected a transfer failure during CONTROL transfer\n");
-        mutex_release(dev->endpoints[0].m);
+        spinlock_releaseRaw(&dev->endpoints[0].lock);
         transfer->status = USB_TRANSFER_FAILED;
         return USB_TRANSFER_FAILED;
     }
 
 
     // Done!
-    mutex_release(dev->endpoints[0].m);
+    spinlock_releaseRaw(&dev->endpoints[0].lock);
     transfer->status = USB_TRANSFER_SUCCESS;
     return USB_TRANSFER_SUCCESS;
 }
@@ -202,12 +202,12 @@ static USB_TRANSFER_STATUS xhci_interrupt(USBController_t *controller, USBDevice
     // Get the endpoint they want to transfer to
     uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
     xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
-    if (!ep->tr || !ep->m) {
+    if (!ep->tr) {
         LOG(ERR, "Endpoint %d is not configured\n", ep_num);
         return USB_TRANSFER_FAILED;
     }
 
-    mutex_acquire(ep->m);
+    spinlock_acquireRaw(&ep->lock);
 
     xhci_normal_trb_t trb;
     memset(&trb, 0, sizeof(xhci_normal_trb_t));
@@ -223,7 +223,7 @@ static USB_TRANSFER_STATUS xhci_interrupt(USBController_t *controller, USBDevice
     // Pending interrupt transfer points to this
     ep->pending_int = transfer;
 
-    mutex_release(ep->m);
+    spinlock_releaseRaw(&ep->lock);
 
     // Ring doorbell
     XHCI_DOORBELL(dev->parent, dev->slot_id) = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
@@ -241,13 +241,13 @@ static USB_TRANSFER_STATUS xhci_bulk(USBController_t *controller, USBDevice_t *d
     uint8_t ep_num = XHCI_ENDPOINT_NUMBER_FROM_DESC(transfer->endp->desc);
     xhci_endpoint_t *ep = &(dev->endpoints[ep_num]);
     
-    if (!ep->tr || !ep->m) {
+    if (!ep->tr) {
         LOG(ERR, "Endpoint %d is not configured for BULK transfer\n", ep_num);
         return USB_TRANSFER_FAILED;
     }
 
     // Lock endpoint
-    mutex_acquire(ep->m);
+    spinlock_acquireRaw(&ep->lock);
 
     // Build the TRB
     xhci_normal_trb_t trb;
@@ -268,14 +268,14 @@ static USB_TRANSFER_STATUS xhci_bulk(USBController_t *controller, USBDevice_t *d
     // TODO asyncronous
     if (xhci_waitForTransfer(ep)) {
         LOG(ERR, "Detected a transfer failure during BULK transfer on EP %d\n", ep_num);
-        mutex_release(ep->m);
         transfer->status = USB_TRANSFER_FAILED;
-        return USB_TRANSFER_FAILED;
+    } else {
+        transfer->status = USB_TRANSFER_SUCCESS;
     }
 
-    mutex_release(ep->m);
-    transfer->status = USB_TRANSFER_SUCCESS;
-    return USB_TRANSFER_SUCCESS;
+    spinlock_releaseRaw(&ep->lock);
+    
+    return transfer->status;
 }
 
 
@@ -351,7 +351,7 @@ static USB_STATUS xhci_configure(USBController_t *controller, USBDevice_t *devic
     uint8_t endp_num = (((endpoint->desc.bEndpointAddress & USB_ENDP_NUMBER_MASK) * 2) + !!(endpoint->desc.bEndpointAddress & USB_ENDP_DIRECTION_IN));
     xhci_endpoint_t *ep = &(dev->endpoints[endp_num]);
 
-    ep->m = mutex_create("xhci endpoint mutex");
+    SPINLOCK_INIT(&ep->lock);
     ep->tr = xhci_createTransferRing();
 
     xhci_input_context_t *ic = XHCI_INPUT_CONTEXT(dev);
@@ -574,8 +574,6 @@ int xhci_initializeDevice(xhci_t *xhci, uint8_t port) {
             LOG(WARN, "Unrecognized speed: %d\n", spd);
             dev->endpoints[0].mps = 8;
     }
-
-    dev->endpoints[0].m = mutex_create("endp mutex");
 
     // Make contexts
     xhci_input_context_t *input_ctx = XHCI_INPUT_CONTEXT(dev);

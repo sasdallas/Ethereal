@@ -39,7 +39,7 @@ typedef struct xhci_transfer_ring {
 typedef struct xhci_endpoint {
     xhci_transfer_ring_t *tr;       // Transfer ring
     uint32_t mps;                   // MPS
-    mutex_t *m;                     // Mutex
+    spinlock_t lock;
     
     USBTransfer_t *pending_int;     // Pending interrupt transfer 
 
