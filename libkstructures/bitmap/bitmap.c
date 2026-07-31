@@ -12,6 +12,7 @@
  */
 
 #include <structs/bitmap.h>
+#include <assert.h>
 #include <string.h>
 
 bool bitmap_test(unsigned long *b, size_t i) {
@@ -20,7 +21,6 @@ bool bitmap_test(unsigned long *b, size_t i) {
 void bitmap_set(unsigned long *b, size_t i) {
     b[i / BITMAP_BITS] |= 1UL << (i % BITMAP_BITS);
 }
-
 
 void bitmap_clear_range(unsigned long *b, size_t start, size_t end) {
     // need to align start
@@ -69,8 +69,8 @@ int bitmap_find_first_from(const unsigned long *b, size_t start, size_t n) {
         }
 
         if (word) {
-            size_t b = i * BITMAP_BITS + __builtin_ctzll(word);
-            return (b < n) ? (int)b : -1;
+            size_t bit = i * BITMAP_BITS + __builtin_ctzll(word);
+            return (bit < n) ? (int)bit : -1;
         }
     }
     
@@ -85,4 +85,47 @@ int bitmap_find_first(const unsigned long *b, size_t n) {
     }
     
     return -1;
+}
+
+int bitmap_find_first_set_from(const unsigned long *b, size_t start, size_t n) {
+    if (start >= n) {
+        return -1;
+    }
+
+    for (size_t i = start / BITMAP_BITS; i < (n + BITMAP_BITS - 1) / BITMAP_BITS; ++i) {
+        unsigned long word = b[i];
+
+        if (i == start / BITMAP_BITS) {
+            word &= (~0UL << (start % BITMAP_BITS));
+        }
+
+        if (word) {
+            size_t bit = i * BITMAP_BITS + __builtin_ctzll(word);
+            return (bit < n) ? (int)bit : -1;
+        }
+    }
+    
+    return -1;
+}
+
+int bitmap_find_first_set(const unsigned long *b, size_t n) {
+    for (size_t i = 0, w = (n + BITMAP_BITS - 1) / BITMAP_BITS; i < w; ++i) {
+        if (b[i]) {
+            // not great practice, however it is safe to access these bits
+            size_t bit = i * BITMAP_BITS + __builtin_ctzll(b[i]);
+            if (bit > n) {
+                return -1;
+            } else {
+                return bit;
+            }
+        }
+    }
+    
+    return -1;
+}
+
+int bitmap_compare(const unsigned long *b1, const unsigned long *b2, size_t sz) {
+    // TODO: This doesnt handle the edge case where bitmaps arent the same at the VERY tail end
+    assert((sz % 8) == 0);
+    return memcmp(b1, b2, BITMAP_TO_SIZE(sz));
 }
