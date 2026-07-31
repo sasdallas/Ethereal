@@ -522,6 +522,11 @@ int celestial_resizeWindow(window_t *win, size_t width, size_t height) {
         .width = width,
         .height = height,
     };
+        
+    if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+        req.width += win->decor->borders.left_width + win->decor->borders.right_width;
+        req.height += win->decor->borders.top_height + win->decor->borders.bottom_height;
+    }   
 
     // Send the request
     if (celestial_sendRequest(&req, req.size) < 0) return -1;
@@ -609,6 +614,10 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
 
         win->decor->render(win);
         gfx_render(win->decor->ctx);
+
+        // adjust resize event
+        resize_event->new_width = win->width;
+        resize_event->new_height = win->height;
     } else {
         // Easy, just update some minor stuff
         // First, update the shared memory object key
