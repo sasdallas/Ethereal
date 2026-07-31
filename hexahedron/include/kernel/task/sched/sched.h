@@ -139,6 +139,8 @@ static inline void sched_yield(struct thread *thread) {
  * @brief Process scheduler event on thread
  * @param thread The thread to process the event on
  * @param event The event
+ * 
+ * @note This can be called from any context
  */
 static inline void sched_event(struct thread *thread, sched_event_t event) {
     return sched_current->ops.sched_event(thread, event);

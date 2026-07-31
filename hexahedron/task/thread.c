@@ -162,8 +162,13 @@ void thread_exit() {
     // process_yield() will kill us
     LOG(DEBUG, "thread_exit %p\n", t);
 
-    // Shitty hack, go!
-    // !!!: TODO Replace this stupid hack with something better. The idea of using a func is fine but using the idle process is silly
+    // IRQs should be disabled from now on to prevent preemption
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
+    // Notify scheduler that we are exiting
+    sched_event(t, SCHED_EVENT_EXIT);
+
+    // !!! TODO Replace this stupid design with something better.
+    // !!! The idea of using a func is fine but using the idle process is silly
     arch_handle_threadexit(current_cpu->idle_process->main_thread, t);
 }
