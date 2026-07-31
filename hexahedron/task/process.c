@@ -413,11 +413,6 @@ process_t *process_spawnIdleTask() {
     // !!!: Hack
     process_freePID(idle->pid);
     idle->pid = -1; // Not actually a process
-    
-    // !!!: remove
-    if (process_list) {
-        list_delete(process_list, &idle->proc_list_node);
-    }
 
     // Create a new thread
     idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL | THREAD_FLAG_IDLE);
