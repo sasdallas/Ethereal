@@ -344,12 +344,6 @@ void kmain() {
         vfs_changeGlobalRoot(vfs_getFilesystem(fs?fs:"ext2"), r, 0, NULL);
     }
 
-    // Spawn idle task for this CPU
-    current_cpu->idle_process = process_spawnIdleTask();
-
-    // Spawn init task for this CPU
-    current_cpu->current_process = process_spawnInit();
-
     // Run kernel late
     INIT_RUN_PHASE(PHASE_KERN_LATE);
 

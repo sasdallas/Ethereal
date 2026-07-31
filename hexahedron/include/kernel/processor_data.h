@@ -77,7 +77,7 @@ typedef struct processor {
     // Generic processor info
     processor_info_t info;
 
-    scheduler_cpu_t sched;                  // Scheduler data (POSITION SENSITIVE!)
+    // Scheduler-specific data
     void *sched_data;
 
     volatile uint32_t irq_bitmap;           // Per-CPU IRQ bitmap

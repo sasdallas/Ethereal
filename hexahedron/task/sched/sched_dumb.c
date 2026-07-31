@@ -23,17 +23,26 @@
 /* Dumb scheduler */
 static void sched_dumb_init();
 static void sched_dumb_ap();
+static void sched_dumb_start();
 static void sched_dumb_insert(thread_t *thread);
 static void sched_dumb_tick(void *context);
 static thread_t *sched_dumb_get();
+static void sched_dumb_thread(thread_t *thread);
+static void sched_dumb_free(thread_t *thread);
+static void sched_dumb_event(thread_t *thread, sched_event_t event);
+
 sched_t dumb_scheduler = {
     .name = "dumb",
     .ops = {
         .sched_init = sched_dumb_init,
         .sched_ap = sched_dumb_ap,
+        .sched_start = sched_dumb_start,
+        .sched_thread = sched_dumb_thread,
+        .sched_free = sched_dumb_free,
         .sched_insert = sched_dumb_insert,
         .sched_get = sched_dumb_get,
-        .sched_yield = sched_dumb_insert // dumb sched has no difference between the two
+        .sched_yield = sched_dumb_insert, // dumb sched has no difference between the two
+        .sched_event = sched_dumb_event,
     }
 };
 
@@ -54,17 +63,51 @@ static void sched_dumb_ap() {
     SPINLOCK_INIT(&queue->lock);
     timer_init(&queue->timer, sched_dumb_tick, NULL, 10000000, true, "dumb_tick");
     current_cpu->sched_data = queue;
+
+}
+
+/**
+ * @brief Start dumb scheduler
+ */
+static void sched_dumb_start() {
+    sched_dumb_queue_t *queue = SCHED_THIS();
     timer_insert(&queue->timer);
+}
+
+/**
+ * @brief Initialize thread
+ */
+static void sched_dumb_thread(thread_t *thread) {
+    thread->sched = kmalloc(sizeof(node_t));
+    node_t *n = thread->sched;
+    NODE_INIT(n, thread);
+}
+
+/**
+ * @brief Free thread data
+ */
+static void sched_dumb_free(thread_t *thread) {
+    kfree(thread->sched);
+}
+
+/**
+ * @brief Handle scheduler event
+ */
+static void sched_dumb_event(thread_t *thread, sched_event_t event) {
+    // stub
 }
 
 /**
  * @brief Insert dumb scheduler
  */
 static void sched_dumb_insert(thread_t *thread) {
+    if (thread->flags & THREAD_FLAG_IDLE) return;
+
     sched_dumb_queue_t *q = SCHED_THIS();
+    node_t *sched_node = thread->sched;
 
     spinlock_acquire(&q->lock);
-    list_append_node(&q->queue, &thread->sched_node);
+    list_append_node(&q->queue, sched_node);
     spinlock_release(&q->lock);
 }
 
@@ -124,7 +167,7 @@ extern void sleep_callback();
 
     thread_t *thr;
     if (n) {
-        thr = CONTAINER_OF(n, thread_t, sched_node);
+        thr = n->value;
     } else {
         thr = current_cpu->idle_process->main_thread;
 
@@ -137,7 +180,7 @@ extern void sleep_callback();
                 spinlock_release(&steal->lock);
 
                 if (n) {
-                    thr = CONTAINER_OF(n, thread_t, sched_node);
+                    thr = n->value;
                 }
             }
         }

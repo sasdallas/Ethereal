@@ -21,6 +21,7 @@
 #include <kernel/task/sleep.h>
 #include <kernel/task/signal.h>
 #include <kernel/subsystems/timemonitor.h>
+#include <kernel/misc/procmask.h>
 #include <sys/signal.h>
 #include <sys/types.h>
 
@@ -38,6 +39,7 @@
 #define THREAD_FLAG_NO_PREEMPT      0x02
 #define THREAD_FLAG_CHILD           0x04    // Thread is a child. NOT PRESERVED. Tells thread_create() not to allocate a stack and mess up potential CoW
 #define THREAD_FLAG_NEEDS_RESCHED   0x08    // Set by the scheduler callback, triggers reschedule on irq_handler
+#define THREAD_FLAG_IDLE            0x10    // This is the idle thread
 
 // Stack size of thread
 #define THREAD_STACK_SIZE           PAGE_SIZE * 16
@@ -58,12 +60,6 @@ typedef struct thread {
     unsigned int status;
     unsigned int flags;
 
-    // SCHEDULER VARIABLES
-    node_t sched_node;                      // Scheduler node
-    time_t preempt_ticks;                   // Ticks until the thread is preempted
-    time_t total_ticks;                     // Total amount of ticks the thread has been running for
-    time_t start_ticks;                     // Starting ticks
-
     // BLOCKING VARIABLES
     thread_sleep_t sleep;                   // Sleep structure
 
@@ -80,6 +76,8 @@ typedef struct thread {
 
     // SCHEDULER
     void *sched;
+    int nice;
+    procmask_t affinity;
 
     // OTHER
     vmm_context_t *ctx;                     // Context
@@ -91,14 +89,14 @@ typedef struct thread {
 
     // PTHREAD RELATED
     pid_t tid;                              // Thread ID
-    list_t *joiners;                        // List of joiners
-    void *retval;                           // Return value of the thread
-                                            // NOTE: This is a weird solution since you can keep joining the same thread. We will destroy everything we can in this thread object
-                                            // NOTE: except the actual object itself, until the process exits.
-    spinlock_t joiner_lck;                  // Joiner lock
-    int priority;
 } thread_t;
 
+/* ASM constraints */
+#ifdef __ARCH_X86_64__
+MUST_BE_AT_OFFSET(thread_t, sleep.lock.lock, 0x3C);
+MUST_BE_AT_OFFSET(thread_t, status, 0x10);
+MUST_BE_AT_OFFSET(thread_t, context, 0x70);
+#endif
 
 /**** MACROS ****/
 

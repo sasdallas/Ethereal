@@ -69,6 +69,15 @@ void process_init() {
     // Initialize futexes
     futex_init();
 
+    // Spawn idle task for this CPU
+    current_cpu->idle_process = process_spawnIdleTask();
+
+    // Spawn init task for this CPU
+    current_cpu->current_process = process_spawnInit();
+    
+    // Start the scheduler for this processor
+    sched_start();
+
     LOG(INFO, "Process system initialized\n");
 }
 
@@ -100,7 +109,10 @@ void __attribute__((noreturn)) process_switchNextThread() {
     thread_t *prev = current_cpu->current_thread;
     current_cpu->current_thread = next_thread;
     current_cpu->current_process = next_thread->parent;
-    
+
+    // Dispatching thread now
+    sched_event(next_thread, SCHED_EVENT_DISPATCH);
+
     // Idle enter
     if (current_cpu->current_process == current_cpu->idle_process) {
         timemonitor_updateIdleEntry();
@@ -129,19 +141,19 @@ void __attribute__((noreturn)) process_switchNextThread() {
  * @param reschedule Whether to readd the process back to the queue, meaning it can return whenever and isn't waiting on something
  */
 void process_yield(uint8_t reschedule) {
-    // If the idle process is being rescheduled handle that
-    if (current_cpu->current_process == current_cpu->idle_process) {
-        reschedule = 0;
-        timemonitor_updateIdleExit();
-    } else {
-        // Calculate times on context switch
-        timemonitor_updateContextSwitch();
-    }
-
     // Do we even have a thread?
     if (current_cpu->current_thread == NULL) {
         // Just switch to next thread
         return process_switchNextThread();
+    }
+
+    // If the idle process is being rescheduled handle that
+    if (current_cpu->current_process == current_cpu->idle_process) {
+        // Idle needs special treatment
+        timemonitor_updateIdleExit();
+    } else {
+        // Calculate times on context switch
+        timemonitor_updateContextSwitch();
     }
 
     // Exit the thread if its trying to stop
@@ -151,6 +163,9 @@ void process_yield(uint8_t reschedule) {
 
     // Get current thread
     thread_t *prev = current_cpu->current_thread;
+
+    // Update timing for the thread
+    sched_event(prev, SCHED_EVENT_DESCHEDULE);
 
     // Can't be rescheduling
     if (prev->status & THREAD_STATUS_SLEEPING) reschedule = 0;
@@ -166,6 +181,9 @@ void process_yield(uint8_t reschedule) {
 
     // Clear resched flag so we dont get preempted in here
     next_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
+
+    // Dispatch
+    sched_event(next_thread, SCHED_EVENT_DISPATCH);
 
     // Update CPU variables
     current_cpu->current_thread = next_thread;
@@ -397,11 +415,17 @@ process_t *process_spawnIdleTask() {
     idle->pid = -1; // Not actually a process
     
     // !!!: remove
-    // if (process_list) list_delete(process_list, list_find(process_list, (void*)idle));
+    if (process_list) {
+        list_delete(process_list, &idle->proc_list_node);
+    }
 
     // Create a new thread
-    idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL);
+    idle->main_thread = process_createThread(idle, (uintptr_t)&kernel_idle, THREAD_FLAG_KERNEL | THREAD_FLAG_IDLE);
     THREAD_PUSH_STACK(SP(idle->main_thread->context), uintptr_t, 0);
+    
+    // Thread should only run on 
+    procmask_clear(&idle->main_thread->affinity);
+    procmask_set(&idle->main_thread->affinity, current_cpu->cpu_id);
 
     timemonitor_updateProcessStart(idle->main_thread);
     return idle;

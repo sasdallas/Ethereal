@@ -92,6 +92,10 @@
 /* caller */
 #define CALLER __builtin_return_address(0)
 
+/* use sparingly */
+#define LIKELY(stmt) __builtin_expect(!!(stmt), 1)
+#define UNLIKELY(stmt) __builtin_expect(!!(stmt), 0)
+
 /* double-lock helpers */
 #define LOCK_BOTH(lock_fn, a, b) ({\
     if ((uintptr_t)(a) == (uintptr_t)(b)) {\

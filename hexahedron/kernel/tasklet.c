@@ -34,11 +34,10 @@ void tasklet_init() {
 
 /**
  * @brief Process pending tasklets on current CPU
- * Called from IRQ context
+ * Called from IRQ context with interrupts disabled
  */
 void tasklet_process() {
     tasklet_t *ts = current_cpu->tasklet->queue;
-    TASKLET_LOCK();
     while (ts) {
         // Delink from list
         if (ts->prev) ts->prev->next = ts->next;
@@ -54,16 +53,15 @@ void tasklet_process() {
         // Execute using this mess cause fuck readability
         TASKLET_ENTER(); // << prevents threads from preempting the tasklet
         
-        TASKLET_UNLOCK();
+        int state = hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
         ts->cb(ctx_saved);
-        TASKLET_LOCK();
+        hal_setInterruptState(state);
         
         TASKLET_EXIT();
 
         current_cpu->tasklet->pending -= 1;
         ts = nxt_saved;
     }
-    TASKLET_UNLOCK();
 }
 
 /**

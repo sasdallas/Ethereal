@@ -29,11 +29,15 @@ typedef __procmask_t procmask_t;
 
 /**** MACROS ****/
 #define PROCMASK_INITIALIZER { 0 }
+#define PROCMASK_BSP         { .bm = { 1 } }
 
 #define procmask_setall(mask) bitmap_fill((mask)->bm, 0xFF, MAX_CPUS)
 #define procmask_clear(mask) bitmap_fill((mask)->bm, 0, MAX_CPUS)
 #define procmask_set(mask, cpu) bitmap_set((mask)->bm, cpu)
 #define procmask_unset(mask, cpu) bitmap_clear((mask)->bm, cpu)
 #define procmask_test(mask, cpu) bitmap_test((mask)->bm, cpu)
+#define procmask_first(mask) bitmap_find_first_set((mask)->bm, MAX_CPUS);
+#define procmask_next(mask, last) bitmap_find_first_set_from((mask)->bm, (last)+1, MAX_CPUS)
+#define procmask_compare(m1, m2) bitmap_compare((m1)->bm, (m2)->bm, MAX_CPUS)
 
 #endif

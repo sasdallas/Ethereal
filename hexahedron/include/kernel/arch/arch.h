@@ -157,4 +157,13 @@ void arch_single_step(struct thread *thread, int state);
  */
 uint64_t arch_get_boot_time();
 
+/**
+ * @brief Send IPI to core(s)
+ * @param core The core to send the IPI to if sending to a specific core
+ * @param ipi The IPI vector to send
+ * @param destination IPI destination
+ * @param flags IPI flags
+ */
+int arch_send_ipi(int core, unsigned int ipi, unsigned int destination, unsigned int flags);
+
 #endif

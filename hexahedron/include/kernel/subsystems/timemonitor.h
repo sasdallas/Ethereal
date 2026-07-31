@@ -48,6 +48,11 @@ typedef struct _thread_times {
 /**** FUNCTIONS ****/
 
 /**
+ * @brief Get nanoseconds
+ */
+uint64_t timemonitor_getNanoseconds();
+
+/**
  * @brief Setup time for process
  */
 void timemonitor_updateProcessStart(struct thread *thr);

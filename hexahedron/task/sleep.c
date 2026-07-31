@@ -212,7 +212,12 @@ int sleep_enter() {
 
     // Enter sleep
     timemonitor_updateSleepEnter();    
+    
+    sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_ENTER);
     process_yield(0);
+    sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_WAKEUP);
+
+    // Accumulate thread times
     timemonitor_updateSleepExit();
     
     // Clear seconds and subseconds

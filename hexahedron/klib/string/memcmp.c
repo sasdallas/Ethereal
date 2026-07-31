@@ -14,6 +14,8 @@
 #include <stdlib.h>
 
 int memcmp(const void *s1, const void *s2, size_t n) {
+    if (s1 == s2) return 0;
+    
     unsigned char *p1 = (unsigned char *)s1;
     unsigned char *p2 = (unsigned char *)s2;
     size_t r = n;

@@ -190,7 +190,6 @@ int irq_allocate(irq_domain_t *domain, int hwirq, void *dev, irq_number_t *outpu
         return ret;
     }
 
-    LOG(DEBUG, "Mapped virq%d -> hwirq%d in domain \"%s\" successfully.\n", allocated, hwirq, domain->domain_name);
 
     if (output) *output = allocated;
     return 0;
@@ -211,6 +210,60 @@ void irq_reserveVector(irq_number_t num) {
 }
 
 /**
+ * @brief Create a IRQ object and returns it
+ * @param domain The domain for the new object (calls no methods)
+ * @param vector The vector for the IRQ
+ * @param hwirq The hardware IRQ for the IRQ
+ * @returns A new allocated IRQ object
+ */
+irq_t *irq_create(irq_domain_t *domain, irq_number_t vector, int hwirq) {
+    irq_t *irq = irq_allocateEntry();
+    SPINLOCK_INIT(&irq->lck);
+    irq->domain = domain;
+    irq->num = vector;
+    irq->hwirq = hwirq;
+    irq->next = NULL;
+    irq->flags = IRQ_FLAG_UNMAPPED;
+    return irq;
+}
+
+/**
+ * @brief Install an existing IRQ object into the appropriate domain
+ * 
+ * Use this if you need to map an IRQ but can't use @c irq_map for some reason.
+ * Really this was created so that the SMP subsystem could pre-allocate its IRQ objects
+ * when creating IPIs, as grabbing a blocking mutex in a tasklet is bad practice.
+ * 
+ * This will call the domain_map method, so if that blocks, you're screwed.
+ * 
+ * @param irq The IRQ to install
+ * @param context Context to use when mapping the IRQ
+ * @returns 0 on success or whatever @c domain_map returned
+ */
+int irq_install(irq_t *irq, void *context) {
+    // TODO: racey
+    if (bitmap_test(irq_bitmap, irq->num) == false) {
+        spinlock_acquire(&irq_bitmap_lock);
+        bitmap_set(irq_bitmap, irq->num);
+        spinlock_release(&irq_bitmap_lock);
+    }
+
+    irq_domain_t *domain = irq->domain;
+    if (domain == percpu_domain) {
+        current_cpu->irq_table->irqs[irq->num] = irq;
+    } else {
+        __atomic_store_n(&irq_table.irqs[irq->num], irq, __ATOMIC_RELAXED);
+    }
+
+    int r = 0;
+    if (domain->ops.domain_map != NULL) {
+        r = domain->ops.domain_map(domain, irq, irq->hwirq, context);
+    } 
+
+    return r;
+}
+
+/**
  * @brief Map to a domain
  * 
  * Effectively, when you do @c irq_register you have registered an entry
@@ -227,7 +280,6 @@ void irq_reserveVector(irq_number_t num) {
  */
 int irq_map(irq_domain_t *domain, irq_number_t vector, int hwirq, void *context) {
     // To map an IRQ to a domain, we need to allocate a blank IRQ entry
-    // assert(bitmap_test(irq_bitmap, vector) == true); // vector should already have a bitmap entry set so nothing can modify it
     // TODO: racey
     if (bitmap_test(irq_bitmap, vector) == false) {
         spinlock_acquire(&irq_bitmap_lock);
@@ -302,6 +354,11 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     irq_t *i = irq_get(vector);
     if (!i) {
         goto _unhandled;
+    }
+
+    if (UNLIKELY(i->flags & IRQ_FLAG_UNMAPPED)) {
+        LOG(ERR, "Vector %d is not mapped\n", vector);
+        assert(0);
     }
 
     if (i->flags & IRQ_FLAG_SHARED) {

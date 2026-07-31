@@ -135,6 +135,21 @@ int irq_register(irq_number_t vector, irq_handler_t handler, uint32_t flags, voi
 int irq_map(irq_domain_t *domain, irq_number_t vector, int hwirq, void *context);
 
 /**
+ * @brief Install an existing IRQ object into the appropriate domain
+ * 
+ * Use this if you need to map an IRQ but can't use @c irq_map for some reason.
+ * Really this was created so that the SMP subsystem could pre-allocate its IRQ objects
+ * when creating IPIs, as grabbing a blocking mutex in a tasklet is bad practice.
+ * 
+ * This will call the domain_map method, so if that blocks, you're screwed.
+ * 
+ * @param irq The IRQ to install
+ * @param context Context to use when mapping the IRQ
+ * @returns 0 on success or whatever @c domain_map returned
+ */
+int irq_install(irq_t *irq, void *context);
+
+/**
  * @brief Allocate an IRQ vector
  * @warning DO NOT USE UNLESS YOU KNOW WHAT YOU ARE DOING!
  * Just allocates an IRQ vector but doesnt map it to anything
@@ -182,5 +197,14 @@ int irq_setAffinity(irq_t *irq, procmask_t affinity);
  * Will return the first IRQ in a shared list (use ->next to iterate) if present
  */
 irq_t *irq_get(irq_number_t num);
+
+/**
+ * @brief Create a IRQ object and returns it
+ * @param domain The domain for the new object (calls no methods)
+ * @param vector The vector for the IRQ
+ * @param hwirq The hardware IRQ for the IRQ
+ * @returns A new allocated IRQ object
+ */
+irq_t *irq_create(irq_domain_t *domain, irq_number_t vector, int hwirq);
 
 #endif

@@ -140,7 +140,7 @@ static void lapic_chipSetAffinity(irq_t *irq, procmask_t pmask) {
 
 static void lapic_chipEoi(irq_t *irq) {
 extern uintptr_t lapic_base;
-    *((volatile uint32_t*)(lapic_base + LAPIC_REGISTER_EOI)) = LAPIC_EOI;
+    *((uint32_t*)(lapic_base + LAPIC_REGISTER_EOI)) = LAPIC_EOI;
 }
 
 /* PIC callbacks */

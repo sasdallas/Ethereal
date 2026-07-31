@@ -17,6 +17,7 @@
 #include <kernel/drivers/clock.h>
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
+#include <kernel/smp.h>
 #include <string.h>
 
 /* Last TID */
@@ -46,7 +47,10 @@ static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, i
     thr->ctx = ctx ? ctx : vmm_kernel_context;
     thr->flags = flags;
     thr->tid = __atomic_add_fetch(&last_tid, 1, __ATOMIC_RELAXED);
-    thr->sched_node.value = thr;
+    
+    thr->affinity = smp_online_cpus;
+    thr->nice = 0;
+    sched_initThread(thr);
     
     return thr;
 }
@@ -125,6 +129,7 @@ int thread_destroy(thread_t *thr) {
     LOG(DEBUG, "******************************************** Thread %p destroying\n", thr);
     if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
+    sched_freeThread(thr);
     slab_free(thread_cache, thr);
 
     return 0;

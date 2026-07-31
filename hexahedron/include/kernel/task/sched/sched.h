@@ -17,11 +17,20 @@
 #define KERNEL_TASK_SCHED_SCHED_H
 
 /**** INCLUDES ****/
+#include <kernel/misc/util.h>
 #include <stdint.h>
 
 /**** TYPES ****/
 
 struct thread;
+
+typedef enum sched_event {
+    SCHED_EVENT_DISPATCH,       // thread is dispatching right now
+    SCHED_EVENT_DESCHEDULE,     // thread is descheduling right now 
+    SCHED_EVENT_SLEEP_ENTER,    // thread just got into sleep
+    SCHED_EVENT_SLEEP_WAKEUP,   // thread just woke up from sleep
+    SCHED_EVENT_EXIT,           // the thread exited
+} sched_event_t;
 
 typedef struct sched {
     char *name;
@@ -33,6 +42,16 @@ typedef struct sched {
         // initialize scheduler (AP-specific)
         void (*sched_ap)();
 
+        // start scheduler (called on all processors)
+        // this is done after idle process has initialized
+        void (*sched_start)();
+
+        // initialize thread
+        void (*sched_thread)(struct thread *);
+
+        // free thread resources
+        void (*sched_free)(struct thread *);
+
         // insert thread (not used when rescheduling)
         void (*sched_insert)(struct thread *);
 
@@ -41,6 +60,9 @@ typedef struct sched {
 
         // yield a thread back (called after sched_get() in all cases)
         void (*sched_yield)(struct thread *);
+
+        // scheduler event
+        void (*sched_event)(struct thread *, sched_event_t);
     } ops;
 } sched_t;
 
@@ -60,6 +82,35 @@ void sched_init();
  * @brief Initialize the scheduler for a sub-processor
  */
 void sched_initAP();
+
+/**
+ * @brief Start scheduler
+ * Only call after idle process has been initialized
+ */
+static inline void sched_start() {
+    return sched_current->ops.sched_start();
+}
+
+/**
+ * @brief Initialize a thread in the scheduler
+ * @param thread The thread to initialize
+ */
+static inline void sched_initThread(struct thread *thread) {
+    if (UNLIKELY(sched_current == NULL)) {
+        // this *can* be the idle thread, so we do unfortunately have to do this check.
+        return;
+    }
+    
+    return sched_current->ops.sched_thread(thread);
+}
+
+/**
+ * @brief Free thread scheduler resources
+ * @param thread The thread to initialize
+ */
+static inline void sched_freeThread(struct thread *thread) {
+    return sched_current->ops.sched_free(thread);
+}
 
 /**
  * @brief Insert a thread into the scheduler
@@ -82,6 +133,15 @@ static inline struct thread *sched_get() {
  */
 static inline void sched_yield(struct thread *thread) {
     return sched_current->ops.sched_yield(thread);
+}
+
+/**
+ * @brief Process scheduler event on thread
+ * @param thread The thread to process the event on
+ * @param event The event
+ */
+static inline void sched_event(struct thread *thread, sched_event_t event) {
+    return sched_current->ops.sched_event(thread, event);
 }
 
 #endif

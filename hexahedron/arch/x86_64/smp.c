@@ -106,11 +106,11 @@ static void smp_invalidate(uintptr_t addr, size_t size) {
  */
 int smp_handleTLBShootdown(irq_t *irq, void *context) {
     // Acknowledge the request
-    struct tlb_shootdown_request *r = &tlb_shootdown_req[smp_getCurrentCPU()];
+    struct tlb_shootdown_request *r = &tlb_shootdown_req[arch_current_cpu()];
 
     smp_invalidate(r->addr, r->size);
     __atomic_add_fetch(r->pending_completion, 1, __ATOMIC_SEQ_CST);
-    spinlock_release(&r->shootdown_lck); // Astral
+    spinlock_releaseRaw(&r->shootdown_lck); // Astral
 
     return IRQ_HANDLED;
 }
@@ -134,6 +134,7 @@ void smp_collectAPInfo(int ap) {
     processor_data[ap].info.model_number = cpu_getModelNumber();
     processor_data[ap].info.family = cpu_getFamily();
     processor_data[ap].lapic_id = smp_getLocalAPICID();
+    processor_data[ap].cpu_id = ap;
 }
 
 /**
@@ -157,7 +158,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
     arch_mmu_ap();
 
     // We want all cores to have a consistent GDT
-    hal_gdtInitCore(smp_getCurrentCPU(), _ap_stack_base);
+    hal_gdtInitCore(arch_current_cpu(), _ap_stack_base);
     
     // Install the IDT
 extern void hal_installIDT();
@@ -178,7 +179,7 @@ extern void hal_installIDT();
 
     // Enable interrupts
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
-    
+
     // Before the local APIC timer is initialized we must have tasklets
     tasklet_init();
 
@@ -247,14 +248,13 @@ int smp_init(smp_info_t *info) {
     lapic_remapped = arch_mmu_remap_physical((uintptr_t)info->lapic_address, PAGE_SIZE, REMAP_PERMANENT);
 
     // Initialize the local APIC
-    int lapic = lapic_initialize(lapic_remapped);
-    if (lapic != 0) {
-        LOG(ERR, "Failed to initialize local APIC");
-        return -EIO;
-    }
+    assert(lapic_initialize(lapic_remapped) == 0);
 
     // Now initialize I/O APIC
-    pic_init(PIC_TYPE_IOAPIC, (void*)info);
+    assert(pic_init(PIC_TYPE_IOAPIC, (void*)info) == 0);
+
+    // Initialize the generic SMP layer
+    smp_genericInit();
 
     // Don't use SMP?
     if (info->processor_count == 1 || kargs_has("--disable-smp")) {
@@ -319,7 +319,7 @@ int smp_getCurrentCPU() {
  * @brief Acknowledge core shutdown (called by ISR)
  */
 void smp_acknowledgeCoreShutdown() {
-    procmask_set(&ap_stopped_mask, smp_getCurrentCPU());
+    procmask_set(&ap_stopped_mask, arch_current_cpu());
 }
 
 /**
@@ -369,13 +369,13 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
     int expected = 0;
 
     for (int i = 0; i < processor_count; i++) {
-        if (i != smp_getCurrentCPU() && (!is_user_shootdown || processor_data[i].current_context == current_cpu->current_context)) {
+        if (i != arch_current_cpu() && (!is_user_shootdown || processor_data[i].current_context == current_cpu->current_context)) {
             // This CPU needs to be shotdown
-            spinlock_acquire(&tlb_shootdown_req[i].shootdown_lck); // astral's idea
+            spinlock_acquireRaw(&tlb_shootdown_req[i].shootdown_lck); // astral's idea
             tlb_shootdown_req[i].addr = address;
             tlb_shootdown_req[i].size = size;
             tlb_shootdown_req[i].pending_completion = &waiting;
-            lapic_sendIPI(processor_data[i].lapic_id, 124, LAPIC_ICR_DESTINATION_PHYSICAL | (1 << 14) | LAPIC_ICR_EDGE);
+            lapic_sendIPI(processor_data[i].lapic_id, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE);
             expected++;
         }
     }
@@ -385,4 +385,29 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
     while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) __builtin_ia32_pause();
     hal_setInterruptState(state);
     __PREEMPT_ENABLE();
+}
+
+/**
+ * @brief Send IPI to core(s)
+ * @param core The core to send the IPI to if sending to a specific core
+ * @param ipi The IPI vector to send
+ * @param destination IPI destination
+ * @param flags IPI flags
+ */
+int arch_send_ipi(int core, unsigned int ipi, unsigned int destination, unsigned int flags) {
+    unsigned int apic_flags = LAPIC_ICR_EDGE;
+    if (flags & IPI_FLAG_NMI) apic_flags |= LAPIC_ICR_NMI;
+
+    if (destination == IPI_DEST_CORE) {
+        apic_flags |= LAPIC_ICR_DESTINATION_PHYSICAL | (1 << 14);
+    } else if (destination == IPI_DEST_SELF) {
+        apic_flags |= LAPIC_ICR_DESTINATION_SELF;
+    } else if (destination == IPI_DEST_ALL) {
+        apic_flags |= LAPIC_ICR_DESTINATION_ALL;
+    } else {
+        apic_flags |= LAPIC_ICR_DESTINATION_EXCLUDE_SELF | LAPIC_ICR_INITDEASSERT;
+    }
+
+    lapic_sendIPI((uint8_t)processor_data[core].lapic_id, (uint8_t)ipi, apic_flags);
+    return 0;
 }

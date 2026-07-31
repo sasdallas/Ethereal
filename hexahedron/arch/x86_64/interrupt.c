@@ -115,7 +115,7 @@ static void hal_setupGDTCoreData(int core) {
  * @param stack The stack to load
  */
 void hal_loadKernelStack(uintptr_t stack) {
-    gdt[smp_getCurrentCPU()].tss.rsp[0] = stack;
+    gdt[arch_current_cpu()].tss.rsp[0] = stack;
     current_cpu->kstack = stack;
 }
 
@@ -315,10 +315,6 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
 
     // Disable interrupts & halt
     asm volatile ("cli\nhlt");
-    for (;;);
-
-    // kernel_panic_finalize();
-
     for (;;);
 }
 

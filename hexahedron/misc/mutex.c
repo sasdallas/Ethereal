@@ -39,7 +39,9 @@ void mutex_acquire(mutex_t *mutex) {
     pid_t expect = (pid_t)-1;
     pid_t want = (current_cpu->current_thread ? current_cpu->current_thread->tid : 0); // 0 is the kernel reserved TID 
     
+    // It is a bug if trying to recursively acquire a mutex
     assert(current_cpu->current_thread == NULL || (want != __atomic_load_n(&mutex->lock, __ATOMIC_SEQ_CST)));
+    assert(!IN_TASKLET() && "Acquiring a mutex from a tasklet is forbidden");
 
     bool prepped_for_sleep = false;
     while (!__atomic_compare_exchange_n(&mutex->lock, &expect, want, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {

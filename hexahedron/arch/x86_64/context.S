@@ -15,10 +15,10 @@
 .align 8
 
 /* change these if you modify the thread structure */
-#define CONTEXT_OFFSET          0xA8    // thread->context
+#define CONTEXT_OFFSET          0x70    // thread->context
 #define STATUS_OFFSET           0x10    // thread->status
 #define THREAD_STATUS_SLEEPING  0x08
-#define SLEEP_LOCK_OFFSET       0x74    // thread->sleep.lock.lock
+#define SLEEP_LOCK_OFFSET       0x3C    // thread->sleep.lock.lock
 
 .global arch_start_execution
 arch_start_execution:
@@ -76,13 +76,13 @@ arch_restore_context:
     iretq
 
 __unlock_thread:
-    movq 0x10(%rdi), %rcx
-    and $0x8, %rcx              // THREAD_STATUS_SLEEPING
+    movq STATUS_OFFSET(%rdi), %rcx
+    and $THREAD_STATUS_SLEEPING, %rcx
     jz .no_need
 
     /* unlock thread sleep queue */
     movq %rdi, %rcx 
-    add $0x74, %rcx
+    add $SLEEP_LOCK_OFFSET, %rcx
     movb $0, %al
     lock xchgb %al,(%rcx)
  
@@ -168,7 +168,7 @@ arch_handle_threadexit:
     // Idle thread in %rdi, next thread in %rsi
 
     // Load the kernel stack for the idle thread
-    addq $0xA8, %rdi
+    addq $CONTEXT_OFFSET, %rdi
     movq 0(%rdi), %rsp
     movq 8(%rdi), %rbp
     movq 16(%rdi), %rbx

@@ -55,22 +55,8 @@ long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
 }
 
 long sys_exit_thread(void *retval) {
-    // Notify joined threads of our exit
-    spinlock_acquire(&current_cpu->current_thread->joiner_lck);
-
-    current_cpu->current_thread->retval = retval;
-
-    if (current_cpu->current_thread->joiners) {
-        foreach(thr_node, current_cpu->current_thread->joiners) {
-            sleep_wakeup(((thread_t*)thr_node->value));
-        }
-    
-        // all entries in the thread list are stack anyways
-    }
-
     // Mark this thread as stopped
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
-    spinlock_release(&current_cpu->current_thread->joiner_lck);
 
     // Bye thread
     process_yield(0);
@@ -92,53 +78,7 @@ int sys_settls(uintptr_t tls) {
 
 
 long sys_join_thread(pid_t tid, void **retval) {
-    // Find the thread by the TID
-    if (!current_cpu->current_process->thread_list) return -ESRCH; // Can't join the main thread, buddy.
-    if (retval) SYSCALL_VALIDATE_PTR(retval);
-
-    process_t *cur = current_cpu->current_process;
-
-    spinlock_acquire(&cur->thread_lock);
-    thread_t *target = cur->thread_list;
-    while (target) {
-        if (target->tid == tid) {
-            break;
-        }
-
-        target = target->next;
-    }
-    spinlock_release(&cur->thread_lock);
-
-    if (!target) return -ESRCH;
-    if (target == current_cpu->current_thread) return -EDEADLK; // Nice try wise guy
-
-    spinlock_acquire(&target->joiner_lck);
-
-    // Has the thread exited already?
-    if (target->status & THREAD_STATUS_STOPPED) {
-        // Yep, set retval and let it go
-        spinlock_release(&target->joiner_lck);
-        
-        if (retval) *retval = target->retval;
-        return 0;
-    }
-
-    // Nope, we should add ourselves to the queue
-    if (!target->joiners) target->joiners = list_create("thread joiners");
-    node_t n = { .value = current_cpu->current_thread };
-    sleep_prepare(current_cpu->current_thread);
-    list_append_node(target->joiners, &n);
-    spinlock_release(&target->joiner_lck);
-
-    // Enter sleep
-    int w = sleep_enter();
-
-    // TODO: Spec says NEVER to do this...
-    if (w == WAKEUP_SIGNAL) return -EINTR;
-
-    // Ok, set retval
-    if (retval) *retval = target->retval;
-    return 0;
+    assert(0);
 }
 
 long sys_kill_thread(pid_t tid, int sig) {
