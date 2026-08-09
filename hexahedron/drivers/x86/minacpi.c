@@ -201,6 +201,13 @@ smp_info_t *minacpi_parseMADT() {
                     continue;
                 }
 
+                // If this CPU is not enabled ignore it
+                if ((lapic->flags & 1) == 0) {
+                    LOG(DEBUG, "Local APIC is not enabled - skipping\n");
+                    start_pointer += entry->length;
+                    continue;
+                }
+
                 if (cpu_count >= MAX_CPUS) {
                     cpu_count++; // Even if we hit the limit, we can still tell the user at the end.
                     break;

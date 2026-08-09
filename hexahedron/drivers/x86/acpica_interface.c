@@ -154,6 +154,13 @@ smp_info_t *ACPICA_GetSMPInfo() {
                     continue;
                 }
 
+                // If bit 0 is not set, this CPU is disabled
+                if ((LocalApic->LapicFlags & 1) == 0) {
+                    LOG(DEBUG, "Local APIC is not enabled - skipping\n");
+                    StartPointer += Subtable->Length;
+                    continue;
+                }
+
                 if (cpu_count >= MAX_CPUS) {
                     cpu_count++; // Even if we have hit the limit, we can still tell the user at the end.
                     break;
