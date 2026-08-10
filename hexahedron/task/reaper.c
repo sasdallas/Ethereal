@@ -13,11 +13,11 @@
 
 #include <kernel/task/process.h>
 #include <kernel/init.h>
-#include <structs/queue.h>
+#include <structs/queue_rb.h>
 
 event_t reap_event = { 0 };
 mutex_t reap_lock = MUTEX_INITIALIZER;
-queue_t reaper_queue = { 0 };
+queue_rb_t reaper_queue = { 0 };
 
 /**
  * @brief grim reaper
@@ -29,8 +29,12 @@ void reaper_proc(void *context) {
         EVENT_ATTACH(&l, &reap_event);
 
         mutex_acquire(&reap_lock);
-        while (!queue_empty(&reaper_queue)) {
-            process_t *p = queue_pop(&reaper_queue);
+        while (!queue_rb_empty(&reaper_queue)) {
+            process_t *p;
+            if (queue_rb_pop(&reaper_queue, (void**)&p)) {
+                break;
+            }
+
             mutex_release(&reap_lock);
             process_destroy(p);
             mutex_acquire(&reap_lock);
@@ -49,7 +53,7 @@ void reaper_proc(void *context) {
  */
 void reaper_push(process_t *proc) {
     mutex_acquire(&reap_lock);
-    queue_push(&reaper_queue, proc);
+    queue_rb_push(&reaper_queue, proc);
     mutex_release(&reap_lock);
     EVENT_SIGNAL(&reap_event);
 }
@@ -59,6 +63,7 @@ void reaper_push(process_t *proc) {
  */
 int reaper_init() {
     EVENT_INIT(&reap_event);
+    QUEUE_RB_INIT(&reaper_queue, 256);
     process_t *reaper = process_createKernel("reaper", PROCESS_KERNEL, reaper_proc, NULL);
     sched_insert(reaper->main_thread);
 

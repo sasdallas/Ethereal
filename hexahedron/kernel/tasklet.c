@@ -37,31 +37,31 @@ void tasklet_init() {
  * Called from IRQ context with interrupts disabled
  */
 void tasklet_process() {
-    tasklet_t *ts = current_cpu->tasklet->queue;
-    while (ts) {
-        // Delink from list
-        if (ts->prev) ts->prev->next = ts->next;
-        else current_cpu->tasklet->queue = ts->next;
-        if (ts->next) ts->next->prev = ts->prev;
+    if (IN_TASKLET()) return; // cannot process tasklets in tasklets
     
-        tasklet_t *nxt_saved = ts->next;
-        ts->prev = ts->next = NULL;
+    TASKLET_ENTER();
+
+    while (current_cpu->tasklet->queue) {
+        int irqs = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
+        tasklet_t *ts = current_cpu->tasklet->queue;
+        current_cpu->tasklet->queue = ts->next;
+        if (ts->next) ts->next->prev = NULL;
+
+        ts->next = NULL;
+        ts->prev = NULL;
         ts->active = false;
+        current_cpu->tasklet->pending--;
 
-        void *ctx_saved = ts->tasklet_ctx;
+        void *ctx = ts->tasklet_ctx;
+        tasklet_cb_t cb = ts->cb;
 
-        // Execute using this mess cause fuck readability
-        TASKLET_ENTER(); // << prevents threads from preempting the tasklet
-        
-        int state = hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
-        ts->cb(ctx_saved);
-        hal_setInterruptState(state);
-        
-        TASKLET_EXIT();
-
-        current_cpu->tasklet->pending -= 1;
-        ts = nxt_saved;
+        hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+        cb(ctx);
+        hal_setInterruptState(irqs);
     }
+
+    TASKLET_EXIT();
 }
 
 /**

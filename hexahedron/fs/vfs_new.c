@@ -915,11 +915,8 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     }
 
     cache_releaseRange(range);
-    
-    if (npages >= 32) {
-        kfree(range);
-    }
 
+    kfree(range);
     return bpos;
 #endif
 }

@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <structs/node.h>
+#include <structs/list_new.h>
 
 /**** TYPES ****/
 

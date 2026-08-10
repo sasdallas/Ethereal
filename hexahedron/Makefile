@@ -6,9 +6,9 @@ OUT_OBJ = $(OBJ_OUTPUT_DIRECTORY)/hexahedron/
 OUT_BUILD = $(BUILD_OUTPUT_DIRECTORY)/hexahedron
 
 # Edit this to add more source directories. MAKE SURE TO HAVE SUBDIRECTORIES SEPARATE!
-SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/usb drivers/usb/hid drivers/net drivers/storage debug mem misc gfx fs loader task task/sched mm
+SOURCE_DIRECTORIES = kernel kernel/panic drivers drivers/net drivers/usb2 drivers/storage debug mem misc gfx fs loader task task/sched mm
 SOURCE_DIRECTORIES += klib/string klib/stdio klib/stdlib klib/time
-SOURCE_DIRECTORIES += task/syscalls subsystems lock
+SOURCE_DIRECTORIES += task/syscalls subsystems subsystems/gpu lock
 
 # Include the architecture Make configuration
 include arch/$(BUILD_ARCH)/make.config

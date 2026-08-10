@@ -35,7 +35,8 @@
 #define USB_DESC_PHYSICAL       0x23
 
 // Hub types
-#define USB_DESC_HUB            0x29
+#define USB_DESC_HUB                0x29
+#define USB_DESC_HUB_SUPERSPEED     0x2A
 
 // Endpoint bitmasks
 #define USB_ENDP_NUMBER_MASK    0x0F

@@ -143,7 +143,7 @@ typedef struct pci_bar {
     uint64_t size;      // Size of the BAR
     int prefetchable;   // Whether the BAR is prefetchable (it does not read side effects)
     uint64_t address;   // Physical address of the BAR. Note that it doesn't take up all of this space.
-    uint64_t mapped;    // Mapped address of the BAR.
+    uintptr_t mapped;   // Mapped address of the BAR.
 } pci_bar_t;
 
 /**
@@ -239,6 +239,9 @@ typedef struct pci_msix_entry {
 // Ending mapping
 #define PCI_ID_MAPPING_END { .devid = { PCI_NONE }, .vid = PCI_NONE }
 #define PCI_DEVID_ACCEPT_ALL { PCI_NONE }
+
+// Whether the BAR is a memory-mapped BAR (16-bit is not supported at the moment)
+#define PCI_BAR_IS_MEMORY(x) ((x)->type == PCI_BAR_MEMORY32 || (x)->type == PCI_BAR_MEMORY64)
 
 /**** FUNCTIONS ****/
 

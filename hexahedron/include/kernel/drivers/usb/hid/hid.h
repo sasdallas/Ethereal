@@ -202,7 +202,6 @@ typedef struct USBHidParserState {
     uint32_t report_size;
     uint32_t report_count;
     uint8_t report_id;
-
     uint8_t has_report_id;
 } USBHidParserState_t;
 

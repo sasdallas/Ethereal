@@ -45,7 +45,7 @@ typedef struct wait_queue_node {
                                 (wq)->head = (wq)->tail = NULL;\
                             })
 
-#define WAIT_QUEUE_CONDITION(wq, condition) ({\
+#define WAIT_QUEUE_CONDITION_TIMEOUT(wq, condition, timeout) ({\
     wait_queue_node_t __node;\
     int __ret = 0;\
     while (1) {\
@@ -53,7 +53,7 @@ typedef struct wait_queue_node {
         if (condition) {\
             break;\
         }\
-        __ret = waitqueue_wait((wq), &__node, -1);\
+        __ret = waitqueue_wait((wq), &__node, (timeout));\
         if (__ret != 0) {\
             break;\
         }\
@@ -65,6 +65,8 @@ typedef struct wait_queue_node {
     waitqueue_remove((wq), &__node);\
     __ret;\
 })
+
+#define WAIT_QUEUE_CONDITION(wq, condition) WAIT_QUEUE_CONDITION_TIMEOUT(wq, condition, -1)
 
 /**** FUNCTIONS ****/
 
