@@ -19,6 +19,7 @@
 #include <kernel/drivers/x86/io_apic.h>
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/pic.h>
+#include <kernel/processor_data.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -33,15 +34,12 @@ int io_apic_count = 0;
 /* IRQ override list */
 uint32_t *io_apic_irq_overrides = NULL;
 
-/* Reserved GSI list */
-uint8_t reserved_gsis[HAL_IRQ_MSI_COUNT/8] = { 0 };
-
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:X86:IOAPIC", __VA_ARGS__)
 
 /* Write/read methods for the APIC */
-#define IOAPIC_READ(off) (*(uint32_t*)(apic->mmio_base + off))
-#define IOAPIC_WRITE(off, value) (*(uint32_t*)(apic->mmio_base + off) = (uint32_t)value)
+#define IOAPIC_READ(off) (*(volatile uint32_t*)(apic->mmio_base + off))
+#define IOAPIC_WRITE(off, value) (*(volatile uint32_t*)(apic->mmio_base + off) = (uint32_t)value)
 
 /**
  * @brief Read register from I/O APIC
@@ -67,23 +65,6 @@ void ioapic_write(io_apic_t *apic, uint32_t reg, uint32_t value) {
 }
 
 /**
- * @brief Set a redirection entry in the I/O APIC
- * @param apic The APIC to set the redirection entry in
- * @param pin Pin to set the redirection entry at
- * @param entry The redirection entry to set in the I/O APIC
- * @returns 0 on success
- */
-int ioapic_setEntry(io_apic_t *apic, int pin, io_apic_redir_entry_t *entry) {
-    // Calculate the offset
-    uint32_t reg = 0x10 + (pin * 2);
-
-    // Write entry
-    ioapic_write(apic, reg, entry->lo);
-    ioapic_write(apic, reg+1, entry->hi);
-    return 0;
-}
-
-/**
  * @brief Initialize the I/O APIC
  * @param data SMP data
  */
@@ -98,10 +79,12 @@ int ioapic_init(void *data) {
         // Create I/O APIC object
         io_apic_t *apic = kzalloc(sizeof(io_apic_t));
         apic->mmio_base = mmio_map(info->ioapic_addrs[i], PAGE_SIZE);
-        apic->id = ((ioapic_read(apic, IO_APIC_REG_IOAPICID)) >> 24) & 0xF0;
-        apic->redir_count = ((ioapic_read(apic, IO_APIC_REG_IOAPICVER)));
+        apic->id = ((ioapic_read(apic, IO_APIC_REG_IOAPICID)) >> 24) & 0xFF;
+        apic->redir_count = ((ioapic_read(apic, IO_APIC_REG_IOAPICVER) >> 16) & 0xff) + 1;
         apic->interrupt_base = info->ioapic_irqbases[i];
         io_apic_list[i] = apic;
+
+        LOG(DEBUG, "IOAPICVER=%08x\n", ioapic_read(apic, IO_APIC_REG_IOAPICVER));
 
         LOG(INFO, "I/O APIC: MMIO=%016llX ID=%02x REDIR=%02x IRQ BASE=%08x\n", apic->mmio_base, apic->id, apic->redir_count, apic->interrupt_base);
         io_apic_count++;
@@ -115,13 +98,6 @@ int ioapic_init(void *data) {
     
     LOG(INFO, "Initialized %d I/O APICs\n", io_apic_count);
 
-    uint32_t gsi = io_apic_irq_overrides[0];
-    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-    gsi = io_apic_irq_overrides[1];
-    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-    gsi = io_apic_irq_overrides[12];
-    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-
     return io_apic_count ? 0 : 1;
 }
 
@@ -133,13 +109,55 @@ void ioapic_shutdown() {
 }
 
 /**
+ * @brief Find the I/O APIC and pin corresponding to a hardware interrupt
+ * @param interrupt Hardware interrupt number
+ * @param pin Output pin within the returned I/O APIC
+ * @returns The corresponding I/O APIC, or NULL if none was found
+ */
+static io_apic_t *ioapic_getInterrupt(uintptr_t interrupt, int *pin) {
+    if (interrupt >= MAX_INT_OVERRIDES) return NULL;
+
+    uint32_t gsi = io_apic_irq_overrides[interrupt];
+    for (int i = 0; i < io_apic_count; i++) {
+        io_apic_t *apic = io_apic_list[i];
+        if (apic->interrupt_base <= gsi && gsi <= apic->interrupt_base + apic->redir_count) {
+            *pin = gsi - apic->interrupt_base;
+            return apic;
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Change the hardware mask state of an I/O APIC interrupt
+ */
+static int ioapic_setMask(uintptr_t interrupt, int masked) {
+    int pin;
+    io_apic_t *apic = ioapic_getInterrupt(interrupt, &pin);
+    if (!apic) {
+        LOG(WARN, "Could not set mask on IRQ%d: No corresponding APIC was found\n", interrupt);
+        return 1;
+    }
+
+    uint32_t reg = 0x10 + (pin * 2);
+    uint32_t entry = ioapic_read(apic, reg);
+    if (masked) {
+        entry |= (1u << 16);
+    } else {
+        entry &= ~(1u << 16);
+    }
+
+    ioapic_write(apic, reg, entry);
+    return 0;
+}
+
+/**
  * @brief Mask an interrupt in the I/O APIC
  * @param interrupt The interrupt to mask
  */
 int ioapic_mask(uintptr_t interrupt) {
-    uint32_t gsi = io_apic_irq_overrides[interrupt];
-    reserved_gsis[gsi / 8] &= ~(1 << (gsi % 8));
-    return 0;
+    return ioapic_setMask(interrupt, 1);
 }
 
 /**
@@ -147,9 +165,7 @@ int ioapic_mask(uintptr_t interrupt) {
  * @param interrupt The interrupt to unmask
  */
 int ioapic_unmask(uintptr_t interrupt) {
-    uint32_t gsi = io_apic_irq_overrides[interrupt];
-    reserved_gsis[gsi / 8] |= (1 << (gsi % 8));
-    return 0;
+    return ioapic_setMask(interrupt, 0);
 }
 
 /**
@@ -168,25 +184,17 @@ int ioapic_eoi(uintptr_t interrupt) {
  * @param hwirq The hardware interrupt
  */
 int ioapic_route(uintptr_t irq, uintptr_t hwirq) {
-    uint8_t gsi = io_apic_irq_overrides[hwirq];
+    assert(hwirq < MAX_INT_OVERRIDES);
+    uint32_t gsi = io_apic_irq_overrides[hwirq];
 
     // Find a corresponding I/O APIC
-    io_apic_t *apic = NULL;
-    for (int i = 0; i < io_apic_count; i++) {
-        io_apic_t *apic_i = io_apic_list[i];
-        
-        if (apic_i->interrupt_base <= gsi && gsi <= apic_i->interrupt_base + apic_i->redir_count) {
-            apic = apic_i;
-            break;
-        }
-    }
+    int pin;
+    io_apic_t *apic = ioapic_getInterrupt(hwirq, &pin);
 
     if (!apic) {
         LOG(WARN, "Mapping IRQ%d failed: No corresponding APIC was found\n", hwirq);
         return -1;
     }
-
-    int pin = gsi - apic->interrupt_base;
 
     LOG(DEBUG, "Mapping an IRQ for Pin %d (GSI: %d, IRQ base: %d) to vector %d\n", pin, gsi, apic->interrupt_base, irq);
 
@@ -195,12 +203,14 @@ int ioapic_route(uintptr_t irq, uintptr_t hwirq) {
     entry.lo = ioapic_read(apic, 0x10 + (pin * 2));
     entry.hi = ioapic_read(apic, 0x10 + (pin * 2 + 1));
 
-    // Setup vector, disable mask, and set to BSP APIC ID
-    entry.vector = irq;
-    entry.mask = 0;
-    entry.destination = 0;      // TODO: Verify this is actually the BSP ID
+    // Setup vector, keep masked until irq_register(), and set to BSP APIC ID
+    entry.lo = (entry.lo & ~0xFFu) | (irq & 0xFF);
+    entry.lo |= (1u << 16);
+    entry.hi &= 0x00FFFFFF;
+    entry.hi |= ((uint32_t)processor_data[0].lapic_id << 24);
 
-    ioapic_setEntry(apic, pin, &entry);
+    ioapic_write(apic, 0x10 + pin * 2 + 1, entry.hi);
+    ioapic_write(apic, 0x10 + pin * 2, entry.lo);
 
     return 0;
 }

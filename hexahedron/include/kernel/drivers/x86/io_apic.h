@@ -72,6 +72,7 @@ typedef union io_apic_redir_entry {
         uint64_t remote_irr:1;          // Remote IRR
         uint64_t trigger:1;             // Trigger mode
         uint64_t mask:1;                // Mask
+        uint64_t reserved:39;           // Reserved
         uint64_t destination:8;         // Destination CPU
     };
 
