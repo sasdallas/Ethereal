@@ -311,8 +311,7 @@ static usb_status_t hid_parseItems(hid_device_t *device, hid_parser_state_t *sta
  */
 static usb_status_t hid_parseReportDescriptor(hid_device_t *device, uint8_t *desc, size_t desc_length) {
     LOG(DEBUG, "Parsing report descriptor (%d bytes long)\n", desc_length);
-    
-    HEXDUMP(desc, desc_length);
+
     // Initialize HID parser state
     hid_parser_state_t state = {
         .data = desc,

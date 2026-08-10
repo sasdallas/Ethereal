@@ -151,8 +151,6 @@ usb_status_t xhci_root_hub_control(usb_bus_t *ubus, usb_transfer_t *transfer) {
             if (portsc & XHCI_PORTSC_WRC) change |= USB_HUB_SS_CHANGE_BH_PORT_RESET;
             if (portsc & XHCI_PORTSC_PLC) change |= USB_HUB_SS_CHANGE_PORT_LINK_STATE;
             if (portsc & XHCI_PORTSC_CEC) change |= USB_HUB_SS_CHANGE_PORT_CONFIG_ERROR;
-
-            LOG(DEBUG, "Speed: %x Link State: %x\n", USB_HUB_SS_SPEED(status), USB_HUB_SS_LINK_STATE(status));
         }
 
         usb_hub_port_status_t port_status = {
