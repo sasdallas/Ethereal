@@ -106,10 +106,8 @@ static void damage_appendRequest(render_request_t **head, render_request_t **tai
 render_request_t *damage_build() {
     pthread_mutex_lock(&SERVER->dmg_lock);
     
-    if (SERVER->dmg_head == NULL) {
-        pthread_mutex_unlock(&SERVER->dmg_lock);
-        usleep(10000);
-        return NULL;
+    while (SERVER->dmg_head == NULL) {
+        pthread_cond_wait(&SERVER->dmg_cond, &SERVER->dmg_lock);
     }
 
     damage_node_t *dmg = SERVER->dmg_head;
@@ -174,7 +172,6 @@ render_request_t *damage_build() {
         bool changed;
         do {
             changed = false;
-
             for (size_t i = 0; i < rect_count; i++) {
                 for (size_t j = i + 1; j < rect_count; ) {
                     if (damage_overlapOrAdjacent(rects[i], rects[j])) {
@@ -182,10 +179,9 @@ render_request_t *damage_build() {
                         rects[j] = rects[rect_count - 1];
                         rect_count--;
                         changed = true;
-                        continue;
+                    } else {
+                        j++;
                     }
-
-                    j++;
                 }
             }
         } while (changed);
@@ -202,16 +198,12 @@ render_request_t *damage_build() {
         damage_appendRequest(&head, &tail, NULL, damage);
 
         for (int z = 0; z < Z_COUNT; z++) {
-
-            // Walk to bottommost window in this z layer.
             wm_window_t *tail_win = SERVER->window_list[z];
             while (tail_win && tail_win->next) {
                 tail_win = tail_win->next;
             }
 
-            // Traverse bottom -> top so alpha and overlaps compose correctly.
             for (wm_window_t *win = tail_win; win; win = win->prev) {
-
                 if (win->state == WINDOW_STATE_CLOSED || !win->visible) {
                     continue;
                 }
@@ -243,6 +235,7 @@ void damage_lock() {
 
 void damage_unlock() {
     pthread_mutex_unlock(&SERVER->dmg_lock);
+    pthread_cond_signal(&SERVER->dmg_cond);
 }
 
 // Add a damage rectangle
