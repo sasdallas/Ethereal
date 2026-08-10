@@ -52,7 +52,7 @@ void bitmap_clear(unsigned long *b, size_t i) {
 void bitmap_fill(unsigned long *b, unsigned char f, size_t n) {
     size_t w = (n + BITMAP_BITS - 1) / BITMAP_BITS;
     memset(b, f, w * sizeof(unsigned long));
-    if (n % BITMAP_BITS) b[w - 1] = (1UL << (n % BITMAP_BITS)) - 1;
+    if (f != 0 && n % BITMAP_BITS) b[w - 1] = (1UL << (n % BITMAP_BITS)) - 1;
 }
 
 
