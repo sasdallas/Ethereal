@@ -85,7 +85,14 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     }
 
     // !!!: very bad
-    file->path = kmalloc(strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 1);
+    size_t path_size;
+    if (*pathname == '/') {
+        path_size = strlen(pathname) + 1;
+    } else {
+        path_size = strlen(pathname) + strlen(current_cpu->current_process->wd_path) + 2;
+    }
+
+    file->path = kmalloc(path_size);
     vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);
 
     // Are they trying to append? If so modify length to be equal to node length

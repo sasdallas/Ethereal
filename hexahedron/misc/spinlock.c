@@ -39,7 +39,7 @@ spinlock_t *spinlock_create(char *name) {
  * @param spinlock Spinlock to destroy
  */
 void spinlock_destroy(spinlock_t *spinlock) {
-    kfree(spinlock); // TODO: Atomics?
+    kfree(spinlock);
 }
 
 /**
@@ -100,7 +100,8 @@ int spinlock_tryAcquire(spinlock_t *spinlock) {
  * @brief Release a spinlock
  */
 void spinlock_release(spinlock_t *spinlock) {
+    int state = spinlock->state;
     spinlock->cpu = -1;
     atomic_flag_clear_explicit(&(spinlock->lock), memory_order_release);
-    hal_setInterruptState(spinlock->state);
+    hal_setInterruptState(state);
 }

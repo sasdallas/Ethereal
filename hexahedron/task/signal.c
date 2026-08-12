@@ -215,7 +215,7 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
 
     // If the process does not have a userspace allocation, create one.
     // !!!: This probably needs to be refactored?
-    spinlock_acquire(&proc->uspace_lck);
+    spinlock_acquireRaw(&proc->uspace_lck);
     extern uintptr_t __userspace_start, __userspace_end;
     if (!proc->userspace || !vmm_validate((uintptr_t)proc->userspace, PAGE_SIZE, VMM_PTR_USER)) {
         size_t sz = PAGE_ALIGN_UP((uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
@@ -229,10 +229,8 @@ static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
         // Copy in the userspace section
         memcpy(proc->userspace, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
         LOG(DEBUG, "Userspace allocation (pid %d) at %p\n", proc->pid, proc->userspace);
-    } else {
-        LOG(DEBUG, "Already have proc->userspace %p\n", proc->userspace);
     }
-    spinlock_release(&proc->uspace_lck);
+    spinlock_releaseRaw(&proc->uspace_lck);
 
     // Push onto the stack the variables
     THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));

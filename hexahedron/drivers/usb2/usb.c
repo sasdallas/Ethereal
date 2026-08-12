@@ -12,6 +12,7 @@
  */
 
 #include <kernel/drivers/usb2/usb.h>
+#include <kernel/panic.h>
 #include <kernel/mm/slab.h>
 #include <kernel/debug.h>
 #include <kernel/init.h>
@@ -496,6 +497,12 @@ static usb_status_t usb_waitTransfer(usb_transfer_t *transfer) {
         }
     }
 
+    // this transfer may become visible while the pipe is still processing it
+    // quickly acquire the pipe lock
+    mutex_acquire(&transfer->pipe->lock);
+    arch_pause_single();
+    mutex_release(&transfer->pipe->lock);
+
     return transfer->status;
 }
 
@@ -639,7 +646,9 @@ _leave_error:
  */
 void usb_transferCompleteLocked(usb_transfer_t *transfer) {
     usb_pipe_t *pipe = transfer->pipe;
-    assert(transfer->status != USB_IN_PROGRESS);
+    if (transfer->status == USB_IN_PROGRESS) {
+        BUG("transferComplete detected the transfer is still USB_IN_PROGRESS");
+    }
 
     // If this is called from a context where DLIST_FIRST != transfer
     // then this transfer does not exist in the pipe transfer list
@@ -683,13 +692,15 @@ void usb_transferCompleteLocked(usb_transfer_t *transfer) {
 /**
  * @brief Complete a transfer
  * @param transfer The transfer to create
+ * @param status The transfer status to complete with (since this is called from unlocked context)
  */
-void usb_transferComplete(usb_transfer_t *transfer) {
+void usb_transferComplete(usb_transfer_t *transfer, usb_status_t status) {
     usb_pipe_t *pipe = transfer->pipe;
 
     USB_HOLD_PIPE(pipe);
     mutex_acquire(&pipe->lock);
 
+    transfer->status = status;
     usb_transferCompleteLocked(transfer);
     
     mutex_release(&pipe->lock);

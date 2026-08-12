@@ -297,14 +297,17 @@ halSyscallEntrypoint:
     movq %rax, %rdi                 // registers_t
     movq %rsp, %rsi       
 
-    /* Call C handler */
     movq %rsp, %rbp                 // ABI: save original rsp
     sub $8, %rsp                    // allocate scratch to avoid overwriting pushed registers when aligning
     and $0xFFFFFFFFFFFFFFF0, %rsp   // Align stack for SSE instructions
-    call hal_syscallHandler 
+    
+    /* IA32_FMASK cleared IF */
+    sti
+    call hal_syscallHandler
+    cli
+
     movq %rbp, %rsp                 // Restore stack
-    
-    
+
     /* Skip over extended registers */
     add $52, %rsp
 

@@ -26,7 +26,7 @@ long sys_chdir(const char *path) {
             return -ENOTDIR;
         }
 
-        char tmp[strlen(current_cpu->current_process->wd_path) + strlen(path) + 1];
+        char tmp[strlen(current_cpu->current_process->wd_path) + strlen(path) + 2];
         vfs_canonicalize(current_cpu->current_process->wd_path, (char*)path, tmp);
 
         kfree(current_cpu->current_process->wd_path);

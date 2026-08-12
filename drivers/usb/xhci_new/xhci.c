@@ -285,15 +285,15 @@ static void xhci_tasklet(void *context) {
             assert(!queue_rb_pop(&pipe->transfers, (void**)&transfer));
 
             transfer->actual_length = transfer->length - min(ttrb->transfer_len, transfer->length);
-            transfer->status = xhci_convertTRBStatus(ttrb->completion_code);
-
-            if (transfer->status != USB_SUCCESS && transfer->status != USB_SHORT_TRANSFER) {
+            
+            if (ttrb->completion_code != 1 && ttrb->completion_code != XHCI_TRB_STATUS_SHORT_PACKET) {
                 LOG(ERR, "Transfer failure with completion code %d\n", ttrb->completion_code);
             }
 
             xhci_completion_t comp = {
                 .type = XHCI_COMPLETION_TRANSFER,
-                .transfer = transfer
+                .transfer = transfer,
+                .transfer_status = xhci_convertTRBStatus(ttrb->completion_code),
             };
 
             xhci_submitCompletion(xhci, &comp);
@@ -345,7 +345,8 @@ static void xhci_completionThread(void *arg) {
         spinlock_release(&xhci->completion_lock);
 
         if (comp.type == XHCI_COMPLETION_TRANSFER) {
-            usb_transferComplete(comp.transfer);
+            // LOG(DEBUG, "Detected an XHCI_COMPLETION_TRANSFER event\n");
+            usb_transferComplete(comp.transfer, comp.transfer_status);
         } else if (comp.type == XHCI_COMPLETION_PORT_CHANGE) {
             xhci_bus_t *bus = comp.port.bus;
             int port = comp.port.id;
@@ -363,13 +364,12 @@ static void xhci_completionThread(void *arg) {
                 size_t l = min(((bus->port_count + 8) / 8), t->length);
                 memcpy(t->buffer, bus->port_map, l);
                 t->actual_length = l;
-                t->status = USB_SUCCESS;
 
                 // now the bitmap can be cleared
                 bitmap_fill(bus->port_map, 0, bus->port_count+1);
                 spinlock_release(&bus->lock);
 
-                usb_transferComplete(t);
+                usb_transferComplete(t, USB_SUCCESS);
             } else {
                 spinlock_release(&bus->lock);
             }
@@ -442,8 +442,7 @@ static usb_status_t xhci_open_pipe(usb_bus_t *bus, usb_pipe_t *pipe) {
  */
 static void xhci_close_pipe(usb_bus_t *bus, usb_pipe_t *pipe) {
     xhci_device_t *xdev = pipe->device->hc_priv;
-
-    return xhci_freePipe(xdev->xhci, pipe);
+    xhci_freePipe(xdev->xhci, pipe);
 }
 
 /**

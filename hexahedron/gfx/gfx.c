@@ -66,9 +66,6 @@ void gfx_drawLogo(color_t color) {
     int center_x = video_getDriver()->screenWidth - size - 10; // Subtract 10 for some extra centering
     int center_y = size + 10;
 
-    
-
-
     // Vertices of the cube in 3D space (without any projection applied)
     // Cube vertices (8 total)
     int vertices[8][2] = {

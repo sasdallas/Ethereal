@@ -132,5 +132,8 @@
     ((type *)(__mptr - offsetof(type, member))); \
 })
 
+/* BUG macro */
+#define BUG(msg) kernel_panic_extended(KERNEL_DEBUG_TRAP, __FILE_NAME__, "*** Kernel bug: " msg "\n")
+#define BUG_ON_IRQ_OFF() if (hal_getInterruptState() == HAL_INTERRUPTS_DISABLED) { BUG("BUG: IRQs should not be enabled on " __FUNCTION__ );}
 
 #endif

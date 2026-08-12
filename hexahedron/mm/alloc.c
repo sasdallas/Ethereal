@@ -123,7 +123,13 @@ __attribute__((malloc)) void *kmalloc_flags(size_t size, kma_flags_t kmaflags) {
         if ((current_cpu->current_thread->status & THREAD_STATUS_SLEEPING) != 0) {
             LOG(ERR, "Thread %p, function %p - attempted to allocate memory while sleeping.\n", current_cpu->current_thread, __builtin_return_address(0));
             assert(0);
-        } 
+        }
+
+        // Only when threads are involved does mutex blocking legitimately matter
+        if (hal_getInterruptState() == HAL_INTERRUPTS_DISABLED) {
+            LOG(ERR, "Thread %p, attempt to allocate memory with interrupts disabled.\n", current_cpu->current_thread);
+            assert(0);
+        }
     }
 
     // Get a cache object

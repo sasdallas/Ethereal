@@ -83,6 +83,29 @@ void sleep_callback() {
 }
 
 /**
+ * @brief Put the current thread to sleep (while having X interrupt state)
+ * @param state The IRQ state to restore exiting sleep_enter
+ * 
+ * This is used if you need to hold an IRQ lock while running sleep_prepare.
+ */
+void sleep_prepareIRQ(int state) {
+    thread_t *cur = current_cpu->current_thread;
+
+    if (IN_TASKLET()) {
+        BUG("Sleeping on a tasklet is forbidden.");
+    }
+
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(&cur->sleep.lock);
+    cur->sleep.irq_state = state;
+    cur->sleep.seconds = 0;
+    cur->sleep.subseconds = 0;
+    cur->sleep.queue = NULL;
+    cur->sleep.interruptible = true;
+    __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_SLEEPING);
+}
+
+/**
  * @brief Put the current thread to sleep
  * 
  * Another thread will wake you up with @c sleep_wakeup
@@ -90,7 +113,14 @@ void sleep_callback() {
  */
 void sleep_prepare() {
     thread_t *cur = current_cpu->current_thread;
-    spinlock_acquire(&cur->sleep.lock);
+
+    if (IN_TASKLET()) {
+        BUG("Sleeping on a tasklet is forbidden.");
+    }
+
+    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(&cur->sleep.lock);
+    cur->sleep.irq_state = state;
     cur->sleep.seconds = 0;
     cur->sleep.subseconds = 0;
     cur->sleep.queue = NULL;
@@ -105,7 +135,14 @@ void sleep_prepare() {
  */
 void sleep_prepareUninterruptible() {
     thread_t *cur = current_cpu->current_thread;
-    spinlock_acquire(&cur->sleep.lock);
+
+    if (IN_TASKLET()) {
+        BUG("Sleeping on a tasklet is forbidden.");
+    }
+
+    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(&cur->sleep.lock);
+    cur->sleep.irq_state = state;
     cur->sleep.seconds = 0;
     cur->sleep.subseconds = 0;
     cur->sleep.queue = NULL;
@@ -190,7 +227,8 @@ inline int sleep_wakeup(struct thread *thread) {
  * @returns A sleep wakeup reason
  */
 int sleep_enter() {
-    if (current_cpu->current_thread->sleep.seconds || current_cpu->current_thread->sleep.subseconds) {
+    thread_t *thread = current_cpu->current_thread;
+    if (thread->sleep.seconds || thread->sleep.subseconds) {
         // We know the drill...
         // !!!: A full time rewrite is necessitated
         unsigned long seconds, subseconds;
@@ -199,9 +237,9 @@ int sleep_enter() {
         spinlock_acquire(&time_lock);
         struct internal_time_queue_entry ent = {
             .next = NULL,
-            .sl = current_cpu->current_thread,
-            .seconds = seconds + current_cpu->current_thread->sleep.seconds,
-            .subseconds = subseconds + current_cpu->current_thread->sleep.subseconds,
+            .sl = thread,
+            .seconds = seconds + thread->sleep.seconds,
+            .subseconds = subseconds + thread->sleep.subseconds,
         };
         
         struct internal_time_queue_entry *n = head;
@@ -210,12 +248,23 @@ int sleep_enter() {
         spinlock_release(&time_lock);
     }
 
+    if (hal_getInterruptState() != HAL_INTERRUPTS_DISABLED) {
+        BUG("This thread entered sleep_enter with a different IRQ state than expected.\n\n"
+            "It is illegal to enter sleep_enter with IRQs enabled.\n"
+            "This can be caused by holding a lock while calling sleep_prepare and releasing it before enter.\n"
+            "Use the API function for sleep_prepareIRQ if this is necessary."
+        );
+    }
+
     // Enter sleep
     timemonitor_updateSleepEnter();    
     
     sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_ENTER);
     process_yield(0);
     sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_WAKEUP);
+
+    // When exiting, the IRQ state was saved
+    hal_setInterruptState(current_cpu->current_thread->sleep.irq_state);
 
     // Accumulate thread times
     timemonitor_updateSleepExit();
@@ -249,7 +298,8 @@ sleep_queue_t *sleep_createQueue(char *name) {
  * @returns 0 on success. Use sleep_enter to enter your slee
  */
 int sleep_inQueue(sleep_queue_t *queue) {
-    spinlock_acquire(&queue->lock);
+    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(&queue->lock);
 
     current_cpu->current_thread->sleep.next = NULL;
     current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
@@ -266,10 +316,10 @@ int sleep_inQueue(sleep_queue_t *queue) {
     }
 
     // Prepare (acquires the thread's sleep lock while still holding queue->lock to keep ordering)
-    sleep_prepare();
+    sleep_prepareIRQ(state);
     current_cpu->current_thread->sleep.queue = queue;
 
-    spinlock_release(&queue->lock);
+    spinlock_releaseRaw(&queue->lock);
     return 0;
 }
 
@@ -316,8 +366,13 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
  */
 int sleep_exit() {
     // Invalidate the current queue, which will have this thread removed on wakeup
-    current_cpu->current_thread->sleep.queue = NULL;
-    __sync_and_and_fetch(&current_cpu->current_thread->status, ~(THREAD_STATUS_SLEEPING));
-    spinlock_release(&current_cpu->current_thread->sleep.lock);
+    thread_t *thr = current_cpu->current_thread;
+    thr->sleep.queue = NULL;
+    __sync_and_and_fetch(&thr->status, ~(THREAD_STATUS_SLEEPING));
+    
+    int state = thr->sleep.irq_state;
+    spinlock_releaseRaw(&thr->sleep.lock);
+    hal_setInterruptState(state);
+    
     return 0;
 }

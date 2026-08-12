@@ -43,7 +43,7 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
-    "A trap was triggered to debug the kernel, but no debugger was connected.\n",
+    "A trap was triggered to debug the kernel, caused by a kernel bug or missing debugger.\n",
     "A fault has occurred in the memory management subsystem during a call.\n",
     "A bad argument was passed to a critical function. This is (unless specified) a bug in the kernel - please contact the developers.\n",
     "The system has run out of memory. Try closing applications or adjusting your pagefile.\n",

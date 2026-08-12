@@ -44,6 +44,7 @@ typedef struct thread_sleep {
     unsigned long seconds, subseconds;      // Seconds and subseconds
     struct sleep_queue *queue;              // Queue being slept on
     bool interruptible;                     // Whether this sleep is interruptible
+    int irq_state;                          // IRQ state
 } thread_sleep_t;
 
 /**
@@ -63,6 +64,14 @@ typedef struct sleep_queue {
 #define SLEEP_QUEUE_INIT(q) ({ SPINLOCK_INIT(&(q)->lock); (q)->head = NULL; })
 
 /**** FUNCTIONS ****/
+
+/**
+ * @brief Put the current thread to sleep (while having X interrupt state)
+ * @param state The IRQ state to restore exiting sleep_enter
+ * 
+ * This is used if you need to hold an IRQ lock while running sleep_prepare.
+ */
+void sleep_prepareIRQ(int state);
 
 /**
  * @brief Put the current thread to sleep

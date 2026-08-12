@@ -70,8 +70,10 @@ typedef enum xhci_completion_type {
 typedef struct xhci_completion {
     xhci_completion_type_t type;
     union {
-        usb_transfer_t *transfer;
-        
+        struct {
+            usb_transfer_t *transfer;
+            usb_status_t transfer_status;
+        };
         struct {
             int id; // logical index in bus
             xhci_bus_t *bus;

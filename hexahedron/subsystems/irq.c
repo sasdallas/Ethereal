@@ -406,6 +406,9 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
 _unhandled:
     percpu_domain->chip->ops.irq_eoi(NULL);
     LOG(WARN, "IRQ vector %d no handler!!\n", vector);
+    IRQ_EXIT();
+    timemonitor_updateIrqExit();
+    
     // kernel_panic_prepare(IRQ_HANDLER_FAILED);
     // dprintf(NOHEADER, "*** Interrupt vector 0x%x has no handler.\n\n", vector);
 

@@ -29,7 +29,7 @@
  * @brief Initialize tasklet system (per-CPU)
  */
 void tasklet_init() {
-    current_cpu->tasklet = kzalloc(sizeof(tasklet_t));
+    current_cpu->tasklet = kzalloc(sizeof(tasklet_cpu_t));
 }
 
 /**
@@ -78,6 +78,7 @@ void tasklet_insert(tasklet_t *tasklet) {
     }
 
     tasklet->next = tsk->queue;
+    if (tsk->queue) tsk->queue->prev = tasklet;
     tsk->queue = tasklet;
     tasklet->prev = NULL;
     tasklet->active = true;

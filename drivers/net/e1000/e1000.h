@@ -195,6 +195,7 @@ typedef struct e1000 {
     uintptr_t rx_virt[E1000_NUM_RX_DESC]; 		// Virtual addresses of Rx descriptor buffers
 
 	process_t *receiver;						// Receiver process
+	tasklet_t tasklet;
 } e1000_t;
 
 #endif

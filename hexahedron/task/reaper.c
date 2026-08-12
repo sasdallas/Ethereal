@@ -16,7 +16,7 @@
 #include <structs/queue_rb.h>
 
 event_t reap_event = { 0 };
-mutex_t reap_lock = MUTEX_INITIALIZER;
+spinlock_t reap_lock = SPINLOCK_INITIALIZER;
 queue_rb_t reaper_queue = { 0 };
 
 /**
@@ -28,19 +28,19 @@ void reaper_proc(void *context) {
         EVENT_INIT_LISTENER(&l);
         EVENT_ATTACH(&l, &reap_event);
 
-        mutex_acquire(&reap_lock);
+        spinlock_acquireRaw(&reap_lock);
         while (!queue_rb_empty(&reaper_queue)) {
             process_t *p;
             if (queue_rb_pop(&reaper_queue, (void**)&p)) {
                 break;
             }
 
-            mutex_release(&reap_lock);
+            spinlock_releaseRaw(&reap_lock);
             process_destroy(p);
-            mutex_acquire(&reap_lock);
+            spinlock_acquireRaw(&reap_lock);
         }
 
-        mutex_release(&reap_lock);
+        spinlock_releaseRaw(&reap_lock);
         EVENT_WAIT(&l, -1);
         EVENT_DETACH(&l);
         EVENT_DESTROY_LISTENER(&l);
@@ -52,9 +52,9 @@ void reaper_proc(void *context) {
  * @param proc The process to push
  */
 void reaper_push(process_t *proc) {
-    mutex_acquire(&reap_lock);
+    spinlock_acquireRaw(&reap_lock);
     queue_rb_push(&reaper_queue, proc);
-    mutex_release(&reap_lock);
+    spinlock_releaseRaw(&reap_lock);
     EVENT_SIGNAL(&reap_event);
 }
 

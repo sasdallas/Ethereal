@@ -476,8 +476,11 @@ void usb_transferCompleteLocked(usb_transfer_t *transfer);
 /**
  * @brief Complete a transfer
  * @param transfer The transfer to create
+ * @param status The transfer status to complete with (since this is called from unlocked context)
+ * 
+ * @note Status should not be set while not holding the pipe lock.
  */
-void usb_transferComplete(usb_transfer_t *transfer);
+void usb_transferComplete(usb_transfer_t *transfer, usb_status_t status);
 
 /**
  * @brief Abort a transfer

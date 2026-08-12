@@ -308,25 +308,33 @@ static void e1000_receiverThread(void *data) {
     e1000_t *nic = (e1000_t*)data;
 
     for (;;) {
-        spinlock_acquire(&nic->rcv_lck);
+        int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+        spinlock_acquireRaw(&nic->rcv_lck);
 
         int head = E1000_RECVCMD(E1000_REG_RXDESCHEAD);
         int packets_processed = 0;
 
         while (nic->rx_current != head) {
             volatile e1000_rx_desc_t *d = &nic->rx_descs[nic->rx_current];
+            BARRIER();
 
             // give the NIC a bit of time to process whats happening
             while (!(d->status & 0x01)) {
-                asm volatile ("pause" ::: "memory");
+                arch_pause_single();
             }
 
             if ((d->errors & 0x97) == 0) {
                 nic->n->stats.rx_packets++;
                 nic->n->stats.rx_bytes += d->length;
-                spinlock_release(&nic->rcv_lck);
+
+                // process the received packet
+                spinlock_releaseRaw(&nic->rcv_lck);
+                hal_setInterruptState(state);
+
                 ethernet_handle((ethernet_packet_t*)nic->rx_virt[nic->rx_current], nic->n, d->length);
-                spinlock_acquire(&nic->rcv_lck);
+                
+                state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+                spinlock_acquireRaw(&nic->rcv_lck);
             } else {
                 nic->n->stats.rx_dropped++;
             }
@@ -347,8 +355,8 @@ static void e1000_receiverThread(void *data) {
             E1000_SENDCMD(E1000_REG_RXDESCTAIL, next_rx_tail);
         }
 
-        sleep_prepare();
-        spinlock_release(&nic->rcv_lck);
+        sleep_prepareIRQ(state);
+        spinlock_releaseRaw(&nic->rcv_lck);
         sleep_enter();
     }
 }
@@ -394,18 +402,16 @@ void e1000_tasklet(void *context) {
         }
         
         if (icr & E1000_ICR_RXT0 || icr & E1000_ICR_RxQ0) {
-            spinlock_acquire(&nic->rcv_lck);
+            spinlock_acquireRaw(&nic->rcv_lck);
             sleep_wakeup(nic->receiver->main_thread);
-            spinlock_release(&nic->rcv_lck);
-        } 
+            spinlock_releaseRaw(&nic->rcv_lck);
+        }
 
         if (icr & (E1000_ICR_RXO | E1000_ICR_RXSEQ)) {
             LOG(ERR, "RX error (0x%x)\n", icr);
         }
     }
 }
-
-tasklet_t tsk;
 
 /**
  * @brief E1000 IRQ handler
@@ -415,7 +421,7 @@ int e1000_irq(irq_t *irq, void *context) {
     // Get the NIC
     e1000_t *nic = (e1000_t*)context;
 
-    tasklet_insert(&tsk);
+    tasklet_insert(&nic->tasklet);
 
     return IRQ_HANDLED;
 }
@@ -436,6 +442,7 @@ void e1000_init(pci_device_t *dev, uint16_t type, bool is_e1000e) {
     // Allocate an E1000 structure
     e1000_t *nic = kmalloc(sizeof(e1000_t));
     memset(nic, 0, sizeof(e1000_t));
+    TASKLET_INIT(&nic->tasklet, "e1000", e1000_tasklet, nic);
     nic->pci_device = dev;              // PCI
     nic->nic_type = type;               // Device ID
     SPINLOCK_INIT(&nic->rcv_lck);
@@ -520,7 +527,6 @@ void e1000_init(pci_device_t *dev, uint16_t type, bool is_e1000e) {
     (void)status;
 
     // Enable IRQs
-    TASKLET_INIT(&tsk, "e1000", e1000_tasklet, nic);
     E1000_SENDCMD(E1000_REG_ICR, 0xFFFFFFFF);
     E1000_SENDCMD(E1000_REG_IMASK, 0xFFFFFFFF);
 

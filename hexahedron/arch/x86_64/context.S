@@ -157,9 +157,14 @@ arch_switch_context:
 arch_thread_entry:
     movq %rax, %rdi
     call thread_entrypoint
+    
+    xorq %rbp, %rbp
     popq %rdi // context
     popq %rsi // function
-    jmpq *%rsi
+    callq *%rsi
+    
+    // threads are not supposed to return
+    ud2
 
 .global arch_handle_threadexit
 .extern thread_safeExit

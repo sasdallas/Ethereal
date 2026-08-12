@@ -106,6 +106,8 @@ static void hid_callback(usb_transfer_t *transfer) {
  * @brief HID attach
  */
 static usb_status_t hid_attach(usb_device_t *dev, usb_interface_t *intf) {
+    LOG(INFO, "Starting HID attach\n");
+
     // Locate the HID descriptor
     // TODO: store these in device parser instead of this
     size_t full_length = intf->config->desc.wTotalLength;
@@ -207,6 +209,8 @@ static usb_status_t hid_attach(usb_device_t *dev, usb_interface_t *intf) {
         kfree(hid_dev);
         return status;
     }
+    
+    LOG(INFO, "HID parser completed.\n");
 
     // find the endpoints
     usb_endpoint_t *intr_in_ep = NULL;

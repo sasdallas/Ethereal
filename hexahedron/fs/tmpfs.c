@@ -130,7 +130,7 @@ static int tmpfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
             mutex_release(&node->lck);
             strncpy(ctx->name, kn->value, NAME_MAX);
             ctx->ino = n_child->ino;
-            ctx->type = 0; // TODO
+            ctx->type = vfs_toDirentType(n_child->attr.type);
             list_destroy(keys, false);
             return 0;
         }  

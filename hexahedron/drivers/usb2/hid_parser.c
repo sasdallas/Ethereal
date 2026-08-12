@@ -460,8 +460,6 @@ void hid_process(hid_device_t *device, void *reportbuf, size_t report_size) {
     uint8_t *buffer = (uint8_t*)reportbuf;
     uint8_t report_id = 0;
 
-    HEXDUMP(reportbuf, report_size);
-
     if (device->uses_report_id) {
         if (report_size == 0) {
             LOG(ERR, "Malformed empty HID report\n");

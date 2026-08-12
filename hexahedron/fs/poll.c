@@ -50,7 +50,7 @@ poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
     assert(w);
     LOCK_WAITER(w);
     refcount_init(&w->refs, 1);
-    w->thr = current_cpu->current_thread;
+    w->thr = thr;
     w->nevents = nevents;
     w->events = kmalloc(sizeof(poll_event_t*) * nevents);
     w->ready = false;

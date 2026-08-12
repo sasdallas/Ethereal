@@ -583,7 +583,7 @@ long sys_read_entries(int handle, void *buffer, size_t max_size) {
         f->pos++;
 
         struct dirent *ent = (struct dirent*)p;
-        strncpy(ent->d_name, ctx.name, 1024);
+        strncpy(ent->d_name, ctx.name, 256);
         
         ent->d_ino = ctx.ino;
         ent->d_type = ctx.type;

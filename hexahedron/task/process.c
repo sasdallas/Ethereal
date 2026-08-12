@@ -574,7 +574,7 @@ int process_executeCommon(elf_image_t *img) {
     process_t *proc = current_cpu->current_process;
 
     // Stop all previous threads
-    spinlock_acquire(&proc->thread_lock);
+    spinlock_acquireRaw(&proc->thread_lock);
     thread_t *t = proc->thread_list;
     while (t) {
         if (t != current_cpu->current_thread) {
@@ -596,7 +596,7 @@ int process_executeCommon(elf_image_t *img) {
 
     proc->thread_list = NULL;
     proc->nthreads = 0;
-    spinlock_release(&proc->thread_lock);
+    spinlock_releaseRaw(&proc->thread_lock);
 
     // Switch away from old directory
     vmm_switch(vmm_kernel_context);

@@ -16,6 +16,7 @@
 #include <kernel/arch/x86_64/smp.h>
 #include <kernel/task/process.h>
 #include <kernel/misc/util.h>
+#include <kernel/misc/args.h>
 #include <kernel/panic.h>
 #include <string.h>
 
@@ -48,6 +49,53 @@ mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE)))
 
 #define IS_VALID_PHYS(addr) (((pg) & 0x000FFFFFFFFFF000ULL) == 0)
 
+static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_nonpresent);
+
+/**
+ * @brief MMU user page fault debugger
+ */
+void arch_mmu_pf_user(registers_t *regs) {
+    dprintf(ERR, "Process '%s' (PID %d)\n", current_cpu->current_process->name, current_cpu->current_process->pid);
+
+    dprintf(ERR, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
+    dprintf(ERR, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
+    dprintf(ERR, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
+    dprintf(ERR, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
+    dprintf(ERR, "ERR %016llX RIP %016llX RFL %016llX\n", regs->err_code, regs->rip, regs->rflags);
+    dprintf(ERR, "CS %04X DS %04X SS %04X\n", regs->cs, regs->ds, regs->ss);
+
+    dprintf(ERR, "Bytes around exception zone:\n");
+    if ((regs->err_code & (1 << 4)) == 0) {
+        HEXDUMP(regs->rip - 4, 8);
+    }
+
+    dprintf(ERR, "Stack trace:\n");
+    uint64_t *rbp = (uint64_t*)regs->rbp;
+    for (int i = 0; i < 10 && rbp; i++) {
+        if (arch_mmu_get_page(NULL, PAGE_ALIGN_DOWN((uintptr_t)rbp), false) == NULL) break;
+        if ((uintptr_t)rbp >= 0xDEADD000 && (uintptr_t)rbp <= 0xDEADFFFF) {
+            break;
+        }
+
+        uint64_t rip = *(rbp + 1);
+        dprintf(ERR, "  [%d] 0x%016llX\n", i, rip);
+        rbp = (uint64_t*)*rbp;
+        if (((uintptr_t)rbp & 0xFFFF0000) == 0xdead0000) break;
+    }
+
+    // if (kargs_has("--do-core-dump")) {
+    //     coredump_process(current_cpu->current_thread, regs);
+    //     signal_send(current_cpu->current_process, SIGSTOP);
+    //     return;
+    // }
+
+    if (kargs_has("--pf-no-segv")) {
+        process_exit(current_cpu->current_process, 1);
+    } else {
+        signal_send(current_cpu->current_process, SIGSEGV);
+    }
+
+}
 
 /**
  * @brief MMU page fault handler
@@ -71,8 +119,27 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
 
     if (regs->err_code & ~(0x17)) goto _die;
 
-    if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
-        return 0;
+    // vmm_fault takes a mutex of the space, so it must run with IRQs on
+    // if IRQs are not on and this fault is for the kernel, kaboom
+    // kernel mode memory is guranteed to always be paged when taken from vmm_map
+    if (info.from == VMM_FAULT_FROM_KERNEL && info.address < MMU_USERSPACE_END && !(regs->rflags & (1 << 9))) {
+        dprintf(ERR, "Kernel attempted access of usermode pageable memory with IRQs disabled!\n");
+        dprintf(ERR, "This is a kernel bug. System calls and device drivers must not access usermode memory without IRQs.\n");
+        goto _die;
+    }
+
+    if (regs->rflags & (1 << 9)) {
+        int state = hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+
+        if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
+            return 0;
+        }
+
+        hal_setInterruptState(state);
+    } else {
+        if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
+            return 0;
+        }
     }
 
 _die:
@@ -82,15 +149,7 @@ _die:
     }
     
     if (info.from == VMM_FAULT_FROM_USER) {
-        dprintf(ERR, "Process '%s' (PID %d)\n", current_cpu->current_process->name, current_cpu->current_process->pid);
-        dprintf(ERR, "Stack trace:\n");
-        uint64_t *rbp = (uint64_t*)regs->rbp;
-        for (int i = 0; i < 3 && rbp; i++) {
-            uint64_t rip = *(rbp + 1);
-            dprintf(ERR, "  [%d] 0x%016llX\n", i, rip);
-            rbp = (uint64_t*)*rbp;
-        }
-        signal_send(current_cpu->current_process, SIGSEGV);
+        arch_mmu_pf_user(regs);
         return 0;
     }
 
@@ -139,7 +198,7 @@ extern void arch_panic_traceback(int depth, registers_t *regs);
             if (processor_data[i].current_thread != NULL) {
                 dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: Current thread %p (process '%s') - page directory %p\n", i, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_context->dir);
             } else {
-                dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", processor_data[i].current_context->dir);
+                dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: No thread available. Page directory %p\n", i, processor_data[i].current_context->dir);
             }
         }
     }
@@ -303,7 +362,7 @@ void arch_mmu_unmap_physical(uintptr_t addr, size_t size) {
 /**
  * @brief Get a page (internal)
  */
-static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_nonpresent) {
+mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_nonpresent) {
     if (!dir) dir = arch_mmu_dir();
     mmu_page_t *d = (mmu_page_t*)dir;
 

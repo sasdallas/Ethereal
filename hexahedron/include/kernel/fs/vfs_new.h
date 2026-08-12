@@ -721,4 +721,20 @@ int vfs_syncFilesystem(vfs_mount_t *mount);
  */
 int vfs_syncFilesystems();
 
+/**
+ * @brief Helper to convert a VFS_ type to a DT_ type
+ */
+static inline int vfs_toDirentType(vfs_ino_type_t type) {
+    switch (type) {
+        case VFS_FILE: return DT_REG;
+        case VFS_DIRECTORY: return DT_DIR;
+        case VFS_BLOCKDEVICE: return DT_BLK;
+        case VFS_CHARDEVICE: return DT_CHR;
+        case VFS_SOCKET: return DT_SOCK;
+        case VFS_SYMLINK: return DT_LNK;
+        case VFS_PIPE: return DT_FIFO;
+        default: return DT_REG;
+    }
+} 
+
 #endif

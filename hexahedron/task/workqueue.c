@@ -39,7 +39,7 @@ void workqueue_drain(void *context) {
     
     while (1) {
         WAIT_QUEUE_CONDITION(&wq->waiters, STAILQ_FIRST(&wq->pending_work) != NULL);
-        
+
         // Pop from the workqueue
         void (*cb)(void*) = NULL;
         void *context = NULL;

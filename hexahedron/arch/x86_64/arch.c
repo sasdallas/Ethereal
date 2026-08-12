@@ -115,8 +115,13 @@ extern uintptr_t __kernel_start, __kernel_end;
                 dprintf(NOHEADER, COLOR_CODE_RED    " (symbols unavailable)\n");
             }
         } else {
-            // Corrupt frame?
-            dprintf(NOHEADER, COLOR_CODE_RED    " (unknown address)\n");
+            loaded_driver_t *d = driver_findByAddress(ip);;
+            if (d != NULL) {
+                dprintf(NOHEADER, COLOR_CODE_RED    " (driver %s+0x%llX)\n", d->filename, ip - d->load_address);
+            } else {
+                // Corrupt frame?
+                dprintf(NOHEADER, COLOR_CODE_RED    " (unknown address)\n");
+            }
         }
         
         // Next frame
@@ -136,6 +141,7 @@ extern uintptr_t __kernel_start, __kernel_end;
  * moving things around, whatever you need to do
  */
 void arch_panic_prepare() {
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
     smp_disableCores();
 }
 
@@ -146,6 +152,21 @@ void arch_panic_prepare() {
 void arch_panic_finalize() {
     // Perform a traceback
     arch_panic_traceback(30, NULL);
+
+    // Dump all drivers
+    dprintf(NOHEADER, COLOR_CODE_RED_BOLD "\nLOADED DRIVERS:\n");
+    if (driver_list != NULL) {
+
+        node_t *n = driver_list->head;
+        while (n) {
+            loaded_driver_t *d = n->value;
+            // dprintf(NOHEADER, COLOR_CODE_RED, "- \"%s\" (driver base %p)\n", d->filename);
+            dprintf(NOHEADER, COLOR_CODE_RED " %-20s%p\n", d->filename, d->load_address);
+            n = n->next;
+        }
+    } else {
+        dprintf(NOHEADER, COLOR_CODE_RED, "(No drivers were loaded at fault-time)\n");
+    }
 
     // Display message
     dprintf(NOHEADER, COLOR_CODE_RED "\nThe kernel will now permanently halt. Connect a debugger for more information.\n");

@@ -143,17 +143,17 @@ static ssize_t mouse_read(devfs_node_t *n, loff_t off, size_t size, char *buffer
         poll_add(w, &mouse_poll_event, POLLIN);
 
         // Check if available
-        spinlock_acquire(&mouse_buffer_lock);
+        spinlock_acquireRaw(&mouse_buffer_lock);
         if (ringbuffer_remaining_read(&mouse_buffer)) {
             
             break;
         }
 
         if (flags & O_NONBLOCK) {
-            spinlock_release(&mouse_buffer_lock);
+            spinlock_releaseRaw(&mouse_buffer_lock);
             return -EAGAIN;
         }
-        spinlock_release(&mouse_buffer_lock);
+        spinlock_releaseRaw(&mouse_buffer_lock);
         
         // Wait
         int ret = poll_wait(w, -1);
@@ -166,7 +166,7 @@ static ssize_t mouse_read(devfs_node_t *n, loff_t off, size_t size, char *buffer
     }
 
     ssize_t r = ringbuffer_read(&mouse_buffer, buffer, size);
-    spinlock_release(&mouse_buffer_lock);
+    spinlock_releaseRaw(&mouse_buffer_lock);
 
     // can only free now ugh
     poll_exit(w);
@@ -218,9 +218,9 @@ int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
         .scancode = scancode
     };
 
-    spinlock_acquire(&keyboard_buffer_lock);
+    spinlock_acquireRaw(&keyboard_buffer_lock);
     ringbuffer_write(&kbd_buffer, (char*)&ev, sizeof(key_event_t));
-    spinlock_release(&keyboard_buffer_lock);
+    spinlock_releaseRaw(&keyboard_buffer_lock);
     poll_signal(&kbd_poll_event, POLLIN);
     return 0;
 }
@@ -230,9 +230,9 @@ int periphfs_sendKeyboardEvent(int event_type, key_scancode_t scancode) {
  * @param event Mouse event
  */
 int periphfs_sendMouseEvent(mouse_event_t *event) {
-    spinlock_acquire(&mouse_buffer_lock);
+    spinlock_acquireRaw(&mouse_buffer_lock);
     ringbuffer_write(&mouse_buffer, (char*)event, sizeof(mouse_event_t));
-    spinlock_release(&mouse_buffer_lock);
+    spinlock_releaseRaw(&mouse_buffer_lock);
     poll_signal(&mouse_poll_event, POLLIN);
     return 0;
 }

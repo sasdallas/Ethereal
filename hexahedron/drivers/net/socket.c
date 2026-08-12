@@ -707,7 +707,7 @@ int socket_waitForContent(sock_t *sock) {
  */
 int socket_received(sock_t *sock, void *data, size_t size) {
     // Get received lock
-    spinlock_acquire(sock->recv_lock);
+    spinlock_acquireRaw(sock->recv_lock);
 
     // Create a new packet
     sock_recv_packet_t *pkt = kzalloc(sizeof(sock_recv_packet_t) + size);
@@ -723,7 +723,7 @@ int socket_received(sock_t *sock, void *data, size_t size) {
     // Wakeup a thread from the queue
     sleep_wakeupQueue(sock->recv_wait_queue, 1);
 
-    spinlock_release(sock->recv_lock);
+    spinlock_releaseRaw(sock->recv_lock);
 
     return 0;
 }
@@ -750,8 +750,8 @@ sock_recv_packet_t *socket_get(sock_t *sock) {
     }
 
     sock_recv_packet_t *pkt = (sock_recv_packet_t*)n->value;
-
     spinlock_release(sock->recv_lock);
+    kfree(n);
     return pkt;
 }
 
