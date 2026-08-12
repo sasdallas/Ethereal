@@ -45,6 +45,36 @@ It is **not** Linux-based, nor does it share any code with Linux at all. Rather,
 - `libc`: Contains mlibc
 - `userspace`: Contains the userspace libraries and programs in Ethereal
 
+## AI policy
+
+Ethereal **does not** permit coding assisted by LLMs to be present in the online repo.\
+If such code does make it, it should be removed immediately.
+
+My personal stance on AI is that its a tool with specific usages.
+
+Artificial intelligence is good at:
+
+- Reading through large codebases (assuming a human double-checks) such as Linux or NetBSD.
+- Generating small, single-use test programs that never make it to upstream.
+- Teaching certain small foreign concepts or asking small questions (when this information is not readily accessible)
+
+Artificial intelligence is horrible at:
+
+- Generating any type of kernel code
+- Explaining why it is doing something/what something does
+- Not overcomplicating the simplest of topics
+
+Due to the above no AI code should ever be present in Ethereal.
+
+As I have noticed (from myself and others) people tend to "overdose" on AI and become dependent on it.\
+This only hurts you in the long run, causing your ability to program to falter.
+
+For your own sake, please avoid using AI in the wrong ways.
+
+**PRs containing AI-generated or suspected AI-generated code can be closed at any time.**
+
+**THERE IS NO VIBECODING IN ETHEREAL.**
+
 ## Code notice
 
 Ethereal's codebase is the result of over 2 years of effort.
@@ -57,11 +87,13 @@ Take caution if using Ethereal as a source to learn how to make your own OS.
 ## Building
 
 
-### ACPICA notice
+### ACPICA notice (READ THIS BEFORE BUILDING)
 
-If you use ACPICA (it is on by default), you must download the tarfile from [here](https://downloadmirror.intel.com/834974/acpica-unix-20240927.tar.gz) and extract it to `external/acpica/acpica-src`
+If you use ACPICA (**it is on by default**), you must download the tarfile from [here](https://downloadmirror.intel.com/834974/acpica-unix-20240927.tar.gz) and extract it to `external/acpica/acpica-src`
 
-Else, you can edit `conf/build/<arch>.mk` and set `USE_ACPICA` to 0.  
+Alternatively, you can edit `conf/build/<arch>.mk` and set `USE_ACPICA` to 0.  
+
+As of now the benefits of ACPICA is the ability to shutdown the system and hibernate, with support for the PCI IRQ routing table coming later (+ batteries).
 
 ### Building
 
