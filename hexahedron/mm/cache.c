@@ -21,6 +21,7 @@
 #include <kernel/init.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <stdlib.h>
 
 /* slabs */
 slab_cache_t *page_cache_cache = NULL;
@@ -30,8 +31,8 @@ slab_cache_t *page_entry_cache = NULL;
 int pages_active = 0;
 int pages_dirty = 0;
 
-/* list of all page caches (for pruner) */
-page_cache_t *cache_list = NULL;
+/* list of all page caches */
+static DLIST_HEAD(cache_list, page_cache_t);
 mutex_t cache_list_lock = MUTEX_INITIALIZER;
 
 /* current system period */
@@ -39,8 +40,11 @@ char cache_period = 0;
 
 /* sync event */
 static mutex_t dirty_lock = MUTEX_INITIALIZER; 
+static mutex_t sync_lock = MUTEX_INITIALIZER;
 static page_cache_t *dirty_cache_list = NULL;
 static event_t sync_event;
+
+static DLIST_HEAD(dirty_list, page_cache_t);
 
 /* max pages per range in sync */
 #define CACHE_SYNC_MAX_PAGES 128
@@ -49,15 +53,17 @@ static event_t sync_event;
 #define LOG(status, ...) dprintf_module(status, "MM:CACHE", __VA_ARGS__)
 
 /* atomicity helpers */
-/* Todo move these to PMM */
 #define PAGE_TEST_FLAG(pg, flag)  (__atomic_load_n(&(pg)->flags, __ATOMIC_SEQ_CST) & flag)
 #define PAGE_IS_LOADING(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_LOADING)
 #define PAGE_IS_READY(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_READY)
 #define PAGE_IS_ERROR(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_ERROR)
 #define PAGE_IS_DIRTY(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_DIRTY)
+#define PAGE_IS_WRITEBACK(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_WRITEBACK)
 #define PAGE_IS_TRUNCATED(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_TRUNCATED)
 #define PAGE_MARK_DIRTY(pg) (__atomic_fetch_or(&(pg)->flags, PAGE_FLAG_DIRTY, __ATOMIC_SEQ_CST) & PAGE_FLAG_DIRTY)
 #define PAGE_MARK_TRUNC(pg) (__atomic_fetch_or(&(pg)->flags, PAGE_FLAG_TRUNCATED, __ATOMIC_SEQ_CST))
+#define PAGE_MARK_WRITEBACK(pg) (__atomic_fetch_or(&(pg)->flags, PAGE_FLAG_WRITEBACK, __ATOMIC_SEQ_CST))
+#define PAGE_CLEAR_WRITEBACK(pg) (__atomic_fetch_and(&(pg)->flags, ~(PAGE_FLAG_WRITEBACK), __ATOMIC_SEQ_CST))
 
 #define __PAGE_DO_CAS(pg, tomask, toset) ({ \
                                             uint32_t saved_fl = __atomic_load_n(&(pg)->flags, __ATOMIC_SEQ_CST);\
@@ -76,6 +82,8 @@ static event_t sync_event;
  */
 void cache_init() {
     EVENT_INIT(&sync_event);
+    DLIST_INIT(&dirty_list);
+    DLIST_INIT(&cache_list);
     assert((page_cache_cache = slab_createCache("page cache", SLAB_CACHE_DEFAULT, sizeof(page_cache_t), 0, NULL, NULL)));
     assert((page_entry_cache = slab_createCache("page entry", SLAB_CACHE_DEFAULT, sizeof(page_entry_t), 0, NULL, NULL)));
 }
@@ -85,24 +93,21 @@ void cache_init() {
  */
 page_cache_t* cache_create() {
     page_cache_t *cache = slab_allocate(page_cache_cache);
+    memset(cache, 0, sizeof(page_cache_t));
     assert(cache);
     XA_INIT(&cache->xa);
     RWSEM_INIT(&cache->sem);
     EVENT_INIT(&cache->ready_event);
     SPINLOCK_INIT(&cache->ready_event_lock);
+    MUTEX_INIT(&cache->dirty.sync_lock);
+    memset(cache->dirty.dirty, 0, sizeof(cache->dirty.dirty));
+    cache->dirty.is_dirty = false;
+    cache->dirty.on_dirty_list = false;
 
     // add it to the cache list
     mutex_acquire(&cache_list_lock);
-    cache->next = cache_list;
-    cache->prev = NULL;
-    if (cache_list) cache_list->prev = cache;
-    cache_list = cache;
+    DLIST_INSERT_TAIL(&cache_list, cache, node);
     mutex_release(&cache_list_lock);
-
-    cache->dirty.head = NULL;
-    cache->dirty.next = NULL;
-    __atomic_store_n(&cache->dirty.is_dirty, false, __ATOMIC_SEQ_CST);
-
     return cache;
 }
 
@@ -115,7 +120,6 @@ static pmm_page_t *cache_get(page_cache_t *cache, loff_t offset) {
     
     page_entry_t *ent = xa_load(&cache->xa, idx);
     if (ent) {
-        ent->period = __atomic_load_n(&cache_period, __ATOMIC_RELAXED);
         if (ent->being_evicted) {
             // We happened to get a page at a time when it was just about to be evicted.
             // This indicates a deferred sync
@@ -154,11 +158,11 @@ static int cache_place(vfs_inode_t *inode, loff_t offset, pmm_page_t *page) {
     entry->page = page;
     entry->in_dirty_list = false;
     entry->being_evicted = false;
+    memset(entry->dirty, 0, sizeof(entry->dirty));
     page->ent = entry;
     page->offset = offset;
     page->inode = inode;
     entry->period = __atomic_load_n(&cache_period, __ATOMIC_SEQ_CST);
-    entry->dirty_next = NULL;
 
     size_t idx = (offset / PAGE_SIZE);
     xa_store(&inode->cache->xa, idx, entry);
@@ -351,6 +355,7 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
     range->npages = npages;
     memset(range->pages, 0, npages * sizeof(uintptr_t));
 
+    bool have_dirty = false;
 
     // Whatever we don't fill will be caught in the write section
     CACHE_START_READ(cache);
@@ -369,7 +374,12 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
             }
             
             if (PAGE_IS_READY(pg)) {
-                // We successfully filled a page             
+                // We successfully filled a page
+                if (PAGE_IS_DIRTY(pg)) {
+                    // Dirty pages cannot be batched, and so missing pages have to be read
+                    have_dirty = true;
+                }
+
                 filled++;
                 pmm_retainPage(pg);
                 range->pages[i] = pmm_address(pg);
@@ -409,6 +419,7 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
                 if (pg) {
                     // todo im lazy
                     assert(pg->flags & PAGE_FLAG_READY && "alignedwrite waiting not impl'd");
+                    pmm_retainPage(pg);
                     range->pages[i] = pmm_address(pg);
                 } else {
                     // allocate some dummy memory thatll be filled anyways
@@ -432,7 +443,7 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
     // On certain disks it is way faster to drop a couple of pages in order to do a big sequential read
     // We should batch them if 50% pages were missing
     size_t missed = npages - filled;
-    if (missed < npages/2 || !inode->c_ops->read_range) {
+    if (have_dirty || missed < npages/2 || !inode->c_ops->read_range) {
         // Read individual pages
         this_off = offset;
         for (unsigned i = 0; i < npages; i++) {
@@ -465,6 +476,7 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
                 // Make sure another thread didnt sneakily put one in
                 pmm_page_t *pg = cache_get(cache, this_off);
                 if (pg) {
+                    pmm_retainPage(pg);
                     PAGE_MARK_LOADING(pg);
                     range->pages[i] = pmm_address(pg);
                     goto _batch_next;
@@ -525,6 +537,10 @@ void cache_destroy(vfs_inode_t *inode) {
     
     dprintf(DEBUG, "cache_destroy on inode %p\n", inode);
 
+    // !!! THIS FUNCTION IS RACY AND WILL PROBABLY CRASH.
+    // !!! A few assertions should help cause a known crash but UAFs are possible with this.
+    // !!! TO BE FIXED.
+
     // HACK: Sync the cache now to remove all the dirty pages
     cache_syncInode(inode);
 
@@ -534,34 +550,16 @@ void cache_destroy(vfs_inode_t *inode) {
     // however this is fine because we have hacks, this just defers the syncer thread to process it next sync IF its not possible to pop it.
     CACHE_START_WRITE(c);
     
-    if (c->dirty.next != NULL) {
-        mutex_acquire(&dirty_lock);
-
-        // Try to see if we are in the dirty list. We need to take ourselves out if we are.
-        // !!! I don't like this and its still racey
-        page_cache_t *dirty = dirty_cache_list;
-        page_cache_t *prev = NULL;
-        bool removed = false;
-        while (dirty) {
-            if (dirty == c) {
-                if (prev) prev->dirty.next = dirty->dirty.next;
-                else dirty_cache_list = dirty->dirty.next;
-                removed = true;
-                break;
-            }
-
-            prev = dirty;
-            dirty = dirty->dirty.next;
-        }
-
-        mutex_release(&dirty_lock);
-
-        if (!removed) {
-            assert(0 && "worst-case scenario not handled");
-        }
+    // remove the cache from the dirty list
+    mutex_acquire(&dirty_lock);
+    if (c->dirty.on_dirty_list) {
+        DLIST_REMOVE(&dirty_list, page_cache_t, c, dirty.node);
     }
+    mutex_release(&dirty_lock);
 
     CACHE_FINISH_WRITE(c);
+
+    assert(c->dirty.is_dirty == false && "cache_destroy on a dirty cache");
 
     // when ready, we destroy all pages
     unsigned long idx;
@@ -577,10 +575,9 @@ void cache_destroy(vfs_inode_t *inode) {
     xa_destroy(&c->xa);
 
     // Now update the cache list
-    if (c == cache_list) cache_list = c->next;
-    if (c->next) c->next->prev = c->prev;
-    if (c->prev) c->prev->next = c->next;
-    c->next = c->prev = NULL;
+    mutex_acquire(&cache_list_lock);
+    DLIST_REMOVE(&cache_list, page_cache_t, c, node);
+    mutex_release(&cache_list_lock);
 
     slab_free(page_cache_cache, c);
 }
@@ -599,8 +596,50 @@ void cache_markDirty(pmm_page_t *page) {
     range->pages[0] = pmm_address(page);;
 
     cache_markRangeDirty(c, range);
+}
 
-    return;
+/**
+ * @brief Insert a dirty page into the skip list
+ * Expects cache write lock held
+ */
+static void cache_insertDirty(page_cache_t *c, page_entry_t *e) {
+    // standard skip list insertion
+    page_entry_t *update[CACHE_MAX_LEVEL] = { NULL };
+
+    // a little annoying but
+    page_entry_t *cur = NULL;
+    for (int i = CACHE_MAX_LEVEL-1; i >= 0; i--) {
+        page_entry_t *next = cur ? cur->dirty[i] : c->dirty.dirty[i];
+        while (next && next->page->offset < e->page->offset) {
+            cur = next;
+            next = cur->dirty[i];
+        }
+
+        if (next && e->page->offset == next->page->offset) {
+            LOG(ERR, "Reinserting page into dirty list? This is a bug.\n");
+            return;
+        }
+
+        update[i] = cur;
+    }
+
+    // generate a random level
+    int lvl = 1;
+    while (lvl < CACHE_MAX_LEVEL && (rand() < RAND_MAX / 2)) {
+        lvl += 1;
+    }
+
+    e->dirty_height = lvl;
+
+    for (int i = 0; i < lvl; i++) {
+        page_entry_t **l = update[i] ? &update[i]->dirty[i] : &c->dirty.dirty[i];
+        e->dirty[i] = *l;
+        *l = e;
+    }
+
+    // NULL the rest of the links out
+    for (unsigned i = lvl; i < CACHE_MAX_LEVEL; i++) e->dirty[i] = NULL;
+    e->in_dirty_list = true;
 }
 
 /**
@@ -622,14 +661,15 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
             return;
         }
 
-        pmm_retainPage(pg); // pin page
-
         if (!PAGE_MARK_DIRTY(pg)) {
-            have_dirty = true;
+            if (!PAGE_IS_WRITEBACK(pg)) {
+                pmm_retainPage(pg);
+            } else {
+                // the page is actively being written back. do not retain it
+            }
+
             ndirty++;
-        } else {
-            // already dirty
-            pmm_releasePage(pg);
+            have_dirty = true;
         }
     }
 
@@ -640,61 +680,28 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
 
     CACHE_START_WRITE(cache);
 
-    // Indeed, this is an annoyingly complex algorithm. We find the gaps.
-    // TODO Maybe make this like a skip list or some junk, ordered list insertion is slow even with this weird code
-    page_entry_t **lowbound = &cache->dirty.head;
     unsigned rindex = 0;
     while (rindex < range->npages) {
         pmm_page_t *rpage = pmm_page(range->pages[rindex]);
         page_entry_t *ent = rpage->ent;
 
-        if (ent->in_dirty_list || PAGE_IS_LOADING(rpage)) {
+        if (ent->in_dirty_list) {
             // from prior write
-            rindex++; continue;
-        }
-
-        loff_t target_offset = range->offset + (rindex * PAGE_SIZE);
-
-        // build as much as possible
-        while (*lowbound && (*lowbound)->page->offset < target_offset) {
-            lowbound = &(*lowbound)->dirty_next;
-        }
-
-        page_entry_t *sub_head = ent;
-        page_entry_t *sub_tail = ent;
-        ent->in_dirty_list = true;
-
-        loff_t sub_start_offset = range->offset + (rindex * PAGE_SIZE);
-        rindex++; 
-
-        while (rindex < range->npages) {
-            pmm_page_t *next_pg = pmm_page(range->pages[rindex]);
-            page_entry_t *next_ent = next_pg->ent;
-
-            if (next_ent->in_dirty_list || PAGE_IS_LOADING(next_pg)) {
-                break;
-            }
-
-            assert(next_ent->page->offset == sub_tail->page->offset + PAGE_SIZE);
-            sub_tail->dirty_next = next_ent;
-            sub_tail = next_ent;
-            sub_tail->in_dirty_list = true; // todo fix in_dirty_list ordering
             rindex++;
+            continue;
         }
 
-        sub_tail->dirty_next = NULL; 
-
-        while (*lowbound && (*lowbound)->page->offset < sub_start_offset) {
-            lowbound = &(*lowbound)->dirty_next;
+        if (PAGE_IS_WRITEBACK(ent->page)) {
+            // page is being written back, it will be re-inserted.
+            rindex++;
+            continue;
         }
 
-        sub_tail->dirty_next = *lowbound;
-        sub_tail->in_dirty_list = true;
+        cache_insertDirty(cache, ent);
 
-        *lowbound = sub_head;
-        lowbound = &sub_tail->dirty_next;
+        rindex++;
     }
-    
+
     CACHE_FINISH_WRITE(cache);
 
     if (__atomic_exchange_n(&cache->dirty.is_dirty, true, __ATOMIC_SEQ_CST) == false) {
@@ -702,9 +709,9 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
         mutex_acquire(&dirty_lock);
 
         // Hack so that syncInode can avoid removing it from the dirty list.. cache_sync() wont screw this up
-        if (cache->dirty.next == NULL) {
-            cache->dirty.next = dirty_cache_list;
-            dirty_cache_list = cache;
+        if (cache->dirty.on_dirty_list == false) {
+            cache->dirty.on_dirty_list = true;
+            DLIST_INSERT_TAIL(&dirty_list, cache, dirty.node);
         }
 
         mutex_release(&dirty_lock);
@@ -715,7 +722,8 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
  * @brief Evict while cache is locked
  */
 static void cache_evictLocked(pmm_page_t *page) {
-    if (page->flags & PAGE_FLAG_DIRTY) {
+    if (page->flags & PAGE_FLAG_PERMANENT) return;
+    if (PAGE_IS_DIRTY(page) || PAGE_IS_WRITEBACK(page)) {
         LOG(WARN, "Evicting dirty page! Trying to compensate...\n");
         page->ent->being_evicted = true;
         return;
@@ -741,31 +749,59 @@ void cache_evict(pmm_page_t *page) {
 }
 
 /**
+ * @brief Writeback finished
+ */
+static void cache_writebackFinish(page_cache_t *c, page_range_t *r) {
+    CACHE_START_WRITE(c);
+
+    for (unsigned i = 0; i < r->npages; i++) {
+        pmm_page_t *pg = pmm_page(r->pages[i]);
+        page_entry_t *ent = pg->ent;
+        
+        // clear the writeback flag
+        PAGE_CLEAR_WRITEBACK(pg);
+
+        if (PAGE_IS_DIRTY(pg)) {
+            // the dirty flag was cleared on syncInodeInner - this means that
+            // a page was re-dirtied. reinsert the page.
+            assert(ent->in_dirty_list == false);
+            cache_insertDirty(c, ent); // dont release the reference on the page, it will remain pinned
+        } else {
+            pmm_releasePage(pg);
+        }
+    }
+
+    CACHE_FINISH_WRITE(c);
+}
+
+/**
  * @brief Inner sync assuming inode was removed from cache list
+ * Dirty points to the first level of the skip list
  */
 static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
     if (!dirty) return 0;
     page_cache_t *c = inode->cache;
     page_entry_t *curr = dirty;
     page_range_t *range = kmalloc(sizeof(page_range_t) + sizeof(uintptr_t)*CACHE_SYNC_MAX_PAGES);
-
-    while (curr) {
+    page_entry_t *cur = dirty;
+    while (cur) {
         range->npages = 0;
         range->offset = 0;
         loff_t expected_offset = 0;
+        while (cur && range->npages < CACHE_SYNC_MAX_PAGES) {
+            pmm_page_t *pg = cur->page;
+            page_entry_t *dnext = cur->dirty[0];
 
-        while (curr && range->npages < CACHE_SYNC_MAX_PAGES) {
-            pmm_page_t *pg = curr->page;
-            page_entry_t *dnext = curr->dirty_next;
-
+            // if this page was truncated try again
             if (PAGE_IS_TRUNCATED(pg)) {
-                page_entry_t *nxt = curr->dirty_next;
+                __atomic_sub_fetch(&pages_dirty, 1, __ATOMIC_RELAXED);
                 pmm_releasePage(pg);
-                slab_free(page_entry_cache, curr);
-                curr = nxt;
+                slab_free(page_entry_cache, cur);
+                cur = dnext;
                 break;
             }
 
+            // out of pages remaining
             if (range->npages > 0 && pg->offset != expected_offset) {
                 break;
             }
@@ -775,34 +811,36 @@ static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
             bool page_claimed = true;
             
             do {
-                if (saved_fl & PAGE_FLAG_LOADING || !(saved_fl & PAGE_FLAG_DIRTY)) {
+                if ((saved_fl & PAGE_FLAG_WRITEBACK) || !(saved_fl & PAGE_FLAG_DIRTY)) {
                     // TODO Maybe just resync the page if dirty
                     page_claimed = false;
                     LOG(DEBUG, "A page is already being synced\n");
                     break;
                 }
                 
-                new_fl = (saved_fl & ~(PAGE_FLAG_DIRTY | PAGE_FLAG_READY | PAGE_FLAG_ERROR)) | PAGE_FLAG_LOADING;
+                new_fl = (saved_fl & ~(PAGE_FLAG_DIRTY)) | PAGE_FLAG_WRITEBACK;
             } while (!__atomic_compare_exchange_n(&pg->flags, &saved_fl, new_fl, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST));
 
-            if (!page_claimed) {
-                // break cluster, some other thread is syncing it
-                page_entry_t *nxt = curr->dirty_next;
+            if (page_claimed == false) {
+                // some other thread is syncing this page
                 pmm_releasePage(pg);
-                curr = nxt;
+                cur = dnext;
                 break;
             }
 
             if (range->npages == 0) {
+                // first page in the list
                 range->offset = pg->offset;
                 expected_offset = pg->offset;
             }
 
+            // add it to the range list
             range->pages[range->npages] = pmm_address(pg);
-            range->npages++;
+            range->npages += 1;
             expected_offset += PAGE_SIZE;
-            curr->in_dirty_list = false; // todo fix this ordering?
-            curr = dnext;
+            cur->in_dirty_list = false;
+            cur->dirty_height = 0;
+            cur = dnext;
         }
 
         if (range->npages > 0) {
@@ -810,17 +848,15 @@ static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
             if (inode->c_ops->write_range) {
                 r = inode->c_ops->write_range(inode, range);
             }
-            
-            __atomic_sub_fetch(&pages_dirty, range->npages, __ATOMIC_SEQ_CST);
-            assert(r >= 0);
 
-            CACHE_START_WRITE(c);
-            cache_pageRangeFinished(c, range, PAGE_FLAG_READY);
-            CACHE_FINISH_WRITE(c);
+            assert(r >= 0 && "TODO: error handling on cache_syncInodeInner");
+            __atomic_sub_fetch(&pages_dirty, range->npages, __ATOMIC_RELAXED);
 
-            cache_releaseRange(range);
+            cache_writebackFinish(c, range);
         }
     }
+
+
 
     kfree(range);
     return 0;
@@ -833,17 +869,28 @@ static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
 int cache_syncInode(vfs_inode_t *inode) {
     page_cache_t *c = inode->cache;
 
-    int start = pages_dirty;
+    // sync_lock must be held through the entire process to prevent racing
+    mutex_acquire(&c->dirty.sync_lock);
+
+    // remove the page cache from the dirty list
+    mutex_acquire(&dirty_lock);
+    if (c->dirty.on_dirty_list) {
+        DLIST_REMOVE(&dirty_list, page_cache_t, c, dirty.node);
+        c->dirty.on_dirty_list = false;
+    }
+    mutex_release(&dirty_lock);
+
+    // take from the skip list
     CACHE_START_WRITE(c);
-    page_entry_t *popped = c->dirty.head;
-    c->dirty.head = NULL;
+    page_entry_t *popped = c->dirty.dirty[0];
+    memset(c->dirty.dirty, 0, sizeof(c->dirty.dirty));
+    __atomic_store_n(&c->dirty.is_dirty, false, __ATOMIC_SEQ_CST);
     CACHE_FINISH_WRITE(c);
 
-    // TODO fixup this broken ordering
-    // !!! this doesnt remove from dcache list
-    __atomic_store_n(&c->dirty.is_dirty, false, __ATOMIC_SEQ_CST);
-
+    // sync the inode
     int r = cache_syncInodeInner(inode, popped);
+
+    mutex_release(&c->dirty.sync_lock);
 
     vfs_syncFilesystem(inode->mount);
     
@@ -861,6 +908,7 @@ void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
     }
 
     page_cache_t *c = inode->cache;
+    mutex_acquire(&c->dirty.sync_lock); // no syncing can take place during this
     CACHE_START_WRITE(c);
 
     loff_t start_loss = PAGE_ALIGN_UP(new_size);
@@ -868,50 +916,52 @@ void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
     void *ent = xa_find(&c->xa, &idx, ULONG_MAX);
     while (ent) {
         page_entry_t *e = ent;
-        cache_evictLocked(e->page);
+        pmm_page_t *page = e->page;
+
+        if (PAGE_IS_DIRTY(page)) {
+            PAGE_MARK_TRUNC(page);
+            cache_remove(c, page);
+            pmm_releasePage(page);
+        } else {
+            cache_remove(c, page);
+            pmm_releasePage(page);
+            slab_free(page_entry_cache, e);
+        }
+
         ent = xa_next(&c->xa, &idx);
     }
 
     CACHE_FINISH_WRITE(c);
-}
-
-/**
- * @brief Get active pages
- */
-int cache_active() {
-    return __atomic_load_n(&pages_active, __ATOMIC_SEQ_CST);
-}
-
-/**
- * @brief Get dirty pages
- */
-int cache_dirty() {
-    return __atomic_load_n(&pages_dirty, __ATOMIC_SEQ_CST);
+    mutex_release(&c->dirty.sync_lock);
 }
 
 /**
  * @brief Sync cache now
  */
 void cache_sync() {
-    mutex_acquire(&dirty_lock);
-    page_cache_t *cache = dirty_cache_list;
-    dirty_cache_list = NULL;
-    mutex_release(&dirty_lock);
+    while (true) {
+        // pop a cache from the list
+        mutex_acquire(&dirty_lock);
+        page_cache_t *cache = DLIST_FIRST(&dirty_list);
+        if (!cache) {
+            mutex_release(&dirty_lock);
+            break;
+        }
 
-    while (cache) {
-        page_cache_t *next_cache = cache->dirty.next;
-        cache->dirty.next = NULL;
+        DLIST_REMOVE(&dirty_list, page_cache_t, cache, dirty.node);
+        cache->dirty.on_dirty_list = false;
+        mutex_release(&dirty_lock);
 
+        mutex_acquire(&cache->dirty.sync_lock);
         if (!__atomic_load_n(&cache->dirty.is_dirty, __ATOMIC_SEQ_CST)) {
             goto _next;
         }
 
         CACHE_START_WRITE(cache);
-        page_entry_t *epop = cache->dirty.head;
-        cache->dirty.head = NULL;
-        CACHE_FINISH_WRITE(cache);
-
+        page_entry_t *epop = cache->dirty.dirty[0];
+        memset(cache->dirty.dirty, 0, sizeof(cache->dirty.dirty));
         __atomic_store_n(&cache->dirty.is_dirty, false, __ATOMIC_SEQ_CST);
+        CACHE_FINISH_WRITE(cache);
 
         if (!epop) {
             goto _next;
@@ -922,11 +972,25 @@ void cache_sync() {
         }
 
     _next:
-        cache = next_cache;
+        mutex_release(&cache->dirty.sync_lock);
     }
 
     // sync every filesystem
     vfs_syncFilesystems();
+}
+
+/**
+ * @brief Get active pages
+ */
+int cache_active() {
+    return __atomic_load_n(&pages_active, __ATOMIC_RELAXED);
+}
+
+/**
+ * @brief Get dirty pages
+ */
+int cache_dirty() {
+    return __atomic_load_n(&pages_dirty, __ATOMIC_RELAXED);
 }
 
 /**
@@ -947,90 +1011,9 @@ void cache_syncer(void *arg) {
 }
 
 /**
- * @brief Cache pruner thread
- */
-void cache_pruner(void *arg) {
-    // The way this pruner works:
-    // cache_period can be 0 or 1 and on getPage the returned page will have its entry's period
-    // set to cache_period. This pruner sleeps for an interval, flips the periods, and checks
-    // for any pages on the new period (as they have missed two rounds). If it finds them they are pruned.
-    for (;;) {
-        sleep_time(15, 0); // every 15s check memory usage
-        int w = sleep_enter();
-
-        unsigned char next_period = __atomic_load_n(&cache_period, __ATOMIC_SEQ_CST) ^ 1;
-        __atomic_store_n(&cache_period, next_period, __ATOMIC_SEQ_CST);
-
-        if (w == WAKEUP_TIME) {
-            // HACK: Check memory usage
-            // If over 75% of memory is in use
-            uintptr_t total = pmm_getTotalBlocks();
-            uintptr_t used = pmm_getUsedBlocks();
-
-            if (used*4 < total*3) {
-                continue;
-            }
-
-            LOG(INFO, "Under memory pressure (%d kB in use), pruning cache.\n", used * 4096 / 1024);
-        } else {
-            LOG(INFO, "Requested a cache prune.\n");
-        }
-
-        // !!! This is an O(n) algorithm, should maybe add some type of LRU to it?
-        // !!! This code is extremely slow for cache standards...
-        mutex_acquire(&cache_list_lock);
-
-        bool wakeup_syncer = false;
-        page_cache_t *iter = cache_list;
-        while (iter) {
-            rwsem_startWrite(&iter->sem);
-            
-            unsigned long index;
-            page_entry_t *ent;
-            xa_foreach(&iter->xa, index, ent) {
-                page_entry_t *nxt = ent->next;
-                pmm_page_t *pg = ent->page;
-                uintptr_t page_addr = pmm_address(pg);
-
-                // permanent pages cannot be evicted (like those used in the tmpfs)
-                if (ent->period == next_period && ((pg->flags & PAGE_FLAG_PERMANENT) == 0)) {
-                    // This page needs to be evicted
-                    dprintf(DEBUG, "Evicting page: %p\n", page_addr);
-                    
-                    if (pg->flags & PAGE_FLAG_DIRTY) {
-                        // We CANT flush this page yet since we are holding a mutex and that would block too long!
-                        // Defer to syncer!!
-                        ent->being_evicted = true;
-                        wakeup_syncer = true;
-                    } else {
-                        // cache_remove would rewalk the entire list
-                        xa_erase(&iter->xa, index);
-                        __atomic_sub_fetch(&pages_active, 1, __ATOMIC_SEQ_CST);
-                        pmm_release(page_addr);
-                        slab_free(page_entry_cache, ent);
-                    }
-                }
-            }
-
-            rwsem_finishWrite(&iter->sem);
-
-            iter = iter->next;
-        }
-    
-        mutex_release(&cache_list_lock);
-
-        if (wakeup_syncer) {
-            EVENT_SIGNAL(&sync_event);
-        }
-    }
-}
-
-/**
  * @brief Initialize cache pruner
  */
 int cache_prunerInit() {
-    process_t *cache_pruner_proc = process_createKernel("cache pruner", PROCESS_KERNEL, cache_pruner, NULL);
-    sched_insert(cache_pruner_proc->main_thread);
     process_t *cache_syncer_proc = process_createKernel("cache syncer", PROCESS_KERNEL, cache_syncer, NULL);
     sched_insert(cache_syncer_proc->main_thread);
     return 0;
