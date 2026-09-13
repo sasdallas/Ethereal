@@ -9,3 +9,9 @@
 [submodule "userspace/lib/neutron/neutron"]
 	path = userspace/lib/neutron/neutron
 	url = https://github.com/sasdallas/Neutron
+[submodule "external/u80211/u80211"]
+	path = external/u80211/u80211
+	url = https://github.com/mathewnd/u80211
+[submodule "external/u80211_drv/u80211_drv"]
+	path = external/u80211_drv/u80211_drv
+	url = https://github.com/mathewnd/u80211_drv
