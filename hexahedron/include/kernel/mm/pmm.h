@@ -43,6 +43,7 @@
 #define PAGE_FLAG_ERROR                 0x10    // The page is fucked
 #define PAGE_FLAG_PERMANENT             0x20    // The page is permanent and cannot be removed UNLESS the cache is truncated
 #define PAGE_FLAG_TRUNCATED             0x40    // The page was truncated and is dead
+#define PAGE_FLAG_WRITEBACK             0x80    // The page is being written back
 
 /**** TYPES ****/
 
