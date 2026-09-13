@@ -220,8 +220,15 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         }
 
         // Now we're finished so return
-        if (current_cpu->current_process && current_cpu->current_thread) {
-            signal_handle(current_cpu->current_thread, regs);
+        if (current_cpu->current_process && current_cpu->current_thread && !IN_INTERRUPT()) {
+            if ((regs->cs & 3) == 3) {
+                hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+                signal_check(regs);
+                hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+                if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
+                    thread_exit();
+                }
+            }
         }
 
         return;
@@ -322,8 +329,9 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
 /**
  * @brief System call handler
  */
-void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) {
+int hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) {
     syscall_t syscall;
+    syscall.force_iret = 0;
     syscall.syscall_number = regs->rax;
     syscall.parameters[0] = regs->rdi;
     syscall.parameters[1] = regs->rsi;
@@ -342,8 +350,10 @@ void hal_syscallHandler(registers_t *regs, extended_registers_t *regs_extended) 
     syscall_finish();
 
     // Handle any signals
-    signal_handle(current_cpu->current_thread, regs);
+    signal_check(regs);
     current_cpu->current_thread->syscall = NULL;
+
+    return syscall.force_iret;
 }
 
 /**
@@ -377,7 +387,7 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         regs->rax = syscall.return_value;
         syscall_finish();
 
-        signal_handle(current_cpu->current_thread, regs);
+        signal_check(regs);
         current_cpu->current_thread->syscall = NULL;
         return;
     }
@@ -386,11 +396,14 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
     irq_handler(regs->int_no, regs);
 
     // TODO move to IRQ handler probably
-    if (current_cpu->current_process && current_cpu->current_thread) {
-        signal_handle(current_cpu->current_thread, regs);
+    // Now we're finished so return
+    if (current_cpu->current_process && current_cpu->current_thread && !IN_INTERRUPT()) {
+        if ((regs->cs & 3) == 3) {
+            signal_check(regs);
             
-        if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
-            thread_exit();
+            if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
+                thread_exit();
+            }
         }
     }
 }

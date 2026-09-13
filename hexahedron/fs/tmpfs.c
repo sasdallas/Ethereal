@@ -156,8 +156,6 @@ static int tmpfs_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_
     if (!new_node) { mutex_release(&node->lck); return -ENOMEM; }
 
     MUTEX_INIT(&new_node->lck);
-    new_node->file.page_list = NULL;
-    new_node->file.page_count = 0;
     new_node->parent = node;
 
     memset(&new_node->attr, 0, sizeof(vfs_inode_attr_t));
@@ -201,16 +199,7 @@ static int tmpfs_destroy(vfs_inode_t *inode) {
         // then we can free all of its pages
         tmpfs_node_t *n = inode->priv;
         
-        if (inode->attr.type == VFS_FILE) {
-            if (inode->attr.size) {
-                for (unsigned i = 0; i < n->file.page_count; i++) {
-                    uintptr_t pg = n->file.page_list[i];
-                    pmm_freePage(pg);
-                }
-
-                kfree(n->file.page_list);
-            }
-        } else if (inode->attr.type == VFS_SYMLINK) {
+        if (inode->attr.type == VFS_SYMLINK) {
             kfree(n->symlink.path);
         } else {
             LOG(ERR, "Can't unlink VFS type %d as this is unimplemented\n", inode->attr.type);
@@ -240,8 +229,6 @@ static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_na
     if (!new_node) { return -ENOMEM; }
 
     MUTEX_INIT(&new_node->lck);
-    new_node->file.page_list = NULL;
-    new_node->file.page_count = 0;
     new_node->parent = n;
     
     new_node->attr.type = VFS_SYMLINK;
@@ -339,7 +326,15 @@ static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
     mutex_acquire(&node->lck);
     assert(node->attr.type == VFS_DIRECTORY);
 
-    tmpfs_node_t *c = hashmap_get(node->dir.children, name);
+    tmpfs_node_t *c;
+    if (!strcmp(name, ".")) {
+        c = node;
+    } else if (!strcmp(name, "..")) {
+        c = node->parent ? node->parent : node;
+    } else {
+        c = hashmap_get(node->dir.children, name);
+    }
+
     if (!c) {
         mutex_release(&node->lck);
         return -ENOENT;
@@ -368,34 +363,8 @@ static int tmpfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **output) {
  * @brief tmpfs truncate
  */
 static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
-    // truncate
-    
-    // LOG(DEBUG, "tmpfs_truncate size %d in_pages %d\n", size, in_pages);
-
     tmpfs_node_t *n = inode->priv;
     mutex_acquire(&n->lck);
-
-#ifndef KERNEL_ENABLE_PAGE_CACHE
-    size_t in_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
-    if (in_pages < n->file.page_count) {
-        // We are shrinking down the file
-        // Go through and free any existing pages
-        for (unsigned i = n->file.page_count; i > in_pages; i++) {
-            pmm_freePage(n->file.page_list[i]);
-        }
-
-        n->file.page_list = krealloc(n->file.page_list, in_pages * sizeof(uintptr_t*));
-    } else if (in_pages > n->file.page_count) {
-        // We are growing the file
-        n->file.page_list = krealloc(n->file.page_list, in_pages * sizeof(uintptr_t*));
-        for (unsigned i = n->file.page_count; i < in_pages; i++) {
-            n->file.page_list[i] = pmm_allocatePage(ZONE_DEFAULT);
-        }
-    }
-
-    n->file.page_count = in_pages;
-#endif
-
     n->attr.size = size;
     inode->attr.size = size;
     mutex_release(&n->lck);
@@ -407,104 +376,14 @@ static int tmpfs_truncate(vfs_inode_t *inode, size_t size) {
  * @brief tmpfs read
  */
 static ssize_t tmpfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
-#ifdef KERNEL_ENABLE_PAGE_CACHE
     assert(0);
-#else
-    tmpfs_node_t *node = file->priv;
-
-    if (node->attr.type == VFS_DIRECTORY) return -EISDIR;
-    if (node->attr.type != VFS_FILE) return -EINVAL;
-
-    if (off >= file->inode->attr.size) {
-        return 0;
-    }
-
-    if (off + size > (size_t)file->inode->attr.size) {
-        size = file->inode->attr.size - off;
-    }
-
-    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
-
-    // Well, now we can just read from the pages.
-    uintptr_t *pgl = node->file.page_list;
-    size_t remaining = size;
-    size_t pg_ind = off / PAGE_SIZE;
-    size_t pg_off = off % PAGE_SIZE;
-    size_t bpos = 0;
-
-    while (remaining) {
-        size_t chunk = PAGE_SIZE - pg_off;
-        if (chunk > remaining) chunk = remaining;
-
-        // map the corresponding page into memory
-        uintptr_t pg_tmp = arch_mmu_remap_physical(pgl[pg_ind], PAGE_SIZE, REMAP_TEMPORARY);
-
-        memcpy(buffer + bpos, (void*)pg_tmp + pg_off, chunk);
-
-    #ifndef __ARCH_X86_64__
-        arch_mmu_unmap_physical(pg_tmp, PAGE_SIZE);
-    #endif
-
-        bpos += chunk;
-        remaining -= chunk;
-        pg_ind++;
-        pg_off = 0;
-    }
-
-    mutex_release(&node->lck);
-    return size;
-#endif
 }
 
 /**
  * @brief tmpfs write
  */
 static ssize_t tmpfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
-#ifdef KERNEL_ENABLE_PAGE_CACHE
     assert(0);
-#else
-    tmpfs_node_t *n = file->priv;
-
-    if (n->attr.type == VFS_DIRECTORY) return -EISDIR;
-    if (n->attr.type != VFS_FILE) return -EINVAL;
-
-    if (off + size >= (size_t)file->inode->attr.size) {
-        int r = tmpfs_truncate(file->inode, off+size);
-        if (r) return r;
-    }
-
-    mutex_acquire(&n->lck);
-    
-     // Well, now we can just write to the pages.
-    uintptr_t *pgl = n->file.page_list;
-    size_t remaining = size;
-    size_t pg_ind = off / PAGE_SIZE;
-    size_t pg_off = off % PAGE_SIZE;
-    size_t bpos = 0;
-
-    while (remaining) {
-        size_t chunk = PAGE_SIZE - pg_off;
-        if (chunk > remaining) chunk = remaining;
-
-        // map the corresponding page into memory
-        uintptr_t pg_tmp = arch_mmu_remap_physical(pgl[pg_ind], PAGE_SIZE, REMAP_TEMPORARY);
-
-        memcpy((void*)pg_tmp + pg_off, buffer + bpos, chunk);
-
-    #ifndef __ARCH_X86_64__
-        arch_mmu_unmap_physical(pg_tmp, PAGE_SIZE);
-    #endif
-
-        bpos += chunk;
-        remaining -= chunk;
-        pg_ind++;
-        pg_off = 0;
-    }
-    
-    mutex_release(&n->lck);
-
-    return size;
-#endif
 }
 
 /**
@@ -572,31 +451,7 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
     if (off >= f->inode->attr.size) {
         return -ENXIO; // should send a SIGBUS
     }
-    
-#ifndef KERNEL_ENABLE_PAGE_CACHE
-    mutex_acquire(&node->lck); // TODO: rwlock/rwsem
 
-    // Well, now we can just read from the pages.
-    uintptr_t *pgl = node->file.page_list;
-    size_t remaining = size;
-    size_t pg_ind = off / PAGE_SIZE;
-    size_t bpos = 0;
-
-    while (remaining) {
-        // map the corresponding page into memory
-        uintptr_t pg = pgl[pg_ind];
-        pmm_retain(pg);
-        arch_mmu_map(NULL, (uintptr_t)addr + bpos, pg, flags);
-
-        bpos += PAGE_SIZE;
-        remaining -= PAGE_SIZE;
-        pg_ind++;
-    }
-
-    arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
-
-    mutex_release(&node->lck);
-#else
     mutex_acquire(&node->lck); // TODO: rwlock/rwsem
 
     // Well, now we can just read from the pages.
@@ -607,7 +462,7 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
     while (remaining) {
         // map the corresponding page into memory
         pmm_page_t *p;
-        assert(cache_getPage(f->inode, off, &p) == 0);
+        assert(cache_getPage(f->inode, off + bpos, &p) == 0);
         arch_mmu_map(NULL, (uintptr_t)addr + bpos, pmm_address(p), flags);
 
         bpos += PAGE_SIZE;
@@ -618,8 +473,6 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
     arch_mmu_invalidate_range((uintptr_t)addr, (uintptr_t)addr + size);
 
     mutex_release(&node->lck);
-
-#endif
     return 0;
 }
 
@@ -664,6 +517,10 @@ static int tmpfs_read_range(vfs_inode_t *f, page_range_t *range) {
     for (unsigned i = 0; i < range->npages; i++) {
         pmm_page_t *p = pmm_page(range->pages[i]);
         p->flags |= PAGE_FLAG_PERMANENT;
+
+        uintptr_t map = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
+        memset((void*)map, 0, PAGE_SIZE);
+        arch_mmu_unmap_physical(map, PAGE_SIZE);
     }
 
     return 0;

@@ -83,14 +83,16 @@ static void irq_freeEntry(irq_t *irq) {
  * @returns 0 on success
  */
 int irq_register(irq_number_t vector, irq_handler_t handler, uint32_t flags, void *ctx, irq_t **irq_out) {
-    irq_t *i = irq_get(vector);
-    if (!i) {
+    irq_t *head = irq_get(vector);
+    if (!head) {
         assert(0 && "you must call irq_mapDomain to map an IRQ before calling irq_register");
     }
 
     // We need to search for a valid IRQ.
     // A valid IRQ is one that isnt locked and has IRQ_FLAG_UNMAPPED set on it
     // !!!: Makes the assumption any locked IRQ is already being setup by irq_register. Only bad for shared IRQs
+    irq_t *i = head;
+    irq_t *last = NULL;
     while (i) {
         int r = spinlock_tryAcquire(&i->lck);
         if (r == 1) {
@@ -102,21 +104,35 @@ int irq_register(irq_number_t vector, irq_handler_t handler, uint32_t flags, voi
         }
 
         assert((i->flags & IRQ_FLAG_SHARED) && (flags & IRQ_FLAG_SHARED));
+        last = i;
         i = i->next;
     }
 
-    assert(i && "IRQ must be registered with irq_mapDomain (or this is kernel bug)");
+    if (!i) {
+        // The route exists but there are no new handlers, create one
+        i = irq_create(head->domain, vector, head->hwirq);
+        spinlock_acquire(&i->lck);
+        i->handler = handler;
+        i->flags = flags;
+        i->context = ctx;
 
-    // Prepare all the IRQ-specific data, assuming the rest has already been setup
-    i->handler = handler;
-    i->flags = flags;
-    i->context = ctx;
+        // TODO: A way to balance IRQs across CPUs
+        procmask_clear(&i->affinity);
+        procmask_set(&i->affinity, current_cpu->cpu_id);
 
-    // Right now, its easier to make it such that this IRQ can only occur on this CPU. irq_setAffinity can be used to change this
-    // TODO: A way to balance IRQs across CPUs
-    procmask_clear(&i->affinity);
-    procmask_set(&i->affinity, current_cpu->cpu_id);
-    
+        __atomic_store_n(&last->next, i, __ATOMIC_RELEASE);
+    } else {
+        // Prepare all the IRQ-specific data, assuming the rest has already been setup
+        i->handler = handler;
+        i->flags = flags;
+        i->context = ctx;
+
+        // Right now, its easier to make it such that this IRQ can only occur on this CPU. irq_setAffinity can be used to change this
+        // TODO: A way to balance IRQs across CPUs
+        procmask_clear(&i->affinity);
+        procmask_set(&i->affinity, current_cpu->cpu_id);
+    }
+
     // Unmask the IRQ now
     i->domain->chip->ops.irq_unmask(i);
 
@@ -176,7 +192,13 @@ int irq_allocate(irq_domain_t *domain, int hwirq, void *dev, irq_number_t *outpu
         bitmap_set(irq_bitmap, allocated);
         spinlock_release(&irq_bitmap_lock);
     
-        assert(irq_get(allocated) == NULL && "domain_alloc returned already allocated and IRQ_FLAG_SHARED not ready yet");
+        irq_t *existing = irq_get(allocated);
+        if (existing) {
+            assert(existing->domain == domain);
+
+            if (output) *output = allocated;
+            return 0;
+        }
     } else {
         // Domain doesn't care, grab our own IRQ.
         allocated = irq_allocateVector();
@@ -348,6 +370,7 @@ inline irq_t *irq_get(irq_number_t num) {
  * @param regs Frame regs
  */
 void irq_handler(irq_number_t vector, registers_t *regs) {
+    BUG_ON_IRQ_ON();
     timemonitor_updateIrqEntry();
     IRQ_ENTER();
 
@@ -362,19 +385,22 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     }
 
     if (i->flags & IRQ_FLAG_SHARED) {
-        while (i) {
-            int stat = i->handler(i, (i->flags & IRQ_FLAG_REGISTERS) ? regs : i->context);
+        bool handled = false;
+        irq_t *iter = i;
+        while (iter) {
+            int stat = iter->handler(iter, (iter->flags & IRQ_FLAG_REGISTERS) ? regs : iter->context);
             if (stat == IRQ_NOT_SOURCE) {
-                i = i->next;
+                iter = iter->next;
             } else if (stat == IRQ_ERROR) {
                 kernel_panic_extended(IRQ_HANDLER_FAILED, "irq", "*** IRQ %d failed\n", vector);
                 __builtin_unreachable();
             } else {
-                break;
+                handled = true;
+                iter = iter->next;
             }
         }
 
-        if (!i) {
+        if (!handled) {
             kernel_panic_extended(IRQ_HANDLER_FAILED, "irq", "*** Chained interrupt 0x%x has no available source\n", vector);
             __builtin_unreachable();
         }
@@ -404,8 +430,8 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     return;
 
 _unhandled:
+    LOG(WARN, "IRQ vector %d has no handler!!!\n", vector);
     percpu_domain->chip->ops.irq_eoi(NULL);
-    LOG(WARN, "IRQ vector %d no handler!!\n", vector);
     IRQ_EXIT();
     timemonitor_updateIrqExit();
     

@@ -41,10 +41,13 @@ wm_window_t *window_create(wm_client_t *client, int flags, size_t width, size_t 
     window->z_array = Z_DEFAULT;
     window->anim.win = window;
     window->visible = true;
+    window->presented = false;
     window->resize.bounds.min_width = 0;
     window->resize.bounds.min_height = 0;
     window->resize.bounds.max_width = SIZE_MAX;
     window->resize.bounds.max_height = SIZE_MAX;
+    strcpy(window->announce.name, "Celestial Window");
+    strcpy(window->announce.icon, "missing");
     pthread_spin_init(&window->resize.resize_lck, PTHREAD_PROCESS_PRIVATE);
     __atomic_add_fetch(&client->window_count, 1, __ATOMIC_SEQ_CST);
     __atomic_add_fetch(&SERVER->window_count, 1, __ATOMIC_SEQ_CST);
@@ -109,14 +112,17 @@ wm_window_t *window_create(wm_client_t *client, int flags, size_t width, size_t 
     SERVER->focused = window;
     if (old_focused) {
         EVENT_SEND(old_focused, celestial_event_unfocused_t, CELESTIAL_EVENT_UNFOCUSED);
+        CHANGED_EVENT(old_focused->id, CELESTIAL_WINDOW_CHANGE_UNFOCUSED);
     }
+
+    CHANGED_EVENT(window->id, CELESTIAL_WINDOW_CHANGE_FOCUSED);
     
     // Update window flags
     if (flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS) {
+        window->presented = true;
         WINDOW_CHANGE_STATE(window, WINDOW_STATE_NORMAL);
     } else {
         WINDOW_CHANGE_STATE(window, WINDOW_STATE_OPENING);
-        window_beginAnimation(window);
     }
 
     return window;
@@ -143,7 +149,7 @@ wm_window_t *window_top_exclude(wm_window_t *excl) {
 void window_close(wm_window_t *win) {
     TRACE_DEBUG("Closing window %p\n", win);
     EVENT_SEND(win, celestial_event_window_close_t, CELESTIAL_EVENT_WINDOW_CLOSE);
-    
+    CHANGED_EVENT(win->id, CELESTIAL_WINDOW_CHANGE_CLOSING);
 
     // Remove from client list now
     wm_window_t *last = NULL;
@@ -163,6 +169,9 @@ void window_close(wm_window_t *win) {
     if (win == SERVER->mouse_window) {
         SERVER->mouse_window = NULL; // TODO: RECALCULATE THIS VALUE
     }
+    if (win == SERVER->mouse_grab) {
+        SERVER->mouse_grab = NULL;
+    }
 
     WINDOW_CHANGE_STATE(win, WINDOW_STATE_CLOSING);
     __atomic_sub_fetch(&SERVER->window_count, 1, __ATOMIC_SEQ_CST);
@@ -180,7 +189,10 @@ void window_destroy(wm_window_t *win) {
     TRACE_DEBUG("window_destroy %p\n", win);
 
     if (win == SERVER->focused) {
-        window_focus(window_top_exclude(win));
+        wm_window_t *upper = window_top_exclude(win);
+        if (upper) {
+            window_focus(upper);
+        }
     }
 
     pthread_mutex_lock(&SERVER->window_lock);
@@ -200,9 +212,6 @@ void window_destroy(wm_window_t *win) {
     wm_client_t *client = win->client;
     __atomic_sub_fetch(&client->window_count, 1, __ATOMIC_SEQ_CST);
 
-    if (win->announce.name) free(win->announce.name);
-    if (win->announce.icon) free(win->announce.icon);
-    
     free(win);
     ipc_releaseClient(client);
 }
@@ -222,13 +231,31 @@ wm_window_t *window_get(wm_client_t *client, wid_t id) {
     return NULL;
 }
 
+wm_window_t *window_get_global(wid_t id) {
+    pthread_mutex_lock(&SERVER->window_lock);
+    for (int i = Z_BACKGROUND; i < Z_COUNT; i++) {
+        wm_window_t *win = SERVER->window_list[i];
+        while (win) {
+            if (win->id == id) {
+                pthread_mutex_unlock(&SERVER->window_lock);
+                return win;
+            }
+
+            win = win->next;
+        }
+    }
+
+    pthread_mutex_unlock(&SERVER->window_lock);
+    return NULL;
+}
+
 wm_window_t *window_top(int x, int y) {
     pthread_mutex_lock(&SERVER->window_lock);
     wm_window_t *candidate = NULL;
     for (z_array_t i = Z_BACKGROUND; i < Z_COUNT; i++) {
         wm_window_t *win = SERVER->window_list[i];
         while (win) {
-            if (x < win->x + win->width && x >= win->x && y < win->y + win->height && y >= win->y && win->state != WINDOW_STATE_CLOSING && win->state != WINDOW_STATE_CLOSED) {
+            if (x < win->x + win->width && x >= win->x && y < win->y + win->height && y >= win->y && win->visible && win->state != WINDOW_STATE_CLOSING && win->state != WINDOW_STATE_CLOSED) {
                 if (!candidate || candidate->z_array < i) {
                     candidate = win;   
                     break;
@@ -268,14 +295,19 @@ void window_focus(wm_window_t *win) {
         return; // can't focus a background window
     }
 
+    if (win->visible == false) return;
+
     if (win == SERVER->focused) return;
     TRACE_DEBUG("window_focus %p/%d\n", win, win->id);
 
     pthread_mutex_lock(&SERVER->window_lock);
     if (SERVER->focused) {
         // Unfocus the previous window
-        EVENT_SEND(SERVER->focused, celestial_event_unfocused_t, CELESTIAL_EVENT_UNFOCUSED);
+        wm_window_t *prev = SERVER->focused;
+        EVENT_SEND(prev, celestial_event_unfocused_t, CELESTIAL_EVENT_UNFOCUSED);
         SERVER->focused = NULL;
+
+        CHANGED_EVENT(prev->id, CELESTIAL_WINDOW_CHANGE_UNFOCUSED);
     }
 
     // Move us to the front of the Z list
@@ -293,6 +325,7 @@ void window_focus(wm_window_t *win) {
 
     SERVER->focused = win;
     EVENT_SEND(SERVER->focused, celestial_event_focused_t, CELESTIAL_EVENT_FOCUSED);
+    CHANGED_EVENT(win->id, CELESTIAL_WINDOW_CHANGE_FOCUSED);
     pthread_mutex_unlock(&SERVER->window_lock);
 }
 
@@ -402,6 +435,8 @@ void window_resize(wm_window_t *win, int nx, int ny, int w, int h) {
         return;
     }
 
+    if (w < 0 || h < 0) return;
+
     TRACE_DEBUG("window_resize(%d,%d,%d,%d)\n", nx, ny, w, h);
 
     // aight, do the thing
@@ -413,7 +448,7 @@ void window_resize(wm_window_t *win, int nx, int ny, int w, int h) {
     if (w + nx >= (int)GFX_WIDTH(SERVER->renderer.ctx)) {
         w = GFX_WIDTH(SERVER->renderer.ctx) - nx;
     }
-    
+
     if (h + ny >= (int)GFX_HEIGHT(SERVER->renderer.ctx)) {
         h = GFX_HEIGHT(SERVER->renderer.ctx) - ny;
     }

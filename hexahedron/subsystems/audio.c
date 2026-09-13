@@ -333,6 +333,8 @@ static int audio_ioctl(devfs_node_t *n, unsigned long request, void *argp) {
     } else if (request == IO_AUDIO_REQUEST) {
         int audreq  = *(int*)argp;
 
+        spinlock_acquire(&stream->buffer.lock);
+
         int r = 0;
         audio_stream_state_t state_to_set = 0;
         if (audreq == AUDIO_STREAM_PLAY) {
@@ -356,7 +358,10 @@ static int audio_ioctl(devfs_node_t *n, unsigned long request, void *argp) {
         }
 
         // Set the state
-        if (stream->state == state_to_set) return 0;
+        if (stream->state == state_to_set) {
+            spinlock_release(&stream->buffer.lock);
+            return 0;
+        }
         r = STREAM_SET_STATE(stream, state_to_set);
         if (r != 0) goto _cleanup;
 
@@ -393,7 +398,6 @@ void audio_streamNextPeriod(audio_stream_t *stream) {
     buf->bytes_available -= bytes_finished;
 
     if (!buf->bytes_available) {
-        buf->app_ptr = 0;
         if (stream->state == AUDIO_STREAM_STATE_DRAINING) {
             waitqueue_wakeup(&buf->drainers, 1);
         } else {

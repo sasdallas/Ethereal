@@ -67,12 +67,14 @@
 #define CELESTIAL_DEFAULT_SOCKET_NAME       "/comm/wndsrv"
 
 /* Mouse types */
+#define CELESTIAL_NMOUSE                    7
 #define CELESTIAL_MOUSE_DEFAULT             0   // Default pointer
 #define CELESTIAL_MOUSE_TEXT                1   // I-Beam for text
 #define CELESTIAL_MOUSE_HORIZONTAL          2   // Horizontal resize
 #define CELESTIAL_MOUSE_VERTICAL            3   // Vertical resize
 #define CELESTIAL_MOUSE_DIAG_ASCEND         4   // Diagonal ascending resize
 #define CELESTIAL_MOUSE_DIAG_DESCEND        5   // Diagonal descending resize
+#define CELESTIAL_MOUSE_GRAB                6   // Grabber
 
 /* Resize direction */
 #define CELESTIAL_RESIZE_TOP                    0
@@ -148,7 +150,7 @@ typedef struct celestial_req_minimize_window {
 typedef struct celestial_req_maximize_window {
     CELESTIAL_REQ_COMMON                // Common
     wid_t wid;                          // Window ID
-} celestial_req_close_maximize_t;
+} celestial_req_maximize_window_t;
 
 typedef struct celestial_req_set_focused {
     CELESTIAL_REQ_COMMON                // Common
@@ -199,8 +201,12 @@ typedef struct celestial_req_announce_window {
     CELESTIAL_REQ_COMMON
     wid_t wid;                          // Window ID to announce
     char name[128];                     // Name of window
-    char icon[128];                     // Name of icon (/usr/share/icons/32/(icon))
+    char icon[128];                     // Name of icon
                                         // TODO: allow full icon images to be passed over this
+
+    // this is a hack so that setTitle and setIcon can exist
+    // shows which fields are valid
+    unsigned char rtype;
 } celestial_req_announce_window_t;
 
 typedef struct celestial_req_query_window {
@@ -306,6 +312,9 @@ typedef struct celestial_resp_query_window {
     char icon[128];
     size_t width;
     size_t height;
+    bool focused;
+    int flags;
+    uint8_t z_array;
 } celestial_resp_query_window_t;
 
 typedef struct celestial_resp_query_window_ids {

@@ -67,13 +67,6 @@ typedef struct thread {
     arch_context_t context;                 // Thread context (defined by architecture)
     uint8_t fp_regs[512] __attribute__((aligned(16))); // FPU registers (TEMPORARY - should be moved into arch_context?)
 
-    // SIGNALS
-    spinlock_t siglock;
-    proc_signal_t signals[_NSIG];
-    sigset_t pending_signals;
-    sigset_t blocked_signals;
-    sigset_t forced_signals;
-
     // SCHEDULER
     void *sched;
     int nice;
@@ -87,8 +80,18 @@ typedef struct thread {
     struct syscall *syscall;                // The current system call of the thread
     thread_times_t times;                   // Thread times
 
-    // PTHREAD RELATED
+    // MISC
     pid_t tid;                              // Thread ID
+
+    // SIGNAL
+    struct {
+        spinlock_t lock;
+        sigset_t pending;
+        sigset_t blocked;
+        siginfo_t info[_NSIG];
+        stack_t altstack;
+        bool have_pending;
+    } signal;
 } thread_t;
 
 /* ASM constraints */
@@ -96,6 +99,7 @@ typedef struct thread {
 MUST_BE_AT_OFFSET(thread_t, sleep.lock.lock, 0x3C);
 MUST_BE_AT_OFFSET(thread_t, status, 0x10);
 MUST_BE_AT_OFFSET(thread_t, context, 0x70);
+MUST_BE_AT_OFFSET(thread_t, fp_regs, 0xC0);
 #endif
 
 /**** MACROS ****/

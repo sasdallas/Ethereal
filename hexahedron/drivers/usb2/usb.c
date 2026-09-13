@@ -248,14 +248,17 @@ usb_status_t usb_createDevice(usb_bus_t *bus, usb_port_t *port, usb_speed_t spee
     if (USB_ERROR(status)) {
         LOG(ERR, "Error opening control pipe\n");
         slab_free(device_cache, dev);
+        if (port) port->device = NULL;
         return status;
     }
 
     // Initialize the device
     status = usb_initializeDevice(dev);
     if (USB_ERROR(status)) {
+        // TODO: leaks
         LOG(ERR, "Error initializing device\n");
         slab_free(device_cache, dev);
+        if (port) port->device = NULL;
         return status;
     }
 
@@ -293,7 +296,9 @@ void usb_removeDevice(usb_device_t *device) {
     mutex_release(&usb_device_lock);
 
     // Close the control pipe first, then close the rest.
-    usb_closePipe(device->control);
+    if (device->control != NULL) {
+        usb_closePipe(device->control);
+    }
 
     // TODO: Make this safe under all conditions
     //       It's safe enough to unplug devices and mostly be okay, since multi-threaded processing should usually

@@ -105,6 +105,22 @@ vmm_context_t *vmm_createContext() {
 }
 
 /**
+ * @brief Get the flags to actually use
+ * @param vmm_flags The VMM flags of the range being updated
+ * @param mmu_flags The MMU flags the range is being set to
+ * 
+ * This is used because private mappings of a file are shared across the page cache meaning
+ * they cannot have their write bit set.
+ */
+static inline mmu_flags_t vmm_getMapFlags(vmm_flags_t vmm_flags, mmu_flags_t mmu_flags) {
+    if ((vmm_flags & VM_FLAG_FILE) && !(vmm_flags & VM_FLAG_SHARED)) {
+        return mmu_flags & ~(MMU_FLAG_WRITE);
+    }
+
+    return mmu_flags;
+}
+
+/**
  * @brief Internal
  */
 int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu_flags_t mmu_flags) {
@@ -122,8 +138,9 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_SET_FLAGS) {
                 // Change the MMU flags for the region
+                mmu_flags_t map_flags = vmm_getMapFlags(r->vmm_flags, mmu_flags);
                 for (uintptr_t i = r->start; i < r->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, mmu_flags);
+                    arch_mmu_setflags(NULL, i, map_flags);
                 }
 
                 r->mmu_flags = mmu_flags;
@@ -188,8 +205,9 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             // Now apply operation to new_range2
             if (op_type == VM_OP_SET_FLAGS) {
+                mmu_flags_t map_flags = vmm_getMapFlags(new_range2->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range2->start; i < new_range2->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, mmu_flags);
+                    arch_mmu_setflags(NULL, i, map_flags);
                 }
 
                 new_range2->mmu_flags = mmu_flags;
@@ -212,7 +230,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
                 goto _next_range;
             }
 
-            vmm_memory_range_t *new_range = vmm_createRange(start, end, r->vmm_flags, r->mmu_flags);
+            vmm_memory_range_t *new_range = vmm_createRange(start, r->end, r->vmm_flags, r->mmu_flags);
             if (r->next) r->next->prev = new_range;
             new_range->next = r->next;
             new_range->prev = r;
@@ -228,8 +246,9 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;
 
+                mmu_flags_t map_flags = vmm_getMapFlags(new_range->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, mmu_flags);
+                    arch_mmu_setflags(NULL, i, map_flags);
                 }
 
                 r = new_range;
@@ -245,6 +264,9 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             if (op_type == VM_OP_FREE) {
                 // Don't actually split
                 vmm_freePages(space, r, 0, (end - r->start) / PAGE_SIZE);
+                if (r->vmm_flags & VM_FLAG_FILE) {
+                    r->file.offset += end - r->start;
+                }
                 r->start = end;
                 goto _next_range;
             }
@@ -269,8 +291,9 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;
 
+                mmu_flags_t map_flags = vmm_getMapFlags(new_range->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, mmu_flags);
+                    arch_mmu_setflags(NULL, i, map_flags);
                 }
             } else {
                 assert(0);
@@ -300,6 +323,9 @@ int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
 
     mutex_acquire(space->mut);
     int err = __vmm_update(space, start, size, op_type, mmu_flags);
+    if (op_type == VM_OP_SET_FLAGS) {
+        arch_mmu_invalidate_range((uintptr_t)start, (uintptr_t)start + size);
+    }
     mutex_release(space->mut);
     return err;
 }

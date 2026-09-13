@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef ETHEREAL_LOG_H
-#define ETHEREAL_LOG_H
+#ifndef _ETHEREAL_LOG_H
+#define _ETHEREAL_LOG_H
 
 /**** INCLUDES ****/
 #include <stdio.h>

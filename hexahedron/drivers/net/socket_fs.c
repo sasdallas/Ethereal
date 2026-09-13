@@ -118,7 +118,11 @@ static int socketfs_ioctl(vfs_file_t *f, long request, void *argp) {
     switch (request) {
         case FIONBIO:
             SYSCALL_VALIDATE_PTR(argp);
-            sock->flags |= (*(int*)argp ? SOCKET_FLAG_NONBLOCKING : 0);
+            if (*(int*)(argp)) {
+                sock->flags |= SOCKET_FLAG_NONBLOCKING;
+            } else {
+                sock->flags &= ~(SOCKET_FLAG_NONBLOCKING);
+            }
             return 0;
 
         default:
@@ -157,6 +161,8 @@ static int socketfs_check_flags(vfs_file_t *f) {
     sock_t *sock = (sock_t*)f->priv;
     if (f->flags & O_NONBLOCK) {
         sock->flags |= SOCKET_FLAG_NONBLOCKING;
+    } else {
+        sock->flags &= ~(SOCKET_FLAG_NONBLOCKING);
     }
     return 0;
 }

@@ -518,6 +518,7 @@ static void pci_probeFunction(uint8_t bus, uint8_t slot, uint8_t function) {
     dev->msi_offset = -1;
     dev->msix_offset = -1;
     dev->irqs = NULL;
+    dev->nirqs = 0;
 
     // LOG(DEBUG, "Found device %04x:%04x on bus %02x slot %02x func %02x\n", dev->vid, dev->devid, dev->bus, dev->slot, dev->function);
 
@@ -1054,7 +1055,6 @@ ssize_t systemfs_pci_read(systemfs_node_t *node) {
 static int pci_sysfsScan(pci_device_t *dev, void *context) {
     char name[128];
     snprintf(name, 128, "%d:%d.%d", dev->bus, dev->slot, dev->function);
-    
     systemfs_registerSimple(pci_dir, name, systemfs_pci_read, NULL, dev);
     return 0;
 }

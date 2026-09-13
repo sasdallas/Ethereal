@@ -14,8 +14,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _KEYBOARD_H
-#define _KEYBOARD_H
+#ifndef _ETHEREAL_KEYBOARD_H
+#define _ETHEREAL_KEYBOARD_H
 
 /**** INCLUDES ****/
 #include <kernel/fs/periphfs.h>

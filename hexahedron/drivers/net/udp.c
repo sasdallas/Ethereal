@@ -104,12 +104,14 @@ int udp_handle(nic_t *nic, void *frame, size_t size) {
     if (ringbuffer_remaining_write(sck->pkts.data) < len) {
         LOG(WARN, "UDP socket ringbuffer is full, dropping %u byte packet\n", len);
         mutex_release(&sck->lock);
+        UDP_RELEASE(sck);
         return 0;
     }
 
-    if (sck->pkts.info_tail == sck->pkts.info_head-1) {
+    if ((sck->pkts.info_tail + 1) % sck->pkts.info_size == sck->pkts.info_head) {
         LOG(WARN, "UDP socket packet list is full, dropping %u byte packet\n", len);
         mutex_release(&sck->lock);
+        UDP_RELEASE(sck);
         return 0;
     }
 
@@ -290,9 +292,18 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
             return -ENOMEM; // ???
         }
 
-        udpsock->addr = nic_route(0)->ipv4_address; // hack
+        // !!! hack
+        nic_t *base = nic_route(0);
+        if (base == NULL) {
+            mutex_release(&udp_lock);
+            mutex_release(&udpsock->lock);
+            return -ENETUNREACH;
+        }
+
+        udpsock->addr = base->ipv4_address;
 
         udpsock->port = (uint16_t)prt;
+        bitmap_set(udp_bitmap, udpsock->port);
         hashmap_set(udp_map, (void*)(uintptr_t)udpsock->port, udpsock);
         mutex_release(&udp_lock);
     }
@@ -323,8 +334,11 @@ static ssize_t udp_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     pkt->checksum = udp_checksum(htonl(udpsock->addr), tgt->sin_addr.s_addr, pkt, sz + sizeof(udp_packet_t));
 
-    nic_t *nic = nic_route(udpsock->addr);
-    assert(nic && "???");
+    nic_t *nic = nic_route(ntohl(tgt->sin_addr.s_addr));
+    if (nic == NULL) {
+        kfree(pkt);
+        return -ENETUNREACH;
+    }
 
     ssize_t ret = ipv4_send(nic, ntohl(tgt->sin_addr.s_addr), IPV4_PROTOCOL_UDP, pkt, sizeof(udp_packet_t)+sz);
     kfree(pkt);
@@ -378,8 +392,11 @@ static int udp_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t add
     in_addr_t tgt_addr = ntohl(in->sin_addr.s_addr);
 
     if (tgt_port == 0) {
-        int prt = bitmap_find_first_from(udp_bitmap, (size_t)tgt_port, 65535);
-        assert(prt != -1);
+        int prt = bitmap_find_first_from(udp_bitmap, UDP_ALLOC_START, 65535);
+        if (prt == -1) {
+            r = -EADDRNOTAVAIL;
+            goto _finish;
+        }
         tgt_port = (in_port_t)prt;
     } else {
         if (bitmap_test(udp_bitmap, tgt_port)) {
@@ -409,8 +426,10 @@ static int udp_close(sock_t *sock) {
     // de-bind the socket if needed
     if (udpsock->port != 0) {
         mutex_acquire(&udp_lock);
-        hashmap_remove(udp_map, (void*)(uintptr_t)udpsock->port);
-        bitmap_clear(udp_bitmap, udpsock->port);
+        if (hashmap_get(udp_map, (void*)(uintptr_t)udpsock->port) == udpsock) {
+            hashmap_remove(udp_map, (void*)(uintptr_t)udpsock->port);
+            bitmap_clear(udp_bitmap, udpsock->port);
+        }
         mutex_release(&udp_lock);
     }
 

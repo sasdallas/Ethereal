@@ -74,9 +74,11 @@ static int partition_read_range(devfs_node_t *node, page_range_t *range) {
         LOG(WARN, "Reading past bounds of partition!\n");
     }
 
-    range->offset += part->off; // ??? !!!
-
-    return part->parent->node->ops->read_range(part->parent->node, range); // !!!
+    loff_t offset = range->offset;
+    range->offset += part->off;
+    int ret = part->parent->node->ops->read_range(part->parent->node, range);
+    range->offset = offset;
+    return ret;
 }
 
 /**
@@ -90,9 +92,11 @@ static int partition_write_range(devfs_node_t *node, page_range_t *range) {
         LOG(WARN, "Writing past bounds of partition, this is really bad!\n");
     }
 
-    range->offset += part->off; // ??? !!!
-
-    return part->parent->node->ops->write_range(part->parent->node, range); // !!!
+    loff_t offset = range->offset;
+    range->offset += part->off;
+    int ret = part->parent->node->ops->write_range(part->parent->node, range);
+    range->offset = offset;
+    return ret;
 }
 
 /**
@@ -132,4 +136,3 @@ void partition_delete(partition_t *part) {
 
     kfree(part);
 }
-

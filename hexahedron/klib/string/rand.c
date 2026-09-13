@@ -11,7 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-static unsigned long __rand_next = 0;
+#include <stdlib.h>
+static unsigned long __rand_next = 1;
 
 void srand(unsigned int seed) {
     __rand_next = seed;
@@ -20,5 +21,5 @@ void srand(unsigned int seed) {
 int rand() {
     // Assuming RAND_MAX is 32767
     __rand_next = __rand_next * 1103515245 + 12345;
-    return (unsigned int)(__rand_next / 65536) % 32768;
+    return (unsigned int)(__rand_next / 65536) % ((unsigned int)RAND_MAX + 1);
 }

@@ -20,6 +20,8 @@
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <signal.h>
+#include <sys/ioctl.h>
+#include <asm/ioctls.h>
 
 #ifdef BUILDING_LINUX
 #define SOCKET_PATH "/tmp/wndsrv"
@@ -143,6 +145,13 @@ void *ipc_acceptor_thread(void *arg) {
         }
 
         TRACE_DEBUG("Got new client on fd %d\n", fd);
+        
+        int r = 1;
+        if (ioctl(fd, FIONBIO, &r) < 0) {
+            FATAL("ioctl(FIONBIO): %s\n", strerror(errno));
+            return NULL;
+        }
+
         ipc_addClient(fd);
     }
 }

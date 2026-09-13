@@ -47,6 +47,7 @@
 #include <kernel/misc/args.h>
 #include <kernel/misc/util.h>
 #include <kernel/debug.h>
+#include <kernel/panic.h>
 #include <kernel/smp.h>
 #include <string.h>
 #include <stddef.h>
@@ -359,11 +360,10 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
     if (processor_count < 2) return; // No CPUs
     if (size & 0xfff) size = PAGE_ALIGN_UP(size);
 
-    int is_user_shootdown = (address < MMU_USERSPACE_END);
-    int state = hal_getInterruptState();
+    BUG_ON_IRQ_OFF();
 
-    // Ensure non-interruptable
-    __PREEMPT_DISABLE();
+    bool is_user_shootdown = (address < MMU_USERSPACE_END);
+    PREEMPT_DISABLE();
     
     atomic_int waiting = 0;
     int expected = 0;
@@ -380,11 +380,11 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
         }
     }
 
-    // dirty TLB hack
-    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
-    while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) __builtin_ia32_pause();
-    hal_setInterruptState(state);
-    __PREEMPT_ENABLE();
+    while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) {
+        __builtin_ia32_pause();
+    }
+    
+    PREEMPT_ENABLE();
 }
 
 /**

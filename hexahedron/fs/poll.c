@@ -48,6 +48,7 @@ static void poll_freeWaiter(poll_waiter_t *w);
 poll_waiter_t *poll_createWaiter(struct thread *thr, size_t nevents) {
     poll_waiter_t *w = slab_allocate(waiter_cache);
     assert(w);
+    UNLOCK_WAITER(w);
     LOCK_WAITER(w);
     refcount_init(&w->refs, 1);
     w->thr = thr;
@@ -159,6 +160,7 @@ void poll_signal(poll_event_t *event, poll_events_t events) {
                 if (wn->waiter->thr) {
                     sleep_wakeup(wn->waiter->thr);
                 }
+                UNLOCK_WAITER(wn->waiter);
             }
         }
 

@@ -73,8 +73,7 @@ void copy_file(const char *src, const char *dest) {
         exit(EXIT_FAILURE);
     }
 
-    dest_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC,
-        preserve ? (st.st_mode & 0777) : 0644);
+    dest_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, preserve ? (st.st_mode & 0777) : 0644);
     if (dest_fd < 0) {
         perror("open destination file");
         close(src_fd);

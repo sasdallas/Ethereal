@@ -20,8 +20,10 @@
 
 /* Schedulers */
 extern sched_t dumb_scheduler;
+extern sched_t ule_scheduler;
 
 static sched_t *schedulers[] = {
+    &ule_scheduler,
     &dumb_scheduler
 };
 

@@ -20,6 +20,7 @@
 
 /* Keyboard state */
 typedef struct hid_keyboard_state {
+    bool keys[256];
     bool mod[8];
 } hid_keyboard_state_t;
 
@@ -37,7 +38,7 @@ uint16_t hid_to_ps2_scancode[] = {
 
 uint16_t hid_modifier_to_ps2_scancode[] = {
     0x1d, 0x2a, 0x38, 0xe05b, 
-    0xe01d, 0x59, 0xe038, 0xe05c
+    0xe01d, 0x36, 0xe038, 0xe05c
 };
 
 #define HID_TO_PS2_SCANCODE_COUNT (sizeof(hid_to_ps2_scancode) / sizeof(hid_to_ps2_scancode[0]))
@@ -135,6 +136,8 @@ static void keyboard_event(hid_collection_t *col, hid_event_t *event) {
 
             state->mod[index] = on;
         } else {
+            if (event->usage < 4) return;
+ 
             uint8_t key = (uint8_t)event->usage;
             if (key >= HID_TO_PS2_SCANCODE_COUNT) {
                 // probably unsupported scancode
@@ -142,8 +145,13 @@ static void keyboard_event(hid_collection_t *col, hid_event_t *event) {
             }
             
             uint16_t sc = hid_to_ps2_scancode[key];
+            if (sc == 0) return;
 
-            if (event->value) {
+            bool on = event->value;
+            if (state->keys[key] == on) return;
+            state->keys[key] = on; 
+
+            if (on) {
                 HID_SEND(EVENT_KEY_PRESS, sc);
             } else {
                 HID_SEND(EVENT_KEY_RELEASE, sc | 0x80);

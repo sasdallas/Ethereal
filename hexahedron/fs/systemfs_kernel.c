@@ -137,14 +137,33 @@ ssize_t systemfs_proc_times(systemfs_node_t *n) {
     ssize_t ret = 0;
     ret += systemfs_printf(n, "#thr_id,time_usr,time_sys\n");
 
+    // it is unsafe to hold the lock, do this bullshit instead
+    struct thread_snapshot { pid_t tid; uint64_t utime; uint64_t stime; };
+
+    size_t max_threads = p->nthreads; // intentionally racy
+    if (!max_threads) return ret;
+
+    struct thread_snapshot *snp = kmalloc(sizeof(struct thread_snapshot) * max_threads);
+    size_t num_threads = 0;
+
     spinlock_acquire(&p->thread_lock);
     thread_t *iter = p->thread_list;
     while (iter) {
-        ret += systemfs_printf(n, "%-5d %lld %lld\n", iter->tid, iter->times.utime, iter->times.stime);
+        if (num_threads >= max_threads) break;
+        struct thread_snapshot *shot = &snp[num_threads++];
+        shot->tid = iter->tid;
+        shot->utime = iter->times.utime;
+        shot->stime = iter->times.stime;
         iter = iter->next;
     }
     spinlock_release(&p->thread_lock);
+
+    for (unsigned i = 0; i < num_threads; i++) {
+        struct thread_snapshot *shot = &snp[i];
+        ret += systemfs_printf(n, "%-5d %lld %lld\n", shot->tid, shot->utime, shot->stime);
+    }
     
+    kfree(snp);
     return ret;
 }
 

@@ -53,7 +53,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
     [SYS_READLINK]          = (syscall_func_t)(uintptr_t)sys_readlink,
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
-    [SYS_CHMOD]             = (syscall_func_t)(uintptr_t)sys_chmod,
+    /* gap */
     [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)sys_fcntl,
     [SYS_UNLINKAT]          = (syscall_func_t)(uintptr_t)sys_unlinkat,
     [SYS_FTRUNCATE]         = (syscall_func_t)(uintptr_t)sys_ftruncate,
@@ -76,7 +76,6 @@ static syscall_func_t syscall_table[] = {
     [SYS_MSYNC]             = (syscall_func_t)(uintptr_t)sys_msync,
     [SYS_MPROTECT]          = (syscall_func_t)(uintptr_t)sys_mprotect,
     [SYS_DUP2]              = (syscall_func_t)(uintptr_t)sys_dup2,
-    [SYS_SIGNAL]            = (syscall_func_t)(uintptr_t)sys_signal,
     [SYS_SIGACTION]         = (syscall_func_t)(uintptr_t)sys_sigaction,
     [SYS_SIGPENDING]        = (syscall_func_t)(uintptr_t)sys_sigpending,
     [SYS_SIGPROCMASK]       = (syscall_func_t)(uintptr_t)sys_sigprocmask,
@@ -105,8 +104,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETTID]            = (syscall_func_t)(uintptr_t)sys_gettid,
     [SYS_SETTLS]            = (syscall_func_t)(uintptr_t)sys_settls,
     [SYS_EXIT_THREAD]       = (syscall_func_t)(uintptr_t)sys_exit_thread,
-    [SYS_JOIN_THREAD]       = (syscall_func_t)(uintptr_t)sys_join_thread,
-    [SYS_KILL_THREAD]       = (syscall_func_t)(uintptr_t)sys_kill_thread,
+    /* gap x2 */
     [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)NULL,
     [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)NULL,
     [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)NULL,
@@ -142,7 +140,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_SYMLINKAT]         = (syscall_func_t)(uintptr_t)sys_symlinkat,
     [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)sys_fchmodat,
     [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)0xdeadbeef,
-    [SYS_FLOCK]             = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_FLOCK]             = (syscall_func_t)(uintptr_t)sys_flock,
     [SYS_UMASK]             = (syscall_func_t)(uintptr_t)sys_umask,
     [SYS_CLOCK_GETTIME]     = (syscall_func_t)(uintptr_t)sys_clock_gettime,
     [SYS_FSYNC]             = (syscall_func_t)(uintptr_t)sys_fsync,
@@ -154,7 +152,10 @@ static syscall_func_t syscall_table[] = {
     [SYS_FCHOWNAT]          = (syscall_func_t)(uintptr_t)sys_fchownat,
     [SYS_FACCESSAT]         = (syscall_func_t)(uintptr_t)sys_faccessat,
     [SYS_SYNC]              = (syscall_func_t)(uintptr_t)sys_sync,
-    [SYS_FSTATAT]           = (syscall_func_t)(uintptr_t)sys_fstatat
+    [SYS_FSTATAT]           = (syscall_func_t)(uintptr_t)sys_fstatat,
+    [SYS_SETGSBASE]         = (syscall_func_t)(uintptr_t)sys_setgsbase,
+    [SYS_SIGRETURN]         = (syscall_func_t)(uintptr_t)sys_sigreturn,
+    [SYS_SIGALTSTACK]       = (syscall_func_t)(uintptr_t)sys_sigaltstack
 }; 
 
 
@@ -223,375 +224,3 @@ void syscall_handle(syscall_t *syscall) {
     return;
 }
 
-/**
- * @brief Change data segment size
- */
-void *sys_brk(void *addr) {
-    return (void*)-ENOSYS;
-}
-
-long sys_usleep(useconds_t usec) {
-    sleep_time((usec / 1000000), (usec % 1000000));
-    if (sleep_enter() == WAKEUP_SIGNAL) return -EINTR;
-
-    return 0;
-}
-
-long sys_wait(pid_t pid, int *wstatus, int options) {
-    if (wstatus) {
-        SYSCALL_VALIDATE_PTR(wstatus);
-    }
-
-    return process_waitpid(pid, wstatus, options);
-}
-
-long sys_chmod(const char *path, mode_t mode) {
-    SYSCALL_UNIMPLEMENTED("sys_chmod");
-}
-
-
-/* MMAP */
-
-long sys_msync(void *addr, size_t len, int flush) {
-    LOG(WARN, "sys_msync %p %d %d\n");
-    return 0;
-}
-
-/* DUP */
-
-long sys_dup2(int oldfd, int newfd) {
-    if (!FD_VALIDATE(oldfd)) {
-        return -EBADF;
-    }
-
-    int fd_out;
-    int err = fd_duplicate(oldfd, newfd, &fd_out, true);
-    if (err != 0) return err;
-    return fd_out;
-}
-
-/* SIGNALS */
-
-long sys_signal(int signum, void (*handler)(int)) {
-    // Validate range
-    if (signum < 0 || signum >= NSIG) return -EINVAL;
-    if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL; // Trying to set signals that cannot be handled
-
-    // Is the handler special?
-    void *old_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
-    if (handler == SIG_IGN) {
-        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_IGNORE;
-    } else if (handler == SIG_DFL) {
-        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_DEFAULT;
-    } else {
-        // Yes, the kernel will "fail" to catch this if handler is an invalid argument
-        // ..but this executes in usermode so it's really us who are laughing
-        THREAD_SIGNAL(current_cpu->current_thread, signum).handler = handler;
-    }
-
-    THREAD_SIGNAL(current_cpu->current_thread, signum).flags = SA_RESTART;
-    return (long)old_handler;
-}
-
-long sys_kill(pid_t pid, int sig) {
-    // Check signal
-    if (sig < 0 || sig >= NSIG) return -EINVAL;
-
-    if (pid > 0 || pid < -1) {
-        if (pid < -1) pid *= -1;
-        process_t *proc = process_getFromPID(pid);
-        if (!proc) return -ESRCH;
-
-        return signal_send(proc, sig);
-    } else if (!pid) {
-        LOG(ERR, "Unimplemented: Send to every process group\n");
-        return -ENOTSUP;
-    } else if (pid == -1) {
-        // TODO
-        LOG(ERR, "Unimplemented: Send to every process possible\n");
-        return -ENOTSUP;
-    }
-
-    // Unreachable
-    return -EINVAL;
-}
-
-long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oact) {
-    if (act) SYSCALL_VALIDATE_PTR(act);
-    if (oact) SYSCALL_VALIDATE_PTR(oact);
-
-    if (signum < 0 || signum >= NSIG) return -EINVAL;
-    if (signum == SIGKILL || signum == SIGSTOP) return -EINVAL;
-
-    // First, assign the old action
-    if (oact) {
-        oact->sa_handler = THREAD_SIGNAL(current_cpu->current_thread, signum).handler;
-        oact->sa_mask = THREAD_SIGNAL(current_cpu->current_thread, signum).mask;
-        oact->sa_flags = THREAD_SIGNAL(current_cpu->current_thread, signum).flags;
-
-        if (oact->sa_handler == SIGNAL_ACTION_IGNORE) oact->sa_handler = SIG_IGN;
-        if ((uintptr_t)oact->sa_handler <= (uintptr_t)SIGNAL_ACTION_CONTINUE) oact->sa_handler = SIG_DFL;
-    }
-
-    // Now, assign the new one
-    if (act) {
-        if (act->sa_handler == SIG_IGN) {
-            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_IGNORE;
-        } else if (act->sa_handler == SIG_DFL) {
-            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = SIGNAL_ACTION_DEFAULT;
-        } else {
-            THREAD_SIGNAL(current_cpu->current_thread, signum).handler = act->sa_handler;
-        }
-
-        THREAD_SIGNAL(current_cpu->current_thread, signum).mask = act->sa_mask;
-        THREAD_SIGNAL(current_cpu->current_thread, signum).flags = act->sa_flags;
-    }
-
-    return 0;
-}
-
-long sys_sigpending(sigset_t *set) {
-    SYSCALL_VALIDATE_PTR(set);
-    *set = current_cpu->current_thread->pending_signals;
-    return 0;
-}
-
-long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset) {
-    if (oset) {
-        SYSCALL_VALIDATE_PTR(oset);
-        *oset = current_cpu->current_thread->blocked_signals; // TODO: thread?
-    }
-
-    if (set) {
-        SYSCALL_VALIDATE_PTR(set);
-
-        // How do they want us to do this?
-        switch (how) {
-            case SIG_BLOCK:
-                // Block a signal
-                current_cpu->current_thread->blocked_signals |= *set;
-                break;
-
-            case SIG_UNBLOCK:
-                // Unblock a signal 
-                current_cpu->current_thread->blocked_signals &= ~(*set);
-                break;
-
-            case SIG_SETMASK:
-                // Set mask
-                current_cpu->current_thread->blocked_signals = *set;
-                break;
-            
-            default:
-                return -EINVAL;
-        }
-    }
-
-    return 0;
-}
-
-long sys_sigsuspend(const sigset_t *sigmask) {
-    LOG(ERR, "sigsuspend is unimplemented\n");
-    return -ENOSYS;
-}
-
-long sys_sigwait(const sigset_t *set, int *sig) {
-    LOG(ERR, "sigwait is unimplemented\n");
-    return -ENOSYS;
-}
-
-/* SOCKETS */
-
-long sys_socket(int domain, int type, int protocol) {
-    return socket_create(current_cpu->current_process, domain, type, protocol);
-}
-
-long sys_sendmsg(int socket, struct msghdr *message, int flags) {
-    if (flags) LOG(WARN, "sys_sendmsg: flags are 0x%x\n", flags);
-    return socket_sendmsg(socket, message, flags);
-}
-
-long sys_recvmsg(int socket, struct msghdr *message, int flags) {
-    if (flags) LOG(WARN, "sys_recvmsg: flags are 0x%x\n", flags);
-    return socket_recvmsg(socket, message, flags);
-}
-
-long sys_getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len) {
-    return socket_getsockopt(socket, level, option_name, option_value, option_len);
-}
-
-long sys_setsockopt(sys_setopt_context_t *context) {
-    // !!!: I don't know why context is required..
-    SYSCALL_VALIDATE_PTR(context);
-    return socket_setsockopt(context->socket, context->level, context->option_name, context->option_value, context->option_len);
-}
-
-long sys_bind(int socket, const struct sockaddr *addr, socklen_t addrlen) {
-    return socket_bind(socket, addr, addrlen);
-}
-
-long sys_connect(int socket, const struct sockaddr *addr, socklen_t addrlen) {
-    return socket_connect(socket, addr, addrlen);
-}
-
-long sys_listen(int socket, int backlog) {
-    return socket_listen(socket, backlog);
-}
-
-long sys_accept(int socket, struct sockaddr *addr, socklen_t *addrlen) {
-    return socket_accept(socket, addr, addrlen);
-}
-
-long sys_getsockname(int socket, struct sockaddr *addr, socklen_t *addrlen) {
-    return socket_getsockname(socket, addr, addrlen);
-}
-
-long sys_getpeername(int socket, struct sockaddr *addr, socklen_t *addrlen) {
-    return socket_getpeername(socket, addr, addrlen);
-}
-
-/* MOUNTS */
-
-long sys_mount(const char *src, const char *dst, const char *type, unsigned long flags, const void *data) {
-    SYSCALL_VALIDATE_PTR(src);
-    SYSCALL_VALIDATE_PTR(dst);
-    if (type) SYSCALL_VALIDATE_PTR(type);
-    if (data) SYSCALL_VALIDATE_PTR(data);
-    
-    if (!type) {
-        // Type can be NULL right? (Didn't care to read docs)
-        LOG(ERR, "Lack of type is not supported\n");
-        return -ENOTSUP;
-    }
-
-    // The current process must be root to mount
-    if (current_cpu->current_process->uid != 0) {
-        return -EPERM;
-    }
-
-    if (strlen(src) > PATH_MAX) return -ENAMETOOLONG;
-    if (strlen(dst) > PATH_MAX) return -ENAMETOOLONG; 
-
-    // get filesystem
-    vfs2_filesystem_t *fs = vfs_getFilesystem((char*)type);
-    if (!fs) { return -ENODEV; }
-
-    // Canonicalize paths
-    char *src_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);
-    char *dst_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);  
-
-    if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)src, src_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
-    if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)dst, dst_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
-
-    // Try to mount filesystem type
-    int success = vfs2_mount(fs, src_canonicalized, (char*)dst_canonicalized, 0, NULL);
-    kfree(src_canonicalized);
-    kfree(dst_canonicalized);
-
-    return success;
-}
-
-long sys_umount(const char *mountpoint) {
-    LOG(WARN, "sys_umount unimplemented\n");
-    return -ENOTSUP;
-}
-
-/**** PIPES ****/
-
-long sys_pipe(int fildes[2]) {
-    SYSCALL_VALIDATE_PTR(fildes);
-    return pipe_create(fildes);
-}
-
-/**** SCHED ****/
-
-long sys_yield() {
-    process_yield(1);
-    return 0; 
-}
-
-/**** TIMERS ****/
-
-long sys_setitimer(int which, const struct itimerval *value, struct itimerval *ovalue) {
-    if (which > ITIMER_PROF) return -EINVAL;
-
-    // Check values
-    if (value) SYSCALL_VALIDATE_PTR_SIZE(value, sizeof(struct itimerval));
-    if (ovalue) SYSCALL_VALIDATE_PTR_SIZE(ovalue, sizeof(struct itimerval));
-
-    if (!value && !ovalue) {
-        return 0;
-    }
-
-    // Handle cases
-    if (value) {
-        if (ovalue) {
-            // !!!: BUG HERE - it_value is not updated as the timer system sleeps. We can probably just do it here.
-            ovalue->it_interval.tv_sec = current_cpu->current_process->itimers[which].reset_value.tv_sec;
-            ovalue->it_interval.tv_usec = current_cpu->current_process->itimers[which].reset_value.tv_usec;
-            ovalue->it_value.tv_sec = current_cpu->current_process->itimers[which].value.tv_sec;
-            ovalue->it_value.tv_usec = current_cpu->current_process->itimers[which].value.tv_usec;
-        }
-
-        int r = timer_set(current_cpu->current_process, which, (struct itimerval*)value);
-        if (r != 0) return r;
-    } else {
-        // They just want to get the timer in ovalue
-            // !!!: BUG HERE - it_value is not updated as the timer system sleeps. We can probably just do it here.
-        ovalue->it_interval.tv_sec = current_cpu->current_process->itimers[which].reset_value.tv_sec;
-        ovalue->it_interval.tv_usec = current_cpu->current_process->itimers[which].reset_value.tv_usec;
-        ovalue->it_value.tv_sec = current_cpu->current_process->itimers[which].value.tv_sec;
-        ovalue->it_value.tv_usec = current_cpu->current_process->itimers[which].value.tv_usec;
-    }
-
-
-    return 0;
-}
-
-/**** PTRACE ****/
-
-long sys_ptrace(enum __ptrace_request op, pid_t pid, void *addr, void *data) {
-    return ptrace_handle(op, pid, addr, data);
-}
-
-/**** MLIBC ****/
-
-
-long sys_read_entries(int handle, void *buffer, size_t max_size) {
-    if (!FD_VALIDATE(handle)) return -EBADF;
-    SYSCALL_VALIDATE_PTR_SIZE(buffer, max_size);
-
-    vfs_file_t *f = FD(handle);
-
-    vfs_dir_context_t ctx = {
-        .dirpos = f->pos
-    };
-
-    unsigned char *p = (unsigned char*)buffer;
-    size_t read = 0;
-    while (read + sizeof(struct dirent) <= max_size) {
-        int r = file_get_entries(f, &ctx);
-        if (r == 1) {
-            break;
-        }
-
-        if (r != 0) {
-            return r;
-        }
-
-        ctx.dirpos++;
-        f->pos++;
-
-        struct dirent *ent = (struct dirent*)p;
-        strncpy(ent->d_name, ctx.name, 256);
-        
-        ent->d_ino = ctx.ino;
-        ent->d_type = ctx.type;
-        ent->d_reclen = sizeof(struct dirent);
-
-        p += sizeof(struct dirent);
-        read += sizeof(struct dirent);
-    }  
-
-    return read;
-}

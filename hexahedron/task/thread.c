@@ -38,7 +38,9 @@ slab_cache_t *thread_cache = NULL;
  * @note No ticks are set and context will need to be saved
  */
 static thread_t *thread_createStructure(process_t *parent, vmm_context_t *ctx, int status,  int flags) {
-    if (!thread_cache) thread_cache = slab_createCache("thread cache", SLAB_CACHE_DEFAULT, sizeof(thread_t), 0, NULL, NULL);
+    if (!thread_cache) {
+        thread_cache = slab_createCache("thread cache", SLAB_CACHE_DEFAULT, sizeof(thread_t), __alignof__(thread_t), NULL, NULL);
+    }
 
     thread_t *thr = slab_allocate(thread_cache);
     memset(thr, 0, sizeof(thread_t));
@@ -141,14 +143,19 @@ int thread_destroy(thread_t *thr) {
  */
 __attribute__((no_caller_saved_registers)) void thread_safeExit(thread_t *arg) {
     thread_t *t = (thread_t*)arg;
-    __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
-    __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
-    __atomic_fetch_sub(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST);
+    
+    // before exiting, the thread must be off its page tables
+    vmm_switch(vmm_kernel_context);
+    current_cpu->current_thread = NULL;
 
-    if (t->parent->nthreads == 0) {
+    if (__atomic_sub_fetch(&t->parent->nthreads, 1, __ATOMIC_SEQ_CST) == 0) {
         reaper_push(t->parent);
     }
 
+    __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPED);
+    __sync_and_and_fetch(&t->status, ~(THREAD_STATUS_STOPPING));
+
+    // the generic switch may try to save registers
     process_switchNextThread();
 }
 

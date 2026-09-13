@@ -156,9 +156,6 @@ static thread_t *sched_dumb_get() {
         return current_cpu->idle_process->main_thread;
     }
 
-    // !!! awful but will be fixed i promise
-extern void sleep_callback();
-    sleep_callback();
 
     // Get a thread from the queue
     spinlock_acquire(&q->lock);

@@ -280,6 +280,10 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
  * Inode comes out locked
  */
 static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t flags) {
+    if (inode->attr.type != VFS_DIRECTORY && inode->attr.type != VFS_SYMLINK) {
+        return -ENOTDIR;
+    }
+
     // TODO: the actual bulk of this function is SUPPOSED to search the inode's dentry cache.. but I haven't made it yet.
     mutex_acquire(&vfs_map_mut);    // Yes we hold this for longer than we should, it's probably fine.
                                     // I don't see a reason to refcount/lock the vfs_mount_entry_t 
@@ -324,13 +328,13 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         // LOG(DEBUG, "Follow symlink %s\n", path);
 
         vfs_inode_t *out_again_tmp = NULL;
-        
+        uint32_t link_flags = flags & ~LOOKUP_PARENT;
         if (*path == '/') {
             // root path, use vfs_lookup
-            res = vfs_lookup(path, &out_again_tmp, flags);
+            res = vfs_lookup(path, &out_again_tmp, link_flags);
         } else {
             // relative path to this inode
-            res = vfs_lookupat(inode, path, &out_again_tmp, flags);
+            res = vfs_lookupat(inode, path, &out_again_tmp, link_flags);
         }
         
         if (res) { inode_release(out_tmp); return res; }
@@ -362,12 +366,21 @@ int vfs_lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t 
 
     // Do path canonicalization
     char path_canon[strlen(name) + 2];
-    if (vfs_canonicalize(NULL, name, path_canon)) return -EINVAL;
+    if (*name == '/') {
+        if (vfs_canonicalize(NULL, name, path_canon)) return -EINVAL;
+    } else {
+        strcpy(path_canon, name);
+    }
 
     // Looking up the parent
     if (flags & LOOKUP_PARENT) {
         char *p = strrchr(path_canon, '/');
-        if (p) *p = 0;
+        if (p) {
+            *p = 0;
+        } else {
+            // A single-component relative path is a child of the starting inode.
+            path_canon[0] = 0;
+        }
     }
 
     // give them root if they really want it
@@ -389,15 +402,19 @@ int vfs_lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint32_t 
             return -ENOTDIR;
         }
 
-        vfs_inode_t *output_tmp;
+        // NO_FOLLOW applies only to the final path component (intermediate symlinks)
+        uint32_t component_flags = flags;
+        char *next = strtok_r(NULL, "/", &save);
+        if (next || (flags & LOOKUP_PARENT)) component_flags &= ~LOOKUP_NO_FOLLOW;
 
-        int r = __lookupat(cur, pch, &output_tmp, flags);
+        vfs_inode_t *output_tmp;
+        int r = __lookupat(cur, pch, &output_tmp, component_flags);
 
         // LOG(DEBUG, "__lookupat %p %s -> %p %d\n", inode, pch, output_tmp, r);
         if (r) { inode_release(cur); return r; }
         inode_release(cur);
         cur = output_tmp;
-        pch = strtok_r(NULL, "/", &save);
+        pch = next;
     }
 
     *output = cur; // already locked by __lookupat
@@ -701,7 +718,6 @@ int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) 
         // We should lookup again (lookupat comes out locked)
         r = vfs_lookupat(inode, path, &output_inode, lookup_flags);
         if (r != 0) return r;
-        if (inode) inode_release(inode);
     } else {
         output_inode = inode;
         inode_hold(output_inode); // I hate inodes...
@@ -719,6 +735,8 @@ int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) 
         file_release(f); // file_open puts a reference on it regardless of failure. this will free it
         return r;    
     }
+
+    file_check_flags(f);
 
     *output = f;
     return 0;
@@ -753,9 +771,8 @@ int vfs_symlinkat(vfs_inode_t *inode, char *target, char *linkpath, vfs_inode_t 
         *symlink_out = tmp;
     }
 
-    if (r == 0) {
+    if (r == 0 && tmp->attr.nlink == 0) {
         // Now, release the inode again. This drops the initial reference when it was made by vfs_inode().
-        // TODO: Add caching to store the inode
         inode_release(tmp);
     }
 
@@ -833,6 +850,14 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
     char *p = strrchr(child, '/');
     if (p) *p = 0;  
 
+    vfs_inode_t *tmp;
+    r = inode_lookup(i_parent, child, &tmp);
+    if (r == 0) {
+        inode_release(tmp);
+        inode_release(i_parent);
+        if (p) *p = '/';
+        return -EEXIST;
+    }
 
     vfs_inode_t *holder;
     r = inode_mkdir(i_parent, child, mode, dirout ? dirout : &holder);
@@ -863,9 +888,6 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
         return -EISDIR;
     }
 
-#ifndef KERNEL_ENABLE_PAGE_CACHE
-    return file_read(file, off, size, buffer);
-#else
     if (!VFS_CACHEABLE(file->inode)) {
         return file_read(file, off, size, buffer);
     }
@@ -918,7 +940,6 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
 
     kfree(range);
     return bpos;
-#endif
 }
 
 /**
@@ -1164,9 +1185,6 @@ int vfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr) {
  * @param size The size to truncate to
  */
 int vfs_truncate(vfs_inode_t *inode, size_t size) {
-#ifndef KERNEL_ENABLE_PAGE_CACHE
-    return inode_truncate(inode, size);
-#else
     if (!VFS_CACHEABLE(inode)) {
         return inode_truncate(inode, size);
     }
@@ -1177,7 +1195,6 @@ int vfs_truncate(vfs_inode_t *inode, size_t size) {
     }
 
     return inode_truncate(inode, size);
-#endif
 }
 
 /**
@@ -1229,7 +1246,10 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path) {
     // Now locate the parent of the inode trying to be removed.
     vfs_inode_t *parent;
     r = vfs_lookupat(inode, path, &parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
-    if (r < 0) return r;
+    if (r < 0) {
+        inode_release(child);
+        return r;
+    }
 
     assert(parent->mount == child->mount);
 
@@ -1240,12 +1260,7 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path) {
     r = inode_unlink(parent, child, last);
 
     if (r == 0) {
-        // This inode is cached
         inode_release(child);
-
-        // release the original refs
-        inode_release(child);
-        inode_release(child); // i dont know where this one is from but its consistent
     }
 
     inode_release(parent);
@@ -1467,9 +1482,8 @@ int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_ev
 
     if (!f->ops->poll) {
         assert(!f->ops->poll_events); // TODO this case is ambiguous and i dont care enough
-        // we have to take over
         *revents = events & (POLLIN | POLLOUT);
-        return 1;
+        return *revents != 0;
     }
 
     // no early hit, we will be adding to queue probably

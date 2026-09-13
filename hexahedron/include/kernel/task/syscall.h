@@ -53,6 +53,11 @@ typedef struct syscall {
     int syscall_number;
     long parameters[SYSCALL_MAX_PARAMETERS];
     long return_value;
+
+#ifdef __ARCH_X86_64__
+    // !!! STUPID ARCHITECTURE SPECIFIC HACK
+    int force_iret;
+#endif
 } syscall_t;
 
 /**
@@ -122,7 +127,7 @@ void syscall_finish();
 
 /* System calls */
 void sys_exit(int status);
-int sys_open(const char *pathname, int flags, mode_t mode);
+long sys_open(const char *pathname, int flags, mode_t mode);
 ssize_t sys_read(int fd, void *buffer, size_t count);
 ssize_t sys_write(int fd, const void *buffer, size_t count);
 int sys_close(int fd);
@@ -136,11 +141,9 @@ long sys_mkdir(const char *pathname, mode_t mode);
 long sys_pselect(sys_pselect_context_t *ctx);
 ssize_t sys_readlink(const char *path, char *buf, size_t bufsiz);
 long sys_access(const char *path, int amode);
-long sys_chmod(const char *path, mode_t mode);
 long sys_fcntl(int fd, int cmd, int extra);
 long sys_unlinkat(int dirfd, const char *path, int flags);
 long sys_ftruncate(int fd, size_t length);
-void *sys_brk(void *addr);
 pid_t sys_fork();
 off_t sys_lseek(int fd, off_t offset, int whence);
 long sys_gettimeofday(struct timeval *tv, void *tz);
@@ -159,7 +162,6 @@ long sys_mprotect(void *addr, size_t len, int prot);
 long sys_munmap(void *addr, size_t len);
 long sys_msync(void *addr, size_t len, int flags);
 long sys_dup2(int oldfd, int newfd);
-long sys_signal(int signum, void (*handler)(int));
 long sys_sigaction(int signum, const struct sigaction *act, struct sigaction *oact);
 long sys_sigpending(sigset_t *set);
 long sys_sigprocmask(int how, const sigset_t *set, sigset_t *oset);
@@ -210,6 +212,7 @@ long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags);
 mode_t sys_umask(mode_t mask);
 long sys_clock_gettime(int clock, time_t *secs, long *nanos);
 long sys_fsync(int fd);
+long sys_flock(int fd, int options);
 long sys_pread(int fd, void *buf, size_t nbyte, off_t offset);
 long sys_pwrite(int fd, void *buf, size_t nbyte, off_t offset);
 long sys_pause();
@@ -217,14 +220,15 @@ long sys_fchownat(int fd, const char *path, uid_t owner, gid_t group, int flags)
 long sys_faccessat(int fd, const char *path, int amode, int flags);
 void sys_sync();
 long sys_fstatat(int fd, const char *path, struct stat *buf, int flags);
+long sys_sigreturn(void *uctx);
+long sys_sigaltstack(const stack_t *ss, stack_t *oss);
 
 /* Ethereal system calls */
 long sys_create_thread(uintptr_t stack, uintptr_t tls, void *entry, void *arg);
 long sys_exit_thread(void *retval);
 pid_t sys_gettid();
 int sys_settls(uintptr_t tls);
-long sys_join_thread(pid_t tid, void **retval);
-long sys_kill_thread(pid_t tid, int sig);
+int sys_setgsbase(uintptr_t gs);
 
 long sys_ethereal_shared_new(size_t size, int flags);
 key_t sys_ethereal_shared_key(int fd);

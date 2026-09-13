@@ -485,6 +485,7 @@ devfs_node_t *devfs_register(devfs_node_t *parent, char *name, int type, devfs_o
     node->ops = ops;
     node->priv = priv;
     node->attr.type = type;
+    node->attr.rdev = (major << 8) | minor;
 
     assert(type == VFS_BLOCKDEVICE || type == VFS_CHARDEVICE);
 

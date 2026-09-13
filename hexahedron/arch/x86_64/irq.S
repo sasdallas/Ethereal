@@ -19,8 +19,8 @@
 /* Swap GS base (make sure points to err_code) */
 .macro _swapgs
     // We only need to swapgs on a usermode -> kernel mode interrupt
-    cmpq $8, 24(%rsp) // 24(%rsp) = CS pushed by CPU
-    je 1f
+    testq $3, 24(%rsp) // 24(%rsp) = CS pushed by CPU
+    jz 1f
     swapgs
 1:
 .endm
@@ -93,6 +93,8 @@
     popq %rcx
     popq %rbx 
     popq %rax
+
+    cli
 
     // Swap GS back
     _swapgs
@@ -308,6 +310,10 @@ halSyscallEntrypoint:
 
     movq %rbp, %rsp                 // Restore stack
 
+    /* use IRET delivery in signal handler */
+    testl %eax, %eax
+    jnz .syscall_iret_return
+
     /* Skip over extended registers */
     add $52, %rsp
 
@@ -341,3 +347,30 @@ halSyscallEntrypoint:
     /* Go! */
     swapgs
     sysretq
+
+/* used on signal returns so that the registers SYSRETQ overwrites are restored */
+.syscall_iret_return:
+    add $52, %rsp
+
+    popw %ax
+
+    pop %r8
+    pop %r9
+    pop %r10
+    pop %r11
+    pop %r12
+    pop %r13
+    pop %r14
+    pop %r15
+
+    pop %rbp
+    pop %rdi
+    pop %rsi
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    add $16, %rsp
+    swapgs
+    iretq

@@ -117,6 +117,11 @@ void celestial_handleEvent(void *event) {
     window_t *win = celestial_getWindow(hdr->wid);
     if (!win) { free(event); return; }
 
+    if (hdr->type != CELESTIAL_EVENT_WINDOW_CLOSE && win->state == CELESTIAL_STATE_CLOSED) {
+        // stop accepting events
+        return;
+    }
+
     // If this is a resize event, *we* need to handle it
     if (hdr->type == CELESTIAL_EVENT_RESIZE) {
         celestial_completeWindowResize(win, event);
@@ -132,6 +137,9 @@ void celestial_handleEvent(void *event) {
             win->x = pos_change->x;
             win->y = pos_change->y;
         }
+    } else if (hdr->type == CELESTIAL_EVENT_WINDOW_CLOSE) {
+        extern void celestial_finishWindowClose(window_t *win);
+        celestial_finishWindowClose(win);
     }
 
     // First drop it into decor, see if it needs anything

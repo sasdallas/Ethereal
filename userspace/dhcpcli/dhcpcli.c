@@ -85,12 +85,17 @@ int dhcp_discover(int sock, uint8_t *mac) {
     packet.hops = 0;
     packet.xid = xid;
     packet.secs = 0;
-    packet.flags = 0;
+    packet.flags = htons(DHCP_FLAG_BROADCAST);
     memcpy(packet.chaddr, mac, 6);
     packet.magic = htonl(DHCP_MAGIC);
 
     DHCP_OPTION_START();
     DHCP_OPTION_PUSH_SINGLE(DHCP_OPT_MESSAGE_TYPE, DHCPDISCOVER); // DHCPDISCOVER
+    DHCP_OPTION_PUSH(DHCP_OPT_CLIENT_ID);
+    DHCP_OPTION_PUSH(7);
+    DHCP_OPTION_PUSH(DHCP_HTYPE_ETH);
+    memcpy(&packet.options[optidx], mac, 6);
+    optidx += 6;
     DHCP_OPTION_PUSH(DHCP_OPT_PARAMETER_REQ);   // Request parameters
     DHCP_OPTION_PUSH(0x03);                     // 3 parameters
     DHCP_OPTION_PUSH(DHCP_OPT_DNS);             // DNS
@@ -119,17 +124,25 @@ int dhcp_request(int sock, uint8_t *mac, in_addr_t req_ip, in_addr_t server_ip) 
     packet.hops = 0;
     packet.xid = xid;
     packet.secs = 0;
-    packet.flags = 0;
+    packet.flags = htons(DHCP_FLAG_BROADCAST);
     memcpy(packet.chaddr, mac, 6);
     packet.magic = htonl(DHCP_MAGIC);
-    packet.siaddr = server_ip;
 
     // Build options
     DHCP_OPTION_START();
     DHCP_OPTION_PUSH_SINGLE(DHCP_OPT_MESSAGE_TYPE, DHCPREQUEST); // DHCPREQUEST
+    DHCP_OPTION_PUSH(DHCP_OPT_CLIENT_ID);
+    DHCP_OPTION_PUSH(7);
+    DHCP_OPTION_PUSH(DHCP_HTYPE_ETH);
+    memcpy(&packet.options[optidx], mac, 6);
+    optidx += 6;
     DHCP_OPTION_PUSH(DHCP_OPT_REQUESTED_IP);
     DHCP_OPTION_PUSH(0x4);
-    *(in_addr_t*)(&packet.options[optidx]) = req_ip;
+    memcpy(&packet.options[optidx], &req_ip, sizeof(req_ip));
+    optidx += sizeof(in_addr_t);
+    DHCP_OPTION_PUSH(DHCP_OPT_SERVER_ID);
+    DHCP_OPTION_PUSH(0x4);
+    memcpy(&packet.options[optidx], &server_ip, sizeof(server_ip));
     optidx += sizeof(in_addr_t);
     DHCP_OPTION_PUSH(DHCP_OPT_END);
 
@@ -151,8 +164,16 @@ int dhcp_parse(dhcp_packet_t *pkt, dhcp_options_t *opt) {
 
     DHCP_OPTION_POP_START();
     while (optidx < 256) {
-        if (DHCP_OPTION_TYPE() == DHCP_OPT_PADDING) continue;
+        if (DHCP_OPTION_TYPE() == DHCP_OPT_PADDING) {
+            optidx++;
+            continue;
+        }
         if (DHCP_OPTION_TYPE() == DHCP_OPT_END) return 0;
+
+        if (optidx + 1 >= 256 || optidx + 2 + DHCP_OPTION_SIZE() > 256) {
+            DHCP_ERR("Truncated DHCP option list\n");
+            return 1;
+        }
     
         switch (DHCP_OPTION_TYPE()) {
             case DHCP_OPT_MESSAGE_TYPE:
@@ -259,6 +280,7 @@ int dhcp_receive(int sock, dhcp_packet_t *outpkt, dhcp_options_t *outopt) {
         return 1;
     }
 
+    memset(outopt, 0, sizeof(*outopt));
     return dhcp_parse(outpkt, outopt);
 }
 

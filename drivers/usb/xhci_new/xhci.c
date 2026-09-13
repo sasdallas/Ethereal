@@ -99,6 +99,11 @@ static int xhci_reset(xhci_t *xhci) {
         return 1;
     }
 
+    if (TIMEOUT(!(xhci->op->usbsts & XHCI_USBSTS_CNR), 10000)) {
+        LOG(ERR, "CNR in xHCI controller did not clear after reset\n");
+        return 1;
+    }
+
     return 0;
 }
 
@@ -111,6 +116,12 @@ static void xhci_initScratchpads(xhci_t *xhci) {
     scratchpads |= (xhci->caps->hcsparams2.max_scratchpad_buffers_lo) & 0x1F;
 
     LOG(DEBUG, "Number of scratchpads: %d\n", scratchpads);
+
+    if (scratchpads == 0) {
+        xhci->dcbaa[0] = 0x0;
+        xhci->scratchpad = NULL;
+        return;
+    }
 
     xhci->scratchpad = (uintptr_t*)dma_map(scratchpads * sizeof(uintptr_t));
     
@@ -267,7 +278,9 @@ static void xhci_tasklet(void *context) {
             waitqueue_wakeup(&xhci->command_waiters, 1);
         } else if (trb->type == XHCI_EVENT_TRANSFER) {
             xhci_transfer_completion_trb_t *ttrb = (typeof(ttrb))trb;
-            // LOG(INFO, "Transfer completed with completion code %d residual length %d slot %d ep %d\n", ttrb->completion_code, ttrb->transfer_len, ttrb->slot_id, ttrb->endpoint_id);
+            // LOG(DEBUG, "Transfer event cc=%d residual=%d slot=%d ep=%d trb=%p\n",
+            //     ttrb->completion_code, ttrb->transfer_len, ttrb->slot_id,
+            //     ttrb->endpoint_id, (void*)ttrb->buffer);
 
             usb_transfer_t *transfer = NULL;
 
@@ -282,6 +295,8 @@ static void xhci_tasklet(void *context) {
             //              a malformed xHCI controller that sends a transfer event before any transfers
             //              are ready has worse problems anyways. multiple transfers are still protected by mutex.
 
+            BARRIER();
+            assert(queue_rb_empty(&pipe->transfers) == false);
             assert(!queue_rb_pop(&pipe->transfers, (void**)&transfer));
 
             transfer->actual_length = transfer->length - min(ttrb->transfer_len, transfer->length);
@@ -393,16 +408,14 @@ int xhci_sendCommand(xhci_t *xhci, void *trb, xhci_command_completion_trb_t *trb
     XHCI_DOORBELL(xhci, 0) = 0;
 
     while (1) {
-        if (waitqueue_wait(&xhci->command_waiters, &n, -1) == 0) {
+        int rval = waitqueue_wait(&xhci->command_waiters, &n, 1000);
+        if (rval != -EINTR) {
             waitqueue_remove(&xhci->command_waiters, &n);
-            break;
+            return rval;
         }
 
         waitqueue_add(&xhci->command_waiters, &n);
     }
-
-    
-    return 0;
 }
 
 /**
@@ -490,8 +503,7 @@ static usb_status_t xhci_new_device(usb_bus_t *ubus, usb_device_t *device) {
     };
     
     xhci_command_completion_trb_t out;
-    xhci_sendCommand(xhci, &slot_trb, &out);
-    if (!TRB_SUCCESS(&out)) {
+    if (xhci_sendCommand(xhci, &slot_trb, &out) || !TRB_SUCCESS(&out)) {
         LOG(ERR, "Failed to create slot for device: completion code 0x%x\n", out.cc);
         return USB_INTERNAL_ERROR;
     }
@@ -699,8 +711,8 @@ static int xhci_init(pci_device_t *dev) {
     }
 
     // Create the DCBAA
-    xhci->dcbaa = (uintptr_t*)dma_map(max_slots * 8);
-    memset((void*)xhci->dcbaa, 0, max_slots * 8);
+    xhci->dcbaa = (uintptr_t*)dma_map((max_slots+1) * 8);
+    memset((void*)xhci->dcbaa, 0, (max_slots+1) * 8);
     xhci->op->dcbaap = arch_mmu_physical(NULL, (uintptr_t)xhci->dcbaa);
 
     // Prepare scratchpads
@@ -751,7 +763,7 @@ static int xhci_init(pci_device_t *dev) {
     
     // Program max enabled slots
     uint32_t config = xhci->op->config;
-    config &= 0xFF;
+    config &= ~0xFF;
     config |= max_slots;
     xhci->op->config =  config;
 

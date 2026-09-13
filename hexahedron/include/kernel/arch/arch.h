@@ -103,20 +103,6 @@ void arch_prepare_switch(struct thread *thread);
 void arch_initialize_context(struct thread *thread, uintptr_t entry, uintptr_t stack);
 
 /**
- * @brief The global signal trampoline
- * 
- * This exists as a signal trampoline for jumping to the usermode handler and returning from it.
- * 
- * On the stack, the following should be popped in this order:
- * 1. Signal handler
- * 2. Signal number
- * 3. Userspace return address
- * 
- * @warning This executes in usermode.
- */
-extern void arch_signal_trampoline();
-
-/**
  * @brief Say hi!
  * @param is_debug Print to dprintf or printf
  */
@@ -129,6 +115,12 @@ void arch_say_hello(int is_debug);
  * This should also reflect in the context when saved/restored
  */
 void arch_set_tlsbase(uintptr_t tls);
+
+/**
+ * @brief Set the usermode GS base
+ * @param gs The GS base to set
+ */
+void arch_set_user_gsbase(uintptr_t gs);
 
 /**
  * @brief Convert a thread's saved registers into a user context structure

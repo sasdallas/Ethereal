@@ -132,4 +132,11 @@ int ioapic_eoi(uintptr_t interrupt);
  */
 int ioapic_route(uintptr_t irq, uintptr_t hwirq);
 
+/**
+ * @brief Get GSI for an interrupt
+ * @param interrupt The interrupt to get the GSI for
+ * @returns GSI
+ */
+uint32_t ioapic_getGSI(uintptr_t interrupt);
+
 #endif

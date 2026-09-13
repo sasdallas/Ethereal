@@ -124,8 +124,8 @@ int rtl8169_initializeRx(rtl8169_t *nic) {
     RTL8169_WRITE32(RTL8169_REG_RDSAR, desc_phys & 0xFFFFFFFF);
     RTL8169_WRITE32(RTL8169_REG_RDSAR + 4, desc_phys >> 32);
 
-    // Enable 1024-byte MXDMA, unlimited RXFTH, accept physica lmatch, broadcast, multicast
-    RTL8169_WRITE32(RTL8169_REG_RCR, RTL8169_RCR_MXDMA1024 | RTL8169_RCR_RXFTH_UNLIMITED | RTL8169_RCR_AB | RTL8169_RCR_AM | RTL8169_RCR_APM);
+    // Enable unlimited MXDMA, unlimited RXFTH, accept physical match, broadcast, multicast
+    RTL8169_WRITE32(RTL8169_REG_RCR, RTL8169_RCR_MXDMA_UNLIMITED | RTL8169_RCR_RXFTH_UNLIMITED | RTL8169_RCR_AB | RTL8169_RCR_AM | RTL8169_RCR_APM);
 
     // Configure MPS
     RTL8169_WRITE16(RTL8169_REG_RMS, 0x1FFF);
@@ -167,8 +167,8 @@ int rtl8169_initializeTx(rtl8169_t *nic) {
     RTL8169_WRITE32(RTL8169_REG_TNPDS, desc_phys & 0xFFFFFFFF);
     RTL8169_WRITE32(RTL8169_REG_TNPDS + 4, desc_phys >> 32);
 
-    // I ain't care enough to write the defines for this, enables standard IFG and 1024-byte DMA
-    RTL8169_WRITE32(RTL8169_REG_TCR, (0x3 << 24) | (0x6 << 8));
+    // I ain't care enough to write the defines for this, enables standard IFG and unlimited DMA
+    RTL8169_WRITE32(RTL8169_REG_TCR, (0x3 << 24) | (0x7 << 8));
 
     // Configure MPS
     RTL8169_WRITE16(RTL8169_REG_MTPS, 0x3B);
@@ -520,7 +520,7 @@ int rtl8169_find(pci_device_t *dev, void *data) {
  */
 int driver_init(int argc, char *argv[]) {
     pci_id_mapping_t id_list[] = {
-        { .vid = 0x10ec, .devid = { 0x8161, 0x8168, 0x8169, 0x2600, PCI_NONE } },
+        { .vid = 0x10ec, .devid = { 0x8161, 0x8168, 0x8169, 0x2600, 0x8136, PCI_NONE } },
         { .vid = 0x1259, .devid = { 0xc107, PCI_NONE } },
         { .vid = 0x1737, .devid = { 0x1032, PCI_NONE } },
         { .vid = 0x16ec, .devid = { 0x0116, PCI_NONE } },

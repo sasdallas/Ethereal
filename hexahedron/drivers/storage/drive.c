@@ -229,13 +229,16 @@ static int drive_read_range(devfs_node_t *node, page_range_t *range) {
         r = d->ops->read_range(d, range);
     } else {
         assert(d->sector_size <= PAGE_SIZE && "unimpl");
+
+        size_t sectors_per_page = PAGE_SIZE / d->sector_size;
+        uint64_t lba = range->offset / d->sector_size;
         for (unsigned i = 0; i < range->npages; i++) {
             uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
-            ssize_t r = d->ops->read_sectors(d, range->offset + (i * PAGE_SIZE), PAGE_SIZE/d->sector_size, (uint8_t*)p);
-            arch_mmu_unmap_physical(range->pages[i], PAGE_SIZE);
+            ssize_t ret = d->ops->read_sectors(d, lba + (i * sectors_per_page), sectors_per_page, (uint8_t*)p);
+            arch_mmu_unmap_physical(p, PAGE_SIZE);
             
-            if (r < 0) {
-                return r;
+            if (ret != (ssize_t)sectors_per_page) {
+                return ret < 0 ? (int)ret : -EIO;
             }
         }
     }
@@ -251,13 +254,16 @@ static int drive_write_range(devfs_node_t *node, page_range_t *range) {
         r = d->ops->write_range(d, range);
     } else {
         assert(d->sector_size <= PAGE_SIZE && "unimpl");
+
+        size_t sectors_per_page = PAGE_SIZE / d->sector_size;
+        uint64_t lba = range->offset / d->sector_size;
         for (unsigned i = 0; i < range->npages; i++) {
             uintptr_t p = arch_mmu_remap_physical(range->pages[i], PAGE_SIZE, REMAP_TEMPORARY);
-            ssize_t r = d->ops->write_sectors(d, range->offset + (i * PAGE_SIZE), PAGE_SIZE/d->sector_size, (uint8_t*)p);
-            arch_mmu_unmap_physical(range->pages[i], PAGE_SIZE);
+            ssize_t ret = d->ops->write_sectors(d, lba + (i * sectors_per_page), sectors_per_page, (uint8_t*)p);
+            arch_mmu_unmap_physical(p, PAGE_SIZE);
             
-            if (r < 0) {
-                return r;
+            if (ret != (ssize_t)sectors_per_page) {
+                return ret < 0 ? (int)ret : -EIO;
             }
         }
     }

@@ -166,19 +166,21 @@ int nvme_submitWait(nvme_queue_t *queue, nvme_transfer_t *transfer) {
     asm volatile ("" ::: "memory");
     *queue->sq.doorbell = queue->sq.index;
 
-    if (transfer->thread) sleep_prepareUninterruptible();
-    spinlock_release(&queue->lock);
     if (transfer->thread) {
+        // !!! HACK
+        sleep_prepareIRQ(queue->lock.state);
+        spinlock_releaseRaw(&queue->lock);
         sleep_enter();
         return (transfer->status == NVME_STATUS_SUCCESS) ? 0 : -EIO;
-    } else {
-        while (transfer->status == 0xFFFF) {
-            asm volatile (  "sti\n"
-                            "hlt\n");
-        }
-        
-        return 0;
     }
+
+
+    spinlock_release(&queue->lock);
+    while (transfer->status == 0xFFFF) {
+        asm volatile (  "sti\n"
+                        "hlt\n");
+    }
+    return 0;
 }
 
 /**

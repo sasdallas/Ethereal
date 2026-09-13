@@ -77,9 +77,7 @@ void ethernet_handle(ethernet_packet_t *packet, nic_t *nic, size_t size) {
         // Try and get an EtherType handler
         ethertype_handler_t handler = (ethertype_handler_t)hashmap_get(ethertype_handler_map, (void*)(uintptr_t)ntohs(packet->ethertype));
         if (handler) {
-            if (handler(packet->payload, nic, size - sizeof(ethernet_packet_t))) {
-                LOG(ERR, "ETH: Failed to handle packet.\n");
-            }
+            handler(packet->payload, nic, size - sizeof(ethernet_packet_t));
         }
     }
 }

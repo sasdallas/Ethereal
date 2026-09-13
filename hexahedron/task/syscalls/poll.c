@@ -24,12 +24,17 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     for (size_t i = 0; i < nfds; i++) {
         // Check the file descriptor
         fds[i].revents = 0;
+
+        // ignore negative descriptors, wine uses these
+        if (fds[i].fd < 0) continue;
+
         if (!FD_VALIDATE(fds[i].fd)) {
             fds[i].revents |= POLLNVAL;
+            have_hit++;
             continue;
         }
 
-        // Does the file descriptor have available contents right now?
+        // we got stuff?
         poll_events_t revents = 0;
         int ready = vfs_poll(FD(fds[i].fd), waiter, fds[i].events, &revents);
         fds[i].revents = (short)revents;
@@ -53,9 +58,7 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
         return 0;
     }
     
-    // Yes, so prepare ourselves to wait
     int w = poll_wait(waiter, timeout);
-
 
     if (w == -EINTR) {
         poll_exit(waiter);
@@ -70,13 +73,24 @@ long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
     }
 
     for (size_t i = 0; i < nfds; i++) {
-        // Does the file descriptor have available contents right now?
-        if (!FD_VALIDATE(fds[i].fd)) continue;
+        fds[i].revents = 0;
+
+        if (fds[i].fd < 0) continue;
+
+        if (!FD_VALIDATE(fds[i].fd)) {
+            fds[i].revents = POLLNVAL;
+            have_hit++;
+            continue;
+        }
         
-        // !!!: FLOW BREAKING TRASH
         vfs_file_t *f = FD(fds[i].fd);
-        assert(f->ops && f->ops->poll_events);
-        fds[i].revents = (short)(f->ops->poll_events(f) & (fds[i].events | POLLHUP | POLLERR));
+        if (f->ops->poll_events) {
+            fds[i].revents = (short)(f->ops->poll_events(f) & (fds[i].events | POLLHUP | POLLERR));
+        } else if (!f->ops->poll) {
+            // fallback to this
+            fds[i].revents = fds[i].events & (POLLIN | POLLOUT);
+        }
+
         if (fds[i].revents) {
             have_hit++;
         }

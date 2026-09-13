@@ -1,6 +1,6 @@
 /**
  * @file hexahedron/task/signal.c
- * @brief Signal handler for tasks
+ * @brief Signal subsystem
  * 
  * 
  * @copyright
@@ -8,332 +8,227 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2025 Samuel Stuart
+ * Copyright (C) 2026 Samuel Stuart
  */
 
 #include <kernel/task/process.h>
+#include <kernel/misc/spinlock.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
-#include <kernel/panic.h>
 #include <errno.h>
-#include <string.h>
 
-/* Default action list */
-const __signal_handler signal_default_action[] = {
-    [SIGHUP]                    = SIGNAL_ACTION_TERMINATE,
-    [SIGINT]                    = SIGNAL_ACTION_TERMINATE,
-    [SIGQUIT]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGILL]                    = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGTRAP]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGABRT]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGBUS]                    = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGFPE]                    = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGKILL]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGUSR1]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGSEGV]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGUSR2]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGPIPE]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGALRM]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGTERM]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGSTKFLT]                 = SIGNAL_ACTION_TERMINATE,
-    [SIGCHLD]                   = SIGNAL_ACTION_IGNORE,
-    [SIGCONT]                   = SIGNAL_ACTION_CONTINUE,
-    [SIGSTOP]                   = SIGNAL_ACTION_STOP,
-    [SIGTSTP]                   = SIGNAL_ACTION_STOP,
-    [SIGTTIN]                   = SIGNAL_ACTION_STOP,
-    [SIGTTOU]                   = SIGNAL_ACTION_STOP,
-    [SIGURG]                    = SIGNAL_ACTION_IGNORE,
-    [SIGXCPU]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGXFSZ]                   = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGVTALRM]                 = SIGNAL_ACTION_TERMINATE,
-    [SIGPROF]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGWINCH]                  = SIGNAL_ACTION_IGNORE,
-    [SIGPOLL]                   = SIGNAL_ACTION_TERMINATE,
-    [SIGPWR]                    = SIGNAL_ACTION_TERMINATE,
-    [SIGSYS]                    = SIGNAL_ACTION_TERMINATE_CORE,
-    [SIGCANCEL]                 = SIGNAL_ACTION_IGNORE, // ???
-    [SIGTIMER]                  = SIGNAL_ACTION_IGNORE, // ???
-    SIGNAL_ACTION_DEFAULT,
+/* Default actions */
+#define SIGNAL_TERMINATE 0
+#define SIGNAL_TERMINATE_CORE 1
+#define SIGNAL_IGNORE 2
+#define SIGNAL_CONTINUE 3
+#define SIGNAL_STOP 4
+
+int signal_default_actions[] = {
+    [SIGHUP]    = SIGNAL_TERMINATE,
+    [SIGINT]    = SIGNAL_TERMINATE,
+    [SIGQUIT]   = SIGNAL_TERMINATE_CORE,
+    [SIGILL]    = SIGNAL_TERMINATE_CORE,
+    [SIGTRAP]   = SIGNAL_TERMINATE_CORE,
+    [SIGABRT]   = SIGNAL_TERMINATE_CORE,
+    [SIGBUS]    = SIGNAL_TERMINATE_CORE,
+    [SIGFPE]    = SIGNAL_TERMINATE_CORE,
+    [SIGKILL]   = SIGNAL_TERMINATE,
+    [SIGUSR1]   = SIGNAL_TERMINATE,
+    [SIGSEGV]   = SIGNAL_TERMINATE_CORE,
+    [SIGUSR2]   = SIGNAL_TERMINATE,
+    [SIGPIPE]   = SIGNAL_TERMINATE,
+    [SIGALRM]   = SIGNAL_TERMINATE,
+    [SIGTERM]   = SIGNAL_TERMINATE,
+    [SIGSTKFLT] = SIGNAL_TERMINATE,
+    [SIGCHLD]   = SIGNAL_IGNORE,
+    [SIGCONT]   = SIGNAL_CONTINUE,
+    [SIGSTOP]   = SIGNAL_STOP,
+    [SIGTSTP]   = SIGNAL_STOP,
+    [SIGTTIN]   = SIGNAL_STOP,
+    [SIGTTOU]   = SIGNAL_STOP,
+    [SIGURG]    = SIGNAL_IGNORE,
+    [SIGXCPU]   = SIGNAL_TERMINATE_CORE,
+    [SIGXFSZ]   = SIGNAL_TERMINATE_CORE,
+    [SIGVTALRM] = SIGNAL_TERMINATE,
+    [SIGPROF]   = SIGNAL_TERMINATE,
+    [SIGWINCH]  = SIGNAL_IGNORE,
+    [SIGPOLL]   = SIGNAL_TERMINATE,
+    [SIGPWR]    = SIGNAL_TERMINATE,
+    [SIGSYS]    = SIGNAL_TERMINATE_CORE,
+    [SIGCANCEL] = SIGNAL_IGNORE, // ???
+    [SIGTIMER]  = SIGNAL_IGNORE, // ???
+    SIGNAL_TERMINATE
 };
 
-/* Pending signal set */
-#define SIGBIT(signum) (1 << (signum))
-#define SIGNAL_MARK_PENDING(thr, signum) (thr->pending_signals) |= SIGBIT(signum)
-#define SIGNAL_UNMARK_PENDING(thr, signum) (thr->pending_signals) &= ~(SIGBIT(signum))
-#define SIGNAL_MARK_FORCE(thr, signum) (thr->forced_signals) |= SIGBIT(signum)
-#define SIGNAL_UNMARK_FORCE(thr, signum) (thr->forced_signals) &= ~(SIGBIT(signum))
-#define SIGNAL_IS_BLOCKED(thr, signum) ((thr->blocked_signals & SIGBIT(signum)) && !(signum == SIGKILL) && !(signum == SIGSTOP))
-#define SIGNAL_IS_PENDING(thr, signum) (thr->pending_signals & SIGBIT(signum) && !SIGNAL_IS_BLOCKED(thr, signum))
-#define SIGNAL_IS_FORCED(thr, signum) ((thr)->forced_signals & SIGBIT(signum))
-#define SIGNAL_ANY_PENDING(thr) ((thr)->pending_signals & ~(thr)->blocked_signals)
-#define SIGNAL_IS_IGNORED(sig)
-#define SIGNAL_CLEAR_BLOCKED(thr,sig) (thr)->blocked_signals &= ~(SIGBIT(signal))
-#define SIGNAL_RESET_HANDLER(thr,sig) (thr)->signals[sig].handler = SIGNAL_ACTION_DEFAULT
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SIGNAL", __VA_ARGS__)
 
 /**
- * @brief Send a signal to a specific thread
- * @param thread The thread to send the signal to
- * @param signal The signal to send to the thread
- * @returns 0 on success
+ * @brief Find a valid thread to route the signal to
+ * @param proc The process being signalled
+ * @param signal The signal to route
  */
-int signal_sendThread(struct thread *thr, int signal) {
-    if (signal < 0 || signal >= NSIG) return -EINVAL;
-    // LOG(DEBUG, "Sending signal %d to thread (handler = %p)\n", signal, thr->signals[signal].handler);
+static thread_t *signal_findThread(process_t *proc, int signal) {
+    spinlock_acquire(&proc->thread_lock);
+    thread_t *thr = proc->thread_list;
+    while (thr) {
+        if (thr->status & (THREAD_STATUS_STOPPED | THREAD_STATUS_STOPPING)) {
+            thr = thr->next;
+            continue;
+        }
 
-    proc_signal_t *sig = &THREAD_SIGNAL(thr, signal);
+        spinlock_acquire(&thr->signal.lock);
+        if (!SIGNAL_BLOCKED(thr, signal) || !SIGNAL_IGNORABLE(signal) || signal == SIGCONT) {
+            break;
+        }
+        spinlock_release(&thr->signal.lock);
 
-    // Are they trying to continue a process?
-    if (sig->handler == SIGNAL_ACTION_CONTINUE && thr->status & THREAD_STATUS_SLEEPING) {
-        // TODO: Continue
-        LOG(ERR, "Cannot continue a process as this is unimplemented\n");
-        return -ENOTSUP;
+        thr = thr->next;
     }
+    spinlock_release(&proc->thread_lock);
 
-    // Is this signal blocked?
-    if (SIGNAL_IS_BLOCKED(thr, signal)) {
-        LOG(INFO, "Signal is blocked\n");
-        return 0;
+    return thr;
+}
+
+/**
+ * @brief Kick a thread after signalling it
+ */
+static void signal_kick(thread_t *thread) {
+    __atomic_store_n(&thread->signal.have_pending, true, __ATOMIC_RELEASE);
+    if (thread->status & THREAD_STATUS_SLEEPING) {
+        sleep_wakeupReason(thread, WAKEUP_SIGNAL);
     }
-
-    // Do we just ignore it? Don't waste time on that
-    if (sig->handler == SIGNAL_ACTION_IGNORE || (sig->handler == SIGNAL_ACTION_DEFAULT && signal_default_action[signal] == SIGNAL_ACTION_IGNORE)) {
-        return 0;
-    }
-
-    // Mark the signal as pending
-    spinlock_acquire(&thr->siglock);
-    SIGNAL_MARK_PENDING(thr, signal);
-    spinlock_release(&thr->siglock);
-
-    // TODO: Interrupt system calls
-
-    if (thr->status & THREAD_STATUS_SLEEPING) {
-        sleep_wakeupReason(thr, WAKEUP_SIGNAL);
-    }
-
-    // Wake them up if they aren't us
-    if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
-        // Wakeup bro
-        thr->parent->state = PROCESS_RUNNING;
-        sched_insert(thr);
-    }
-
-    return 0;
 }
 
 /**
  * @brief Send a signal to a process
- * @param proc The process to send the signal to
- * @param signal The signal to send to the process
- * @returns 0 on success, otherwise error code
- */
-int signal_send(struct process *proc, int signal) {
-    if (signal < 0 || signal >= NSIG) return -EINVAL;
-
-    return signal_sendThread(proc->main_thread, signal);
-}
-
-/**
- * @brief Internal method to handle signal
- * @returns 1 if the signal was handled and to return, 0 if not handled
- */
-static int signal_try_handle(thread_t *thr, int signum, registers_t *regs) {
-    process_t *proc = thr->parent;
-
-    // Get signal and handler
-    proc_signal_t *sig = &THREAD_SIGNAL(thr, signum);
-    __signal_handler handler = (sig->handler ? sig->handler : signal_default_action[signum]);
-
-    // Reset?
-    if (sig->flags & SA_RESETHAND) {
-        sig->handler = SIGNAL_ACTION_DEFAULT;
-    }
-
-    // We're gonna handle this signal so unset it
-    SIGNAL_UNMARK_PENDING(thr, signum);
-
-    // No longer any use
-    spinlock_release(&thr->siglock);
-
-    // Handle appropriately
-    if (handler == SIGNAL_ACTION_DEFAULT) {
-        kernel_panic_extended(UNKNOWN_CORRUPTION_DETECTED, "signal", "*** The default signal handler says to call the default signal handler.\n");
-    } else if (handler == SIGNAL_ACTION_CONTINUE) {
-        // We just got a SIGCONT with no handler (SIGCONT already woke us up)
-        return 0;
-    } else if (handler == SIGNAL_ACTION_STOP) {
-        // Set up our waitpid parameters
-        proc->exit_status = signum;
-        proc->exit_reason = PROCESS_EXIT_SIGNAL;
-
-        // Stop process
-        proc->state = PROCESS_SUSPENDED;
-
-        if (proc->nthreads > 1) {
-            LOG(ERR, "SIGNAL_ACTION_STOP with multiple threads is not implemented\n");
-        }
-
-        // Wakeup any parents that are waiting
-        // TODO: Send SIGCHLD and put our other threads to sleep
-        if (proc->parent) {
-            EVENT_SIGNAL(&proc->parent->wait_event);
-        }
-
-        // Suspend ourselves
-        LOG(DEBUG, "Suspending process - received SIGNAL_ACTION_STOP\n");
-
-        // Notify the parent if they want to find us
-        if (proc->parent) {
-            signal_send(proc->parent, SIGCHLD);
-            EVENT_SIGNAL(&proc->parent->wait_event);
-        }
-
-        // Now enter a loop forever with no escape!!
-        do {
-            process_yield(0);
-        } while (!SIGNAL_ANY_PENDING(thr));
-
-        // Oh, we escaped. Go back to normal exit state.
-        proc->exit_status = PROCESS_EXIT_NORMAL;
-
-        // Done, go back and handle another
-        return 0;
-    } else if (handler == SIGNAL_ACTION_IGNORE) {
-        // Ignore signal
-        return 0;
-    } else if (handler == SIGNAL_ACTION_TERMINATE || handler == SIGNAL_ACTION_TERMINATE_CORE) {
-        // Terminate the process
-        proc->exit_status = PROCESS_EXIT_SIGNAL;
-        process_exit(proc, signum);
-        return 2;
-    }
-
-    // Else, let's have it call the handler.
-    LOG(DEBUG, "Handling signal %d for process PID %d thread TID %d (handler: %p)\n", signum, proc->pid, thr->tid, handler);
-
-    // If the process does not have a userspace allocation, create one.
-    // !!!: This probably needs to be refactored?
-    spinlock_acquireRaw(&proc->uspace_lck);
-    extern uintptr_t __userspace_start, __userspace_end;
-    if (!proc->userspace || !vmm_validate((uintptr_t)proc->userspace, PAGE_SIZE, VMM_PTR_USER)) {
-        size_t sz = PAGE_ALIGN_UP((uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
-
-        // !!! minor hack, signal system shouldn't even be running in interrupt context but whatever.
-        proc->userspace = vmm_map((void*)0x1000, sz, VM_FLAG_ALLOC, MMU_FLAG_USER | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
-        if (!proc->userspace) {
-            kernel_panic_extended(OUT_OF_MEMORY, "signal", "*** Out of memory when allocating a signal trampoline.\n");
-        }
-
-        // Copy in the userspace section
-        memcpy(proc->userspace, &__userspace_start, (uintptr_t)&__userspace_end - (uintptr_t)&__userspace_start);
-        LOG(DEBUG, "Userspace allocation (pid %d) at %p\n", proc->pid, proc->userspace);
-    }
-    spinlock_releaseRaw(&proc->uspace_lck);
-
-    // Push onto the stack the variables
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, REGS_IP(regs));
-
-    // !!!: Stupid hack to push flags
-#if defined(__ARCH_I386__)
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, regs->eflags);
-#elif defined(__ARCH_X86_64__)
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, regs->rflags);
-#endif
-    
-    // Push handler and signal number
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, handler);
-    THREAD_PUSH_STACK(REGS_SP(regs), uintptr_t, signum);
-
-    // Set IP to point to the rebased signal handler
-    uintptr_t signal_trampoline_offset = (uintptr_t)arch_signal_trampoline - (uintptr_t)&__userspace_start;
-    REGS_IP(regs) = (uintptr_t)proc->userspace + signal_trampoline_offset;
-    
-    LOG(DEBUG, "Redirected IP to 0x%x\n", REGS_IP(regs));
-    return 1;
-} 
-
-/**
- * @brief Send a signal to a thread, with force
- * @param thread The thread to send the signal to
+ * @param proc The process to signal
  * @param signal The signal to send
- * 
- * Forced signals cannot be ignored by the thread. They are automatically unblocked,
- * have their handlers reset, and are marked in the force list. 
+ * @param info Signal information (optional, leave as NULL to not provide)
  */
-int signal_sendThreadForce(thread_t *thr, int signal) {
-    spinlock_acquire(&thr->siglock);
-
-    // Reset signal handler
-    SIGNAL_RESET_HANDLER(thr, signal);
-
-    // Mark as pending in force list, which bypasses blocked
-    SIGNAL_MARK_FORCE(thr, signal);
-
-    // Handle
-    if (thr->status & THREAD_STATUS_SLEEPING) {
-        sleep_wakeupReason(thr, WAKEUP_SIGNAL);
+void signal_sendInfo(process_t *proc, int signal, siginfo_t *info) {
+    if (signal < 0 && signal >= SIGRTMIN) {
+        LOG(ERR, "Unsupported signal: %d\n", signal);
+        return;
     }
 
-    // Wake them up if they aren't us
-    if (thr != current_cpu->current_thread && (thr->parent->state == PROCESS_SUSPENDED)) {
-        // Wakeup bro
-        thr->parent->state = PROCESS_RUNNING;
-        sched_insert(thr);
-    }
+    assert(info == NULL && "Info is not supported yet on process-wide signals");
 
-    spinlock_release(&thr->siglock);
-    return 0;;
-}
+    spinlock_acquire(&proc->signal.lock);
 
-/**
- * @brief Handle signals sent to a process
- * @param thread The thread to check signals for
- * @param regs The current registers for the frame (this is called on IRQ)
- * @returns 0 on success
- */
-int signal_handle(struct thread *thr, registers_t *regs) {
-    process_t *proc = thr->parent;
-    if (!proc) return 0;
-
-    spinlock_acquire(&thr->siglock);
+    signal_action_t *act = &proc->signal.actions[signal];
+    bool ignored = (act->handler == (uintptr_t)SIG_IGN) || (act->handler == (uintptr_t)SIG_DFL && signal_default_actions[signal] == SIGNAL_IGNORE);
     
-    if (!SIGNAL_ANY_PENDING(thr)) {
-        spinlock_release(&thr->siglock);
+    // LOG(INFO, "send signal %d (ignored: %d) to process %d\n", signal, ignored, proc->pid);
+
+    bool resume = false;
+    thread_t *route = NULL;
+
+    if (signal == SIGCONT) {
+        resume = proc->state == PROCESS_SUSPENDED;
+        proc->state = PROCESS_RUNNING;
+        if (resume) {
+            __atomic_store_n(&proc->continued, true, __ATOMIC_SEQ_CST);
+        }
+
+        // hack, if being continued these signals need to be cleared
+        SIGNAL_CLR(proc->signal.pending, SIGSTOP);
+        SIGNAL_CLR(proc->signal.pending, SIGTSTP);
+        SIGNAL_CLR(proc->signal.pending, SIGTTIN);
+        SIGNAL_CLR(proc->signal.pending, SIGTTOU);
+    }
+
+    if (ignored && SIGNAL_IGNORABLE(signal) && signal != SIGCONT) {
         goto _leave;
     }
 
-    // Signals like SIGKILL and critical ones have higher priority
-    int sig_to_process = NSIG;
-    if (SIGNAL_IS_PENDING(thr, SIGKILL)) {
-        spinlock_release(&thr->siglock);
-        proc->exit_status = PROCESS_EXIT_SIGNAL;
-        process_exit(current_cpu->current_process, SIGKILL);
+    route = signal_findThread(proc, signal);
+
+    if (route == NULL) {
+        // Defer to next waking thread
+        // TODO: Find threads waiting for signals when support is impl.d
+        SIGNAL_SET(proc->signal.pending, signal);
+        __atomic_store_n(&proc->signal.have_pending, true, __ATOMIC_RELEASE);
+    } else {
+        // Kick this poor sucker
+        SIGNAL_SET(route->signal.pending, signal);
+        signal_kick(route);
+        spinlock_release(&route->signal.lock);
     }
-
-    // Find the signal to process, checking forced first
-    // !!! RT signals not supported
-    for (int i = 0; i < SIGRTMIN; i++) {
-        if (SIGNAL_IS_FORCED(thr, i)) {
-            sig_to_process = i;
-            goto _process;
-        }
-
-        if (SIGNAL_IS_PENDING(thr, i) && sig_to_process > i) {
-            sig_to_process = i;
-        }
-    }
-
-    assert(sig_to_process != NSIG); 
-
-_process:
-
-    // Handle the appropriate signal
-    signal_try_handle(thr, sig_to_process, regs);
 
 _leave:
-    return 0;
+    spinlock_release(&proc->signal.lock);
+
+    if (resume && proc->parent) {
+        signal_send(proc->parent, SIGCHLD);
+        EVENT_SIGNAL(&proc->parent->wait_event);
+    }
+
+    if (resume && route && route != current_cpu->current_thread && !(route->status & (THREAD_STATUS_SLEEPING | THREAD_STATUS_STOPPING | THREAD_STATUS_STOPPED))) {
+        sched_insert(route);
+    }
+
+    return;
+
+}
+
+/**
+ * @brief Send a signal to a thread
+ * @param thread The thread to signal
+ * @param signal The signal to send
+ * @param info Signal information (optional, leave as NULL to not provide)
+ */
+void signal_sendThreadInfo(thread_t *thread, int signal, siginfo_t *info) {
+    assert(signal > 0 && signal < SIGRTMIN && "Invalid or unsupported signal");
+
+    process_t *proc = thread->parent;
+    spinlock_acquire(&proc->signal.lock);
+    spinlock_acquire(&thread->signal.lock);
+    
+    bool resume = false;
+    if (signal == SIGCONT) {
+        resume = (proc->state == PROCESS_SUSPENDED);
+        proc->state = PROCESS_RUNNING;
+        if (resume) __atomic_store_n(&proc->continued, true, __ATOMIC_SEQ_CST);
+        
+        // hack, if being continued these signals need to be cleared
+        SIGNAL_CLR(thread->signal.pending, SIGSTOP);
+        SIGNAL_CLR(thread->signal.pending, SIGTSTP);
+        SIGNAL_CLR(thread->signal.pending, SIGTTIN);
+        SIGNAL_CLR(thread->signal.pending, SIGTTOU);
+    }
+
+    signal_action_t *act = &proc->signal.actions[signal];
+    bool ignored = (act->handler == (uintptr_t)SIG_IGN) || (act->handler == (uintptr_t)SIG_DFL && signal_default_actions[signal] == SIGNAL_IGNORE);
+    if (!SIGNAL_IGNORABLE(signal)) ignored = false;
+
+    if (ignored) {
+        goto _leave;
+    }
+
+    if (info && !SIGNAL_GET(thread->signal.pending, signal)) {
+        memcpy(&thread->signal.info[signal], info, sizeof(siginfo_t));
+    }
+
+    SIGNAL_SET(thread->signal.pending, signal);
+    if (!SIGNAL_BLOCKED(thread, signal)) {
+        signal_kick(thread);
+    }
+
+_leave:
+    spinlock_release(&thread->signal.lock);
+    spinlock_release(&proc->signal.lock);
+
+    if (resume && proc->parent) {
+        signal_send(proc->parent, SIGCHLD);
+        EVENT_SIGNAL(&proc->parent->wait_event);
+    }
+
+    if (resume && thread != current_cpu->current_thread && !(thread->status & (THREAD_STATUS_SLEEPING | THREAD_STATUS_STOPPING | THREAD_STATUS_STOPPED))) {
+        sched_insert(thread);
+    }
 }
 
 /**
@@ -345,12 +240,296 @@ _leave:
 int signal_sendGroup(pid_t pgid, int signal) {
     // TODO: Stupidity
 
-    // !!! UNSAFE WALK!!
+    // !!! VERY UNSAFE WALK!!
 extern list_t *process_list;
     foreach(node, process_list) {
         process_t *proc = node->value;
-        if (proc->pgid == pgid) signal_send(proc, signal);
+        if (proc->pgid == pgid) {
+            signal_send(proc, signal);
+        }
     }
 
     return 0;
+}
+
+/**
+ * @brief sigprocmask
+ */
+int signal_procmask(int how, const sigset_t *set, sigset_t *oset) {
+    thread_t *thr = current_cpu->current_thread;
+
+    // TODO: introduce a usercopy system.. usermode memory cannot be accessed from this unsafe IRQs off context
+    sigset_t new;
+    if (set) {
+        new = *set;
+
+        // SIGKILL and SIGSTOP may not be blocked.
+        SIGNAL_CLR(new, SIGKILL);
+        SIGNAL_CLR(new, SIGSTOP);
+    }
+
+    // entering IRQ context
+    spinlock_acquire(&thr->signal.lock);
+    sigset_t og = thr->signal.blocked;
+    
+    if (set) {
+        switch (how) {
+            case SIG_BLOCK: thr->signal.blocked |= new; break;
+            case SIG_UNBLOCK: thr->signal.blocked &= ~(new); break;
+            case SIG_SETMASK: thr->signal.blocked = new; break;
+
+            default:
+                spinlock_release(&thr->signal.lock);
+                return -EINVAL;
+        }
+    }
+
+    bool pending = !!(thr->signal.pending & ~thr->signal.blocked);
+    __atomic_store_n(&thr->signal.have_pending, pending, __ATOMIC_RELEASE);
+
+    // exiting IRQ context
+    spinlock_release(&thr->signal.lock);
+
+    if (oset) *oset = og;
+    return 0;
+}
+
+/**
+ * @brief sigaction
+ */
+int signal_action(int signal, struct sigaction *new, struct sigaction *old) {
+    process_t *proc = current_cpu->current_process;
+    if (signal <= 0 || signal >= _NSIG) return -EINVAL;
+    if (new && (signal == SIGKILL || signal == SIGSTOP)) return -EINVAL;
+
+    // TODO: introduce a usercopy system.. usermode memory cannot be accessed from this unsafe IRQs off context
+    struct sigaction saved_new;
+    if (new) saved_new = *new;
+
+    spinlock_acquire(&proc->signal.lock);
+    signal_action_t *act = &proc->signal.actions[signal];
+    signal_action_t saved = *act;
+    if (new) {
+        act->flags = saved_new.sa_flags;
+        act->mask = saved_new.sa_mask;
+        act->restorer = saved_new.sa_restorer;
+        act->handler = (uintptr_t)saved_new.sa_handler;
+    }
+    spinlock_release(&proc->signal.lock);
+
+    if (old) {
+        old->sa_flags = saved.flags;
+        old->sa_mask = saved.mask;
+        old->sa_restorer = saved.restorer;
+        old->sa_handler = (void (*)(int))saved.handler;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief sigaltstack
+ */
+int signal_sigaltstack(const stack_t *ss, stack_t *oss) {
+    thread_t *thr = current_cpu->current_thread;
+
+    // Possible non-present access, todo usercopy, yada yada.
+    stack_t restore;
+    if (ss) restore = *ss;
+
+    spinlock_acquire(&thr->signal.lock);
+
+    bool on_alt_stack = signal_onAltStack(thr, thr->regs->rip);
+    
+    stack_t saved = thr->signal.altstack;
+    
+    // Fix ss_flags
+    if (saved.ss_size) {
+        saved.ss_flags = (on_alt_stack) ? SS_ONSTACK : 0;
+    } else {
+        saved.ss_flags = SS_DISABLE;
+    }
+
+    if (ss) {
+        // POSIX says this is illegal (for good reason)
+        if (on_alt_stack) {
+            spinlock_release(&thr->signal.lock);
+            return -EPERM;
+        }
+
+        if (restore.ss_flags & SS_DISABLE) {
+            memset(&thr->signal.altstack, 0, sizeof(stack_t));
+        } else {
+            if (restore.ss_size < MINSIGSTKSZ) {
+                spinlock_release(&thr->signal.lock);
+                return -ENOMEM;
+            }
+
+            thr->signal.altstack = restore;
+            thr->signal.altstack.ss_flags = 0;
+        }
+    }
+
+    spinlock_release(&thr->signal.lock);
+
+    if (oss) *oss = saved;
+    return 0;
+}
+
+/**
+ * @brief Check signal on return
+ * @param regs Returning trap frame
+ */
+void signal_check(registers_t *regs) {
+    process_t *proc = current_cpu->current_process;
+    thread_t *thr = current_cpu->current_thread;
+
+    if (!__atomic_load_n(&thr->signal.have_pending, __ATOMIC_ACQUIRE)) {
+        if (LIKELY(!__atomic_load_n(&proc->signal.have_pending, __ATOMIC_ACQUIRE))) {
+            return;
+        }
+    }
+
+    spinlock_acquire(&proc->signal.lock);
+    spinlock_acquire(&thr->signal.lock);
+
+_retry:
+
+    // Check for SIGKILL first as it has priority
+    if (SIGNAL_GET(thr->signal.pending, SIGKILL) || SIGNAL_GET(proc->signal.pending, SIGKILL)) {
+        spinlock_release(&thr->signal.lock);
+        spinlock_release(&proc->signal.lock);
+        process_exit(proc, SIGKILL);
+        __builtin_unreachable();
+    }
+
+    // Check thread lists to find the first signal to process
+    int target_signal = -1;
+    for (int i = 1; i < SIGRTMIN; i++) {
+        if (SIGNAL_BLOCKED(thr, i)) continue;
+
+        if (SIGNAL_GET(thr->signal.pending, i)) {
+            target_signal = i;
+            SIGNAL_CLR(thr->signal.pending, i);
+            break;
+        }
+    }
+
+    if (target_signal == -1) {
+        // Check process list
+        for (int i = 1; i < SIGRTMIN; i++) {
+            if (SIGNAL_BLOCKED(thr, i)) continue;
+            if (SIGNAL_GET(proc->signal.pending, i)) {
+                target_signal = i;
+                SIGNAL_CLR(proc->signal.pending, i);
+                break;
+            }
+        }
+
+        if (target_signal == -1) {
+            // Lost race
+            __atomic_store_n(&proc->signal.have_pending,
+                    proc->signal.pending != 0, __ATOMIC_RELEASE);
+            __atomic_store_n(&thr->signal.have_pending,
+                    !!(thr->signal.pending & ~thr->signal.blocked), __ATOMIC_RELEASE);
+            
+            goto _leave;
+        }
+    }
+
+    // If we found something
+    LOG(INFO, "Found signal %d to be processed\n", target_signal);
+
+    signal_action_t *act = &proc->signal.actions[target_signal];
+
+    if (act->handler == (uintptr_t)SIG_IGN) {
+        goto _retry;
+    } else if (act->handler == (uintptr_t)SIG_DFL) {
+        int action = signal_default_actions[target_signal];
+
+        if (action == SIGNAL_IGNORE || action == SIGNAL_CONTINUE) {
+            goto _retry;
+        } else if (action == SIGNAL_TERMINATE || action == SIGNAL_TERMINATE_CORE) {
+            spinlock_release(&thr->signal.lock);
+            spinlock_release(&proc->signal.lock);
+
+            // interrupts must be on to terminate a process
+            hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+            process_exit(proc, target_signal);
+        } else if (action == SIGNAL_STOP) {
+            proc->exit_status = target_signal;
+            proc->exit_reason = PROCESS_EXIT_SIGNAL;
+            proc->state = PROCESS_SUSPENDED;
+
+            spinlock_release(&thr->signal.lock);
+            spinlock_release(&proc->signal.lock);
+
+            if (proc->parent) {
+                signal_send(proc->parent, SIGCHLD);
+                EVENT_SIGNAL(&proc->parent->wait_event);
+            }
+
+            process_yield(0);
+            return;
+        } else {
+            assert(0 && "bad signal_default_action");
+        }
+    }
+
+    signal_action_t saved_action = *act;
+    sigset_t saved_mask = thr->signal.blocked;
+
+    // The signal stays blocked for the duration of the handler
+    thr->signal.blocked |= saved_action.mask;
+    if (!(saved_action.flags & SA_NODEFER)) {
+        SIGNAL_SET(thr->signal.blocked, target_signal);
+    }
+
+    if (saved_action.flags & SA_RESETHAND) {
+        memset(act, 0, sizeof(signal_action_t));
+    }
+
+    // re-evaluate have_pending on these
+    __atomic_store_n(&proc->signal.have_pending, proc->signal.pending != 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&thr->signal.have_pending, !!(thr->signal.pending & ~thr->signal.blocked), __ATOMIC_RELEASE);
+
+    spinlock_release(&thr->signal.lock);
+    spinlock_release(&proc->signal.lock);
+
+    // because this memory can be pageable, interrupts are required to be enabled
+    // (arch_prepare_signal_frame is an abomination)
+    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+    if (arch_prepare_signal_frame(thr, target_signal, regs, saved_action.handler, saved_action.restorer, saved_action.flags, saved_mask) != 0) {
+        LOG(ERR, "arch_prepare_signal_frame did not succeed for signal %d\n", target_signal);
+        process_exit(proc, target_signal);
+    }
+
+    if (thr->syscall) {
+        thr->syscall->force_iret = 1;
+    }
+
+    return;
+
+_leave:
+    __atomic_store_n(&proc->signal.have_pending, proc->signal.pending != 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&thr->signal.have_pending, !!(thr->signal.pending & ~thr->signal.blocked), __ATOMIC_RELEASE);
+    spinlock_release(&thr->signal.lock);
+    spinlock_release(&proc->signal.lock);
+}
+
+/**
+ * @brief Check whether an address is on the alternate stack
+ * @param thread The thread to check
+ * @param addr The address to check
+ * @warning Assumes thread signal lock is already held
+ */
+bool signal_onAltStack(thread_t *thread, uintptr_t addr) {
+    if (thread->signal.altstack.ss_size == 0) {
+        return false;
+    }
+
+    uintptr_t stk_base = (uintptr_t)thread->signal.altstack.ss_sp;
+    uintptr_t stk_end = stk_base + (thread->signal.altstack.ss_size);
+
+    return (addr >= stk_base && addr < stk_end);
 }

@@ -39,13 +39,16 @@ long sys_mmap(sys_mmap_context_t *context) {
         return -EINVAL;
     }
 
-    if ((uintptr_t)addr >= MMU_USERSPACE_END) {
+    if ((uintptr_t)addr >= MMU_USERSPACE_END || len > MMU_USERSPACE_END - (uintptr_t)addr) {
         return -EINVAL;
     }
 
 
     int file = ((flags & MAP_ANONYMOUS) == 0);
     if (file) {
+        if (off < 0 || (off & (PAGE_SIZE - 1))) {
+            return -EINVAL;
+        }
         if (!FD_VALIDATE(filedes)) {
             return -EBADF;
         }
@@ -55,8 +58,6 @@ long sys_mmap(sys_mmap_context_t *context) {
     addr = (void*)PAGE_ALIGN_DOWN((uintptr_t)addr);
 
     len = PAGE_ALIGN_UP(len);
-    off = PAGE_ALIGN_UP(off);
-
     mmu_flags_t mmu_flags = vmm_toMMU(prot);
     vmm_flags_t vm_flags =  ((flags & MAP_FIXED) ? VM_FLAG_REPLACE : 0) |
                             ((file) ? VM_FLAG_FILE : 0) |
@@ -92,7 +93,7 @@ long sys_mmap(sys_mmap_context_t *context) {
 
 long sys_munmap(void *addr, size_t len) {
     // TODO: more checks
-    if ((uintptr_t)addr > MMU_USERSPACE_END) return -EFAULT;
+    if ((uintptr_t)addr >= MMU_USERSPACE_END || len > MMU_USERSPACE_END - (uintptr_t)addr) return -EINVAL;
     if (((uintptr_t)addr & (PAGE_SIZE-1)) || len == 0) return -EINVAL; 
     vmm_unmap(addr, len);
     return 0;

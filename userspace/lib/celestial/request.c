@@ -101,18 +101,17 @@ void *celestial_getResponse(int type) {
     } 
 
     // Wait for a response
-    if (celestial_resp_queue && celestial_resp_queue->length) {
-        foreach(resp_node, celestial_resp_queue) {
-            celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
-            if (h->type == type || type == -1) {
-                list_delete(celestial_resp_queue, resp_node);
-                return h;
+    while (1) {
+        if (celestial_resp_queue && celestial_resp_queue->length) {
+            foreach(resp_node, celestial_resp_queue) {
+                celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
+                if (h->type == type || type == -1) {
+                    list_delete(celestial_resp_queue, resp_node);
+                    return h;
+                }
             }
         }
-    }
 
-    // Else we have to poll from the socket
-    while (1) {
         struct pollfd fds[1];
         fds[0].fd = __celestial_socket;
         fds[0].events = POLLIN;
@@ -132,6 +131,7 @@ void *celestial_getResponse(int type) {
         }
 
         if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) {
+            fprintf(stderr, "celestial_lib: recv failed (%d): %s\n", r, strerror(errno));
             return NULL;
         }
         
@@ -167,17 +167,14 @@ void *celestial_getResponse(int type) {
 void celestial_pollTimeout(int timeout) {
     // Anything in queue?
     if (celestial_resp_queue && celestial_resp_queue->length) {
-        node_t *n = list_popleft(celestial_resp_queue);
-        while (n) {
-            celestial_req_header_t *h = (celestial_req_header_t*)n->value;
-            free(n);
+        foreach (resp_node, celestial_resp_queue) {
+            celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
+            if (h->magic != CELESTIAL_MAGIC_EVENT) continue;
 
-            if (h->magic == CELESTIAL_MAGIC_EVENT) {
-                celestial_handleEvent(h);
-                return;
-            }
-
-            n = list_popleft(celestial_resp_queue);
+            list_delete(celestial_resp_queue, resp_node);
+            free(resp_node);
+            celestial_handleEvent(h);
+            return;
         }
     }
 
@@ -207,7 +204,11 @@ void celestial_pollTimeout(int timeout) {
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
             celestial_handleEvent(m);
         } else {
-            free(m);
+            if (!celestial_resp_queue) {
+                celestial_resp_queue = list_create("celestial resp queue");
+            }
+
+            list_append(celestial_resp_queue, m);
         }
     }
 }
@@ -296,6 +297,9 @@ int celestial_queryWindow(wid_t wid, window_info_t *output) {
 
     output->width = resp->width;
     output->height = resp->height;
+    output->focused = resp->focused;
+    output->flags = resp->flags;
+    output->z_array = resp->z_array;
     strncpy(output->name, resp->name, 128);
     strncpy(output->icon, resp->icon, 128);
 

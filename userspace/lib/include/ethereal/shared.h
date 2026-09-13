@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _SYS_ETHEREAL_SHARED_H
-#define _SYS_ETHEREAL_SHARED_H
+#ifndef _ETHEREAL_SHARED_H
+#define _ETHEREAL_SHARED_H
 
 /**** INCLUDES ****/
 #include <stddef.h>

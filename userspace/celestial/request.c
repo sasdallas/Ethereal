@@ -34,7 +34,7 @@
                                         TRACE_ERROR("Client %d sent request " #type " with invalid size %d\n", client->client_fd, request->size);\
                                         return request_send_error(client, type, -EINVAL);\
                                     }\
-                                    TRACE_DEBUG("Received " #type "\n");\
+                                    TRACE_DEBUG("Received " #type " from client %d\n", client->client_fd);\
                                     return request_ ## name (client, request);
                                     
 #define EXECUTE_REQUEST_SILENT(name, type) celestial_req_ ## name ## _t *request = (typeof(request))buffer; \
@@ -146,6 +146,12 @@ REQUEST_HANDLER(flip, CELESTIAL_REQ_FLIP) {
     wm_window_t *win = window_get(client, req->wid);
     if (!win) return;
 
+    if (win->presented == false) {
+        win->presented = true;
+        window_beginAnimation(win);
+        return;
+    }
+
     damage_window_locked(win);
 }
 
@@ -176,6 +182,7 @@ REQUEST_HANDLER(drag_start, CELESTIAL_REQ_DRAG_START) {
     wm_window_t *win = window_get(client, req->wid);
     if (!win) return request_send_error(client, CELESTIAL_REQ_DRAG_START, -ESRCH);
 
+    input_set_mouse(CELESTIAL_MOUSE_GRAB);
     WINDOW_CHANGE_STATE(win, WINDOW_STATE_DRAGGING);
     
     REQ_OK(req);
@@ -185,13 +192,21 @@ REQUEST_HANDLER(drag_stop, CELESTIAL_REQ_DRAG_STOP) {
     wm_window_t *win = window_get(client, req->wid);
     if (!win) return request_send_error(client, CELESTIAL_REQ_DRAG_STOP, -ESRCH);
 
+    input_set_mouse(CELESTIAL_MOUSE_DEFAULT);
     WINDOW_CHANGE_STATE(win, WINDOW_STATE_NORMAL);
     
     REQ_OK(req);
 }
 
 REQUEST_HANDLER(close_window, CELESTIAL_REQ_CLOSE_WINDOW) {
-    wm_window_t *win = window_get(client, req->wid);
+    wm_window_t *win;
+    
+    if (SERVER->root && client == SERVER->root->client) {
+        win = window_get_global(req->wid);
+    } else {
+        win = window_get(client, req->wid);
+    }
+
     if (!win) return request_send_error(client, CELESTIAL_REQ_CLOSE_WINDOW, -ESRCH);
     window_close(win);
     REQ_OK(req);
@@ -215,8 +230,13 @@ REQUEST_HANDLER(announce_window, CELESTIAL_REQ_ANNOUNCE_WINDOW) {
     wm_window_t *win = window_get(client, req->wid);
     if (!win) return request_send_error(client, CELESTIAL_REQ_ANNOUNCE_WINDOW, -ESRCH);
 
-    win->announce.name = strdup(req->name);
-    win->announce.icon = strdup(req->icon);
+    if (req->rtype == 0 || req->rtype == 1) {
+        strncpy(win->announce.name, req->name, 128);
+    }
+
+    if (req->rtype == 0 || req->rtype == 2) {
+        strncpy(win->announce.icon, req->icon, 128);
+    }
 
     if (SERVER->root != NULL) {
         wm_window_t *root = SERVER->root;
@@ -246,26 +266,35 @@ REQUEST_HANDLER(bind_key, CELESTIAL_REQ_BIND_KEY) {
     REQ_OK(req);
 }
 
+REQUEST_HANDLER(set_focused, CELESTIAL_REQ_SET_FOCUSED) {
+    wm_window_t *win = window_get_global(req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_SET_FOCUSED, -ESRCH);
+
+    if (req->focused) {
+        window_focus(win);
+    } else {
+        if (SERVER->focused == win) {
+            window_focus(window_top_exclude(win));
+        }
+    }
+
+    REQ_OK(req);
+}
+
 REQUEST_HANDLER(query_window, CELESTIAL_REQ_QUERY_WINDOW) {
-    wm_window_t *win = window_get(client, req->query);
+    wm_window_t *win = window_get_global(req->query);
     if (!win) return request_send_error(client, CELESTIAL_REQ_QUERY_WINDOW, -ESRCH);
 
     DECLARE_RESP(query_window, resp, CELESTIAL_REQ_QUERY_WINDOW,
         .width = win->width,
         .height = win->height,
+        .focused = (SERVER->focused == (win)),
+        .flags = win->flags,
+        .z_array = win->z_array
     );
 
-    if (win->announce.name) {
-        strncpy(resp.name, win->announce.name, 128);
-    } else {
-        resp.name[0] = 0;
-    }
-
-    if (win->announce.icon) {
-        strncpy(resp.icon, win->announce.icon, 128);
-    } else {
-        resp.icon[0] = 0;
-    }
+    strncpy(resp.name, win->announce.name, 128);
+    strncpy(resp.icon, win->announce.icon, 128);
 
     SEND_RESP(resp);
 }
@@ -273,11 +302,12 @@ REQUEST_HANDLER(query_window, CELESTIAL_REQ_QUERY_WINDOW) {
 REQUEST_HANDLER(query_window_ids, CELESTIAL_REQ_QUERY_WINDOW_IDS) {
     pthread_mutex_lock(&SERVER->window_lock);
     int nwids = __atomic_load_n(&SERVER->window_count, __ATOMIC_SEQ_CST);
-    char buffer[sizeof(celestial_resp_query_window_ids_t) + (sizeof(wid_t) * nwids)];
+    size_t buffer_size = sizeof(celestial_resp_query_window_ids_t) + (sizeof(wid_t) * nwids);
+    char *buffer = malloc(buffer_size);
     celestial_resp_query_window_ids_t *resp = (celestial_resp_query_window_ids_t *)buffer;
     
     resp->magic = CELESTIAL_MAGIC;
-    resp->size = sizeof(buffer);
+    resp->size = buffer_size;
     resp->type = CELESTIAL_REQ_QUERY_WINDOW_IDS;
 
     int idx = 0;
@@ -292,12 +322,12 @@ REQUEST_HANDLER(query_window_ids, CELESTIAL_REQ_QUERY_WINDOW_IDS) {
         }
     }
 
-    resp->size = sizeof(celestial_resp_query_window_ids_t) + (sizeof(wid_t) * idx);
     resp->nwids = idx;
 
     pthread_mutex_unlock(&SERVER->window_lock);
 
-    SEND_RESP(resp);
+    request_send(client, resp, resp->size);
+    free(buffer);
 }
 
 REQUEST_HANDLER(set_root_window, CELESTIAL_REQ_SET_ROOT_WINDOW) {
@@ -384,11 +414,59 @@ REQUEST_HANDLER(ack_resize, CELESTIAL_REQ_ACK_RESIZE) {
 
 REQUEST_HANDLER(resize, CELESTIAL_REQ_RESIZE) {
     wm_window_t *win = window_get(client, req->wid);
-    if (!win) return; // no response
+    if (!win) return request_send_error(client, CELESTIAL_REQ_RESIZE, -ESRCH);
 
     win->resize.oneoff = true;
-    TRACE_DEBUG("celestial_req_resize\n");
-    window_resize(win, win->x, win->y, req->width, req->height);
+
+    size_t sh = renderer_getHeight();
+    size_t sw = renderer_getWidth();
+
+    int x = win->x;
+    int y = win->y;
+    if (req->width + win->x >= sw) {
+        x = sw - req->width;
+    }
+
+    if (req->height + win->y >= sh) {
+        y = sh - req->height;
+    }
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    window_resize(win, x, y, req->width, req->height);
+    REQ_OK(req);
+}
+
+REQUEST_HANDLER(maximize_window, CELESTIAL_REQ_MAXIMIZE_WINDOW) {
+    wm_window_t *win = window_get(client, req->wid);
+    if (!win) return request_send_error(client, CELESTIAL_REQ_MAXIMIZE_WINDOW, -ESRCH);
+
+    int x = 0;
+    int y = 0;
+    int h = 0;
+    int w = renderer_getWidth();
+    if (SERVER->root) {
+        h = (int)SERVER->root->y; 
+    } else {
+        h = (int)renderer_getHeight();
+    }
+
+    // HACK: need proper tiling system for multiple reasons. this is just a hack to allow maximize to fix itself up
+    if (win->height == y && win->width == renderer_getWidth() && win->y == 0 && win->x == 0) {
+        x = win->tile_saved.x;
+        y = win->tile_saved.y;
+        w = win->tile_saved.w;
+        h = win->tile_saved.h;
+    } else {
+        win->tile_saved.x = win->x;
+        win->tile_saved.y = win->y;
+        win->tile_saved.w = win->width;
+        win->tile_saved.h = win->height;
+    }
+
+    win->resize.oneoff = true;
+    window_resize(win, x, y, w, h);
     REQ_OK(req);
 }
 
@@ -439,6 +517,8 @@ void request_handle(wm_client_t *client, void *buffer, size_t size) {
         EXECUTE_REQUEST(set_window_visible, CELESTIAL_REQ_SET_WINDOW_VISIBLE);
     } else if (hdr->type == CELESTIAL_REQ_SET_MOUSE_CURSOR) {
         EXECUTE_REQUEST(set_mouse_cursor, CELESTIAL_REQ_SET_MOUSE_CURSOR);
+    } else if (hdr->type == CELESTIAL_REQ_SET_FOCUSED) {
+        EXECUTE_REQUEST(set_focused, CELESTIAL_REQ_SET_FOCUSED);
     } else if (hdr->type == CELESTIAL_REQ_ANNOUNCE_WINDOW) {
         EXECUTE_REQUEST(announce_window, CELESTIAL_REQ_ANNOUNCE_WINDOW);
     } else if (hdr->type == CELESTIAL_REQ_QUERY_WINDOW) {
@@ -463,6 +543,8 @@ void request_handle(wm_client_t *client, void *buffer, size_t size) {
         EXECUTE_REQUEST(ack_resize, CELESTIAL_REQ_ACK_RESIZE);
     } else if (hdr->type == CELESTIAL_REQ_RESIZE) {
         EXECUTE_REQUEST(resize, CELESTIAL_REQ_RESIZE);
+    } else if (hdr->type == CELESTIAL_REQ_MAXIMIZE_WINDOW) {
+        EXECUTE_REQUEST(maximize_window, CELESTIAL_REQ_MAXIMIZE_WINDOW);
     } else {
         TRACE_ERROR("Client %d sent unknown/unhandled request %d\n", client->client_fd, hdr->type);
         return request_send_error(client, hdr->type, -ENOSYS);

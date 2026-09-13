@@ -143,7 +143,8 @@ void AcpiOsSleep(UINT64 Milliseconds) {
 }
 
 void AcpiOsStall(UINT32 Microseconds) {
-    FUNC_UNIMPLEMENTED("AcpiOsStall");
+    if (Microseconds < 1000) Microseconds = 1000;
+    return clock_sleep ( Microseconds / 1000 );
 }
 
 void AcpiOsWaitEventsComplete() {

@@ -161,7 +161,7 @@ void arch_panic_finalize() {
         while (n) {
             loaded_driver_t *d = n->value;
             // dprintf(NOHEADER, COLOR_CODE_RED, "- \"%s\" (driver base %p)\n", d->filename);
-            dprintf(NOHEADER, COLOR_CODE_RED " %-20s%p\n", d->filename, d->load_address);
+            dprintf(NOHEADER, COLOR_CODE_RED " %-20s%p %s\n", d->filename, d->load_address, d->metadata->name);
             n = n->next;
         }
     } else {

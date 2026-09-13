@@ -568,9 +568,23 @@ static int hda_configure(audio_stream_t *s, audio_stream_config_t *config) {
     if (config->channels > 16) return -EINVAL;
     if (config->format == AUDIO_FORMAT_F32_LE) return -ENOTSUP;
 
+    stream->regs->sdctl[0] &= ~(1 << 1);
+    while (stream->regs->sdctl[0] & (1 << 1)) {
+        arch_pause();
+    }
+
+    stream->regs->sdctl[0] |= (1 << 0);
+    while ((stream->regs->sdctl[0] & (1 << 0)) == 0) {
+        arch_pause();
+    }
+
+    stream->regs->sdctl[0] &= ~(1 << 0);
+    while (stream->regs->sdctl[0] & (1 << 0)) {
+        arch_pause();
+    }
+
     // Configure the format
     uint16_t fmt = hda_calculateFormat(config);
-    stream->regs->sdfmt = fmt;
 
     // Request the DAC to also do that
     uint32_t resp;
@@ -589,9 +603,19 @@ static int hda_configure(audio_stream_t *s, audio_stream_config_t *config) {
         stream->bdl[i].ioc = 1;
     }
 
-    // Setup more BDL data
+    memset(s->buffer.vaddr, 0, period_bytes * config->periods);
+    BARRIER();
+
+    uintptr_t bdl_phys = arch_mmu_physical(NULL, (uintptr_t)stream->bdl);
+    stream->regs->sdbdpl = (uint32_t)bdl_phys;
+    stream->regs->sdbdpu = (uint32_t)(bdl_phys >> 32);
+    stream->regs->sdfmt = fmt;
     stream->regs->sdlvi = (uint16_t)(config->periods - 1);
     stream->regs->sdlcbl = (uint32_t)(period_bytes * config->periods);
+    stream->regs->sdsts = (1 << 2) | (1 << 3) | (1 << 4);
+    stream->regs->sdctl[0] = (1 << 2) | (1 << 4);
+    stream->regs->sdctl[1] = 0;
+    stream->regs->sdctl[2] = (stream->index << 4);
     
     return 0;
 }
@@ -692,6 +716,8 @@ static int hda_initFunctionGroup(hda_t *hda, uint8_t codec, int fg_idx) {
         int r = hda_initWidget(hda, codec, fg, i);
         if (r != 0) return r;
     }
+
+    LOG(DEBUG, "Function group initialized successfully.\n");
 
     return 0;
 }

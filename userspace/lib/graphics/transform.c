@@ -16,8 +16,8 @@
 
 // lerp function for bilinear
 static gfx_color_t lerp(gfx_color_t a, gfx_color_t b, float _t) {
-    uint8_t t = (uint8_t)(_t * 255.0f + 0.5f);
-    uint8_t pl = 0xFF - t; // weight for left color
+    uint16_t t = (uint16_t)(_t * 256.0f + 0.5f);
+    uint16_t pl = 0x100 - t; // weight for left color
 
     uint8_t r = (((uint32_t)GFX_RGB_R(a) * pl + (uint32_t)GFX_RGB_R(b) * t + 0x80) >> 8);
     uint8_t g = (((uint32_t)GFX_RGB_G(a) * pl + (uint32_t)GFX_RGB_G(b) * t + 0x80) >> 8);
@@ -69,17 +69,21 @@ void gfx_renderSpriteTransform(gfx_context_t *ctx, sprite_t *sprite, gfx_mat2x3_
         for (int32_t x = x_low; x < x_max; x++) {
             // Bilinearly interpolate at X coordinate u and Y coordinate v
             // Clamp pixels down to get rid of anything silly
-            int _x = (int)floorf(fmaxf(fminf(u, sprite->width),0));
-            int _y = (int)floorf(fmaxf(fminf(v, sprite->height),0));
+            float sample_x = fmaxf(fminf(u, sprite->width - 1), 0);
+            float sample_y = fmaxf(fminf(v, sprite->height - 1), 0);
+            int _x = (int)floorf(sample_x);
+            int _y = (int)floorf(sample_y);
+            int _x2 = GFX_MIN(_x + 1, (int)sprite->width - 1);
+            int _y2 = GFX_MIN(_y + 1, (int)sprite->height - 1);
 
             gfx_color_t c00 = SPRITE_PIXEL(sprite, _x, _y);
-            gfx_color_t c01 = (_x+1 >= (int)sprite->width) ? 0 : SPRITE_PIXEL(sprite, _x+1, _y);
-            gfx_color_t c10 = (_y+1 >= (int)sprite->height) ? 0 : SPRITE_PIXEL(sprite, _x, _y+1);
-            gfx_color_t c11 = (_x+1 >= (int)sprite->width || _y+1 >= (int)sprite->height) ? 0 : SPRITE_PIXEL(sprite, _x+1, _y+1);
+            gfx_color_t c01 = SPRITE_PIXEL(sprite, _x2, _y);
+            gfx_color_t c10 = SPRITE_PIXEL(sprite, _x, _y2);
+            gfx_color_t c11 = SPRITE_PIXEL(sprite, _x2, _y2);
 
             // FINISH
-            float dx = u - (float)_x;
-            float dy = v - (float)_y;
+            float dx = sample_x - (float)_x;
+            float dy = sample_y - (float)_y;
 
             gfx_color_t top = lerp(c00, c01, dx);
             gfx_color_t bot = lerp(c10, c11, dx);

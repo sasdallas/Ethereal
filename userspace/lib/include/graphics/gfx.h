@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <graphics/draw.h>
+#include <graphics/blur.h>
 #include <graphics/sprite.h>
 #include <graphics/text.h>
 #include <graphics/pattern.h>

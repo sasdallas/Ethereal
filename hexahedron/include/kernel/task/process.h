@@ -39,15 +39,17 @@
 
 /**** DEFINITIONS ****/
 
-#define PROCESS_MAX_PIDS            32768                                       // Maximum amount of PIDs. The kernel uses a bitmap to keep track of these
-#define PROCESS_PID_BITMAP_SIZE     PROCESS_MAX_PIDS / (sizeof(uint32_t) * 8)   // Bitmap size
+// Maximum amount of PIDs
+#define PROCESS_MAX_PIDS            32768
 
-#define PROCESS_KSTACK_SIZE         PAGE_SIZE*4    // Kernel stack size
+// Kernel stack size
+#define PROCESS_KSTACK_SIZE         PAGE_SIZE*4
 
-#define PROCESS_EXIT_NORMAL                 0           // The process chose to exit on its own will
-#define PROCESS_EXIT_SIGNAL                 1           // The process was exited by a signal, and exit_status contains the signal number
+// Exit codes
+#define PROCESS_EXIT_NORMAL                 0   // The process chose to exit on its own will
+#define PROCESS_EXIT_SIGNAL                 1   // The process was exited by a signal, and exit_status contains the signal number
 
-#define PROCESS_MMAP_MINIMUM                0x1000
+#define PROCESS_MMAP_MINIMUM    0x1000
 
 // process flags
 #define PROCESS_KERNEL          0x01    // Process is a kernel-mode process 
@@ -107,6 +109,7 @@ typedef struct process {
     size_t nthreads;                    // Number of threads
     spinlock_t thread_lock;
     bool exiting;                       // Small flag to prevent race in process_exit
+    bool continued;                     // Continued state waiting for waitpid
 
     // FILE INFORMATION
     char *wd_path;                      // Working directory path
@@ -114,9 +117,13 @@ typedef struct process {
     fd_table_t *fd_table;               // File descriptor table
     mode_t umask;                       // User-file creation mask
 
-    // SIGNALS
-    void *userspace;                    // Userspace allocation (only for sigtramp right now)
-    spinlock_t uspace_lck;              // Userspace lock
+    // SIGNAL
+    struct {
+        spinlock_t lock;
+        sigset_t pending;
+        bool have_pending;
+        signal_action_t actions[_NSIG];
+    } signal;
 
     // TIMER
     process_timer_t itimers[3];         // setitimer timers

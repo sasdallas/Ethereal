@@ -14,25 +14,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-int main(int argc, char *argv[]) {
-    // we are symlinked to "[" for shell script compat.
-    if (!strcmp(argv[0], "[")) {
-        if (argc && strcmp(argv[argc-1], "]")) {
-            return fprintf(stderr, "[: missing ']' in statement\n");
-        }
-
-        argc--;
-    }
-
+int evaluate(int argc, char **argv) {
     if (argc < 2) {
         return 1;
     }
 
     if (argc == 2) {
-        return (strlen(argv[1]) > 0) ? 0 : 1;
+        return ((strlen(argv[1]) > 0) ? 0 : 1);
     }
 
     if (argc == 3) {
@@ -102,4 +94,33 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "test: too many arguments\n");
     return 2;
+}
+
+int main(int argc, char *argv[]) {
+    // we are symlinked to "[" for shell script compat.
+    if (!strcmp(argv[0], "[")) {
+        if (argc && strcmp(argv[argc-1], "]")) {
+            return fprintf(stderr, "[: missing ']' in statement\n");
+        }
+
+        argc--;
+    }
+
+    bool inverted = false;
+    if (!strcmp(argv[1], "!")) {
+        inverted = true;
+        
+        // hack!
+        argv = &argv[1];
+        argc--;
+    }
+
+    int r = evaluate(argc, argv);
+
+    if (r > 1 || r < 0) {
+        // error code
+        return r;
+    }
+
+    return r ^ inverted;
 }

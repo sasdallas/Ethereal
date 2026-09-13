@@ -175,15 +175,15 @@ usb_status_t xhci_configurePipe(xhci_t *xhci, usb_pipe_t *pipe) {
     
     // Prepare endpoint context
     ec->endpoint_type = ep_type;
-    ec->error_count = 3;
+    ec->error_count = USB_ENDP_IS_ISOCH(endp) ? 0 : 3;
     ec->state = 0;
     ec->transfer_ring_dequeue_ptr = xpipe->ring->trb_phys | 1;
 
     // TODO: is this necessary? porting endpoint context stuff from the old driver
     if (USB_ENDP_IS_CONTROL(endp) || USB_ENDP_IS_BULK(endp)) {
-        ec->max_packet_size = endp->desc.wMaxPacketSize;
+        ec->max_packet_size = endp->mps;
     } else {
-        ec->max_packet_size = endp->desc.wMaxPacketSize & 0x7FF;    
+        ec->max_packet_size = endp->mps & 0x7FF;    
     }
 
     // configure max burst size
@@ -194,15 +194,15 @@ usb_status_t xhci_configurePipe(xhci_t *xhci, usb_pipe_t *pipe) {
         ec->max_burst_size = (endp->mps & 0x1800) >> 11;
     }
 
-    // calculate the ESIT payload
-    uint32_t max_esit = ((ec->max_packet_size * (ec->max_burst_size + 1)));
-    ec->max_esit_payload_lo = max_esit & 0xFFFF;
-    ec->max_esit_payload_hi = max_esit >> 16;
-
-    // control endpoints average a TRB length of 8 always
-    if (type == USB_ENDP_TYPE_CONTROL) {
+    // calculate the ESIT payload and average trb length
+    if (type == USB_ENDP_TYPE_CONTROL || type == USB_ENDP_TYPE_BULK) {
+        ec->max_esit_payload_hi = 0;
+        ec->max_esit_payload_lo = 0;
         ec->average_trb_length = 8;
     } else {
+        uint32_t max_esit = ((ec->max_packet_size * (ec->max_burst_size + 1)));
+        ec->max_esit_payload_lo = max_esit & 0xFFFF;
+        ec->max_esit_payload_hi = max_esit >> 16;
         ec->average_trb_length = max_esit;
     }
 
@@ -339,6 +339,7 @@ static usb_status_t xhci_control_start(usb_pipe_t *pipe, usb_transfer_t *transfe
             .ch = 0,
             .type = XHCI_TRB_TYPE_DATA_STAGE,
             .dir = in,
+            .isp = 0,
         };
 
         xhci_enqueueRing(xpipe->ring, (xhci_trb_t*)&data);

@@ -85,7 +85,15 @@ int main(int argc, char *argv[]) {
     dup2(log_device, STDOUT_FILENO);
     dup2(log_device, STDERR_FILENO);
 
-    TRACE_INFO("celestialv2 1.0.0\n");
+    TRACE_INFO("celestial 1.2.0\n");
+
+    // TODO: store like a config file or something
+extern bool render_blur_enable;
+    if (argc > 1 && !strcmp(argv[1], "--no-blur")) {
+        TRACE_INFO("Disabled renderer blur\n");
+        render_blur_enable = false;
+    }
+
     main_thread = gettid();
     memset(SERVER, 0, sizeof(celestial_t));
     signal(SIGUSR1, sigusr1_handler);
@@ -102,8 +110,8 @@ int main(int argc, char *argv[]) {
 
     pid_t cpid = fork();
     if (!cpid) {
-        const char *argv[] = { "desktop", NULL }; 
-        execvp("desktop", (char *const *)argv);
+        const char *argv[] = { "desktopv2", NULL }; 
+        execvp("desktopv2", (char *const *)argv);
         TRACE_ERROR("Could not start desktop process: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }

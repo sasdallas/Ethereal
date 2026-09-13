@@ -51,8 +51,10 @@ enum ss_pieces {
     NPIECES
 };
 
-static sprite_t *spritesheet[NPIECES];
-static sprite_t *sp_base;
+static sprite_t *spritesheet_inactive[NPIECES];
+static sprite_t *spritesheet_active[NPIECES];
+static sprite_t *sp_base_inactive;
+static sprite_t *sp_base_active;
 static int loaded = 0;
 
 #define CORNER_UL_X 0
@@ -117,15 +119,15 @@ static sprite_t *mercury_loadPiece(sprite_t *base, int x, int y, int w, int h) {
 /**
  * @brief Load the spritesheet
  */
-static void mercury_loadSpritesheet(sprite_t *sp) {
-    spritesheet[CORNER_UL] = mercury_loadPiece(sp, CORNER_UL_X, CORNER_UL_Y, CORNER_UL_W, CORNER_UL_H);
-    spritesheet[CORNER_UR] = mercury_loadPiece(sp, CORNER_UR_X, CORNER_UR_Y, CORNER_UR_W, CORNER_UR_H);
-    spritesheet[CORNER_BL] = mercury_loadPiece(sp, CORNER_BL_X, CORNER_BL_Y, CORNER_BL_W, CORNER_BL_H);
-    spritesheet[CORNER_BR] = mercury_loadPiece(sp, CORNER_BR_X, CORNER_BR_Y, CORNER_BR_W, CORNER_BR_H);
-    spritesheet[TOP] = mercury_loadPiece(sp, TOP_X, TOP_Y, TOP_W, TOP_H);
-    spritesheet[BOT] = mercury_loadPiece(sp, BOT_X, BOT_Y, BOT_W, BOT_H);
-    spritesheet[LEFT] = mercury_loadPiece(sp, LEFT_X, LEFT_Y, LEFT_W, LEFT_H);
-    spritesheet[RIGHT] = mercury_loadPiece(sp, RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H);
+static void mercury_loadSpritesheet(sprite_t **sheet, sprite_t *sp) {
+    sheet[CORNER_UL] = mercury_loadPiece(sp, CORNER_UL_X, CORNER_UL_Y, CORNER_UL_W, CORNER_UL_H);
+    sheet[CORNER_UR] = mercury_loadPiece(sp, CORNER_UR_X, CORNER_UR_Y, CORNER_UR_W, CORNER_UR_H);
+    sheet[CORNER_BL] = mercury_loadPiece(sp, CORNER_BL_X, CORNER_BL_Y, CORNER_BL_W, CORNER_BL_H);
+    sheet[CORNER_BR] = mercury_loadPiece(sp, CORNER_BR_X, CORNER_BR_Y, CORNER_BR_W, CORNER_BR_H);
+    sheet[TOP] = mercury_loadPiece(sp, TOP_X, TOP_Y, TOP_W, TOP_H);
+    sheet[BOT] = mercury_loadPiece(sp, BOT_X, BOT_Y, BOT_W, BOT_H);
+    sheet[LEFT] = mercury_loadPiece(sp, LEFT_X, LEFT_Y, LEFT_W, LEFT_H);
+    sheet[RIGHT] = mercury_loadPiece(sp, RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H);
     loaded = 1;
 }
 
@@ -142,17 +144,32 @@ int celestial_initMercury(window_t *win) {
 
     // Load the mercury borders
     if (!loaded) {
-        FILE *f = fopen("/usr/share/mercury/borders.bmp", "r");
+        FILE *f = fopen("/usr/share/mercury/borders_active.png", "r");
         if (!f) {
             fprintf(stderr, "mercury: Error loading /usr/share/mercury/borders.bmp\n");
             fprintf(stderr, "mercury: Trying to continue anyways, this won't work well...\n");
             return 1;
         }   
         
-        sp_base = gfx_createSprite(0,0);
-        gfx_loadSprite(sp_base, f);
+        sp_base_active = gfx_createSprite(0,0);
+        gfx_loadSprite(sp_base_active, f);
         fclose(f);
-        mercury_loadSpritesheet(sp_base);
+        mercury_loadSpritesheet(spritesheet_active, sp_base_active);
+
+
+        f = fopen("/usr/share/mercury/borders_inactive.png", "r");
+        if (!f) {
+            fprintf(stderr, "mercury: Error loading /usr/share/mercury/borders.bmp\n");
+            fprintf(stderr, "mercury: Trying to continue anyways, this won't work well...\n");
+            return 1;
+        }   
+        
+        sp_base_inactive = gfx_createSprite(0,0);
+        gfx_loadSprite(sp_base_inactive, f);
+        fclose(f);
+        mercury_loadSpritesheet(spritesheet_inactive, sp_base_inactive);
+
+
     }
 
     return 0;
@@ -164,6 +181,8 @@ int celestial_initMercury(window_t *win) {
  */
 int celestial_renderMercury(window_t *win) {
     decor_t *d = win->decor;
+
+    sprite_t **spritesheet = win->decor->focused ? spritesheet_active : spritesheet_inactive;
 
     // Left and right borders
     gfx_rect_t rect_left = { .x = 0, .y = d->borders.top_height, .width = d->borders.left_width, .height = WIN_HEIGHT(win) - d->borders.top_height - d->borders.bottom_height };

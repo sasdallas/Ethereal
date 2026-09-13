@@ -52,9 +52,25 @@ mmu_page_t __mmu_initial_page_region[3][512] __attribute__((aligned(PAGE_SIZE)))
 static mmu_page_t *arch_mmu_get_page(mmu_dir_t *dir, uintptr_t virt, bool allow_nonpresent);
 
 /**
+ * @brief Check whether an address can be read
+ */
+static int arch_mmu_pf_readable(uintptr_t addr) {
+    if (addr >= MMU_USERSPACE_END) return 0;
+    mmu_flags_t fl = arch_mmu_read_flags(NULL, addr);
+    return (fl & MMU_FLAG_PRESENT) && (fl & MMU_FLAG_USER);
+}
+
+/**
  * @brief MMU user page fault debugger
  */
 void arch_mmu_pf_user(registers_t *regs) {
+    uintptr_t cr2;
+    asm volatile ("movq %%cr2, %0" : "=r"(cr2));
+    dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", cr2, regs->cs, regs->rip, regs->rsp);
+    if (current_cpu->current_thread) {
+        dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
+    }
+
     dprintf(ERR, "Process '%s' (PID %d)\n", current_cpu->current_process->name, current_cpu->current_process->pid);
 
     dprintf(ERR, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
@@ -66,13 +82,20 @@ void arch_mmu_pf_user(registers_t *regs) {
 
     dprintf(ERR, "Bytes around exception zone:\n");
     if ((regs->err_code & (1 << 4)) == 0) {
-        HEXDUMP(regs->rip - 4, 8);
+        uintptr_t dump = regs->rip - 4;
+        if (arch_mmu_pf_readable(dump) && arch_mmu_pf_readable(dump + 7)) {
+            HEXDUMP(dump, 8);
+        }
     }
 
     dprintf(ERR, "Stack trace:\n");
     uint64_t *rbp = (uint64_t*)regs->rbp;
     for (int i = 0; i < 10 && rbp; i++) {
-        if (arch_mmu_get_page(NULL, PAGE_ALIGN_DOWN((uintptr_t)rbp), false) == NULL) break;
+        if ((uintptr_t)rbp & 0x7) break;
+
+        if (!arch_mmu_pf_readable((uintptr_t)rbp)) break;
+        if (!arch_mmu_pf_readable((uintptr_t)(rbp + 1))) break;
+
         if ((uintptr_t)rbp >= 0xDEADD000 && (uintptr_t)rbp <= 0xDEADFFFF) {
             break;
         }
@@ -89,12 +112,19 @@ void arch_mmu_pf_user(registers_t *regs) {
     //     return;
     // }
 
-    if (kargs_has("--pf-no-segv")) {
-        process_exit(current_cpu->current_process, 1);
-    } else {
-        signal_send(current_cpu->current_process, SIGSEGV);
-    }
+    if (!kargs_has("--pf-no-segv")) {
+        siginfo_t info = {
+            .si_signo = SIGSEGV,
+            .si_errno = 0,
+            .si_code = (regs->err_code & (1 << 0)) ? SEGV_ACCERR : SEGV_MAPERR,
+            .si_addr = (void *)cr2,
+        };
 
+        signal_sendThreadInfo(current_cpu->current_thread, SIGSEGV, &info);
+        return;
+    }
+    
+    process_exit(current_cpu->current_process, 1);
 }
 
 /**
@@ -143,14 +173,15 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
     }
 
 _die:
-    dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
-    if (current_cpu->current_thread) {
-        dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
-    }
     
     if (info.from == VMM_FAULT_FROM_USER) {
         arch_mmu_pf_user(regs);
         return 0;
+    }
+
+    dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", regs_extended->cr2, regs->cs, regs->rip, regs->rsp);
+    if (current_cpu->current_thread) {
+        dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
     }
 
     // Prepare
@@ -619,6 +650,11 @@ void arch_mmu_copy_kernel(mmu_dir_t *dir) {
 int arch_mmu_setflags(mmu_dir_t *dir, uintptr_t i, mmu_flags_t flags) {
     mmu_page_t *page = arch_mmu_get_page(dir, i, false);
     if (!page) return 1;
+
+    // The page table exists but this entry has no frame behind it yet
+    // It is a demand-paged mapping which hasn't been faulted in
+    // If it was marked present here it would break stuff
+    if (!MMU_PAGE_ADDR(*page)) return 0;
 
 #define TRANSLATE_FLAG(flg,flg2) if (flags & flg) { (*page) |= flg2; } else { (*page) &= ~(flg2); };
     TRANSLATE_FLAG(MMU_FLAG_PRESENT, MMU_PAGE_FLAG_PRESENT);

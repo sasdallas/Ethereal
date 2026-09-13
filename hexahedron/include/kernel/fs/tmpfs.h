@@ -28,11 +28,6 @@ typedef struct tmpfs_node {
     ino_t ino;                          // Inode number
     union {
         struct {
-            uintptr_t *page_list;       // Page array
-            size_t page_count;          // How many pages were allocated for the tmpfs
-        } file;
-
-        struct {
             hashmap_t *children;        // Fast children access
         } dir;
 

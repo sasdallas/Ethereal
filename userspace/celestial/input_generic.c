@@ -17,9 +17,12 @@
 #include <sys/poll.h>
 #include <unistd.h>
 
-sprite_t *mouse_sprites[6];
+sprite_t *mouse_sprites[CELESTIAL_NMOUSE];
 unsigned char mouse_type = CELESTIAL_MOUSE_DEFAULT;
 static int input_ready = 0;
+static bool mouse_drawn = false;
+static keyboard_t *keyboard = NULL;
+static gfx_context_t mouse_ctx = { 0 };
 
 int mw_off_x = 0;
 int mw_off_y = 0;
@@ -46,7 +49,7 @@ inline uint32_t mouse_toCelestialButtons(uint32_t mbuttons) {
 
 static inline gfx_rect_t input_cursorRect(int x, int y) {
     sprite_t *sp = mouse_sprites[mouse_type];
-    return GFX_RECT(x, y, sp->width, sp->height);
+    return GFX_RECT(x, y, sp->width + 1, sp->height + 1);
 }
 
 static inline bool input_rectsIntersect(gfx_rect_t a, gfx_rect_t b) {
@@ -188,7 +191,7 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         goto _rel_goto;
     }
 
-    wm_window_t *top = window_top(new_x, new_y);
+    wm_window_t *top = SERVER->mouse_grab ? SERVER->mouse_grab : window_top(new_x, new_y);
 
     // Check if we are still in the mouse window
     if (SERVER->mouse_window && (SERVER->mouse_window != top)) {
@@ -229,6 +232,7 @@ _rel_goto:
         if (BUTTON_PRESSED(MOUSE_BUTTON_LEFT)) {
             mw_off_x = new_x - SERVER->mouse_window->x;
             mw_off_y = new_y - SERVER->mouse_window->y;
+            SERVER->mouse_grab = SERVER->mouse_window;
         }
 
         if (BUTTON_PRESSED(MOUSE_BUTTON_LEFT) && SERVER->mouse_window != SERVER->focused) {
@@ -238,8 +242,10 @@ _rel_goto:
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_button_down_t, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, .x = TO_REL_X(new_x), .y = TO_REL_Y(new_y), .held = CONVERT_MOUSE_BUTTONS(NEWLY_PRESSED));
     } else if (NEWLY_RELEASED) {
         // use old X and Y coordinates
-        TRACE_DEBUG("Sending button up event.\n");
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_button_up_t, CELESTIAL_EVENT_MOUSE_BUTTON_UP, .x = TO_REL_X(SERVER->mouse_x), .y = TO_REL_Y(SERVER->mouse_y), .released = CONVERT_MOUSE_BUTTONS(NEWLY_RELEASED));
+        if (BUTTON_RELEASED(MOUSE_BUTTON_LEFT)) {
+            SERVER->mouse_grab = NULL;
+        }
     } else if ((SERVER->mouse_x != new_x || SERVER->mouse_y != new_y)  && SERVER->mouse_window->state != WINDOW_STATE_DRAGGING && SERVER->mouse_window != SERVER->mouse_capture) {
         // otherwise, as long as the window is not dragging, send it mouse events
         if (BUTTON_HELD(MOUSE_BUTTON_LEFT)) {
@@ -248,7 +254,9 @@ _rel_goto:
         } else {
             EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_motion_t, CELESTIAL_EVENT_MOUSE_MOTION, .x = TO_REL_X(new_x), .y = TO_REL_Y(new_y), .buttons = CONVERT_MOUSE_BUTTONS(new_btns));
         }
-    } else if (scroll != 0) {
+    }
+    
+    if (scroll != 0) {
         // send a scroll event
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_scroll_t, CELESTIAL_EVENT_MOUSE_SCROLL, .x = TO_REL_X(new_x), .y = TO_REL_Y(new_y), .direction = (scroll == 1) ? CELESTIAL_MOUSE_SCROLL_UP : CELESTIAL_MOUSE_SCROLL_DOWN);
     }
@@ -272,6 +280,26 @@ _rel_goto:
 }
 
 void keyboard_process_event(key_event_t event) {
+    keyboard_event_t kev;
+    keyboard_event2(keyboard, &event, &kev);
+
+    // check server binds
+    if (SERVER->binds) {
+        input_bind_t *bind = SERVER->binds;
+
+        while (bind) {
+            // TODO: there is a bug where if the bound window exits this will crash
+            if (bind->sc == kev.scancode && keyboard->mods == bind->mods) {
+                EVENT_SEND(bind->win, celestial_event_bound_key_t, CELESTIAL_EVENT_BOUND_KEY, .pressed = (kev.type == KEYBOARD_EVENT_PRESS), .focused = SERVER->focused ? SERVER->focused->id : (wid_t)-1, .sc = bind->sc, .mods = bind->mods);
+                if (bind->capture) {
+                    return;
+                }
+            }
+
+            bind = bind->next;
+        }
+    }
+
     if (SERVER->focused) {
         EVENT_SEND(SERVER->focused, celestial_event_key_t, CELESTIAL_EVENT_KEY_EVENT, .ev = event);
     }
@@ -301,7 +329,40 @@ void input_draw() {
 void input_draw_at(int x, int y) {
     if (!input_ready) return;
     if (SERVER->mouse_window && SERVER->mouse_window == SERVER->mouse_capture) return; // dont draw mouse if mouse capture!
-    gfx_renderSprite(RENDERER->ctx, mouse_sprites[mouse_type], x, y);
+
+    sprite_t *sp = mouse_sprites[mouse_type];
+    
+    // save the chunk the mouse gets blitted into in a temporary buffer
+    // this is needed for some visual artifacting reasons
+    // i wish i knew why
+    size_t width = GFX_MIN(sp->width, renderer_getWidth() - x);
+    size_t height = GFX_MIN(sp->height, renderer_getHeight() - y);
+    mouse_ctx.width = width;
+    mouse_ctx.height = height;
+    for (size_t row = 0; row < height; row++) {
+        memcpy(
+            mouse_ctx.backbuffer + row * mouse_ctx.pitch,
+            RENDERER->ctx->backbuffer + (y + row) * GFX_PITCH(RENDERER->ctx) + x * 4,
+            width * 4
+        );
+    }
+
+    gfx_renderSprite(RENDERER->ctx, sp, x, y);
+    mouse_drawn = true;
+}
+
+void input_restore_at(int x, int y) {
+    if (!mouse_drawn) return;
+
+    for (size_t row = 0; row < mouse_ctx.height; row++) {
+        memcpy(
+            RENDERER->ctx->backbuffer + (y + row) * GFX_PITCH(RENDERER->ctx) + x * 4,
+            mouse_ctx.backbuffer + row * mouse_ctx.pitch,
+            mouse_ctx.width * 4
+        );
+    }
+
+    mouse_drawn = false;
 }
 
 
@@ -331,7 +392,7 @@ void input_set_mouse_capture(wm_window_t *win) {
 
 void input_set_mouse(int mouse) {
     if (!input_ready) return;
-    if (mouse < 0 || mouse > CELESTIAL_MOUSE_DIAG_DESCEND || mouse_sprites[mouse] == NULL) {
+    if (mouse < 0 || mouse > CELESTIAL_NMOUSE || mouse_sprites[mouse] == NULL) {
         TRACE_ERROR("input_set_mouse unknown mouse type %d\n", mouse);
         return;
     }
@@ -344,14 +405,34 @@ void input_set_mouse(int mouse) {
 }
 
 int input_init() {
+    keyboard = keyboard_create();
+
     input_loadMouseSprite(CELESTIAL_MOUSE_DEFAULT, "/usr/share/cursors/default.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_TEXT, "/usr/share/cursors/text.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_HORIZONTAL, "/usr/share/cursors/horizontal.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_VERTICAL, "/usr/share/cursors/vertical.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_DIAG_ASCEND, "/usr/share/cursors/diag_ascend.bmp");
     input_loadMouseSprite(CELESTIAL_MOUSE_DIAG_DESCEND, "/usr/share/cursors/diag_descend.bmp");
+    input_loadMouseSprite(CELESTIAL_MOUSE_GRAB, "/usr/share/cursors/grab.bmp");
+
+    // reading directly from fb ram is slow and sucks!
+    // instead do this hacky shit
+    size_t mouse_width = 0;
+    size_t mouse_height = 0;
+    for (int i = 0; i < CELESTIAL_NMOUSE; i++) {
+        if (mouse_sprites[i] == NULL) continue;
+        if (mouse_sprites[i]->width > mouse_width) mouse_width = mouse_sprites[i]->width;
+        if (mouse_sprites[i]->height > mouse_height) mouse_height = mouse_sprites[i]->height;
+    }
+
+    mouse_ctx.width = mouse_width;
+    mouse_ctx.height = mouse_height;
+    mouse_ctx.bpp = 32;
+    mouse_ctx.pitch = mouse_width * 4;
+    mouse_ctx.backbuffer = malloc(mouse_width * mouse_height * 4);
 
     SERVER->mouse_window = NULL;
+    SERVER->mouse_grab = NULL;
     SERVER->mouse_x = (renderer_getWidth() - mouse_sprites[0]->width) / 2; 
     SERVER->mouse_y = (renderer_getHeight() - mouse_sprites[0]->height) / 2; 
 

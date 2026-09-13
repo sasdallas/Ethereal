@@ -104,8 +104,16 @@ usb_status_t usb_getString(usb_device_t *device, int index, char *buf) {
         return USB_SUCCESS;
     }
 
+    usb_device_request_t req = {
+        .bmRequestType = USB_RT_D2H | USB_RT_STANDARD | USB_RT_DEV,
+        .bRequest = USB_REQ_GET_DESC,
+        .wValue = (USB_DESC_STRING << 8) | index,
+        .wIndex = device->langid,
+        .wLength = sizeof(usb_string_desc_t)
+    };
+
     usb_string_desc_t desc;
-    usb_status_t status = usb_getDescriptorFlags(device, USB_DESC_STRING, index, &desc, sizeof(usb_string_desc_t), USB_TRANSFER_ALLOW_SHORT);
+    usb_status_t status = usb_requestFlags(device, &req, &desc, USB_TRANSFER_ALLOW_SHORT);
     if (USB_ERROR(status)) {
         return status;
     }

@@ -537,8 +537,6 @@ int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
         return -ENOMEM;
     }
 
-    pty->master_node->attr.rdev = num;
-
     snprintf(tmp, 64, "/device/.ptmaster%d", num);
     if (master) {
         int r = vfs_open(tmp, O_RDWR, master);

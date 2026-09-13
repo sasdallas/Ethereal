@@ -19,6 +19,7 @@
 #include <kernel/task/thread.h>
 #include <kernel/task/sleep.h>
 #include <kernel/misc/waitqueue.h>
+#include <kernel/misc/mutex.h>
 #include <sys/time.h>
 
 /**** DEFINITIONS ****/
@@ -26,10 +27,11 @@
 /**** TYPES ****/
 
 typedef struct futex {
-    spinlock_t lock;
+    mutex_t lock;
     wait_queue_t queue;
     volatile size_t waiters;
     volatile size_t wakers;
+    size_t references;
 } futex_t;
 
 /**** FUNCTIONS ****/

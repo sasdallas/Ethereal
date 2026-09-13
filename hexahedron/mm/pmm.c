@@ -324,16 +324,20 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
     assert(zone >= 0 && zone < NZONES);
 
     // Get a section with a page
-    // TODO: Check this for stability.. what if we skip a region right before a page gets freed? Probably not that big of a deal
     pmm_section_t *s = zones[zone];
-    while (s && s->nfree == 0) {
-        s = s->next;
+    while (true) {
+        while (s && s->nfree == 0) {
+            s = s->next;
+        }
+
+        if (!s) pmm_oom(1);
+
+        // acquire lock, check nfree, if the race was lost retry
+        mutex_acquire(s->mutex);
+        if (s->nfree) break;
+        mutex_release(s->mutex);
+        s = zones[zone];
     }
-
-    if (!s) pmm_oom(1);
-
-    mutex_acquire(s->mutex);
-
 
     // Use the FFB
     if (s->bmap[s->ffb] == 0xFF) {

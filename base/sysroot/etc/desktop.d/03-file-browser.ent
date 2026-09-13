@@ -1,4 +1,4 @@
 [Desktop]
 Name="File Browser"
-Icon=/usr/share/resources/24/folder.bmp
+Icon=folder
 Exec="file-browser"

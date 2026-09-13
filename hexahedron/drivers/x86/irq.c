@@ -32,6 +32,7 @@
 #include <kernel/drivers/x86/io_apic.h>
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/drivers/pci.h>
+#include <kernel/processor_data.h>
 #include <kernel/debug.h>
 #include <assert.h>
 
@@ -59,6 +60,8 @@ static void pic_chipMask(irq_t *irq);
 static void pic_chipUnmask(irq_t *irq);
 static void pic_chipSetAffinity(irq_t *irq, procmask_t mask);
 static void pic_chipEoi(irq_t *irq);
+irq_number_t pic_mapping[256] = { 0 };
+spinlock_t pic_mapping_lock = SPINLOCK_INITIALIZER;
 irq_chip_t __pic_chip = {
     .name = "Global PIC",
     .ops = {
@@ -140,6 +143,7 @@ static void lapic_chipSetAffinity(irq_t *irq, procmask_t pmask) {
 
 static void lapic_chipEoi(irq_t *irq) {
 extern uintptr_t lapic_base;
+    if (lapic_base == 0x0) return; // sometimes ACPICA can try to fire an interrupt early I guess? i dont know
     *((uint32_t*)(lapic_base + LAPIC_REGISTER_EOI)) = LAPIC_EOI;
 }
 
@@ -174,8 +178,18 @@ static int global_alloc(irq_domain_t *domain, int hwirq, void *dev, irq_number_t
         return 0;
     }
 
-    // Otherwise just allocate
-    *ret = irq_allocateVector();
+    // Because of an edge case where two IRQs can have different vIRQs, this mapping garbage is needed
+    spinlock_acquire(&pic_mapping_lock);
+    uint32_t gsi = ioapic_getGSI(hwirq);
+
+    // A mapping does not exist
+    if (pic_mapping[gsi] == 0) {
+        pic_mapping[gsi] = irq_allocateVector();
+    }
+
+    *ret = pic_mapping[gsi];
+
+    spinlock_release(&pic_mapping_lock);
     return 0;
 }
 
@@ -190,7 +204,7 @@ static int msi_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
     if (ctrl & (1 << 7)) {
         // 64-bit supported
         // !!!! HACK GET ACTUAL APIC BASE
-        uint64_t addr = 0xFEE00000;
+        uint64_t addr = 0xFEE00000 | ((uint64_t)processor_data[0].lapic_id << 12);
         uint16_t data = irq->num & 0xFFFF;
         pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x04, (addr & 0xFFFFFFFF));
         pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x08, ((addr >> 32) & 0xFFFFFFFF));
@@ -198,7 +212,7 @@ static int msi_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
     } else {
         // 64-bit not supported
         // !!!! HACK GET ACTUAL APIC BASE
-        uint32_t addr = 0xFEE00000;
+        uint32_t addr = 0xFEE00000 | ((uint32_t)processor_data[0].lapic_id << 12);
         uint16_t data = irq->num & 0xFFFF;
         pci_writeConfigDword(pcidev, pcidev->msi_offset + 0x04, (addr & 0xFFFFFFFF));
         pci_writeConfigWord(pcidev, pcidev->msi_offset + 0x08, data);
@@ -213,9 +227,9 @@ static int msix_map(irq_domain_t *domain, irq_t *irq, int hwirq, void *dev) {
     // dev points to the start of the table in memory
     // hwirq is the index within the table
     pci_msix_entry_t *entry = &((pci_msix_entry_t*)dev)[hwirq];
-    
+
     // !!! HACK GET ACTUAL APIC BASE
-    uint64_t addr = 0xFEE00000;
+    uint64_t addr = 0xFEE00000 | ((uint64_t)processor_data[0].lapic_id << 12);
     uint32_t data = irq->num;
     entry->msg_addr_low = (uint32_t)(addr & 0xFFFFFFFF);
     entry->msg_addr_high = (uint32_t)((addr >> 32) & 0xFFFFFFFF);

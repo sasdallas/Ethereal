@@ -562,13 +562,14 @@ int socket_create(process_t *proc, int domain, int type, int protocol) {
     list_append(socket_list, (void*)sock);
     mutex_release(&socket_list_lck);
 
+    long open_flags = O_RDWR;
     if (type_original & SOCK_NONBLOCK) {
-        SOCKET_CHANGE_FLAG(SOCKET_FLAG_NONBLOCKING, 1);
+        open_flags |= O_NONBLOCK;
     }
 
     // Add as file descriptor
-    vfs_file_t *f;    
-    assert(vfs_openat(sock->inode, NULL, O_RDWR, &f) == 0);
+    vfs_file_t *f;
+    assert(vfs_openat(sock->inode, NULL, open_flags, &f) == 0);
 
     inode_release(sock->inode); // required after creation so that the last reference can be dropped
 
@@ -635,16 +636,16 @@ int socket_pair(int domain, int type, int protocol, int pair[2]) {
     list_append(socket_list, (void*)sock2);
     mutex_release(&socket_list_lck);
 
+    long open_flags = O_RDWR;
     if (type_original & SOCK_NONBLOCK) {
-        sock1->flags |= SOCKET_FLAG_NONBLOCKING;
-        sock2->flags |= SOCKET_FLAG_NONBLOCKING;
+        open_flags |= O_NONBLOCK;
     }
 
     // Open the files
     vfs_file_t *f1;    
     vfs_file_t *f2;
-    assert(vfs_openat(sock1->inode, NULL, O_RDWR, &f1) == 0);
-    assert(vfs_openat(sock2->inode, NULL, O_RDWR, &f2) == 0);
+    assert(vfs_openat(sock1->inode, NULL, open_flags, &f1) == 0);
+    assert(vfs_openat(sock2->inode, NULL, open_flags, &f2) == 0);
     inode_release(sock1->inode);
     inode_release(sock2->inode);
 
@@ -689,11 +690,20 @@ int socket_insert(sock_t *sock) {
  * @returns 0 on success, 1 on interrupted
  */
 int socket_waitForContent(sock_t *sock) {
-    if (sock->recv_queue->length) return 0;
+    int irq_state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(sock->recv_lock);
 
-    // Just sleep in the queue, we'll be woken up eventually
+    if (sock->recv_queue->length) {
+        spinlock_releaseRaw(sock->recv_lock);
+        hal_setInterruptState(irq_state);
+        return 0;
+    }
+
     sleep_inQueue(sock->recv_wait_queue);
+    spinlock_releaseRaw(sock->recv_lock);
+
     int r = sleep_enter();
+    hal_setInterruptState(irq_state);
     return r == WAKEUP_SIGNAL;
 }
 

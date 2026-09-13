@@ -26,11 +26,15 @@ long sys_clock_gettime(int clock, time_t *secs, long *nanos) {
             break;
         };
 
-        case CLOCK_BOOTTIME:
-            uint64_t s = clock_getBoottime();
-            *secs = s;
-            *nanos = 0;
+        case CLOCK_BOOTTIME: {
+            unsigned long boot_seconds;
+            unsigned long boot_subseconds;
+
+            clock_getCurrentTime(&boot_seconds, &boot_subseconds);
+            *secs = boot_seconds;
+            *nanos = boot_subseconds * 1000;
             break;
+        }
 
         default:
             SYSCALL_LOG(ERR, "Unimplemented clock ID %d\n", clock);

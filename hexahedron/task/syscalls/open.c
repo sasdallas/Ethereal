@@ -104,7 +104,7 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     return fd_out;
 }
 
-int sys_open(const char *pathname, int flags, mode_t mode) {
+long sys_open(const char *pathname, int flags, mode_t mode) {
     SYSCALL_VALIDATE_PTR(pathname);
     int r = __sys_open_internal((char*)pathname, flags, mode);
     return r;

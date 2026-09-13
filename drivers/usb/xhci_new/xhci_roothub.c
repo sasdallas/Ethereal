@@ -117,7 +117,8 @@ usb_status_t xhci_root_hub_control(usb_bus_t *ubus, usb_transfer_t *transfer) {
                 } else if (speed == 3) {
                     status |= USB_HUB_STATUS_HIGH_SPEED;
                 } else {
-                    assert(0 && "invalid speed for USB 2.0 bus");
+                    LOG(ERR, "Invalid USB 2.0 speed 0!! Assuming LOW speed. Be prepared for failure :wilted_rose:\n");
+                    status |= USB_HUB_STATUS_LOW_SPEED;
                 }
             }
 

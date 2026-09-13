@@ -148,7 +148,7 @@ typedef struct vfs_file_ops {
     int (*munmap)(struct vfs_file *file, void *addr, size_t size, off_t offset);
     int (*mmap_prepare)(struct vfs_file *file, struct vmm_memory_range *range); // prepare the range for mapping (yes, it will be a VMM memory range)
     int (*lseek)(struct vfs_file *file, loff_t off, int whence, loff_t *pos); // optional lseek equivalent. pos is a pointer to file->pos. returns 0 on success and sets pos to the new pos.
-    int (*check_flags)(struct vfs_file *file); // called on fcntl(F_SETFL)
+    int (*check_flags)(struct vfs_file *file); // called on open and on fcntl(F_SETFL)
     int (*fsync)(struct vfs_file *file);
 } vfs_file_ops_t;
 

@@ -11,8 +11,8 @@
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#ifndef _SYS_ETHEREAL_REBOOT_H
-#define _SYS_ETHEREAL_REBOOT_H
+#ifndef _ETHEREAL_REBOOT_H
+#define _ETHEREAL_REBOOT_H
 
 /**** DEFINITIONS ****/
 

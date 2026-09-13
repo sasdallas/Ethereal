@@ -33,7 +33,7 @@ static key_scancode_t kbd_us_scancodes_lower[128] = {
 	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\r', SCANCODE_LEFT_CTRL,
 	'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', SCANCODE_LEFT_SHIFT,
 	'\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', SCANCODE_RIGHT_SHIFT,
-	'*', 0, ' ', 0,
+	'*', SCANCODE_LEFT_ALT, ' ', 0,
 	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
 	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
 	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0,
@@ -48,7 +48,7 @@ static key_scancode_t kbd_us_scancodes_upper[128] = {
 	'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\r', SCANCODE_LEFT_CTRL,
 	'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '\"', '~', SCANCODE_LEFT_SHIFT,
 	'|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', SCANCODE_RIGHT_SHIFT,
-	'*', 0, ' ', 0,
+	'*', SCANCODE_LEFT_ALT, ' ', 0,
 	SCANCODE_F1, SCANCODE_F2, SCANCODE_F3, SCANCODE_F4, SCANCODE_F5, SCANCODE_F6,
 	SCANCODE_F7, SCANCODE_F8, SCANCODE_F9, SCANCODE_F10,
 	0, 0, 0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0, // TODO: Fill in these scancodes

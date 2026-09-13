@@ -37,7 +37,6 @@ char *syscall_table[] = {
     [SYS_PSELECT] = "pselect",
     [SYS_READLINK] = "readlink",
     [SYS_ACCESS] = "access",
-    [SYS_CHMOD] = "chmod",
     [SYS_FCNTL] = "fcntl",
     [SYS_UNLINKAT] = "unlink",
     [SYS_FTRUNCATE] = "ftruncate",
@@ -59,7 +58,6 @@ char *syscall_table[] = {
     [SYS_MUNMAP] = "munmap",
     [SYS_MSYNC] = "msync",
     [SYS_DUP2] = "dup2",
-    [SYS_SIGNAL] = "signal",
     [SYS_SIGACTION] = "sigaction",
     [SYS_SIGPENDING] = "sigpending",
     [SYS_SIGPROCMASK] = "sigprocmask",
@@ -85,12 +83,13 @@ char *syscall_table[] = {
     [SYS_SHARED_NEW] = "shared",
     [SYS_SHARED_KEY] = "shared",
     [SYS_SHARED_OPEN] = "shared",
-    [SYS_CREATE_THREAD] = "create",
+    [SYS_CREATE_THREAD] = "create_thread",
     [SYS_GETTID] = "gettid",
     [SYS_SETTLS] = "settls",
+    [SYS_SETGSBASE] = "setgsbase",
+    [SYS_SIGRETURN] = "sigreturn",
+    [SYS_SIGALTSTACK] = "sigaltstack",
     [SYS_EXIT_THREAD] = "exit",
-    [SYS_JOIN_THREAD] = "join",
-    [SYS_KILL_THREAD] = "kill",
     [SYS_EPOLL_CREATE] = "epoll",
     [SYS_EPOLL_CTL] = "epoll",
     [SYS_EPOLL_PWAIT] = "epoll",
@@ -156,7 +155,6 @@ char *syscall_formats[] = {
     [SYS_PSELECT] = "nfds %d readfds %p writefds %p exceptfds %p timeout %p sigmask %p",
     [SYS_READLINK] = "pathname %s buf %s bufsiz %zu",
     [SYS_ACCESS] = "pathname %s mode %d",
-    [SYS_CHMOD] = "pathname %s mode %d",
     [SYS_FCNTL] = "fd %d cmd %d arg %ld",
     [SYS_UNLINKAT] = "dfd %d pathname %s flag %d",
     [SYS_FTRUNCATE] = "fd %d length %ld",
@@ -178,7 +176,6 @@ char *syscall_formats[] = {
     [SYS_MUNMAP] = "addr %p length %zu",
     [SYS_MSYNC] = "addr %p length %zu flags %d",
     [SYS_DUP2] = "oldfd %d newfd %d",
-    [SYS_SIGNAL] = "signum %d handler %p",
     [SYS_SIGACTION] = "signum %d act %p oldact %p",
     [SYS_SIGPENDING] = "set %p",
     [SYS_SIGPROCMASK] = "how %d set %p oldset %p",
@@ -207,9 +204,10 @@ char *syscall_formats[] = {
     [SYS_CREATE_THREAD] = "stack %p tls %p entry %p arg %p",
     [SYS_GETTID] = "",
     [SYS_SETTLS] = "tls %p",
+    [SYS_SETGSBASE] = "gs %p",
+    [SYS_SIGRETURN] = "uctx %p",
+    [SYS_SIGALTSTACK] = "ss %p oss %p",
     [SYS_EXIT_THREAD] = "???",
-    [SYS_JOIN_THREAD] = "tid %d retval %p",
-    [SYS_KILL_THREAD] = "tid %d sig %d",
     [SYS_EPOLL_CREATE] = "size %d",
     [SYS_EPOLL_CTL] = "epfd %d op %d fd %d event %p",
     [SYS_EPOLL_PWAIT] = "epfd %d events %p maxevents %d timeout %d sigmask %p",
@@ -432,7 +430,7 @@ void syscall_trace_exit(syscall_t *s) {
     char buffer[1024];
     char *name = syscall_table[s->syscall_number];
 
-    if ((int)s->return_value < 0) {
+    if ((long)s->return_value < 0) {
         snprintf(buffer, 1024, "return: process %s:%d thread %d: %s: %s (0x%llx)\r\n", p->name, p->pid, thr->tid, name, strerror(-s->return_value), s->return_value);
     } else {
         snprintf(buffer, 1024, "return: process %s:%d thread %d: %s: %lld\r\n", p->name, p->pid, thr->tid, name, s->return_value);

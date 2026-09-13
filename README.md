@@ -142,11 +142,13 @@ Certain external components are by the same developer, however may follow a diff
 
 A lot of Ethereal's design was inspired by [ToaruOS by klange](https://github.com/klange/ToaruOS) - thank you!
 
+The "grab" cursor from ToaruOS is used in Celestial (art asset is located at base/sysroot/usr/share/cursors/grab.bmp).
+
 Ethereal's virtual memory manager design and other parts was inspired by [Astral by @mathewnd](https://github.com/mathewnd/Astral)
 
 Some code from Astral was also used, credited where appropriate. A license file is included in `external/`.
 
-The Ethereal logo and Mercury theme were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
+The Ethereal logo, Mercury theme, as well as all art assets not specified were designed by the artist [ArtsySquid](https://artsycomms.carrd.co)
 
 ## Licensing
 

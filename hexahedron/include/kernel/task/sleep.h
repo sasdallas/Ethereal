@@ -125,7 +125,7 @@ int sleep_inQueue(sleep_queue_t *queue);
 /**
  * @brief Wakeup threads in a sleep queue
  * @param queue The queue to start waking up
- * @param amount The amount of threads to wakeup. 0 wakes them all up
+ * @param amount The amount of threads to wakeup. Non-positive wakes them all up
  * @returns Amount of threads awoken
  */
 int sleep_wakeupQueue(sleep_queue_t *queue, int amounts);

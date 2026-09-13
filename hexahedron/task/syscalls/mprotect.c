@@ -16,6 +16,9 @@
 #include <sys/mman.h>
 
 long sys_mprotect(void *addr, size_t len, int prot) {
+    if (((uintptr_t)addr & (PAGE_SIZE - 1)) || len == 0) return -EINVAL;
+    if ((uintptr_t)addr >= MMU_USERSPACE_END || len > MMU_USERSPACE_END - (uintptr_t)addr) return -ENOMEM;
+
     mmu_flags_t target = vmm_toMMU(prot);
     return vmm_update(addr, len, VM_OP_SET_FLAGS, target);
 }

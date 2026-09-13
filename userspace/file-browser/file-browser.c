@@ -25,6 +25,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <getopt.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -201,9 +202,6 @@ void open_application(fb_entry_t *ent) {
 
 // about dialog
 void about_pressed(nt_widget_t *w, nt_signal_t *s, void *data) {
-    // HACK: need to update the main window once to allow the menu to unrender itself
-    nt_window_update(nt_widget_get_window(w));
-
     nt_dialog_t *dlg = nt_dialog_create(file_browser_window, "About File Browser", 350, 190);
     
     nt_widget_t *img = nt_image_create_from_image(nt_icon_get("folder", NULL, 48));
@@ -488,7 +486,7 @@ nt_widget_t *create_sidebar_entry(char *name, nt_image_t *icon) {
 nt_widget_t *create_sidebar() {
     sidebar = nt_list_view_create();
     nt_widget_set_expansion(sidebar, NT_EXPAND_VERTICAL);
-    nt_list_view_append(sidebar, create_sidebar_entry("Desktop", folder_icon));
+    nt_style_set_suggested_width(&sidebar->style, 100);
     nt_style_set_margin_all(&sidebar->style, 0);
     return sidebar;
 }
@@ -615,7 +613,7 @@ void _context_menu_open_terminal(nt_widget_t *w, nt_signal_t *sig, void *data) {
             char *term_name = "kitty";
         #endif
             
-            char *temp_argv[] = { term_name, selected_entry->launch_cmd, NULL };
+            char *temp_argv[] = { term_name, selected_entry->d_name, NULL };
             execvp(term_name, (char *const*)temp_argv);
             
             exit(1);
@@ -623,13 +621,58 @@ void _context_menu_open_terminal(nt_widget_t *w, nt_signal_t *sig, void *data) {
     }
 }
 
+void usage() {
+    printf("Usage: file-browser [-h] [-v] [PATH]\n");
+    printf("File browser built on Neutron\n\n");
+    printf(" -h, --help         Display this help message\n");
+    printf(" -v, --version      Print the version of file-browser\n\n");
+    exit(1);
+}
+
+void version() {
+    printf("file-browser version 1.0.0\n");
+    printf("Copyright (C) 2026 The Ethereal Development Team\n");
+    exit(1);
+}
+
 int main(int argc, char *argv[]) {
-    // begin at cwd
-    getcwd(file_browser_path, PATH_MAX);
+    struct option options[] = {
+        { "help", no_argument, 0, 'h' },
+        { "version", no_argument, 0, 'v' },
+        { 0, 0, 0, 0 }
+    };
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "hv", options, NULL)) != -1) {
+        switch (opt) {
+            case 'v':
+                version();
+                break;
+            case 'h':
+            default:    
+                usage();
+                break;
+        }
+    }
+
+    if (argc-optind > 0) {
+        char *target_path = argv[optind];
+        strncpy(file_browser_path, target_path, PATH_MAX);
+        
+        if (chdir(file_browser_path) < 0) {
+            fprintf(stderr, "file-browser: Cannot change directory to \"%s\": %s\n", target_path, strerror(errno));
+            return 1;
+        }
+    } else {
+        // begin at cwd
+        getcwd(file_browser_path, PATH_MAX);
+    }
 
     nt_init();
     load_icons();
+
     file_browser_window = nt_window_create("File Explorer", 800, 600);
+    nt_window_set_icon(file_browser_window, "folder");
 
     nt_widget_t *box = nt_box_create_vertical();
     nt_widget_set_expansion(box, NT_EXPAND_HORIZONTAL | NT_EXPAND_VERTICAL);
@@ -668,6 +711,8 @@ int main(int argc, char *argv[]) {
     status_lbl = nt_label_create("I am the status label");
     nt_style_set_padding_all(&status_lbl->style, 5);
     nt_style_set_margin_all(&status_lbl->style, 0);
+    nt_style_set_border_color(&status_lbl->style, NT_COLOR(0xde,0xde,0xde,0xff));
+    nt_style_set_border_thickness(&status_lbl->style, 5);
     nt_widget_set_expansion(status_lbl, NT_EXPAND_HORIZONTAL);
     nt_style_set_bg_color(&status_lbl->style, NT_COLOR(0xde,0xde,0xde,0xff));
     nt_box_append(main_box, status_lbl);

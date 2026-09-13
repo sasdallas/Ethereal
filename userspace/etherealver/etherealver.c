@@ -21,6 +21,7 @@ int main(int argc, char *argv[]) {
     wid_t w = celestial_createWindow(0, 350, 250);
     window_t *win = celestial_getWindow(w);
     celestial_setTitle(win, "Ethereal Version");
+    celestial_setIcon(win, "ethereal");
 
     // Load font we need
     gfx_font_t *f = gfx_loadFont(NULL, "/usr/share/DejaVuSans.ttf");

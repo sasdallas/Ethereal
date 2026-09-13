@@ -16,6 +16,7 @@
 #include "hub.h"
 #include <kernel/loader/driver.h>
 #include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 
 static int hub_match(usb_device_t *device, usb_interface_t *intf);
@@ -189,6 +190,9 @@ static void hub_handleResetChange(hub_internal_t *internal, int port, usb_hub_po
     }
 
     LOG(INFO, "Reset complete on USB port %d\n", port);
+
+    // give the port time to cool off (10ms is mandated)
+    clock_sleep(10);
     
     usb_speed_t spd;
     if (USB_IS_SUPERSPEED(dev->speed)) {
@@ -199,7 +203,7 @@ static void hub_handleResetChange(hub_internal_t *internal, int port, usb_hub_po
         else if (spd_raw == USB_HUB_SS_SPEED_FULL) spd = USB_SPEED_FULL;
         else if (spd_raw == USB_HUB_SS_SPEED_HIGH) spd = USB_SPEED_HIGH;
         else if (spd_raw == USB_HUB_SS_SPEED_SUPER) spd = USB_SPEED_SUPER; 
-        else assert(0 && "unknown hub speed");
+        else spd = USB_SPEED_SUPER; // todo this requires more handling
     } else {
         if (sts->wPortStatus & USB_HUB_STATUS_LOW_SPEED) {
             spd = USB_SPEED_LOW;

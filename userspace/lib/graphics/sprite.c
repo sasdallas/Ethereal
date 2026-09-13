@@ -331,9 +331,9 @@ int gfx_renderSpriteAlpha(gfx_context_t *ctx, sprite_t *sprite, int x, int y, ui
 
             uint8_t a_src = GFX_RGB_A(src_pixel);
             uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
-            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)alpha + 127) / 255);
             *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
         }
 
@@ -377,9 +377,9 @@ int gfx_renderSpriteAlpha(gfx_context_t *ctx, sprite_t *sprite, int x, int y, ui
 
             uint8_t a_src = GFX_RGB_A(src_pixel);
             uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
-            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)alpha + 127) / 255);
             *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
         }
     }
@@ -393,9 +393,9 @@ int gfx_renderSpriteAlpha(gfx_context_t *ctx, sprite_t *sprite, int x, int y, ui
 
             uint8_t a_src = GFX_RGB_A(src_pixel);
             uint8_t a_eff = (uint8_t)((a_src * (uint32_t)alpha + 127) / 255);
-            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)a_eff + 127) / 255);
-            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)a_eff + 127) / 255);
+            uint8_t r = (uint8_t)((GFX_RGB_R(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t g = (uint8_t)((GFX_RGB_G(src_pixel) * (uint32_t)alpha + 127) / 255);
+            uint8_t b = (uint8_t)((GFX_RGB_B(src_pixel) * (uint32_t)alpha + 127) / 255);
 
             *pix = gfx_alphaBlend(GFX_RGBA(r, g, b, a_eff), *pix);
         }

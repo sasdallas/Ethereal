@@ -8,7 +8,7 @@
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2026 Samuel Stuart
  */
 
 #ifndef PS2_H
@@ -74,8 +74,8 @@
 #define PS2_SELF_TEST_FAIL              0xFC
 
 // IRQs
-#define PS2_KEYBOARD_IRQ                1
-#define PS2_MOUSE_IRQ                   12
+#define PS2_DEVICE0_IRQ                 1
+#define PS2_DEVICE1_IRQ                 12
 
 // Keyboard shenanigans
 #define PS2_KEYBOARD_SET_SCANCODE       0xF0    // Get/set scancode
@@ -100,69 +100,5 @@
 /* Responses */
 #define PS2_ACK                             0xFA
 #define PS2_RESEND                          0xFE
-
-
-/**** FUNCTIONS ****/
-
-/**
- * @brief Read a PS/2 byte
- * @returns LESS than 0 on error
- */
-int ps2_readByte();
-
-/**
- * @brief Initialize the PS/2 keyboard
- */
-void kbd_init(uint8_t port);
-
-/**
- * @brief Initialize the PS/2 mouse
- */
-void mouse_init(uint8_t port);
-
-/**
- * @brief Wait for input buffer to be empty
- * @returns 1 on timeout
- */
-int ps2_waitForInputClear();
-
-/**
- * @brief Wait for output buffer to be full
- * @returns 1 on timeout
- */
-int ps2_waitForOutput();
-
-/**
- * @brief Send PS/2 command (single-byte)
- * @param command The command byte to send
- */
-int ps2_sendCommand(uint8_t command);
-
-/**
- * @brief Send PS/2 command (return value)
- * @param command The command byte to send
- * @returns PS2_DATA value or -1 on failure
- */
-int ps2_sendCommandResponse(uint8_t command);
-
-/**
- * @brief Send a multi-byte command
- * @param command The command byte to send
- * @param data The data byte to send
- */
-void ps2_sendCommandParameter(uint8_t command, uint8_t data);
-
-/**
- * @brief Send a command to a device
- */
-void ps2_sendDevice(uint8_t port, uint8_t data);
-
-/**
- * @brief Send a command to a device and get an ACK response
- * Will wait for a PS2 ACK response, resend up to 10 times.
- * @returns 0 on success
- */
-int ps2_sendDeviceACK(uint8_t port, uint8_t data);
-
 
 #endif

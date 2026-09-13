@@ -1,0 +1,4 @@
+[Desktop]
+Name="Plasma"
+Icon=application
+Exec="plasma"

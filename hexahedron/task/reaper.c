@@ -28,19 +28,19 @@ void reaper_proc(void *context) {
         EVENT_INIT_LISTENER(&l);
         EVENT_ATTACH(&l, &reap_event);
 
-        spinlock_acquireRaw(&reap_lock);
+        spinlock_acquire(&reap_lock);
         while (!queue_rb_empty(&reaper_queue)) {
             process_t *p;
             if (queue_rb_pop(&reaper_queue, (void**)&p)) {
                 break;
             }
 
-            spinlock_releaseRaw(&reap_lock);
+            spinlock_release(&reap_lock);
             process_destroy(p);
-            spinlock_acquireRaw(&reap_lock);
+            spinlock_acquire(&reap_lock);
         }
 
-        spinlock_releaseRaw(&reap_lock);
+        spinlock_release(&reap_lock);
         EVENT_WAIT(&l, -1);
         EVENT_DETACH(&l);
         EVENT_DESTROY_LISTENER(&l);
@@ -52,6 +52,7 @@ void reaper_proc(void *context) {
  * @param proc The process to push
  */
 void reaper_push(process_t *proc) {
+    // when this is called, IRQs are already off so raw lock acquisition is safe
     spinlock_acquireRaw(&reap_lock);
     queue_rb_push(&reaper_queue, proc);
     spinlock_releaseRaw(&reap_lock);

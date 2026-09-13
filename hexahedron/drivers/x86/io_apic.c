@@ -20,6 +20,7 @@
 #include <kernel/drivers/x86/local_apic.h>
 #include <kernel/drivers/x86/pic.h>
 #include <kernel/processor_data.h>
+#include <kernel/misc/spinlock.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
@@ -34,6 +35,9 @@ int io_apic_count = 0;
 /* IRQ override list */
 uint32_t *io_apic_irq_overrides = NULL;
 
+/* I/O APIC lock */
+static spinlock_t io_apic_lock = SPINLOCK_INITIALIZER;
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:X86:IOAPIC", __VA_ARGS__)
 
@@ -42,23 +46,18 @@ uint32_t *io_apic_irq_overrides = NULL;
 #define IOAPIC_WRITE(off, value) (*(volatile uint32_t*)(apic->mmio_base + off) = (uint32_t)value)
 
 /**
- * @brief Read register from I/O APIC
- * @param apic The APIC to read from
- * @param reg The register to read from
+ * @brief Read from I/O APIC
  */
-uint32_t ioapic_read(io_apic_t *apic, uint32_t reg) {
+static uint32_t ioapic_read(io_apic_t *apic, uint32_t reg) {
     IOAPIC_WRITE(IO_APIC_IOREGSEL, reg);
     io_wait();
     return IOAPIC_READ(IO_APIC_IOREGWIN);
 }
 
 /**
- * @brief Write register to I/O APIC
- * @param apic The APIC to write the register to
- * @param reg The register to write
- * @param value The value to write
+ * @brief Write to I/O APIC
  */
-void ioapic_write(io_apic_t *apic, uint32_t reg, uint32_t value) {
+static void ioapic_write(io_apic_t *apic, uint32_t reg, uint32_t value) {
     IOAPIC_WRITE(IO_APIC_IOREGSEL, reg);
     io_wait();
     IOAPIC_WRITE(IO_APIC_IOREGWIN, value);
@@ -130,6 +129,16 @@ static io_apic_t *ioapic_getInterrupt(uintptr_t interrupt, int *pin) {
 }
 
 /**
+ * @brief Get GSI for an interrupt
+ * @param interrupt The interrupt to get the GSI for
+ * @returns GSI
+ */
+uint32_t ioapic_getGSI(uintptr_t interrupt) {
+    assert(interrupt < MAX_INT_OVERRIDES);
+    return io_apic_irq_overrides[interrupt];
+}
+
+/**
  * @brief Change the hardware mask state of an I/O APIC interrupt
  */
 static int ioapic_setMask(uintptr_t interrupt, int masked) {
@@ -141,6 +150,7 @@ static int ioapic_setMask(uintptr_t interrupt, int masked) {
     }
 
     uint32_t reg = 0x10 + (pin * 2);
+    spinlock_acquire(&io_apic_lock);
     uint32_t entry = ioapic_read(apic, reg);
     if (masked) {
         entry |= (1u << 16);
@@ -149,6 +159,7 @@ static int ioapic_setMask(uintptr_t interrupt, int masked) {
     }
 
     ioapic_write(apic, reg, entry);
+    spinlock_release(&io_apic_lock);
     return 0;
 }
 
@@ -200,6 +211,7 @@ int ioapic_route(uintptr_t irq, uintptr_t hwirq) {
 
     // Get redirection entry already at that address 
     io_apic_redir_entry_t entry;
+    spinlock_acquire(&io_apic_lock);
     entry.lo = ioapic_read(apic, 0x10 + (pin * 2));
     entry.hi = ioapic_read(apic, 0x10 + (pin * 2 + 1));
 
@@ -211,6 +223,7 @@ int ioapic_route(uintptr_t irq, uintptr_t hwirq) {
 
     ioapic_write(apic, 0x10 + pin * 2 + 1, entry.hi);
     ioapic_write(apic, 0x10 + pin * 2, entry.lo);
+    spinlock_release(&io_apic_lock);
 
     return 0;
 }

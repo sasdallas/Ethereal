@@ -18,10 +18,13 @@
 #define CONTEXT_OFFSET          0x70    // thread->context
 #define STATUS_OFFSET           0x10    // thread->status
 #define THREAD_STATUS_SLEEPING  0x08
+#define FP_OFFSET               0xC0
 #define SLEEP_LOCK_OFFSET       0x3C    // thread->sleep.lock.lock
 
 .global arch_start_execution
 arch_start_execution:
+    cli
+
     /* Clear RBP to a known value for debug */
     movq $0xDEADDEAD, %rbp  // Thread stack marker (debug)
 
@@ -71,7 +74,7 @@ arch_restore_context:
     // Skip over error code and int no
     add $16, %rsp
 
-    /* swapgs and return */
+    cli
     swapgs
     iretq
 
@@ -101,6 +104,7 @@ arch_switch_context:
     jz .start_load
 
     /* save the old thread's context */
+    fxsave64 FP_OFFSET(%rdi)
     leaq 8(%rsp), %rax // reads the RSP from the stack
     movq %rax, (CONTEXT_OFFSET+0)(%rdi)
     movq %rbp, (CONTEXT_OFFSET+8)(%rdi)
@@ -113,12 +117,17 @@ arch_switch_context:
     rdmsr
     movl %eax, (CONTEXT_OFFSET+56)(%rdi)
     movl %edx, (CONTEXT_OFFSET+60)(%rdi)
+    movq $0xC0000102, %rcx
+    rdmsr
+    movl %eax, (CONTEXT_OFFSET+64)(%rdi)
+    movl %edx, (CONTEXT_OFFSET+68)(%rdi)
     movq (%rsp), %rax // reads IP from the stack
-    movq %rax, (CONTEXT_OFFSET+64)(%rdi)
+    movq %rax, (CONTEXT_OFFSET+72)(%rdi)
 
 .start_load:
 
     /* begin loading new thread's context */
+    fxrstor64 FP_OFFSET(%rsi) // todo: lazy FPU
     movq (CONTEXT_OFFSET+0)(%rsi), %rsp
     movq (CONTEXT_OFFSET+8)(%rsi), %rbp
     movq (CONTEXT_OFFSET+16)(%rsi), %rbx
@@ -140,8 +149,14 @@ arch_switch_context:
     movq $0xC0000100, %rcx
     wrmsr
 
+    /* restore gsbase */
+    movl (CONTEXT_OFFSET+64)(%rsi), %eax
+    movl (CONTEXT_OFFSET+68)(%rsi), %edx
+    movq $0xC0000102, %rcx
+    wrmsr
+
     /* this is the RIP to get back to */
-    movq (CONTEXT_OFFSET+64)(%rsi), %rcx
+    movq (CONTEXT_OFFSET+72)(%rsi), %rcx
 
     /* depending on reschedule flag, return thread in RAX */
     xorq %rax, %rax
@@ -184,10 +199,3 @@ arch_handle_threadexit:
 
     movq %rsi, %rdi
     jmp thread_safeExit
-
-.global arch_execute_safe
-arch_execute_safe:
-    movq %rdx, %rsp
-    andq $0xFFFFFFFFFFFFFFF0, %rsp
-    xchg %rdi, %rsi
-    callq %rsi

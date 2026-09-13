@@ -30,7 +30,7 @@
 
 /* NIC list */
 list_t *nic_list = NULL;
-static spinlock_t nic_list_lock = { 0 };
+static mutex_t nic_list_lock = MUTEX_INITIALIZER;
 
 /* Network directory for SystemFS */
 systemfs_node_t *systemfs_net_dir = NULL;
@@ -157,9 +157,9 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
     nic->driver = driver;
     nic->state = NIC_STATE_UP;
     
-    spinlock_acquire(&nic_list_lock);
+    mutex_acquire(&nic_list_lock);
     list_append(nic_list, nic);
-    spinlock_release(&nic_list_lock);
+    mutex_release(&nic_list_lock);
 
     // Mount with devfs
     assert(devfs_register(devfs_root, name, VFS_BLOCKDEVICE, &nic_devfs_ops, DEVFS_MAJOR_NETWORK, nic_last_minor++, nic));
@@ -176,9 +176,9 @@ nic_t *nic_create(char *name, int type, nic_ops_t *ops, uint8_t *mac, void *driv
  * @param nic The NIC to destroy
  */
 int nic_destroy(nic_t *nic) {
-    spinlock_acquire(&nic_list_lock);
+    mutex_acquire(&nic_list_lock);
     list_delete(nic_list, list_find(nic_list, nic));
-    spinlock_release(&nic_list_lock);
+    mutex_release(&nic_list_lock);
 
     slab_free(nic_cache, nic);
     return 0;

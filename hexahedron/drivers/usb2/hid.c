@@ -315,8 +315,11 @@ static usb_status_t hid_attach(usb_device_t *dev, usb_interface_t *intf) {
 static void hid_freeReport(hid_report_t *r) {
     for (unsigned i = 0; i < r->num_fields; i++) {
         hid_field_t *f = &r->fields[i];
-        kfree(f->last_state);
-        kfree(f->current_state);
+
+        if (f->current_state && f->last_state) {
+            kfree(f->last_state);
+            kfree(f->current_state);
+        }
     }
 
     kfree(r->fields);

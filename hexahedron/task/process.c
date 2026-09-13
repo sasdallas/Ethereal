@@ -91,6 +91,8 @@ void process_init() {
  * @warning Don't call this unless you know what you're doing. Use @c process_yield
  */
 void __attribute__((noreturn)) process_switchNextThread() {
+    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
     // Get next thread in queue
     thread_t *next_thread = sched_get();
     if (!next_thread) {
@@ -102,9 +104,6 @@ void __attribute__((noreturn)) process_switchNextThread() {
         timemonitor_updateIdleExit();
     }
     
-    // Entering critical section
-    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
-
     // Update CPU variables
     thread_t *prev = current_cpu->current_thread;
     current_cpu->current_thread = next_thread;
@@ -170,14 +169,13 @@ void process_yield(uint8_t reschedule) {
     // Can't be rescheduling
     if (prev->status & THREAD_STATUS_SLEEPING) reschedule = 0;
 
+    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
     // Get next thread in queue
     thread_t *next_thread = sched_get();
     if (!next_thread) {
         kernel_panic_extended(SCHEDULER_ERROR, "scheduler", "*** No thread was found in the scheduler (or something has been corrupted). Got thread %p.\n", next_thread);
     }
-
-    // Entering a critical section now
-    int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
 
     // Clear resched flag so we dont get preempted in here
     next_thread->flags &= ~(THREAD_FLAG_NEEDS_RESCHED);
@@ -203,11 +201,7 @@ void process_yield(uint8_t reschedule) {
     arch_prepare_switch(current_cpu->current_thread);
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_RUNNING);
 
-    // TODO: DESPERATELY move this to context structure.
-    // TODO: Lazy FPU
-    asm volatile ("fxsave64 (%0)" :: "r"(prev->fp_regs));
     thread_t *yield = arch_switch_context(prev, next_thread, reschedule);
-    asm volatile ("fxrstor (%0)" :: "r"(current_cpu->current_thread->fp_regs));
 
     // Return thread to its queue safely
     if (yield != NULL) {
@@ -573,30 +567,43 @@ int process_executeCommon(elf_image_t *img) {
     // Destroy previous threads
     process_t *proc = current_cpu->current_process;
 
-    // Stop all previous threads
-    spinlock_acquireRaw(&proc->thread_lock);
-    thread_t *t = proc->thread_list;
-    while (t) {
-        if (t != current_cpu->current_thread) {
-            __sync_or_and_fetch(&t->status, THREAD_STATUS_STOPPING);
-            sleep_wakeup(t);
+    // Mark each thread as stopping
+    thread_t *victims = NULL;
+    thread_t *self = current_cpu->current_thread;
+    spinlock_acquire(&proc->thread_lock);
 
-            while ((t->status & THREAD_STATUS_STOPPED) == 0) {
-                LOG(DEBUG, "process_executeCommon waiting for thread %p to die\n", t);
-                process_yield(1);
-            }
-
-            thread_t *nxt = t->next;
-            thread_destroy(t);
-            t = nxt;
-            continue;
-        }
-        t = t->next;
-    }
-
+    victims = proc->thread_list;
     proc->thread_list = NULL;
     proc->nthreads = 0;
-    spinlock_releaseRaw(&proc->thread_lock);
+
+    for (thread_t *iter = victims; iter; iter = iter->next) {
+        if (iter == self) {
+            continue;
+        }
+
+        __atomic_fetch_or(&iter->status, THREAD_STATUS_STOPPING, __ATOMIC_RELEASE);
+    }
+
+    spinlock_release(&proc->thread_lock);
+
+    // Finish thread destruction
+    thread_t *iter = victims;
+    while (iter) {
+        if (iter == self) { iter = iter->next; continue; }
+        sleep_wakeup(iter);
+
+        while (!(__atomic_load_n(&iter->status, __ATOMIC_ACQUIRE) & THREAD_STATUS_STOPPED)) {
+            LOG(DEBUG, "waiting for thread %p to exit\n", iter);
+            process_yield(1);
+        }
+
+        thread_t *next = iter->next;
+        thread_destroy(iter);
+        iter = next;
+    }
+
+
+
 
     // Switch away from old directory
     vmm_switch(vmm_kernel_context);
@@ -612,6 +619,14 @@ int process_executeCommon(elf_image_t *img) {
     // Create a new main thread with a blank entrypoint
     proc->main_thread = process_createThread(proc, 0x0, THREAD_FLAG_DEFAULT);
     if (current_cpu->current_thread) {
+        // HACK TO RESET MASKS
+        spinlock_acquire(&current_cpu->current_thread->signal.lock);
+        proc->main_thread->signal.blocked = current_cpu->current_thread->signal.blocked;
+        proc->main_thread->signal.pending = current_cpu->current_thread->signal.pending;
+        memcpy(proc->main_thread->signal.info, current_cpu->current_thread->signal.info, sizeof(proc->main_thread->signal.info));
+        proc->main_thread->signal.have_pending = !!(proc->main_thread->signal.pending & ~proc->main_thread->signal.blocked);
+        spinlock_release(&current_cpu->current_thread->signal.lock);
+
         // Reuse kernel-stack
         kfree((void*)(proc->main_thread->kstack - PROCESS_KSTACK_SIZE));
         proc->main_thread->kstack = current_cpu->current_thread->kstack;
@@ -622,6 +637,15 @@ int process_executeCommon(elf_image_t *img) {
     if (ret != 0) {
         return ret;
     }
+
+    // reset all handlers but preserve ignored ones
+    spinlock_acquire(&proc->signal.lock);
+    for (int i = 1; i < _NSIG; i++) {
+        bool ignored = proc->signal.actions[i].handler == (uintptr_t)SIG_IGN;
+        memset(&proc->signal.actions[i], 0, sizeof(signal_action_t));
+        if (ignored) proc->signal.actions[i].handler = (uintptr_t)SIG_IGN;
+    }
+    spinlock_release(&proc->signal.lock);
 
     // Close any file descriptors marked "close-on-exec"
     fd_table_t *tbl = current_cpu->current_process->fd_table;
@@ -677,14 +701,13 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     r = -1;
     if (interpreter_path) {
         // We have an interpreter path
-        LOG(INFO, "Trying to execute interpreter: %s\n", interpreter_path);
         r = vfs_open(interpreter_path, O_RDONLY, &interpreter);
     }
 
     // Strike 2
     if (r) {
         // Backup path: Run /usr/lib/ld.so
-        LOG(INFO, "Trying to load interpreter: /usr/lib/ld.so\n");
+        LOG(INFO, "Trying to load interpreter (backup): /usr/lib/ld.so\n");
         r = vfs_open("/usr/lib/ld.so", O_RDONLY, &interpreter);
     }
 
@@ -840,7 +863,6 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     // First, check if the file requires an interpreter
     if (img.interp_path) {
         // Yes, it is, run the process with ld.so
-        LOG(INFO, "Running dynamic executable\n");
         elf_destroyImage(&img); // !!!
         return process_executeDynamic(path, file, argc, argv, envp);
     }
@@ -1007,6 +1029,15 @@ pid_t process_fork() {
     process_t *child = process_create(parent, parent->name, parent->flags);
     child->main_thread = process_createThread(child, (uintptr_t)NULL, THREAD_FLAG_CHILD);
 
+    // HACK: inherit signal dispositions
+    spinlock_acquire(&parent->signal.lock);
+    spinlock_acquire(&current_cpu->current_thread->signal.lock);
+    memcpy(child->signal.actions, parent->signal.actions, sizeof(child->signal.actions));
+    child->main_thread->signal.blocked = current_cpu->current_thread->signal.blocked;
+    child->main_thread->signal.altstack = current_cpu->current_thread->signal.altstack;
+    spinlock_release(&current_cpu->current_thread->signal.lock);
+    spinlock_release(&parent->signal.lock);
+
     // Configure context of child thread
     // !!!: Have to bypass the existing thread logic in order to create this thread.
     // !!!: arch_restore_context() will execute thread_entrypoint in order to accomplish this
@@ -1088,6 +1119,18 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
                 return r;
             }
 
+            if ((options & WCONTINUED) && __atomic_exchange_n(&child->continued, false, __ATOMIC_SEQ_CST)) {
+                pid_t r = child->pid;
+                if (wstatus) *wstatus = 0xffff;
+
+                if ((options & WNOHANG) == 0) {
+                    EVENT_DETACH(&l);
+                    EVENT_DESTROY_LISTENER(&l);
+                }
+
+                return r;
+            }
+
             if (child->state == PROCESS_SUSPENDED) {
                 if (options & WSTOPPED || (child->ptrace.tracer == NULL && options & WUNTRACED)) {
                     pid_t r = child->pid;
@@ -1130,6 +1173,12 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
 pid_t process_createUserThread(uintptr_t stack, uintptr_t tls, void *entry, void *arg) {
     thread_t *thr = process_createThread(current_cpu->current_process, (uintptr_t)entry, THREAD_FLAG_CHILD);
     thr->stack = stack; // Fix stack
+
+    // HACK: Inherit mask from current thread
+    spinlock_acquire(&current_cpu->current_thread->signal.lock);
+    thr->signal.blocked = current_cpu->current_thread->signal.blocked;
+    spinlock_release(&current_cpu->current_thread->signal.lock);
+
     LOG(DEBUG, "Thread %p (TID=%d) created for process.\n", thr, thr->tid);
 
     // Boom, we have a thread. That was easy, right?

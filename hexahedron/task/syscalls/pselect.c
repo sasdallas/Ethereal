@@ -24,10 +24,9 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->timeout) SYSCALL_VALIDATE_PTR(ctx->timeout);
     if (ctx->sigmask) SYSCALL_VALIDATE_PTR(ctx->sigmask);
 
-    sigset_t old_set = current_cpu->current_thread->blocked_signals;
-
+    sigset_t old_set;
     if (ctx->sigmask) {
-        current_cpu->current_thread->blocked_signals = *(ctx->sigmask);
+        signal_procmask(SIG_SETMASK, ctx->sigmask, &old_set);
     }
 
     // Create the return sets
@@ -78,7 +77,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     }
     
     if (ret || timeout == 0) {
-        (current_cpu->current_thread->blocked_signals) = old_set;
+        if (ctx->sigmask) signal_procmask(SIG_SETMASK, &old_set, NULL);
         poll_exit(waiter);
         poll_destroyWaiter(waiter);
         if (ctx->readfds) memcpy(ctx->readfds, &rfds, sizeof(fd_set));
@@ -90,7 +89,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     int w = poll_wait(waiter, timeout);
 
     if (w == -EINTR) {
-        (current_cpu->current_thread->blocked_signals) = old_set;
+        if (ctx->sigmask) signal_procmask(SIG_SETMASK, &old_set, NULL);
         poll_exit(waiter);
         poll_destroyWaiter(waiter);
         return -EINTR;
@@ -135,7 +134,7 @@ long sys_pselect(sys_pselect_context_t *ctx) {
     if (ctx->writefds) memcpy(ctx->writefds, &wfds, sizeof(fd_set));
     if (ctx->errorfds) memcpy(ctx->errorfds, &efds, sizeof(fd_set));
 
-    (current_cpu->current_thread->blocked_signals) = old_set;
+    if (ctx->sigmask) signal_procmask(SIG_SETMASK, &old_set, NULL);
     poll_exit(waiter);
     poll_destroyWaiter(waiter);
     return ret;

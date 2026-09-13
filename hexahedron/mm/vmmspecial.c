@@ -29,9 +29,13 @@ uintptr_t mmio_map(uintptr_t physical, size_t size) {
         kernel_panic_extended(OUT_OF_MEMORY, "vmm", "*** Could not allocate %d bytes for MMIO\n", size);
     }
 
+    vmm_space_t *space = vmm_getSpaceForAddress((void*)virt);
+    assert(space);
+    mutex_acquire(space->mut);
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         arch_mmu_map(NULL, virt+i, physical+i, MMU_FLAG_UC | MMU_FLAG_PRESENT | MMU_FLAG_WRITE);
     }
+    mutex_release(space->mut);
 
     return virt;
 }
@@ -56,9 +60,14 @@ uintptr_t dma_map(size_t size) {
 
     uintptr_t virt = (uintptr_t)vmm_map(NULL, size, VM_FLAG_DEFAULT, MMU_FLAG_UC | MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     uintptr_t phys = pmm_allocatePages(size / 4096, ZONE_DEFAULT);
-    for (uintptr_t i = 0; i < size; i++) {
+
+    vmm_space_t *space = vmm_getSpaceForAddress((void*)virt);
+    assert(space);
+    mutex_acquire(space->mut);
+    for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         arch_mmu_map(NULL, virt+i, phys+i, MMU_FLAG_UC | MMU_FLAG_WRITE | MMU_FLAG_PRESENT);
     }
+    mutex_release(space->mut);
 
     return virt;
 }

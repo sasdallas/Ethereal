@@ -57,8 +57,11 @@ long sys_fchdir(int fd) {
     if (oldpath) kfree(oldpath);
 
     vfs_inode_t *old = current_cpu->current_process->wd_node;
-    current_cpu->current_process->wd_node = f->inode; // already locked
+    inode_hold(f->inode);
+    current_cpu->current_process->wd_node = f->inode;
     inode_release(old);
+
+    FD_FINISH(f);
 
     return 0;
 }

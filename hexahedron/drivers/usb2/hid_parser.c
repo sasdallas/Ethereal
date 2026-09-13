@@ -184,7 +184,13 @@ static usb_status_t hid_parseItems(hid_device_t *device, hid_parser_state_t *sta
                 if (item.unsigned_val == HID_COLLECTION_TYPE_LOGICAL) {
                     new->usage_id = 0;
                 } else {
-                    new->usage_id = HID_POP_USAGE(state);
+                    if (state->usage_stack_len) {
+                        new->usage_id = state->usage_stack[0];
+                    } else if (state->has_usage_range) {
+                        new->usage_id = state->usage_minimum;
+                    } else {
+                        new->usage_id = 0;
+                    }
                 }
 
                 STAILQ_INSERT_TAIL(&device->collections, new, node);
@@ -209,23 +215,21 @@ static usb_status_t hid_parseItems(hid_device_t *device, hid_parser_state_t *sta
 
                 state->collection = collection;
                 state->app_collection = app;
-
-                // reset state
-                state->usage_stack_len = 0;
-                state->has_usage_range = false;
             } else if (tag == HID_REPORT_MAIN_END_COLLECTION) {
                 assert(is_collection);
                 return USB_SUCCESS;
             } else if (tag == HID_REPORT_MAIN_INPUT || tag == HID_REPORT_MAIN_OUTPUT || tag == HID_REPORT_MAIN_FEATURE) {
                 assert(is_collection);
                 hid_addItem(device, state, &item);
-
-                // reset state
-                state->usage_stack_len = 0;
-                state->has_usage_range = false;
             } else {
                 LOG(WARN, "Encountered unknown MAIN item with tag=%02x report_size=%02x\n", HID_ITEM_TAG(item.item), item.report_size);
             }
+
+            // reset state
+            state->usage_stack_len = 0;
+            state->has_usage_range = false;
+            state->usage_minimum = 0;
+            state->usage_maximum = 0;
         } else if (type == HID_REPORT_GLOBAL) {
             switch (tag) {
                 case HID_REPORT_GLOBAL_USAGE_PAGE:

@@ -31,6 +31,8 @@
 #define CELESTIAL_WINDOW_FLAG_NO_AUTO_FOCUS     0x4
 #define CELESTIAL_WINDOW_FLAG_SOLID             0x8
 #define CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE     0x10
+#define CELESTIAL_WINDOW_FLAG_FADE_ANIM         0x20
+#define CELESTIAL_WINDOW_FLAG_BLURRED           0x40
 
 #define CELESTIAL_Z_BACKGROUND              0
 #define CELESTIAL_Z_DEFAULT                 1
@@ -46,9 +48,15 @@
 
 /**
  * @brief Celestial window
+ * CELESTIAL_COMPAT is there for certain ports like Links which use a struct window
  */
+
+#ifdef CELESTIAL_COMPAT
+typedef struct _celestial_window {
+#else
 typedef struct window {
-    uint8_t flags;                      // Flags
+#endif
+    unsigned int flags;                 // Flags
     uint8_t state;                      // State
 
     wid_t wid;                          // Window ID
@@ -78,6 +86,9 @@ typedef struct _window_info {
     size_t height;
     char name[128];
     char icon[128];
+    bool focused;
+    int flags;
+    uint8_t z_array;
 } window_info_t;
 
 /**** MACROS ****/
@@ -106,11 +117,19 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height);
 wid_t celestial_createWindow(int flags, size_t width, size_t height);
 
 /**
- * @brief Set the title of a decorated window
+ * @brief Set the title of a window (reflects in taskbar)
  * @param window The window to set title of decorated
  * @param title The title to set
  */
 void celestial_setTitle(window_t *win, char *title);
+
+/**
+ * @brief Set the icon name of a window
+ * @param win The window to set the icon of
+ * @param icon The icon name to set (e.g. terminal)
+ * @todo Raw icon surfaces are not supported (yet)
+ */
+void celestial_setIcon(window_t *win, char *icon);
 
 /**
  * @brief Get a window object from an ID
@@ -291,5 +310,30 @@ int celestial_startResizing(window_t *win, unsigned char direction);
  * @param win The window to stop resizing
  */
 int celestial_stopResizing(window_t *win);
+
+/**
+ * @brief Set focus to a window
+ * @param wid The window to set the focus of (this is a WID)
+ * @param focused Whether the window should be focused or not
+ * @returns 0 on success
+ */
+int celestial_setFocusID(wid_t wid, bool focused);
+
+/**
+ * @brief Set focus to a window
+ * @param win The window to set the focus of
+ * @param focused Whether the window should be focused or not
+ * @returns 0 on success
+ */
+static inline int celestial_setFocus(window_t *win, bool focused) {
+    return celestial_setFocusID(win->wid, focused);
+}
+
+/**
+ * @brief Maximize window
+ * @param win The window to maximize
+ * @returns 0 on success
+ */
+int celestial_maximize(window_t *win);
 
 #endif

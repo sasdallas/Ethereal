@@ -73,8 +73,8 @@ typedef struct wm_window_anim {
 } wm_window_anim_t;
 
 typedef struct wm_window_announce_data {
-    char *name;
-    char *icon;
+    char name[128];
+    char icon[128];
 } wm_window_announce_data_t;
 
 /* Per-window object */
@@ -92,6 +92,7 @@ typedef struct wm_window {
     int flags;
     z_array_t z_array;
     bool visible;
+    bool presented;
     window_state_t state;
 
     volatile int refcount;
@@ -102,6 +103,13 @@ typedef struct wm_window {
     uint8_t *buffer;            // Buffer allocated to the window
     key_t bufkey;               // Buffer shared memory key
     int shmfd;                  // Buffer shared memory fd
+
+    struct {
+        int x;
+        int y;
+        int w;
+        int h;
+    } tile_saved;
 
     struct {
         bool pending;
@@ -197,6 +205,7 @@ typedef struct celestial {
     int mouse_y;
     uint32_t last_buttons;
     wm_window_t *mouse_window; // the topmost window that the mouse is currently in
+    wm_window_t *mouse_grab;   // the window that received the current mouse press
     input_bind_t *binds;
     pthread_mutex_t bind_lck;
     wm_window_t *mouse_capture;
@@ -248,10 +257,12 @@ inline int event_send_int(wm_client_t *cli, void *buffer, size_t size) {
 
 #define EVENT_SEND(win, evtype, t, ...) ({ wm_window_t *_ev_win = (win); wm_client_t *_ev_cli = _ev_win->client; if (_ev_cli && !__atomic_load_n(&_ev_cli->dead, __ATOMIC_SEQ_CST)) { int _ev_fd = _ev_cli->client_fd; evtype ev = { .magic = CELESTIAL_MAGIC_EVENT, .size = sizeof(evtype), .type = (t), .wid = _ev_win->id, ## __VA_ARGS__ }; if (event_send_int(_ev_cli, &ev, sizeof(evtype))) { TRACE_WARN("Connection error with client %d: %s\n", _ev_fd, strerror(errno)); ipc_removeClient(_ev_fd); } } })
 
+#define CHANGED_EVENT(cwin, ctype) if (SERVER->root != NULL) { EVENT_SEND(SERVER->root, celestial_event_window_changed_t, CELESTIAL_EVENT_WINDOW_CHANGED, .changed_window = (cwin), .changed_event = (ctype)); }
+
 #define WINDOW_CHANGE_STATE(window, new_state) { (window)->state = (new_state); TRACE_DEBUG("Window %d state changed to " #new_state "\n", window->id); }
 
 #define window_hold(w) __atomic_add_fetch(&(w)->refcount, 1, __ATOMIC_SEQ_CST)
-#define window_release(w) { __atomic_sub_fetch(&(w)->refcount, 1, __ATOMIC_SEQ_CST); if ((w)->refcount == 0) { window_destroy(w); } }
+#define window_release(w) { if (__atomic_sub_fetch(&(w)->refcount, 1, __ATOMIC_SEQ_CST) == 0) { window_destroy(w); } }
 
 /* Damage functions */
 
@@ -286,6 +297,8 @@ void window_destroy(wm_window_t *win);
 void window_beginAnimation(wm_window_t *win);
 void window_resize(wm_window_t *win, int nx, int ny, int w, int h);
 void window_resize_finish(wm_window_t *win);
+wm_window_t *window_top_exclude(wm_window_t *excl);
+wm_window_t *window_get_global(wid_t id);
 
 inline bool window_contains(wm_window_t *win, int x, int y) {
     return (x >= win->x && y >= win->y && x < win->x + win->width && y < win->y + win->height);
@@ -296,6 +309,8 @@ int renderer_init();
 void renderer_shutdown();
 size_t renderer_getWidth();
 size_t renderer_getHeight();
+int renderer_initGeneric();
+void renderer_shutdownGeneric();
 void render_request(render_request_t *upd);
 void renderer_buildFrame();
 
@@ -307,6 +322,7 @@ int input_init();
 int input_init_backend();
 void input_draw();
 void input_draw_at(int x, int y);
+void input_restore_at(int x, int y);
 bool input_frameCursor(render_request_t *frame, int *x, int *y);
 void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns);
 void input_get_mouse_pos(int *x, int *y);

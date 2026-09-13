@@ -1,0 +1,4 @@
+[Desktop]
+Name="Flanterm"
+Icon=/usr/share/resources/24/Terminal.bmp
+Exec="flanterm"

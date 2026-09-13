@@ -60,6 +60,7 @@ int rm_unlink(char *p) {
 
     if (rm_verbose) printf("removing '%s'\n", p);
     int r = unlink(p);
+    if (r) fprintf(stderr, "rm: %s: %s\n", p, strerror(errno));
     return r;
 }
 

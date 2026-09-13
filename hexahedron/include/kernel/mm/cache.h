@@ -19,13 +19,14 @@
 #include <kernel/event.h>
 #include <kernel/lock/rwsem.h>
 #include <kernel/misc/xarray.h>
+#include <structs/list.h>
 
 /**** DEFINITIONS ****/
 
-#define PAGE_CACHE_MAP_ENTS             32  // Default map entries per hashmap
-
 #define CACHE_FLAG_ALIGNEDWRITE         0x1 // Tells the page cache you are trying to a write op with start and end being page aligned.
                                             // The page cache automatically optimizes this by avoiding reading back
+
+#define CACHE_MAX_LEVEL                 8   // Max levels in dirty skiplist
 
 /**** TYPES ****/
 
@@ -37,23 +38,26 @@ typedef struct page_range {
 
 typedef struct page_entry {
     struct page_entry *next;
-    struct page_entry *dirty_next;
     volatile char period;
     bool in_dirty_list; // stupid dumb no good hack
     bool being_evicted; // used by syncer thread
     pmm_page_t *page;
+
+    uint8_t dirty_height;
+    struct page_entry *dirty[CACHE_MAX_LEVEL];
 } page_entry_t;
 
 typedef struct page_cache {
-    struct page_cache *next;
-    struct page_cache *prev;
+    DLIST_ENTRY(struct page_cache) node;
     rwsem_t sem;
     xarray_t xa;
 
     struct {
-        struct page_cache *next;
-        page_entry_t *head;
+        DLIST_ENTRY(struct page_cache) node;
+        page_entry_t *dirty[CACHE_MAX_LEVEL];
         bool is_dirty;
+        bool on_dirty_list; // !!! hack
+        mutex_t sync_lock;
     } dirty;
 
     spinlock_t ready_event_lock;

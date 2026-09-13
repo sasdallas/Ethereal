@@ -907,8 +907,9 @@ int main(int argc, char *argv[]) {
         ctx = gfx_createFullscreen(CTX_DEFAULT);
     } else {
         // Initialize the graphics context for celestial
-        wid_t wid = celestial_createWindow(0x40, 82*CELL_WIDTH, 30*CELL_HEIGHT);
+        wid_t wid = celestial_createWindow(0, 82*CELL_WIDTH, 30*CELL_HEIGHT);
         win = celestial_getWindow(wid);
+        celestial_setIcon(win, "terminal");
         celestial_setTitle(win, "Terminal");
         celestial_setHandler(win, CELESTIAL_EVENT_KEY_EVENT, kbd_handler);
         celestial_setHandler(win, CELESTIAL_EVENT_MOUSE_SCROLL, scroll_handler);
@@ -994,12 +995,7 @@ int main(int argc, char *argv[]) {
     pthread_create(&writer, NULL, input_thread, NULL);
     
     // Enter main loop
-    // The idea for this mechanism of redraw came from my research of ToaruOS
-    int tty_last = 0;
-    int flip_now = 0;
     while (!die) {
-        flip_now = 0;
-
         // Get events
         int p;
         struct pollfd fds[] = {
@@ -1043,11 +1039,6 @@ int main(int argc, char *argv[]) {
                     ansi_parse(terminal_ansi, buf[i]);
                 }
             }
-
-            tty_last = 1;
-        } else {
-            if (tty_last) flip_now = 1;
-            tty_last = 0;
         }
 
         terminal_render();

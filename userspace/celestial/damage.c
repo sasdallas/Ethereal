@@ -47,6 +47,42 @@ static inline void damage_mergeRects(gfx_rect_t *a, gfx_rect_t b) {
     a->height = new_y2 - new_y;
 }
 
+// !!! THIS IS A HACK. Blurred windows need extra expansion due to the way they work
+static void damage_expandBlurredWindows(gfx_rect_t *damage) {
+    bool changed = true;
+
+    while (changed) {
+        changed = false;
+
+        for (int z = 0; z < Z_COUNT; z++) {
+            for (wm_window_t *win = SERVER->window_list[z]; win; win = win->next) {
+                if (win->state == WINDOW_STATE_CLOSED || !win->visible || !(win->flags & CELESTIAL_WINDOW_FLAG_BLURRED)) {
+                    continue;
+                }
+
+                if (!damage_intersectsWindow(*damage, win)) continue;
+
+                int left = GFX_MAX(win->x, 0);
+                int top = GFX_MAX(win->y, 0);
+                int right = GFX_MIN(win->x + win->width, (int)renderer_getWidth());
+                int bottom = GFX_MIN(win->y + win->height, (int)renderer_getHeight());
+                if (right <= left || bottom <= top) continue;
+
+                gfx_rect_t window_rect = GFX_RECT(left, top, right - left, bottom - top);
+                int old_x = damage->x;
+                int old_y = damage->y;
+                int old_width = damage->width;
+                int old_height = damage->height;
+
+                damage_mergeRects(damage, window_rect);
+                if ((int)damage->x != old_x || (int)damage->y != old_y || (int)damage->width != old_width || (int)damage->height != old_height) {
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+
 static bool damage_clipToWindow(gfx_rect_t damage, wm_window_t *win, gfx_rect_t *out_local_rect) {
     int d_x1 = damage.x;
     int d_y1 = damage.y;
@@ -194,6 +230,7 @@ render_request_t *damage_build() {
 
     for (size_t r = 0; r < rect_count; r++) {
         gfx_rect_t damage = rects[r];
+        damage_expandBlurredWindows(&damage);
 
         damage_appendRequest(&head, &tail, NULL, damage);
 

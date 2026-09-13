@@ -129,7 +129,7 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
         .width = width_real,
         .height = height_real,
         .size = sizeof(celestial_req_create_window_t),
-        .flags = flags
+        .flags = flags | CELESTIAL_WINDOW_FLAG_DECORATED
     };
 
     // Send the request
@@ -176,14 +176,67 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
 }
 
 /**
- * @brief Set the title of a decorated window
+ * @brief Set the title of a window (reflects in taskbar)
  * @param window The window to set title of decorated
  * @param title The title to set
  */
 void celestial_setTitle(window_t *win, char *title) {
-    if (!(win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) return;
-    win->decor->titlebar = title;
-    win->decor->render(win);
+    if (title == NULL) return;
+
+    // Set it in decoration
+    if ((win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) {
+        win->decor->titlebar = title;
+        win->decor->render(win);
+    }
+    
+    // HACK: announce the window title
+    celestial_req_announce_window_t req = {
+        .type = CELESTIAL_REQ_ANNOUNCE_WINDOW,
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_announce_window_t),
+        .wid = win->wid,
+        .rtype = 1,
+    };
+
+    strncpy(req.name, title, 128);
+
+    if (celestial_sendRequest(&req, req.size) < 0 ) {
+        return;
+    }
+
+    // dont care about value
+    celestial_resp_ok_t *ok = celestial_getResponse(CELESTIAL_REQ_ANNOUNCE_WINDOW);
+    if (ok) free(ok);
+}
+
+/**
+ * @brief Set the icon name of a window
+ * @param win The window to set the icon of
+ * @param icon The icon name to set (e.g. terminal)
+ * @todo Raw icon surfaces are not supported (yet)
+ */
+void celestial_setIcon(window_t *win, char *icon) {
+    if (icon == NULL) return;
+    
+    // HACK: announce the window icon
+    celestial_req_announce_window_t req = {
+        .type = CELESTIAL_REQ_ANNOUNCE_WINDOW,
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(celestial_req_announce_window_t),
+        .wid = win->wid,
+        .rtype = 2,
+    };
+
+    strncpy(req.icon, icon, 128);
+
+    if (celestial_sendRequest(&req, req.size) < 0 ) {
+        return;
+    }
+
+    // dont care about value
+    celestial_resp_ok_t *ok = celestial_getResponse(CELESTIAL_REQ_ANNOUNCE_WINDOW);
+    if (ok) free(ok);
+
 }
 
 /**
@@ -344,7 +397,7 @@ gfx_context_t *celestial_initGraphics(window_t *win, int flags) {
                 if (!(win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) free(win->ctx->backbuffer);
             } else {
                 win->ctx->flags &= ~(CTX_NO_BACKBUFFER);
-                if (!(win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) win->ctx->backbuffer = malloc(GFX_WIDTH(win->ctx) * GFX_HEIGHT(win->ctx) + (win->ctx->bpp/8));
+                if (!(win->flags & CELESTIAL_WINDOW_FLAG_DECORATED)) win->ctx->backbuffer = malloc(GFX_WIDTH(win->ctx) * GFX_HEIGHT(win->ctx) * (win->ctx->bpp/8));
             }
         }
 
@@ -496,15 +549,44 @@ void celestial_closeWindow(window_t *win) {
 
     celestial_sendRequest(&req, req.size);
 
-    // Close the window shm
-    close(win->shmfd);
-    
+    // racey, but its fine. resources get cleaned up eventually
     win->state = CELESTIAL_STATE_CLOSED;
     __celestial_window_count--; // Hopefully we cleanup...
 
     if (win->flags & CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE && !__celestial_is_cleaning_up) {
         exit(0); 
     }
+}
+
+/**
+ * @brief Finish window close
+ */
+void celestial_finishWindowClose(window_t *win) {
+    // Close the window shm
+    int fd = win->shmfd;
+    win->shmfd = -1;
+    close(fd);
+
+    if (win->buffer) {
+        if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+            munmap(win->decor->ctx->buffer, win->width * win->height * 4);
+        } else {
+            munmap(win->buffer, win->width * win->height * 4);
+        }
+    }
+
+    if (win->state != CELESTIAL_STATE_CLOSED) {
+        // this means that the event came from some other place (cough taskbar cough)
+        // so therefore we have to do extra work
+        win->state = CELESTIAL_STATE_CLOSED;
+        __celestial_window_count--;
+    }
+
+    if (win->flags & CELESTIAL_WINDOW_FLAG_EXIT_ON_CLOSE && !__celestial_is_cleaning_up) {
+        exit(0); 
+    }
+
+    // !!! Just leave the window object in memory since its easier to deal with.
 }
 
 /**
@@ -709,7 +791,8 @@ int celestial_announceWindow(window_t *win, char *name, char *icon) {
         .type = CELESTIAL_REQ_ANNOUNCE_WINDOW,
         .magic = CELESTIAL_MAGIC,
         .size = sizeof(celestial_req_announce_window_t),
-        .wid = win->wid
+        .wid = win->wid,
+        .rtype = 0,
     };
 
     strncpy(req.name, name, 128);
@@ -717,7 +800,7 @@ int celestial_announceWindow(window_t *win, char *name, char *icon) {
 
     if (celestial_sendRequest(&req, req.size) < 0) {
         return -1;
-    }   
+    }
 
     // Wait for a response
     celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_ANNOUNCE_WINDOW);
@@ -904,6 +987,61 @@ int celestial_stopResizing(window_t *win) {
     if (!resp) return -1;
 
     // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Set focus to a window
+ * @param wid The window to set the focus of (this is a WID)
+ * @param focused Whether the window should be focused or not
+ * @returns 0 on success
+ */
+int celestial_setFocusID(wid_t wid, bool focused) {
+    celestial_req_set_focused_t req = {
+        .type = CELESTIAL_REQ_SET_FOCUSED,
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(req),
+        .wid = wid,
+        .focused = focused,
+    };
+
+    if (celestial_sendRequest(&req, req.size)) {
+        return -1;
+    }
+
+    // Wait for a response
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_FOCUSED);
+    if (!resp) return -1;
+
+    // Handle error in resp
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
+    return 0;
+}
+
+
+/**
+ * @brief Maximize window
+ * @param win The window to maximize
+ * @returns 0 on success
+ */
+int celestial_maximize(window_t *win) {
+    celestial_req_maximize_window_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .size = sizeof(req),
+        .type = CELESTIAL_REQ_MAXIMIZE_WINDOW,
+        .wid = win->wid
+    };
+
+    if (celestial_sendRequest(&req, req.size)) return -1;
+
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_MAXIMIZE_WINDOW);
+    if (!resp) return -1;
+
     CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
 
     free(resp);

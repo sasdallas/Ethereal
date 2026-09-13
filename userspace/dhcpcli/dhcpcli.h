@@ -31,6 +31,9 @@
 /* Magic */
 #define DHCP_MAGIC              0x63825363
 
+/* BOOTP flags */
+#define DHCP_FLAG_BROADCAST     0x8000
+
 /* Options */
 #define DHCP_OPT_PADDING            0       // Padding
 #define DHCP_OPT_SUBNET_MASK        1       // Subnet mask
@@ -41,6 +44,7 @@
 #define DHCP_OPT_MESSAGE_TYPE       53      // DHCP message type
 #define DHCP_OPT_SERVER_ID          54      // Server ID
 #define DHCP_OPT_PARAMETER_REQ      55      // Parameter request list
+#define DHCP_OPT_CLIENT_ID          61      // Client identifier
 #define DHCP_OPT_END                255     // End of list
 
 /* Message types */

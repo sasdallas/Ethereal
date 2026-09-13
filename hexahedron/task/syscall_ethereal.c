@@ -76,13 +76,12 @@ int sys_settls(uintptr_t tls) {
     return 0;
 }
 
+int sys_setgsbase(uintptr_t gs) {
+    SYSCALL_VALIDATE_PTR(gs);
 
-long sys_join_thread(pid_t tid, void **retval) {
-    assert(0);
-}
-
-long sys_kill_thread(pid_t tid, int sig) {
-    LOG(ERR, "sys_kill_thread: UNIMPL\n");
+    // Context won't reflect until next save/load cycle
+    GSBASE(current_cpu->current_thread->context) = gs;
+    arch_set_user_gsbase(gs);
     return 0;
 }
 
@@ -143,8 +142,8 @@ long sys_reboot(int operation) {
     if (operation < 0 || operation > REBOOT_TYPE_HIBERNATE) return -EINVAL;
     if (!PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
 
-    // Disable interrupts
-    hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    // Disable preemption
+    __PREEMPT_DISABLE();
 
     int state = 0;
     if (operation == REBOOT_TYPE_DEFAULT) {
@@ -159,6 +158,6 @@ long sys_reboot(int operation) {
     int r = hal_setPowerState(state);
 
     // Reboot failure
-    hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
+    __PREEMPT_ENABLE();
     return r;
 }

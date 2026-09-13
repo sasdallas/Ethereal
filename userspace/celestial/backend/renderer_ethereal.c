@@ -21,6 +21,17 @@
 #include <time.h>
 #include <signal.h>
 
+void render_copyRect(gfx_rect_t *r) {
+    size_t pitch = RENDERER->ctx->pitch;
+    uint8_t *buffer = ((uint8_t*)RENDERER->ctx->buffer + (r->y * pitch + r->x * 4));
+    uint8_t *backbuffer = ((uint8_t*)RENDERER->ctx->backbuffer + (r->y * pitch + r->x * 4));
+    for (unsigned y = 0; y < r->height; y++) {
+        memcpy(buffer, backbuffer, r->width * 4);
+        buffer += RENDERER->ctx->pitch;
+        backbuffer += RENDERER->ctx->pitch;
+    }
+}
+
 void *render_main(void *arg) {
     TRACE_DEBUG("Render thread TID: %d\n", gettid());
     
@@ -36,13 +47,28 @@ void *render_main(void *arg) {
             render_request(req);
 
             render_request_t *next = req->next;
+            req = next;
+        }
+
+        if (draw_cursor) {
+            input_draw_at(cursor_x, cursor_y);
+        }
+
+        req = RENDERER->frame;
+        while (req) {
+            render_copyRect(&req->rect);
+
+            render_request_t *next = req->next;
             free(req);
             req = next;
         }
 
-        
-        if (draw_cursor) input_draw_at(cursor_x, cursor_y);
-        memcpy(RENDERER->ctx->buffer, RENDERER->ctx->backbuffer, GFX_SIZE(RENDERER->ctx));
+        // this alleviates some visual artifacting while blurring/other effects.
+        // because the compositor doesn't flush correctly or something
+        // (i actually have no idea why this works)
+        if (draw_cursor) {
+            input_restore_at(cursor_x, cursor_y);
+        }
     }
 }
 
@@ -56,6 +82,9 @@ int renderer_init() {
     gfx_render(RENDERER->ctx);
 
     RENDERER->frame = NULL;
+
+    // initialize the generic blur context
+    renderer_initGeneric();
     
     if (pthread_create(&SERVER->render_thread, NULL, render_main, NULL) < 0) {
         FATAL("Could not create render thread: %s\n", strerror(errno));
@@ -71,6 +100,7 @@ void renderer_shutdown() {
     TRACE_INFO("Shutting down renderer...\n");
 
     pthread_cancel(SERVER->render_thread);
+    renderer_shutdownGeneric();
     
     // TODO graphics API for this
 

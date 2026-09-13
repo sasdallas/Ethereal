@@ -2,6 +2,7 @@
  * @file hexahedron/task/sleep.c
  * @brief Thread blocker/sleeper handler
  * 
+ * @warning Time sleeping here sucks
  * 
  * @copyright
  * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
@@ -13,6 +14,7 @@
 
 #include <kernel/task/process.h>
 #include <kernel/task/sleep.h>
+#include <kernel/subsystems/timer.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/panic.h>
 #include <structs/list.h>
@@ -23,6 +25,12 @@
 
 /* Time lock */
 spinlock_t time_lock = { 0 };
+
+/* Time queue timer */
+#define SLEEP_TIMER_INTERVAL 1000000
+static spinlock_t sleep_timer_lock = { 0 };
+static timer_event_t sleep_timer;
+static bool sleep_timer_started = false;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:SLEEP", __VA_ARGS__)
@@ -38,11 +46,10 @@ struct internal_time_queue_entry {
 static struct internal_time_queue_entry dummy = { .next = NULL, .sl = NULL };
 static struct internal_time_queue_entry *head = &dummy;
 
-
 /**
  * @brief Wakeup sleepers callback
  */
-void sleep_callback() {
+static void sleep_callback() {
     if (!spinlock_tryAcquire(&time_lock)) {
         return;
     }
@@ -67,7 +74,7 @@ void sleep_callback() {
         }
 
         // Check for expiration
-        if (n->sl != current_cpu->current_thread && (seconds > n->seconds || (seconds == n->seconds && subseconds > n->subseconds))) {
+        if (n->sl != current_cpu->current_thread && (seconds > n->seconds || (seconds == n->seconds && subseconds >= n->subseconds))) {
             // Trigger thread wakeup
             sleep_wakeupReason(n->sl, WAKEUP_TIME);
             prev->next = n->next;
@@ -80,6 +87,21 @@ void sleep_callback() {
     }
 
     spinlock_release(&time_lock);
+}
+
+/**
+ * @brief Start the time queue timer
+ */
+static void sleep_startTimer() {
+    spinlock_acquire(&sleep_timer_lock);
+
+    if (sleep_timer_started == false) {
+        timer_init(&sleep_timer, (timer_expire_t)sleep_callback, NULL, SLEEP_TIMER_INTERVAL, true, "thread sleep");
+        timer_insert(&sleep_timer);
+        sleep_timer_started = true;
+    }
+
+    spinlock_release(&sleep_timer_lock);
 }
 
 /**
@@ -162,6 +184,7 @@ void sleep_prepareUninterruptible() {
  * @param subseconds Subseconds to sleep for
  */
 void sleep_time(unsigned long seconds, unsigned long subseconds) {
+    sleep_startTimer();
     sleep_prepare();
     
     // !!!: As a bit of backstory, I'm about halfway done with the VM rewrite. I have already rewritten the entire sleep system. I do NOT care enough to make this look good right now.
@@ -170,12 +193,60 @@ void sleep_time(unsigned long seconds, unsigned long subseconds) {
 }
 
 /**
+ * @brief Remove a thread from a sleep queue
+ */
+static void sleep_unlinkFromQueue(sleep_queue_t *queue, thread_sleep_t *node) {
+    thread_sleep_t *prev = (node->prev == node) ? NULL : node->prev;
+    thread_sleep_t *next = (node->next == node) ? NULL : node->next;
+
+    if (prev) {
+        prev->next = next;
+    } else if (queue->head == node) {
+        queue->head = next;
+    }
+
+    if (next) next->prev = prev;
+
+    node->next = NULL;
+    node->prev = NULL;
+}
+
+/**
+ * @brief Complete a wakeup (holding thread sleep lock)
+ */
+static int sleep_finishWakeup(thread_t *thread, int reason) {
+    if (reason == WAKEUP_SIGNAL && thread->sleep.interruptible == false) {
+        return 1;
+    }
+
+    if ((thread->status & THREAD_STATUS_SLEEPING) == 0) {
+        return 1;
+    }
+
+    thread->sleep.queue = NULL;
+    __sync_and_and_fetch(&thread->status, ~(THREAD_STATUS_SLEEPING));
+    __atomic_store_n(&thread->sleep.wakeup_reason, reason, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+/**
  * @brief Wakeup another thread for a reason
  * @param thread The thread to wakeup
  * @param reason The reason to wake the thread up
  */
 int sleep_wakeupReason(struct thread *thread, int reason) {
-    if (reason != WAKEUP_TIME && (thread->sleep.seconds || thread->sleep.subseconds)) {
+    spinlock_acquire(&thread->sleep.lock);
+
+    sleep_queue_t *queue = thread->sleep.queue;
+    bool timed = thread->sleep.seconds || thread->sleep.subseconds;
+    int r = sleep_finishWakeup(thread, reason);
+    spinlock_release(&thread->sleep.lock);
+
+    if (r != 0) {
+        return r;
+    }
+
+    if (reason != WAKEUP_TIME && timed) {
         spinlock_acquire(&time_lock);
         struct internal_time_queue_entry *prev = head;
         struct internal_time_queue_entry *n = head->next;
@@ -191,24 +262,15 @@ int sleep_wakeupReason(struct thread *thread, int reason) {
         spinlock_release(&time_lock);
     }
 
-    spinlock_acquire(&thread->sleep.lock);
-
-    if (reason == WAKEUP_SIGNAL && thread->sleep.interruptible == false) {
-        spinlock_release(&thread->sleep.lock);
-        return 1;
+    if (queue) {
+        spinlock_acquire(&queue->lock);
+        thread_sleep_t *node = queue->head;
+        while (node && node != &thread->sleep) node = node->next;
+        if (node) sleep_unlinkFromQueue(queue, node);
+        spinlock_release(&queue->lock);
     }
 
-    if ((thread->status & THREAD_STATUS_SLEEPING) == 0) {
-        spinlock_release(&thread->sleep.lock);
-        return 1;
-    }
-
-    // Thread is no longer sleeping
-    thread->sleep.queue = NULL; // Invalidate the current queue
-    __sync_and_and_fetch(&thread->status, ~(THREAD_STATUS_SLEEPING));
-    __atomic_store_n(&thread->sleep.wakeup_reason, reason, __ATOMIC_SEQ_CST);
-
-    spinlock_release(&thread->sleep.lock);
+    sched_event(thread, SCHED_EVENT_SLEEP_WAKEUP);
     sched_insert(thread);
     return 0;
 }
@@ -234,12 +296,19 @@ int sleep_enter() {
         unsigned long seconds, subseconds;
         clock_getCurrentTime(&seconds, &subseconds);
 
+        seconds += thread->sleep.seconds;
+        subseconds += thread->sleep.subseconds;
+        if (subseconds >= SUBSECONDS_PER_SECOND) {
+            seconds += subseconds / SUBSECONDS_PER_SECOND;
+            subseconds %= SUBSECONDS_PER_SECOND;
+        }
+
         spinlock_acquire(&time_lock);
         struct internal_time_queue_entry ent = {
             .next = NULL,
             .sl = thread,
-            .seconds = seconds + thread->sleep.seconds,
-            .subseconds = subseconds + thread->sleep.subseconds,
+            .seconds = seconds,
+            .subseconds = subseconds,
         };
         
         struct internal_time_queue_entry *n = head;
@@ -261,7 +330,6 @@ int sleep_enter() {
     
     sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_ENTER);
     process_yield(0);
-    sched_event(current_cpu->current_thread, SCHED_EVENT_SLEEP_WAKEUP);
 
     // When exiting, the IRQ state was saved
     hal_setInterruptState(current_cpu->current_thread->sleep.irq_state);
@@ -301,10 +369,12 @@ int sleep_inQueue(sleep_queue_t *queue) {
     int state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
     spinlock_acquireRaw(&queue->lock);
 
+    // prime the thread
     current_cpu->current_thread->sleep.next = NULL;
+    current_cpu->current_thread->sleep.prev = NULL;
     current_cpu->current_thread->sleep.thread = current_cpu->current_thread;
 
-    // Place ourselves in the queue FIFO-style
+    // Place ourselves in the queue
     if (queue->head) {
         thread_sleep_t *s = queue->head;
         while (s->next) s = s->next;
@@ -315,7 +385,7 @@ int sleep_inQueue(sleep_queue_t *queue) {
         current_cpu->current_thread->sleep.prev = NULL;
     }
 
-    // Prepare (acquires the thread's sleep lock while still holding queue->lock to keep ordering)
+    // Prepare the thread to sleep
     sleep_prepareIRQ(state);
     current_cpu->current_thread->sleep.queue = queue;
 
@@ -326,36 +396,51 @@ int sleep_inQueue(sleep_queue_t *queue) {
 /**
  * @brief Wakeup threads in a sleep queue
  * @param queue The queue to start waking up
- * @param amount The amount of threads to wakeup. 0 wakes them all up
+ * @param amount The amount of threads to wakeup. Non-positive wakes them all up
  * @returns Amount of threads awoken
  */
 int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
-    spinlock_acquire(&queue->lock);
-    thread_sleep_t *node = queue->head;
     int awoken = 0;
-    while (node) {
-        if (amounts != 0 && awoken >= amounts) {
+    while (1) {
+        if (amounts > 0 && awoken >= amounts) {
             break;
         }
 
-        // Pop from the first
-        queue->head = node->next;
-        if (queue->head) queue->head->prev = NULL;
-
-        // Wakeup the thread (outside of list structure)
-        // If this check fails then either the thread exited or it was already woken up by another thing
-        // TODO: This could probably be improved, perhaps by releasing the lock before accessing this, but would have to rework sleep_exit
-
-        if (node->queue == queue) {
-            awoken += 1;
-            sleep_wakeup(node->thread);
-        } else {
+        spinlock_acquire(&queue->lock);
+        thread_sleep_t *node = queue->head;
+        if (node == NULL) {
+            spinlock_release(&queue->lock);
+            break;
         }
 
-        node = queue->head;
+        thread_t *thread = node->thread;
+        if (!spinlock_tryAcquire(&thread->sleep.lock)) {
+            spinlock_release(&queue->lock);
+            arch_pause_single();
+            continue;
+        }
+
+        sleep_unlinkFromQueue(queue, node);
+
+        // if a thread exited early, its queue will not match
+        int r = 1;
+        if (node->queue == queue) {
+            r = sleep_finishWakeup(thread, WAKEUP_ANOTHER_THREAD);
+            node->queue = NULL;
+        }
+
+        if (r == 0) {
+            awoken++;
+            spinlock_release(&thread->sleep.lock);
+            spinlock_release(&queue->lock);
+            sched_event(thread, SCHED_EVENT_SLEEP_WAKEUP);
+            sched_insert(thread);
+        } else {
+            spinlock_release(&thread->sleep.lock);
+            spinlock_release(&queue->lock);
+        }
     }
 
-    spinlock_release(&queue->lock);
     return awoken;
 }
 
@@ -365,14 +450,29 @@ int sleep_wakeupQueue(sleep_queue_t *queue, int amounts) {
  * @warning Usage of this is not recommended.
  */
 int sleep_exit() {
-    // Invalidate the current queue, which will have this thread removed on wakeup
     thread_t *thr = current_cpu->current_thread;
+
+    // before the lock is released, snapshot the current queue
+    sleep_queue_t *queue = thr->sleep.queue;
     thr->sleep.queue = NULL;
+
+    // the thread can now be unmarked as sleeping
     __sync_and_and_fetch(&thr->status, ~(THREAD_STATUS_SLEEPING));
-    
+
+    // IRQs cannot be restored yet since the queue lock may need to be taken
     int state = thr->sleep.irq_state;
     spinlock_releaseRaw(&thr->sleep.lock);
+
+    // hacky, unlink from queue
+    if (queue) {
+        spinlock_acquireRaw(&queue->lock);
+        thread_sleep_t *node = queue->head;
+        while (node && node != &thr->sleep) node = node->next;
+        if (node) sleep_unlinkFromQueue(queue, node);
+        spinlock_releaseRaw(&queue->lock);
+    }
+
     hal_setInterruptState(state);
-    
+
     return 0;
 }

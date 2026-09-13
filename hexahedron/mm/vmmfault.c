@@ -66,6 +66,9 @@ int vmm_fault(vmm_fault_information_t *info) {
     if (info->exception_type & ~(actions)) {
         LOG(WARN, "Cannot perform access on range - fault resolution failed\n");
         LOG(WARN, "Allowed access: %x Attempted: %x\n", actions, info->exception_type);
+        LOG(WARN, "Range %p-%p VMM flags %x MMU flags %x, PTE flags %x\n",
+            r->start, r->end, r->vmm_flags, r->mmu_flags,
+            arch_mmu_read_flags(NULL, info->address));
         mutex_release(sp->mut);
         return VMM_FAULT_UNRESOLVED;
     }
@@ -100,12 +103,13 @@ int vmm_fault(vmm_fault_information_t *info) {
         } else {
             // Anonymous memory, map a page
             uintptr_t pg = pmm_allocatePage(ZONE_DEFAULT);
+
+            uintptr_t zmap = arch_mmu_remap_physical(pg, PAGE_SIZE, REMAP_TEMPORARY);
+            memset((void*)zmap, 0, PAGE_SIZE);
+            arch_mmu_unmap_physical(zmap, PAGE_SIZE);
+
             arch_mmu_map(NULL, info->address, pg, r->mmu_flags);
             arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
-            
-            if (r->mmu_flags & MMU_FLAG_WRITE) {
-                memset((void*)info->address, 0, PAGE_SIZE);
-            }
 
             sp->metrics.anon_resident += PAGE_SIZE;
         }
@@ -130,9 +134,7 @@ int vmm_fault(vmm_fault_information_t *info) {
             arch_mmu_map(NULL, info->address, new_phys, r->mmu_flags);
             arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
 
-            if ((r->vmm_flags & VM_FLAG_FILE) == 0) {
-                pmm_release(phys); // !!!: check this
-            }
+            pmm_release(phys);
         }
 
     } else {

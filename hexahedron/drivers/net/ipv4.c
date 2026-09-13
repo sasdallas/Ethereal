@@ -63,18 +63,6 @@ int ipv4_unregister(uint8_t protocol) {
 
 
 /**
- * @brief inet_ntoa that doesn't use a stack variable
- */
-static void __inet_ntoa(const uint32_t src_addr, char * out) {
-    uint32_t in_fixed = ntohl(src_addr);
-    snprintf(out, 17, "%d.%d.%d.%d",
-        (in_fixed >> 24) & 0xFF,
-        (in_fixed >> 16) & 0xFF,
-        (in_fixed >> 8) & 0xFF,
-        (in_fixed >> 0) & 0xFF);
-}
-
-/**
  * @brief Calculate the IPv4 checksum
  * @param packet The packet to calculate the checksum of
  * @returns Checksum
@@ -101,13 +89,6 @@ uint16_t ipv4_checksum(ipv4_packet_t *packet) {
  * @returns 0 on success
  */
 int ipv4_sendPacket(nic_t *nic, ipv4_packet_t *packet) {
-    // Print packet
-    char src[17];
-    __inet_ntoa(nic->ipv4_address, src);
-    char dst[17];
-    __inet_ntoa(packet->dest_addr, dst);
-    LOG(DEBUG, "Send packet protocol=%02x ttl=%d cksum=0x%x size=%d src_addr=%s dst_addr=%s\n", packet->protocol, packet->ttl, packet->checksum, packet->length, src, dst);
-
     // Try to get destination MAC from ARP
     // Is this a local address?
     arp_table_entry_t *entry = NULL;
@@ -240,12 +221,6 @@ _begin_send:
  */
 int ipv4_handle(void *frame, nic_t *nic, size_t size) {
     ipv4_packet_t *packet = (ipv4_packet_t*)frame;
-
-    // Get addresses
-    char dest[17];
-    __inet_ntoa(packet->dest_addr, dest);
-    char src[17];
-    __inet_ntoa(packet->src_addr, src);
 
     // Handle protocol
     ipv4_handler_t handler = hashmap_get(ipv4_handler_hashmap, (void*)(uintptr_t)packet->protocol);

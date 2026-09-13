@@ -15,6 +15,8 @@
 #include <kernel/misc/waitqueue.h>
 #include <kernel/task/process.h>
 #include <kernel/processor_data.h>
+#include <kernel/drivers/clock.h>
+#include <kernel/panic.h>
 #include <kernel/debug.h>
 #include <assert.h>
 
@@ -59,10 +61,24 @@ void waitqueue_add(wait_queue_t *wq, wait_queue_node_t *n) {
 int waitqueue_wait(wait_queue_t *wq, wait_queue_node_t *n, int timeout) {
     if (n->thr == NULL || IN_TASKLET()) {
         // NULL threads indicate that the kernel wants to sleep
-        assert(timeout == -1 && "kernel sleeping on timeout not supported");
+        if (timeout != -1) {
+            BUG_ON_IRQ_OFF();
+            while (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) == false && timeout > 0) {
+                arch_pause_single();
 
-        while (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) == false) {
-            arch_pause();
+                clock_sleep(25);
+                timeout -= 25;
+            }
+
+            if (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST)) {
+                return 0;
+            } else {
+                return -ETIMEDOUT;
+            }
+        } else {
+            while (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) == false) {
+                arch_pause();
+            }
         }
 
         return 0;
@@ -147,23 +163,38 @@ void waitqueue_remove(wait_queue_t *wq, wait_queue_node_t *n) {
 int waitqueue_wakeup(wait_queue_t *wq, int nthreads) {
     int threads_awoken = 0;
     int threads_to_wake = nthreads ? nthreads : INT_MAX;
-    spinlock_acquire(&wq->lck);
+    while (threads_to_wake) {
+        wait_queue_node_t *wake = NULL;
+        thread_t *thread = NULL;
 
-    wait_queue_node_t *n = wq->head;
-    while (threads_to_wake && n) {
-        if (__atomic_exchange_n(&n->ready, true, __ATOMIC_SEQ_CST) == false) {
-            // We were the first to get this node
-            threads_awoken++;
-            threads_to_wake--;
+        spinlock_acquire(&wq->lck);
+        wait_queue_node_t *n = wq->head;
+        while (n) {
+            if (__atomic_exchange_n(&n->ready, true, __ATOMIC_SEQ_CST) == false) {
+                // We were the first to get this node
+                threads_awoken++;
+                threads_to_wake--;
+
+                if (!LOCK_WAKE(n)) {
+                    wake = n;
+                    thread = n->thr;
+                }
+                break;
+            }
+
+            n = n->next;
+        }
+        spinlock_release(&wq->lck);
+
+        if (n == NULL) {
+            break;
         }
 
-        if (!LOCK_WAKE(n)) {
-            if (n->thr) sleep_wakeup(n->thr);
+        if (wake) {
+            if (thread) sleep_wakeup(thread);
+            UNLOCK_WAKE(wake);
         }
-
-        n = n->next;
     }
 
-    spinlock_release(&wq->lck);
     return threads_awoken;
 }

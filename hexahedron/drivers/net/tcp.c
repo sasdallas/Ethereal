@@ -35,6 +35,7 @@
 #include <kernel/init.h>
 #include <kernel/fs/poll.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <errno.h>
 #include <stdlib.h>
 
@@ -161,12 +162,15 @@ static ssize_t tcp_sendmsg(sock_t *sock, struct msghdr *msg, int flags);
 static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags);
 static int tcp_poll(sock_t *sock, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t tcp_poll_events(sock_t *sock);
+static poll_events_t tcp_tcbEvents(tcp_tcb_t *tcb);
+static poll_events_t tcp_windowEventChecker(poll_event_t *ev);
 static int tcp_close(sock_t *sock);
 static int tcp_listen(sock_t *sock, int backlog);
-static int tcp_accept(struct sock *sock, struct sockaddr *addr, socklen_t *addrlen);
+static int tcp_accept(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen);
 static int tcp_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen);
 static int tcp_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addrlen);
-
+static int tcp_getsockopt(sock_t *sock, int level, int option_name, void *option_value, socklen_t *option_len);
+static int tcp_setsockopt(sock_t *sock, int level, int option_name, const void *option_value, socklen_t option_len);
 sock_ops_t tcp_socket_ops = {
     .accept = tcp_accept,
     .bind = tcp_bind,
@@ -174,8 +178,8 @@ sock_ops_t tcp_socket_ops = {
     .connect = tcp_connect,
     .getpeername = tcp_getpeername,
     .getsockname = tcp_getsockname,
-    .getsockopt = NULL,
-    .setsockopt = NULL,
+    .getsockopt = tcp_getsockopt,
+    .setsockopt = tcp_setsockopt,
     .listen = tcp_listen,
     .poll = tcp_poll,
     .poll_events = tcp_poll_events,
@@ -620,41 +624,52 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
                 tcb->send_window.snduna = ntohl(tcp_pkt->ack);
             }
 
-            if (tcp_pkt->flags & TCP_PSH || tcp_pkt->flags & TCP_ACK) {
-                // Calculate payload size
-                size_t payload_len = ntohs(ip_pkt->length) - sizeof(ipv4_packet_t) - (tcp_pkt->data_offset * 4);
-                
-                if (payload_len > 0) {
-                    char *payload = (char*)tcp_pkt + (tcp_pkt->data_offset * 4);
-                    if (ntohl(tcp_pkt->seq) != tcb->recv_window.rcvnxt) {
-                        dprintf(WARN, "Out of order packet (expected SEQ %d got %d)\n", tcb->recv_window.rcvnxt, ntohl(tcp_pkt->seq));
-                        tcp_acknowledge(tcb);
-                        break;   
-                    }
+            // Calculate payload size
+            size_t payload_len = ntohs(ip_pkt->length) - sizeof(ipv4_packet_t) - (tcp_pkt->data_offset * 4);
 
-                    TCB_LOCK_RCV(tcb);
-                    ssize_t written = ringbuffer_write(tcb->recv_window.buffer, payload, payload_len);
+            if (payload_len > 0) {
+                char *payload = (char*)tcp_pkt + (tcp_pkt->data_offset * 4);
+                if (ntohl(tcp_pkt->seq) != tcb->recv_window.rcvnxt) {
+                    dprintf(WARN, "Out of order packet (expected SEQ %d got %d)\n", tcb->recv_window.rcvnxt, ntohl(tcp_pkt->seq));
+                    tcp_acknowledge(tcb);
+                    break;
+                }
+
+                TCB_LOCK_RCV(tcb);
+                ssize_t written = ringbuffer_write(tcb->recv_window.buffer, payload, payload_len);
+
+                if (written == (ssize_t)payload_len) {
                     tcb->recv_window.rcvwnd -= written;
                     tcb->recv_window.rcvnxt += payload_len;
-                    TCB_UNLOCK_RCV(tcb);
-                    
-                    // Only advance rcvnxt and ACK if we successfully wrote all data
-                    if (written == (ssize_t)payload_len) {
-                        tcp_acknowledge(tcb);
-                        poll_signal(&tcb->wndev, POLLIN);
-                    } else {
-                        LOG(WARN, "Receive buffer full, discarding %zu bytes\n", payload_len - written);
-                        tcp_reset(tcb, ntohl(ip_pkt->src_addr), tcp_pkt);
-                    }
                 }
-            } else if (tcp_pkt->flags & TCP_FIN) {
+                TCB_UNLOCK_RCV(tcb);
+
+                // Only advance rcvnxt and ACK if we successfully wrote all data
+                if (written != (ssize_t)payload_len) {
+                    LOG(WARN, "Receive buffer full, discarding %zu bytes\n", payload_len - written);
+                    tcp_reset(tcb, ntohl(ip_pkt->src_addr), tcp_pkt);
+                    break;
+                }
+
+                poll_signal(&tcb->wndev, POLLIN);
+            }
+
+            if (tcp_pkt->flags & TCP_FIN) {
                 // FIN packet, we can transition to CLOSE_WAIT state.
+                uint32_t fin_seq = ntohl(tcp_pkt->seq) + payload_len;
+                if (fin_seq != tcb->recv_window.rcvnxt) {
+                    LOG(INFO, "FIN packet has seq 0x%x expected 0x%x\n", fin_seq, tcb->recv_window.rcvnxt);
+                    tcp_acknowledge(tcb);
+                    break;
+                }
+
                 LOG(INFO, "Got FIN packet, transitioning to CLOSE_WAIT\n");
+                tcb->recv_window.rcvnxt++;
                 tcb->state = TCP_STATE_CLOSE_WAIT;
                 tcp_acknowledge(tcb);
-            } else {
-                LOG(ERR, "set flags: %x\n", tcp_pkt->flags);
-                assert(0 && "ESTABLISHED: Unimplemented");
+                poll_signal(&tcb->wndev, POLLIN | POLLHUP);
+            } else if (payload_len > 0) {
+                tcp_acknowledge(tcb);
             }
 
 
@@ -731,7 +746,6 @@ void tcp_workerProcessPacket(tcp_worker_t *self, tcp_worker_request_t *request) 
 
     TCB_UNLOCK(tcb);
     TCB_RELEASE(tcb);
-
 }
 
 /**
@@ -841,6 +855,8 @@ void tcp_initTCB(tcp_tcb_t *tcb) {
     MUTEX_INIT(&tcb->lck);
     POLL_EVENT_INIT(&tcb->event);
     POLL_EVENT_INIT(&tcb->wndev);
+    tcb->wndev.dev = (void*)tcb;
+    tcb->wndev.checker = tcp_windowEventChecker;
     tcb->transmit_buffer = NULL;
     refcount_init(&tcb->ref, 1);
     
@@ -985,7 +1001,6 @@ static int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t 
     }
 
     // Lock the TCB
-    LOG(DEBUG, "Begin connection\n");
     TCB_LOCK(tcb);
 
     // We must be in closed state to connect
@@ -998,8 +1013,6 @@ static int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t 
     // Configure connection info
     tcb->connect_info.target_addr = ntohl(addr->sin_addr.s_addr);
     tcb->connect_info.target_port = ntohs(addr->sin_port);
-    
-    LOG(DEBUG, "Doing connection %d -> %d\n", tcb->port, tcb->connect_info.target_port);
 
     uint32_t iss = rand();
 
@@ -1062,7 +1075,7 @@ static int tcp_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t 
         return -ECONNREFUSED;
     }
 
-    LOG(DEBUG, "Connection succeeded.\n");
+    LOG(DEBUG, "Connection succeeded\n");
     return 0;
 }
 
@@ -1152,7 +1165,7 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     tcp_tcb_t *tcb = TCP_TCB(sock->driver);
     TCB_HOLD(tcb);
 
-    if (tcb->state != TCP_STATE_ESTABLISHED) {
+    if (tcb->state != TCP_STATE_ESTABLISHED && tcb->state != TCP_STATE_CLOSE_WAIT) {
         TCB_RELEASE(tcb);
 
         // TODO: ECONNRESET
@@ -1162,6 +1175,12 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     
     TCB_LOCK_RCV(tcb);
     while (ringbuffer_remaining_read(tcb->recv_window.buffer) == 0) {
+        if (tcb->state == TCP_STATE_CLOSE_WAIT) {
+            TCB_UNLOCK_RCV(tcb);
+            TCB_RELEASE(tcb);
+            return 0;
+        }
+
         if (sock_nonblocking(sock)) {
             TCB_UNLOCK_RCV(tcb);
             TCB_RELEASE(tcb);
@@ -1169,7 +1188,7 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
         }
 
         poll_waiter_t *waiter = poll_createWaiter(current_cpu->current_thread, 1);
-        poll_add(waiter, &tcb->wndev, POLLIN | POLLERR);
+        poll_add(waiter, &tcb->wndev, POLLIN | POLLHUP | POLLERR);
         TCB_UNLOCK_RCV(tcb);
         int w = poll_wait(waiter, -1);
      
@@ -1217,7 +1236,14 @@ static ssize_t tcp_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
  * @brief TCP poll events
  */
 static poll_events_t tcp_poll_events(sock_t *sock) {
-    tcp_tcb_t *tcb = TCP_TCB(sock->driver);;
+    return tcp_tcbEvents(TCP_TCB(sock->driver));
+}
+
+/**
+ * @brief Get the currently pending events on a TCB
+ * @param tcb The TCB to check
+ */
+static poll_events_t tcp_tcbEvents(tcp_tcb_t *tcb) {
     poll_events_t events = 0;
 
     if (tcb->abort) return POLLERR;
@@ -1234,13 +1260,27 @@ static poll_events_t tcp_poll_events(sock_t *sock) {
             events |= (ringbuffer_remaining_write(tcb->send_window.buffer) ? POLLOUT : 0) | (ringbuffer_remaining_read(tcb->recv_window.buffer) ? POLLIN : 0);
             break;
 
+        case TCP_STATE_CLOSE_WAIT:
+            events |= POLLHUP | (ringbuffer_remaining_read(tcb->recv_window.buffer) ? POLLIN : 0);
+            break;
+
         default:
             // The rest of these are closed
-            events |= POLLHUP | (ringbuffer_remaining_read(tcb->recv_window.buffer));
+            events |= POLLHUP;
             break;
     }
 
     return events;
+}
+
+/**
+ * @brief Window event checker
+ *
+ * Lets @c poll_add see events that are already pending. Without this the window event is purely
+ * edge-triggered, so anything signalled between a caller's state check and its @c poll_add is lost.
+ */
+static poll_events_t tcp_windowEventChecker(poll_event_t *ev) {
+    return tcp_tcbEvents((tcp_tcb_t*)ev->dev);
 }
 
 /**
@@ -1458,6 +1498,34 @@ static int tcp_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *addrl
 
     TCB_UNLOCK(tcb);
     return 0;
+}
+
+/**
+ * @brief TCP getsockopt
+ */
+static int tcp_getsockopt(sock_t *sock, int level, int option_name, void *option_value, socklen_t *option_len) {
+    if (level != IPPROTO_TCP) {
+        return -ENOPROTOOPT;
+    }
+
+    LOG(ERR, "TCP getsockopt not implemented (option_name = %d)\n", option_name);
+    return -ENOPROTOOPT;
+}
+
+/**
+ * @brief TCP setsockopt
+ */
+static int tcp_setsockopt(sock_t *sock, int level, int option_name, const void *option_value, socklen_t option_len) {
+    if (level != IPPROTO_TCP) {
+        return -ENOPROTOOPT;
+    }
+
+    if (option_name == TCP_NODELAY) {
+        return 0;
+    } else {
+        LOG(ERR, "TCP setsockopt not implemented (option_name = %d)\n", option_name);
+        return -ENOPROTOOPT;
+    }
 }
 
 /**

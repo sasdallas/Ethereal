@@ -45,7 +45,7 @@
 /* Timeouts */
 #define USB_NO_TIMEOUT          -1      // Wait infinitely for this transfer to complete
 
-#define USB_LANGID_ENGLISH      0x0401
+#define USB_LANGID_ENGLISH      0x0409
 
 #define USB_MAX_ADDRESS         128
 

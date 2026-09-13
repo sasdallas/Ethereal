@@ -282,16 +282,4 @@ void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
     p->bitmap[word] &= ~(1ULL << bit);
     p->rem += 1;
     mutex_release(&p->mut);
-
-    // If the page is totally free, destroy it
-    if (p->rem == _vmm_entries_per_page) {
-        if (p->prev) p->prev->next = p->next;
-        if (p->next) p->next->prev = p->prev;
-        if (vmm_ranges_head == p) vmm_ranges_head = p->next;
-
-        uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)p);
-        assert(phys);
-        pmm_freePage(phys);
-        arch_mmu_unmap(NULL, (uintptr_t)p);
-    }
 }

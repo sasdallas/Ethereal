@@ -25,7 +25,7 @@ list_t *timer_queue = NULL;
 process_t *timer_process = NULL;
 
 /* Timer lock */
-spinlock_t timer_lock = { 0 };
+mutex_t timer_lock = MUTEX_INITIALIZER;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TASK:TIMER", __VA_ARGS__)
@@ -47,7 +47,7 @@ void timer_kthread(void *ctx) {
         long sleep_seconds = -1;
         long sleep_subseconds = -1;
 
-        spinlock_acquire(&timer_lock);
+        mutex_acquire(&timer_lock);
 
         foreach(node, timer_queue) {
             process_timer_t *t = (process_timer_t*)node->value;
@@ -107,7 +107,7 @@ void timer_kthread(void *ctx) {
             }
         }
         
-        spinlock_release(&timer_lock);
+        mutex_release(&timer_lock);
 
         if (sleep_seconds == -1) {
             sleep_prepare(); // Anything in the sleep queue wakes us up.
@@ -135,7 +135,7 @@ int timer_set(struct process *process, int which, struct itimerval *value) {
         sched_insert(timer_process->main_thread);
     }
 
-    spinlock_acquire(&timer_lock);
+    mutex_acquire(&timer_lock);
 
     process_timer_t *timer = (process_timer_t*)&process->itimers[which];
     timer->process = process;
@@ -155,7 +155,7 @@ int timer_set(struct process *process, int which, struct itimerval *value) {
         sleep_wakeup(timer_process->main_thread);
     }
 
-    spinlock_release(&timer_lock);
+    mutex_release(&timer_lock);
 
     LOG(DEBUG, "Created a new timer with value %d/%d\n", timer->value.tv_sec, timer->value.tv_usec);
 

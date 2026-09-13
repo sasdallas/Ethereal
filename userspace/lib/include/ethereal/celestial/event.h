@@ -41,6 +41,7 @@
 #define CELESTIAL_EVENT_MOUSE_MOTION_REL        0x0000000D // Relative mouse motion
 #define CELESTIAL_EVENT_WINDOW_CLOSE            0x0000000E
 #define CELESTIAL_EVENT_WINDOW_CHANGED          0x0000000F // Special event. Sent only to the root window (desktop). Sent on advertise and window close only.
+#define CELESTIAL_EVENT_BOUND_KEY               0x00000010
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -59,6 +60,8 @@
 /* Window changed events */
 #define CELESTIAL_WINDOW_CHANGE_ADVERTISED      0
 #define CELESTIAL_WINDOW_CHANGE_CLOSING         1
+#define CELESTIAL_WINDOW_CHANGE_FOCUSED         2
+#define CELESTIAL_WINDOW_CHANGE_UNFOCUSED       3
 
 /**** TYPES ****/
 
@@ -155,6 +158,14 @@ typedef struct celestial_event_window_changed {
     wid_t changed_window;               // ID of the changed window, can be passed to CELESTIAL_REQ_QUERY_WINDOW
     unsigned char changed_event;        // CELESTIAL_WINDOW_CHANGED_...
 } celestial_event_window_changed_t;
+
+typedef struct celestial_event_bound_key {
+    CELESTIAL_EVENT_COMMON
+    bool pressed;
+    wid_t focused;
+    key_scancode_t sc;
+    key_modifiers_t mods;
+} celestial_event_bound_key_t;
 
 /**
  * @brief Celestial event handler
