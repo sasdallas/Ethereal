@@ -136,9 +136,21 @@ void *xa_store(xarray_t *xa, unsigned long index, void *entry) {
         root->shift = shift;
         root->parent = NULL;
 
-        size_t offset = (index >> shift) & XA_MASK;
-        root->entries[offset] = XA_AS_VALUE(entry);
-        root->bitmap = (1ULL << offset);
+        xarray_node_t *node = root;
+        while (node->shift > 0) {
+            size_t offset = (index >> node->shift) & XA_MASK;
+            xarray_node_t *child = xa_allocnode();
+            child->shift = node->shift - XA_SHIFT;
+            child->parent = node;
+
+            node->entries[offset] = child;
+            node->bitmap = (1ULL << offset);
+            node = child;
+        }
+
+        size_t offset = index & XA_MASK;
+        node->entries[offset] = XA_AS_VALUE(entry);
+        node->bitmap = (1ULL << offset);
     
         XA_STORE_PTR(xa->xa_head, root);
         XA_UNLOCK_WRITE(xa);
