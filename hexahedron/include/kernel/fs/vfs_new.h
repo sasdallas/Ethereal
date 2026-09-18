@@ -279,7 +279,17 @@ static inline int file_ioctl(vfs_file_t *f, long request, void *argp) { if (f->o
 static inline int file_get_entries(vfs_file_t *f, vfs_dir_context_t *ctx) { if (f->ops->get_entries) { return f->ops->get_entries(f, ctx); } else { return -ENOTSUP; }}
 static inline int file_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events) { if (f->ops->poll) { return f->ops->poll(f, waiter, events); } else { return -ENOTSUP; }} // ambig. if file doesn't support polling. poll()/select() should exit on file_poll_events tho
 static inline int file_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags) { if (f->ops->mmap) { return f->ops->mmap(f, addr, size, off, flags); } else { return -ENOTSUP; }}
-static inline int file_mmap_prepare(vfs_file_t *f, void *range) { if (f->ops->mmap_prepare) { return f->ops->mmap_prepare(f, range); } else { return 0; }}
+static inline int file_mmap_prepare(vfs_file_t *f, void *range) {
+    if ((f->inode->attr.type == VFS_FILE || f->inode->attr.type == VFS_BLOCKDEVICE) && !(f->inode->flags & INODE_FLAG_NOT_CACHEABLE) && f->inode->c_ops && !f->inode->cache) {
+        f->inode->cache = cache_create();
+    }
+
+    if (f->ops->mmap_prepare) {
+        return f->ops->mmap_prepare(f, range);
+    } else {
+        return 0;
+    }
+}
 static inline int file_munmap(vfs_file_t *f, void *addr, size_t size, off_t offset) { if (f->ops->munmap) { return f->ops->munmap(f, addr, size, offset); } else { return -ENOTSUP; }}
 static inline int file_check_flags(vfs_file_t *f) { if (f->ops->check_flags) { return f->ops->check_flags(f); } else { return 0; } }
 static inline int inode_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **inode_output) { if (parent->ops->create) { return parent->ops->create(parent, name, mode, inode_output); } else { return -ENOTSUP; }} // TODO: maybe EROFS?
