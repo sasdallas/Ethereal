@@ -221,8 +221,12 @@ static int socket_default_setsockopt(sock_t *sock, int option_name, const void *
             LOG(ERR, "Send buffer not implemented\n");
             return 0;   // Our receive/send buffers are dynamic
         case SO_BINDTODEVICE:
-            assert(0 && "SO_BINDTODEVICE");
-            return 0;
+            if (!option_value || option_len < 2) {
+                return -EINVAL;
+            }
+
+            sock->bound_nic = nic_get((char *)option_value);
+            return sock->bound_nic ? 0 : -ENODEV;
     }
 
     return -ENOPROTOOPT;
@@ -275,9 +279,17 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
 
     // Other cases
     switch (option_name) {
+        case SO_RCVBUF:
+        case SO_SNDBUF:
+            // TODO
+            SOCKET_CHECK_LEN(option_len, int);
+            *((int*)option_value) = 64 * 1024;
+            *option_len = sizeof(int);
+            return 0;
         case SO_ERROR:
             SOCKET_CHECK_LEN(option_len, int);
-            *((int*)option_len) = 0;
+            *((int*)option_value) = 0;
+            *option_len = sizeof(int);
             return 0;
         case SO_TYPE:
             SOCKET_CHECK_LEN(option_len, int);

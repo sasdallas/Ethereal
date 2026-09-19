@@ -85,6 +85,7 @@ typedef struct sock {
     unsigned char domain;               // Domain of the socket
     unsigned char type;                 // Type of the socket
     unsigned char protocol;             // Protocol of the socket
+    nic_t *bound_nic;                   // SO_BINDTODEVICE
 
     // Poll
     poll_event_t sock_event;            // Socket event
