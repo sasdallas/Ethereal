@@ -375,8 +375,8 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
             
             if (PAGE_IS_READY(pg)) {
                 // We successfully filled a page
-                if (PAGE_IS_DIRTY(pg)) {
-                    // Dirty pages cannot be batched, and so missing pages have to be read
+                if (PAGE_IS_DIRTY(pg) || PAGE_IS_WRITEBACK(pg) || PAGE_TEST_FLAG(pg, PAGE_FLAG_PERMANENT)) {
+                    // Dirty pages cannot be batched, nor permanent pages since tmpfs just sets them to 0 anyways.
                     have_dirty = true;
                 }
 
