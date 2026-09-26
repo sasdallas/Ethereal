@@ -49,6 +49,21 @@ usb_pipe_ops_t xhci_intr_ep_ops = {
     .abort = xhci_intr_abort
 };
 
+/* Bulk endpoint */
+static usb_status_t xhci_bulk_init_transfer(usb_pipe_t *pipe, usb_transfer_t *transfer);
+static void xhci_bulk_free_transfer(usb_pipe_t *pipe, usb_transfer_t *transfer);
+static usb_status_t xhci_bulk_start(usb_pipe_t *pipe, usb_transfer_t *transfer);
+static usb_status_t xhci_bulk_submit(usb_pipe_t *pipe, usb_transfer_t *transfer);
+static void xhci_bulk_abort(usb_pipe_t *pipe, usb_transfer_t *transfer);
+
+usb_pipe_ops_t xhci_bulk_ep_ops = {
+    .init_transfer = xhci_bulk_init_transfer,
+    .free_transfer = xhci_bulk_free_transfer,
+    .start = xhci_bulk_start,
+    .submit = xhci_bulk_submit,
+    .abort = xhci_bulk_abort
+};
+
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "DRIVER:XHCI:PIPE", __VA_ARGS__)
 
@@ -145,6 +160,13 @@ usb_status_t xhci_configurePipe(xhci_t *xhci, usb_pipe_t *pipe) {
     memset(ic, 0, XHCI_CONTEXT_SIZE(xhci));
     ic->add_flags = (1 << endp_num) | (1 << 0);
     ic->drop_flags = 0;
+
+    if (pipe->endp != &pipe->device->control_ep) {
+        memset(sc, 0, XHCI_CONTEXT_SIZE(xhci));
+        memcpy(sc, XHCI_OUTPUT_SLOT_CONTEXT(dev), sizeof(*sc));
+    }
+
+    memset(ec, 0, XHCI_CONTEXT_SIZE(xhci));
 
     // Configure slot context
     if (dev->highest_ep < endp_num) {
@@ -247,7 +269,11 @@ usb_status_t xhci_configurePipe(xhci_t *xhci, usb_pipe_t *pipe) {
 
 
         xhci_command_completion_trb_t trbout;
-        xhci_sendCommand(xhci, &trb, &trbout);
+        int command_status = xhci_sendCommand(xhci, &trb, &trbout);
+        if (command_status != 0) {
+            return USB_TIMED_OUT;
+        }
+
         if (!TRB_SUCCESS(&trbout)) {
             LOG(ERR, "CONFIGURE_ENDPOINT failed with completion code %d\n", trbout.cc);
             return USB_INTERNAL_ERROR;
@@ -418,5 +444,50 @@ static usb_status_t xhci_intr_submit(usb_pipe_t *pipe, usb_transfer_t *transfer)
 }
 
 static void xhci_intr_abort(usb_pipe_t *pipe, usb_transfer_t *transfer) {
+    assert(0);
+}
+
+/* BULK */
+
+static usb_status_t xhci_bulk_init_transfer(usb_pipe_t *pipe, usb_transfer_t *transfer) {
+    assert(transfer->length <= 0x1FFFF);
+    return USB_SUCCESS;
+}
+
+static void xhci_bulk_free_transfer(usb_pipe_t *pipe, usb_transfer_t *transfer) {
+    // no-op
+}
+
+static usb_status_t xhci_bulk_start(usb_pipe_t *pipe, usb_transfer_t *transfer) {
+    xhci_pipe_t *xpipe = pipe->hc_priv;
+    xhci_device_t *dev = pipe->device->hc_priv;
+
+    XHCI_LOCK_RING(xpipe->ring);
+
+    assert(queue_rb_space(&xpipe->transfers) && "maximum amount of transfers exceeded, kernel bug");
+    queue_rb_push(&xpipe->transfers, transfer);
+
+    xhci_normal_trb_t trb = {
+        .type = XHCI_TRB_TYPE_NORMAL,
+        .buffer = arch_mmu_physical(NULL, (uintptr_t)transfer->buffer),
+        .len = transfer->length,
+        .ioc = 1,
+        .c = 1,
+        .ch = 0,
+        .isp = USB_ENDP_DIRECTION(pipe->endp->desc.bEndpointAddress) == USB_ENDP_DIR_IN,
+    };
+
+    xhci_enqueueRing(xpipe->ring, (xhci_trb_t *)&trb);
+    XHCI_DOORBELL(dev->xhci, dev->slot_id) = xhci_getDCI(pipe->endp);
+    XHCI_UNLOCK_RING(xpipe->ring);
+    return USB_SUCCESS;
+}
+
+static usb_status_t xhci_bulk_submit(usb_pipe_t *pipe, usb_transfer_t *transfer) {
+    transfer->status = USB_IN_PROGRESS;
+    return USB_SUCCESS;
+}
+
+static void xhci_bulk_abort(usb_pipe_t *pipe, usb_transfer_t *transfer) {
     assert(0);
 }
