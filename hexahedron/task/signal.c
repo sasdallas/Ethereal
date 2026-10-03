@@ -109,7 +109,7 @@ static void signal_kick(thread_t *thread) {
  * @param info Signal information (optional, leave as NULL to not provide)
  */
 void signal_sendInfo(process_t *proc, int signal, siginfo_t *info) {
-    if (signal < 0 && signal >= SIGRTMIN) {
+    if (signal <= 0 || signal >= SIGRTMIN) {
         LOG(ERR, "Unsupported signal: %d\n", signal);
         return;
     }
@@ -229,27 +229,6 @@ _leave:
     if (resume && thread != current_cpu->current_thread && !(thread->status & (THREAD_STATUS_SLEEPING | THREAD_STATUS_STOPPING | THREAD_STATUS_STOPPED))) {
         sched_insert(thread);
     }
-}
-
-/**
- * @brief Send a signal to a group of processes
- * @param pgid The process group ID of the processes to send to
- * @param signal The signal to send to the group
- * @returns 0 on success, otherwise error code 
- */
-int signal_sendGroup(pid_t pgid, int signal) {
-    // TODO: Stupidity
-
-    // !!! VERY UNSAFE WALK!!
-extern list_t *process_list;
-    foreach(node, process_list) {
-        process_t *proc = node->value;
-        if (proc->pgid == pgid) {
-            signal_send(proc, signal);
-        }
-    }
-
-    return 0;
 }
 
 /**
@@ -438,8 +417,6 @@ _retry:
     }
 
     // If we found something
-    LOG(INFO, "Found signal %d to be processed\n", target_signal);
-
     signal_action_t *act = &proc->signal.actions[target_signal];
 
     if (act->handler == (uintptr_t)SIG_IGN) {

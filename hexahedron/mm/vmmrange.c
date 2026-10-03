@@ -85,6 +85,7 @@ uintptr_t vmm_findFree(vmm_space_t *space, uintptr_t address, size_t size) {
  * @param range The range to insert into the VMM context
  */
 void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
+    space->range_cache = NULL;
     range->end = PAGE_ALIGN_UP(range->end);
     range->start = PAGE_ALIGN_DOWN(range->start);
     assert(range->end > range->start);
@@ -152,11 +153,18 @@ static vmm_range_page_t *vmm_createRangePage() {
  * @param size Size of allocation
  */
 vmm_memory_range_t *vmm_getRange(vmm_space_t *space, uintptr_t start, size_t size) {
+    if (space->range_cache && RANGE_IN_RANGE(start, start+size, space->range_cache->start, space->range_cache->end)) {
+        return space->range_cache;
+    }
+
     vmm_memory_range_t *r = space->range;
     while (r) {
         if (RANGE_IN_RANGE(start, start+size, r->start, r->end)) {
+            space->range_cache = r;
             return r;
         }
+
+        if (start < r->start) break;
 
         r = r->next;
     }  
@@ -226,24 +234,27 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
     // assert(space == current_cpu->current_context->space || space == vmm_kernel_space);
     // !!!: Will need to update later, a lot of type support will be needed
     for (uintptr_t i = range->start + offset; i < range->start + offset + (npages * PAGE_SIZE); i += PAGE_SIZE) {
+        uintptr_t pg = arch_mmu_physical(NULL, i);
         if (range->vmm_flags & VM_FLAG_FILE) {
-            // TODO
-            space->metrics.file_resident -= PAGE_SIZE;
+            if (pg) space->metrics.file_resident -= PAGE_SIZE;
             space->metrics.file_usage -= PAGE_SIZE;
         } else if (range->vmm_flags & VM_FLAG_DEVICE) {
             // Device memory is never freed
         } else {
             if (range->vmm_flags & VM_FLAG_ALLOC) {
                 space->metrics.anon_usage -= PAGE_SIZE;
-                uintptr_t pg = arch_mmu_physical(NULL, i);
                 if (pg != 0x0) {
                     space->metrics.anon_resident -= PAGE_SIZE;
-                    pmm_freePage(pg);
                 }
             }
         }
 
         arch_mmu_unmap(NULL, i);
+
+        // Every non-device mapping owns a page reference
+        if (pg && !(range->vmm_flags & VM_FLAG_DEVICE) && (range->vmm_flags & (VM_FLAG_FILE | VM_FLAG_ALLOC))) {
+            pmm_freePage(pg);
+        }
     }
 
     arch_mmu_invalidate_range(range->start + offset, range->start + offset + (npages * PAGE_SIZE));
@@ -256,6 +267,7 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
  * @param range The range to destroy
  */
 void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
+    space->range_cache = NULL;
     if (range->next) range->next->prev = range->prev;
     if (range->prev) range->prev->next = range->next;
     if (range == space->range) space->range = range->next;

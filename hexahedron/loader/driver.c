@@ -172,9 +172,11 @@ int driver_load(vfs_file_t *driver_file, int priority, char *file, int argc, cha
     memcpy(loaded_driver->metadata, metadata, sizeof(driver_metadata_t));
 
     // !!!: VERY VERY VERY VERY VERY BAD!!!!!!!!!! BREAKS ALL VMM RULES
+    mutex_acquire(vmm_kernel_space->mut);
     vmm_memory_range_t *r = vmm_getRange(vmm_kernel_space, driver_load_address, 1);
     assert(r);
     ssize_t driver_loaded_size = (ssize_t)(r->end - driver_load_address);
+    mutex_release(vmm_kernel_space->mut);
 
     // Copy other variables
     loaded_driver->filename = strdup(file);

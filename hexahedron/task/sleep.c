@@ -75,10 +75,10 @@ static void sleep_callback() {
 
         // Check for expiration
         if (n->sl != current_cpu->current_thread && (seconds > n->seconds || (seconds == n->seconds && subseconds >= n->subseconds))) {
-            // Trigger thread wakeup
-            sleep_wakeupReason(n->sl, WAKEUP_TIME);
+            thread_t *thread = n->sl;
             prev->next = n->next;
             n = prev->next;
+            sleep_wakeupReason(thread, WAKEUP_TIME);
             continue;
         }
 
@@ -290,6 +290,21 @@ inline int sleep_wakeup(struct thread *thread) {
  */
 int sleep_enter() {
     thread_t *thread = current_cpu->current_thread;
+    if (thread->sleep.interruptible) {
+        // There might've been a signal queued before sleep_prepare was marked sleeping
+        if (__atomic_load_n(&thread->signal.have_pending, __ATOMIC_ACQUIRE)) {
+            sleep_exit();
+            return WAKEUP_SIGNAL;
+        }
+
+        // We might also be able to process the parent's signals
+        if (__atomic_load_n(&thread->parent->signal.pending, __ATOMIC_ACQUIRE) & ~(__atomic_load_n(&thread->signal.blocked, __ATOMIC_ACQUIRE))) {
+            sleep_exit();
+            return WAKEUP_SIGNAL;
+        }
+    }
+
+    struct internal_time_queue_entry ent;
     if (thread->sleep.seconds || thread->sleep.subseconds) {
         // We know the drill...
         // !!!: A full time rewrite is necessitated
@@ -304,7 +319,7 @@ int sleep_enter() {
         }
 
         spinlock_acquire(&time_lock);
-        struct internal_time_queue_entry ent = {
+        ent = (struct internal_time_queue_entry) {
             .next = NULL,
             .sl = thread,
             .seconds = seconds,

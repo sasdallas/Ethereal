@@ -109,7 +109,6 @@ int vmm_fault(vmm_fault_information_t *info) {
             arch_mmu_unmap_physical(zmap, PAGE_SIZE);
 
             arch_mmu_map(NULL, info->address, pg, r->mmu_flags);
-            arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
 
             sp->metrics.anon_resident += PAGE_SIZE;
         }
@@ -121,6 +120,7 @@ int vmm_fault(vmm_fault_information_t *info) {
         if (r->vmm_flags & VM_FLAG_SHARED || r->vmm_flags & VM_FLAG_DEVICE || PMM_REFCOUNT(phys) == 1) {
             // Remap the page as writable, the other proc got it
             arch_mmu_map(NULL, info->address, phys, r->mmu_flags);
+            arch_mmu_invalidate_range(info->address, info->address + PAGE_SIZE);
         } else {
             // Create a copy of the page and release the old one
             uintptr_t new_phys = pmm_allocatePage(ZONE_DEFAULT);

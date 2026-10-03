@@ -84,6 +84,7 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
         range = range->next;
     }
 
+    new_ctx->space->metrics = ctx->space->metrics;
     arch_mmu_invalidate_range(MMU_USERSPACE_START, MMU_USERSPACE_END);
     mutex_release(ctx->space->mut);
 

@@ -41,6 +41,9 @@
 #define VM_FLAG_FAKE_ME_NOT 0x20        // Do not allow this memory region to be filled in later and fill it in now
 #define VM_FLAG_REPLACE     0x40        // Replace the existing mapping (MAP_FIXED)
 
+// For small allocations, a threadhold to use instead of blindly demand-paging everything
+#define VMM_FILL_THRESHOLD (16 * PAGE_SIZE)
+
 /* VM_OP_ */
 #define VM_OP_SET_FLAGS     1
 #define VM_OP_FREE          2
@@ -96,6 +99,7 @@ typedef struct vmm_space {
     uintptr_t start;
     uintptr_t end;
     vmm_memory_range_t *range;
+    vmm_memory_range_t *range_cache;
     mutex_t *mut;
     vmm_metrics_t metrics;
 } vmm_space_t;
