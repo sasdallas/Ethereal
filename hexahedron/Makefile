@@ -13,10 +13,7 @@ SOURCE_DIRECTORIES += task/syscalls subsystems subsystems/gpu lock
 # Include the architecture Make configuration
 include arch/$(BUILD_ARCH)/make.config
 
-# NOW INCLUDE THE REST! LIBRARY ORDER MATTERS!!!
-# -lkstructures must not use anything from before it
-# -lkpolyhedron must not use anything from libkstructures
-# -lgcc must not use anything from libkpolyhedron
+# Libraries
 LIBS += -lkstructures -lgcc
 
 # Construct object output directories
@@ -90,20 +87,8 @@ install-headers:
 	@-mkdir -pv $(DESTDIR)$(INCLUDE_DIRECTORY)
 	cp -rp include/kernel/ $(DESTDIR)$(INCLUDE_DIRECTORY)
 
-ifeq ($(HOSTARCH), aarch64)
-
-bootstub:
-	make -C arch/aarch64/bootstubs install
-
-install: PRINT_HEADER CREATE_BUILD_DIRECTORIES DELETE_OBJECTS $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf bootstub
-else
 install: PRINT_HEADER CREATE_BUILD_DIRECTORIES DELETE_OBJECTS $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
-endif
 
 clean:
 	@-rm -r $(OUT_OBJ)
 	@-rm -r $(DESTDIR)$(BOOT_OUTPUT)/hexahedron-kernel.elf
-
-ifeq ($(HOSTARCH), aarch64)
-	make -C arch/aarch64/bootstubs clean
-endif
