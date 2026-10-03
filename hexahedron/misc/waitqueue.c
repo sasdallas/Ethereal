@@ -84,6 +84,10 @@ int waitqueue_wait(wait_queue_t *wq, wait_queue_node_t *n, int timeout) {
         return 0;
     }
 
+    if (timeout == 0) {
+        return __atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) ? 0 : -ETIMEDOUT;
+    }
+
     // Prepare to sleep
     if (timeout != -1) {
         sleep_time(timeout / 1000, timeout % 1000);
@@ -105,8 +109,8 @@ int waitqueue_wait(wait_queue_t *wq, wait_queue_node_t *n, int timeout) {
     // Nah go sleep
     int w = sleep_enter();
 
-    // If another thread didn't wake us up we need this lock
-    LOCK_WAKE(n);
+    // We must own this lock
+    while (LOCK_WAKE(n)) arch_pause_single();
 
     // Ignore w value if we were awoken
     if (__atomic_load_n(&n->ready, __ATOMIC_SEQ_CST) == true) {

@@ -14,8 +14,7 @@
 #include <kernel/task/process.h>
 
 long sys_poll(struct pollfd fds[], nfds_t nfds, int timeout) {
-    if (!nfds) return 0;
-    SYSCALL_VALIDATE_PTR_SIZE(fds, sizeof(struct pollfd) * nfds);
+    if (timeout < -1) return -EINVAL;
 
     int have_hit = 0;
 
