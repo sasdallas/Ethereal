@@ -583,7 +583,10 @@ void pmm_releasePage(pmm_page_t *page) {
     uintptr_t ref = __atomic_sub_fetch(&page->refcount, 1, __ATOMIC_SEQ_CST);
     if (ref == 0) {
         // empty page, remove references
-        page->flags |= PAGE_FLAG_FREE;
+        page->flags = PAGE_FLAG_FREE;
+        page->inode = NULL;
+        page->ent = NULL;
+        page->offset = 0;
         s->bmap[off/8] &= ~(1 << (off % 8));
         if ((unsigned)off / 8 < s->ffb) s->ffb = off / 8;
         s->nfree++;    

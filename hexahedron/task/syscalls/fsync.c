@@ -16,7 +16,7 @@
 long sys_fsync(int fd) {
     vfs_file_t *f = GET_FD_OR_ERROR(fd);
     int r = 0;
-    SYSCALL_LOG(DEBUG, "fsync\n");
+
     if (f->inode->cache) {
         r = cache_syncInode(f->inode);
     }
