@@ -442,6 +442,7 @@ int slab_freeFast(slab_cache_t *cache, void *object) {
     if (cpu_cache->loaded && cpu_cache->loaded->nrounds < MAGAZINE_SIZE) {
         MAGAZINE_PUSH(cpu_cache->loaded, object);
         spinlock_release(&cpu_cache->lock);
+        depot_push(&cache->depot_empty, new);
         return 1;
     }
 
@@ -454,6 +455,7 @@ int slab_freeFast(slab_cache_t *cache, void *object) {
 
         MAGAZINE_PUSH(cpu_cache->loaded, object);
         spinlock_release(&cpu_cache->lock);
+        depot_push(&cache->depot_empty, new);
         return 1;
     }
 
