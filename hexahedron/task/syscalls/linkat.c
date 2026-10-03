@@ -1,0 +1,57 @@
+/**
+ * @file hexahedron/task/syscalls/linkat.c
+ * @brief linkat
+ *
+ *
+ * @copyright
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * It is released under the terms of the BSD 3-clause license.
+ * Please see the LICENSE file in the main repository for more details.
+ *
+ * Copyright (C) 2026 Samuel Stuart
+ */
+
+#define _GNU_SOURCE
+#include <kernel/task/process.h>
+#include <kernel/fs/vfs_new.h>
+#include <unistd.h>
+
+long sys_linkat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, int flags) {
+    SYSCALL_VALIDATE_PTR(old_path);
+    SYSCALL_VALIDATE_PTR(new_path);
+
+    vfs_inode_t *src_inode = NULL;
+    vfs_inode_t *dst_inode = NULL;
+
+    if (*old_path == '/') {
+        // Absolute path
+    } else if (olddirfd == AT_FDCWD) {
+        src_inode = current_cpu->current_process->wd_node;
+    } else {
+        if (!FD_VALIDATE(olddirfd)) return -EBADF;
+        src_inode = FD(olddirfd)->inode;
+    }
+    if (src_inode) inode_hold(src_inode);
+
+    // repeat for dest
+    if (*new_path == '/') {
+        // Absolute path
+    } else if (newdirfd == AT_FDCWD) {
+        dst_inode = current_cpu->current_process->wd_node;
+    } else {
+        if (!FD_VALIDATE(newdirfd)) {
+            if (src_inode) inode_release(src_inode);
+            return -EBADF;
+        }
+
+        dst_inode = FD(newdirfd)->inode;
+    }
+    if (dst_inode) inode_hold(dst_inode);
+
+    uint32_t lookup_flags = (flags & AT_SYMLINK_FOLLOW) ? LOOKUP_DEFAULT : LOOKUP_NO_FOLLOW;
+
+    int ret = vfs_linkat(src_inode, (char*)old_path, dst_inode, (char*)new_path, lookup_flags);
+    if (src_inode) inode_release(src_inode);
+    if (dst_inode) inode_release(dst_inode);
+    return ret;
+}

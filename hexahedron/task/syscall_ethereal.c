@@ -85,6 +85,14 @@ int sys_setgsbase(uintptr_t gs) {
     return 0;
 }
 
+int sys_setfsbase(uintptr_t fs) {
+    SYSCALL_VALIDATE_PTR(fs);
+
+    TLSBASE(current_cpu->current_thread->context) = fs;
+    arch_set_tlsbase(fs);
+    return 0;
+}
+
 /**** DRIVER API ****/
 
 long sys_load_driver(char *filename, int priority, char **argv) {

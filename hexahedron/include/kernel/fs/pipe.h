@@ -19,6 +19,16 @@
 #include <kernel/fs/poll.h>
 #include <kernel/misc/mutex.h>
 #include <structs/ringbuffer.h>
+#include <kernel/fs/vfs_new.h>
+
+/**** DEFINITIONS ****/
+
+#define PIPE_DEFAULT_SIZE   4096
+#define PIPE_MINIMUM_SIZE   4096
+#define PIPE_MAXIMUM_SIZE   (1024 * 1024)
+
+/* POSIX moment */
+#define PIPE_ATOMIC_WRITE   4096
 
 /**** TYPES ****/
 
@@ -28,7 +38,7 @@ typedef struct fs_pipe {
     ringbuffer_t *buf;          // Ring buffer
     volatile int readers;
     volatile int writers;
-    volatile char dead;         // Pipe dead
+    volatile int inodes;        // Number of inodes still alive, needed as multiple inodes ref this one object
 } fs_pipe_t;
 
 /**** FUNCTIONS ****/
@@ -36,9 +46,19 @@ typedef struct fs_pipe {
 /**
  * @brief Create a new pipe set for a process
  * @param fildes The file descriptor array to fill with pipes
+ * @param flags O_CLOEXEC and/or O_NONBLOCK
  * @returns Error code
  */
-int pipe_create(int fildes[2]);
+int pipe_create(int fildes[2], int flags);
+
+/**
+ * @brief Handle the pipe-specific fcntl() commands
+ * @param file The file to operate on
+ * @param cmd F_GETPIPE_SZ or F_SETPIPE_SZ
+ * @param arg The requested capacity for F_SETPIPE_SZ
+ * @returns The pipe capacity, or a negative error code (-EBADF if not a pipe)
+ */
+long pipe_fcntl(vfs_file_t *file, int cmd, int arg);
 
 /**
  * @brief Create a pipe set for usage

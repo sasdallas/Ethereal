@@ -29,7 +29,7 @@ long sys_openpty(int *amaster, int *aslave, char *name, const struct termios *te
 
     if (name) {
         SYSCALL_VALIDATE_PTR(name);
-        strcpy(name, pty->slave->name);
+        sprintf(name, "/device/%s", pty->slave->name);
     }
 
     r = fd_add(master, amaster);

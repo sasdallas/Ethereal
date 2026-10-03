@@ -103,7 +103,7 @@ int ptrace_attach(pid_t pid) {
     if (!tracee) return -ESRCH;
 
     // The process must be the same user or be root to trace
-    if (!PROC_IS_ROOT(current_cpu->current_process) && tracee->euid != current_cpu->current_process->euid) return -EPERM;
+    if (!PROC_IS_ROOT(current_cpu->current_process) && tracee->cred.euid != current_cpu->current_process->cred.euid) return -EPERM;
 
     // The tracee must not already be being traced
     if (tracee->ptrace.tracer) return -EPERM;

@@ -49,7 +49,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_IOCTL]             = (syscall_func_t)(uintptr_t)sys_ioctl,
     /* gap */
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
-    [SYS_MKDIR]             = (syscall_func_t)(uintptr_t)sys_mkdir,
+    [SYS_MKDIRAT]           = (syscall_func_t)(uintptr_t)sys_mkdirat,
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
     [SYS_READLINK]          = (syscall_func_t)(uintptr_t)sys_readlink,
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
@@ -104,15 +104,18 @@ static syscall_func_t syscall_table[] = {
     [SYS_GETTID]            = (syscall_func_t)(uintptr_t)sys_gettid,
     [SYS_SETTLS]            = (syscall_func_t)(uintptr_t)sys_settls,
     [SYS_EXIT_THREAD]       = (syscall_func_t)(uintptr_t)sys_exit_thread,
-    /* gap x2 */
+    /* gap */
+    [SYS_TKILL]             = (syscall_func_t)(uintptr_t)sys_tkill,
     [SYS_EPOLL_CREATE]      = (syscall_func_t)(uintptr_t)NULL,
     [SYS_EPOLL_CTL]         = (syscall_func_t)(uintptr_t)NULL,
     [SYS_EPOLL_PWAIT]       = (syscall_func_t)(uintptr_t)NULL,
     [SYS_OPENPTY]           = (syscall_func_t)(uintptr_t)sys_openpty,
     [SYS_GETUID]            = (syscall_func_t)(uintptr_t)sys_getuid,
     [SYS_SETUID]            = (syscall_func_t)(uintptr_t)sys_setuid,
+    [SYS_SETRESUID]         = (syscall_func_t)(uintptr_t)sys_setresuid,
     [SYS_GETGID]            = (syscall_func_t)(uintptr_t)sys_getgid,
     [SYS_SETGID]            = (syscall_func_t)(uintptr_t)sys_setgid,
+    [SYS_SETRESGID]         = (syscall_func_t)(uintptr_t)sys_setresgid,
     [SYS_GETPPID]           = (syscall_func_t)(uintptr_t)sys_getppid,
     [SYS_GETPGID]           = (syscall_func_t)(uintptr_t)sys_getpgid,
     [SYS_SETPGID]           = (syscall_func_t)(uintptr_t)sys_setpgid,
@@ -136,7 +139,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_FUTEX_WAKE]        = (syscall_func_t)(uintptr_t)sys_futex_wake,
     [SYS_OPENAT]            = (syscall_func_t)(uintptr_t)sys_openat,
     [SYS_RENAMEAT]          = (syscall_func_t)(uintptr_t)sys_renameat,
-    [SYS_LINKAT]            = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_LINKAT]            = (syscall_func_t)(uintptr_t)sys_linkat,
     [SYS_SYMLINKAT]         = (syscall_func_t)(uintptr_t)sys_symlinkat,
     [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)sys_fchmodat,
     [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)0xdeadbeef,
@@ -155,8 +158,9 @@ static syscall_func_t syscall_table[] = {
     [SYS_FSTATAT]           = (syscall_func_t)(uintptr_t)sys_fstatat,
     [SYS_SETGSBASE]         = (syscall_func_t)(uintptr_t)sys_setgsbase,
     [SYS_SIGRETURN]         = (syscall_func_t)(uintptr_t)sys_sigreturn,
-    [SYS_SIGALTSTACK]       = (syscall_func_t)(uintptr_t)sys_sigaltstack
-}; 
+    [SYS_SIGALTSTACK]       = (syscall_func_t)(uintptr_t)sys_sigaltstack,
+    [SYS_SETFSBASE]         = (syscall_func_t)(uintptr_t)sys_setfsbase
+};
 
 
 /* Unimplemented system call */
@@ -223,4 +227,3 @@ void syscall_handle(syscall_t *syscall) {
 
     return;
 }
-

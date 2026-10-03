@@ -17,40 +17,34 @@
 #include <unistd.h>
 
 long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
-    // flags can be AT_EMPTY_PATH or AT_SYMLINK_NOFOLLOW
-    int open_flags = O_RDWR;
-    if (flags & AT_SYMLINK_NOFOLLOW) open_flags |= O_NOFOLLOW;
+    SYSCALL_VALIDATE_PTR(path);
+    if (flags & ~(AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)) return -EINVAL;
 
-    vfs_file_t *f = NULL;
-    if (path[0] == '/' || dirfd == AT_FDCWD) {
-        // this opens either relative to cwd or absolute anyways,
-        // so both cases are acceptible
-        int r = vfs_open((char*)path, open_flags, &f);
-        if (r != 0) return r;
-    } else if (path[0] == 0) {
-        // path is an empty string, if AT_EMPTY_PATH was specified this means that dirfd IS the file
-        if ((flags & AT_EMPTY_PATH) == 0) return -ENOENT;
-        f = GET_FD_OR_ERROR(dirfd);
-    } else {
-        // otherwise, open relative to dirfd
-        vfs_file_t *at = GET_FD_OR_ERROR(dirfd);
-        int r = vfs_openat(at->inode, (char*)path, open_flags, &f);
-        if (r != 0) {
-            FD_FINISH(at);
-            return r;
-        }
-        FD_FINISH(at);
-    }
-
-    // try it
-    int r = vfs_chmod(f->inode, mode);
-
-    // release the file
     if (path[0] == 0) {
-        FD_FINISH(f);
-    } else {
-        vfs_close(f);
+        if (!(flags & AT_EMPTY_PATH)) return -ENOENT;
+        vfs_file_t *file = GET_FD_OR_ERROR(dirfd);
+        int r = vfs_chmod(file->inode, mode);
+        FD_FINISH(file);
+        return r;
     }
 
+    uint32_t lookup_flags = LOOKUP_DEFAULT;
+    if (flags & AT_SYMLINK_NOFOLLOW) lookup_flags |= LOOKUP_NO_FOLLOW;
+    vfs_inode_t *inode;
+    int r;
+    if (path[0] == '/' || dirfd == AT_FDCWD) {
+        r = vfs_lookup((char *)path, &inode, lookup_flags);
+    } else {
+        vfs_file_t *dir = GET_FD_OR_ERROR(dirfd);
+        if (dir->inode->attr.type != VFS_DIRECTORY) {
+            FD_FINISH(dir);
+            return -ENOTDIR;
+        }
+        r = vfs_lookupat(dir->inode, (char *)path, &inode, lookup_flags);
+        FD_FINISH(dir);
+    }
+    if (r) return r;
+    r = vfs_chmod(inode, mode);
+    inode_release(inode);
     return r;
 }

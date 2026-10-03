@@ -17,7 +17,6 @@
 
 long sys_unlinkat(int dirfd, const char *path, int flags) {
     SYSCALL_VALIDATE_PTR(path);
-    if (flags & AT_REMOVEDIR) { SYSCALL_LOG(WARN, "rmdir not supported\n"); return 1; }
 
     vfs_inode_t *at = NULL;
     if (*path == '/') {
@@ -32,7 +31,13 @@ long sys_unlinkat(int dirfd, const char *path, int flags) {
 
     SYSCALL_LOG(INFO, "unlinkat at=%p dirfd=%d path=%s flags=%d\n", at, dirfd, path, flags);
     if (at) inode_hold(at);
-    int ret = vfs_unlinkat(at, (char*)path);
+
+    int ret;
+    if (flags & AT_REMOVEDIR) {
+        ret = vfs_rmdirat(at, (char*)path);
+    } else {
+        ret = vfs_unlinkat(at, (char*)path);
+    }
     if (at) inode_release(at);
 
 

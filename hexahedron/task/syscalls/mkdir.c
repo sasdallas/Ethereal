@@ -13,7 +13,16 @@
 
 #include <kernel/task/process.h>
 
-long sys_mkdir(const char *pathname, mode_t mode) {
-    SYSCALL_VALIDATE_PTR(pathname);
-    return vfs2_mkdir((char*)pathname, mode, NULL);
+long sys_mkdirat(int dirfd, const char *pathname, mode_t mode) {
+    vfs_inode_t *at = NULL;
+    if (dirfd != AT_FDCWD) {
+        vfs_file_t *f = GET_FD_OR_ERROR(dirfd);
+        at = f->inode;
+
+        int ret = vfs_mkdirat(at, (char*)pathname, mode & ~current_cpu->current_process->umask, NULL);
+        FD_FINISH(f);
+        return ret;
+    }
+
+    return vfs_mkdirat(at, (char*)pathname, mode & ~current_cpu->current_process->umask, NULL);
 }

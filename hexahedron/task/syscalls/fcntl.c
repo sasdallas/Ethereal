@@ -12,6 +12,7 @@
  */
 
 #include <kernel/task/process.h>
+#include <kernel/fs/pipe.h>
 #include <fcntl.h>
 
 long sys_fcntl(int fd, int cmd, int extra) {
@@ -61,14 +62,21 @@ long sys_fcntl(int fd, int cmd, int extra) {
         }
 
         case F_GETFL:
-            return file->flags;
+            ret = file->flags;
+            break;
 
         case F_GETLK:
             ret = 0;
             break;
 
         case F_SETLK:
+        case F_SETLKW:
             ret = 0;
+            break;
+
+        case F_GETPIPE_SZ:
+        case F_SETPIPE_SZ:
+            ret = pipe_fcntl(file, cmd, extra);
             break;
 
         default:

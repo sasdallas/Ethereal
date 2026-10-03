@@ -55,6 +55,7 @@
 #include <structs/hashmap.h>
 #include <kernel/config.h>
 #include <kernel/mm/cache.h>
+#include <sys/stat.h>
 
 /**** DEFINITIONS ****/
 
@@ -177,7 +178,7 @@ typedef struct vfs_inode_ops {
     int (*lookup)(struct vfs_inode *inode, char *name, struct vfs_inode **ino_output);
     int (*link)(struct vfs_inode *inode, struct vfs_inode *parent, char *link_name);
     int (*symlink)(struct vfs_inode *inode, char *link_contents, char *link_name, struct vfs_inode **sym_output);
-    int (*rmdir)(struct vfs_inode *inode, const char *dir);
+    int (*rmdir)(struct vfs_inode *inode, struct vfs_inode *child, char *child_name);
     int (*unlink)(struct vfs_inode *inode, struct vfs_inode *child, char *child_name);
     ssize_t (*readlink)(struct vfs_inode *inode, char *buffer, size_t maxlen);
     int (*getattr)(struct vfs_inode *inode, vfs_inode_attr_t *attr);
@@ -231,10 +232,13 @@ typedef struct vfs_file {
 typedef struct vfs_mount {
     struct vfs_mount *next;     // Next in list of filesystem mounts
     struct vfs_mount *prev;     // Previous in list of filesystem mounts
+    dev_t dev;                  // Just a small hack for a device ID
     unsigned long flags;        // Mount flags
     struct vfs_filesystem *fs;  // Filesystem
     vfs_mount_ops_t *ops;
     vfs_inode_t *root;          // Root inode
+    vfs_inode_t *parent;        // Directory containing the covered mountpoint
+    vfs_inode_t *covered;       // Inode hidden by this mount
     void *priv;                 // Private field
 } vfs_mount_t;
 
@@ -245,7 +249,7 @@ typedef struct vfs_filesystem {
     vfs_mount_t *fs_mounts;     // Linked list of mounts
 
     int (*mount)(struct vfs_filesystem *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
-} vfs2_filesystem_t;
+} vfs_filesystem_t;
 
 /**** INLINE ****/
 
@@ -293,10 +297,10 @@ static inline int file_mmap_prepare(vfs_file_t *f, void *range) {
 static inline int file_munmap(vfs_file_t *f, void *addr, size_t size, off_t offset) { if (f->ops->munmap) { return f->ops->munmap(f, addr, size, offset); } else { return -ENOTSUP; }}
 static inline int file_check_flags(vfs_file_t *f) { if (f->ops->check_flags) { return f->ops->check_flags(f); } else { return 0; } }
 static inline int inode_create(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **inode_output) { if (parent->ops->create) { return parent->ops->create(parent, name, mode, inode_output); } else { return -ENOTSUP; }} // TODO: maybe EROFS?
-static inline int inode_link(vfs_inode_t *i, vfs_inode_t *parent, char *link_name) { if (i->ops->link) { return i->ops->link(i, parent, link_name); } else { return -ENOTSUP; }}
+static inline int inode_link(vfs_inode_t *i, vfs_inode_t *parent, char *link_name) { if (i->ops->link) { return i->ops->link(i, parent, link_name); } else { return -EPERM; }}
 static inline int inode_mkdir(vfs_inode_t *i, char *name, mode_t mode, vfs_inode_t **inode_output) { if (i->ops->mkdir) { return i->ops->mkdir(i, name, mode, inode_output); } else { return -ENOTSUP; }}
 static inline int inode_symlink(vfs_inode_t *i, char *link_contents, char *link_name, vfs_inode_t **sym_output) { if (i->ops->symlink) { return i->ops->symlink(i, link_contents, link_name, sym_output); } else { return -ENOTSUP; }}
-static inline int inode_rmdir(vfs_inode_t *i, const char *dir) { if (i->ops->rmdir) { return i->ops->rmdir(i, dir); } else { return -ENOTSUP; }}
+static inline int inode_rmdir(vfs_inode_t *i, vfs_inode_t *child, char *child_name) { if (i->ops->rmdir) { return i->ops->rmdir(i, child, child_name); } else { return -ENOTSUP; }}
 static inline int inode_unlink(vfs_inode_t *i, vfs_inode_t *child, char *child_name) { if (i->ops->unlink) { return  i->ops->unlink(i, child, child_name); } else { return -ENOTSUP; }}
 static inline ssize_t inode_readlink(vfs_inode_t *i, char *buffer, size_t maxlen) { if (i->ops->readlink) { return i->ops->readlink(i, buffer, maxlen); } else { return -ENOTSUP; }}
 static inline int inode_getattr(vfs_inode_t *i, vfs_inode_attr_t *attr) { if (i->ops->getattr) { return i->ops->getattr(i, attr); } else { return -ENOTSUP; }}
@@ -365,7 +369,7 @@ int vfs_lookup(char *path, vfs_inode_t **output, uint32_t flags);
  * @param flags Mount flags (MS_)
  * @param data Data
  */
-int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, char *dst, unsigned long flags, void *data);
+int vfs_mountat(vfs_filesystem_t *filesystem, vfs_inode_t *parent, char *src, char *dst, unsigned long flags, void *data);
 
 /**
  * @brief Mount specific filesystem on path
@@ -376,7 +380,7 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
  * @param data Mount additional data
  * @returns 0 on success.
  */
-int vfs2_mount(vfs2_filesystem_t *filesystem, char *src, char *dst, unsigned long flags, void *data);
+int vfs_mount(vfs_filesystem_t *filesystem, char *src, char *dst, unsigned long flags, void *data);
 
 /**
  * @brief Unmount a path
@@ -393,7 +397,7 @@ int vfs_unmount(char *path);
  * 
  * This will not preserve the old root filesystem or any mounts under it, it will be deleted.
  */
-int vfs_changeGlobalRoot(vfs2_filesystem_t *filesystem, char *src, unsigned long flags, void *data);
+int vfs_changeGlobalRoot(vfs_filesystem_t *filesystem, char *src, unsigned long flags, void *data);
 
 /**
  * @brief Create directory at
@@ -412,7 +416,7 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
  * @param dirout The optional directory out
  * @returns 0 on success
  */
-static inline int VFS_PREFIX(mkdir)(char *name, mode_t mode, vfs_inode_t **dirout) {
+static inline int vfs_mkdir(char *name, mode_t mode, vfs_inode_t **dirout) {
     return vfs_mkdirat(NULL, name, mode, dirout);
 }
 
@@ -580,30 +584,30 @@ static inline ssize_t vfs_readlink(vfs_inode_t *inode, char *buffer, size_t bufs
  * @brief Get filesystem from VFS map
  * @param name The name of the filesystem to get
  */
-vfs2_filesystem_t *vfs_getFilesystem(char *name);
+vfs_filesystem_t *vfs_getFilesystem(char *name);
 
 /**
  * @brief Register filesystem with the VFS
  * @param filesystem The filesystem to register
  */
-void vfs_register(vfs2_filesystem_t *filesystem);
+void vfs_register(vfs_filesystem_t *filesystem);
 
 /**
  * @brief Unregister filesystem from the VFS
  * @param filesystem The filesystem to unregister
  */
-void vfs_unregister(vfs2_filesystem_t *filesystem);
+void vfs_unregister(vfs_filesystem_t *filesystem);
 
 /**
  * @brief Creates and returns a blank inode (or NULL on no memory)
  */
-vfs_inode_t *VFS_PREFIX(inode)();
+vfs_inode_t *vfs_inode();
 
 /**
  * @brief Creates and returns a new file object
  * @param inode The inode for the file object
  */
-vfs_file_t *VFS_PREFIX(file)(vfs_inode_t *inode);
+vfs_file_t *vfs_file(vfs_inode_t *inode);
 
 /**
  * @brief Get the next inode number
@@ -686,6 +690,14 @@ loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence);
 int vfs_unlinkat(vfs_inode_t *inode, char *path);
 
 /**
+ * @brief Remove a directory
+ * @param inode The inode to unlink at
+ * @param path The relative path to unlink
+ * @returns 0 on success or error code
+ */
+int vfs_rmdirat(vfs_inode_t *inode, char *path);
+
+/**
  * @brief VFS rename
  * @param src_inode The source inode to rename at
  * @param src_path The path to rename at
@@ -694,6 +706,16 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path);
  * @param flags Flags for the rename operation
  */
 int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, unsigned int flags);
+
+/**
+ * @brief VFS link
+ * @param src_inode The source inode to link at
+ * @param src_path The path to link
+ * @param dst_inode The destination inode to link at
+ * @param dst_path The path of the new link
+ * @param lookup_flags Lookup flags for the source path (LOOKUP_xxx)
+ */
+int vfs_linkat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, uint32_t lookup_flags);
 
 /**
  * @brief VFS get information on mountpoint

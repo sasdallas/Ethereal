@@ -72,6 +72,7 @@ mutex_t vfs_inode_cache_mut = MUTEX_INITIALIZER;
 /* Next inode */
 /* Used by memory things like tmpfs/initfs */
 static atomic_long vfs_next_ino = 1;
+static atomic_long vfs_next_dev = 1;
 
 /**
  * @brief VFS directory entry hash
@@ -105,7 +106,7 @@ void VFS_PREFIX(init)() {
     vfs_fs_map = hashmap_create("vfs filesystem map", 10);
 
     // Initialize dummy node
-    vfs_root_inode = vfs2_inode();
+    vfs_root_inode = vfs_inode();
     vfs_root_inode->ops = &dummy_ops;
     inode_hold(vfs_root_inode);
 }
@@ -284,6 +285,13 @@ static int __lookupat(vfs_inode_t *inode, char *name, vfs_inode_t **output, uint
         return -ENOTDIR;
     }
 
+    // handle edge case where .. exits a mountpoint
+    if (!strcmp(name, "..") && inode->mount && inode == inode->mount->root && inode->mount->parent) {
+        *output = inode->mount->parent;
+        inode_hold(*output);
+        return 0;
+    }
+
     // TODO: the actual bulk of this function is SUPPOSED to search the inode's dentry cache.. but I haven't made it yet.
     mutex_acquire(&vfs_map_mut);    // Yes we hold this for longer than we should, it's probably fine.
                                     // I don't see a reason to refcount/lock the vfs_mount_entry_t 
@@ -453,7 +461,7 @@ int vfs_lookup(char *path, vfs_inode_t **output, uint32_t flags) {
  * @param flags Mount flags (MS_)
  * @param data Data
  */
-int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, char *dst, unsigned long flags, void *data) {
+int vfs_mountat(vfs_filesystem_t *filesystem, vfs_inode_t *parent, char *src, char *dst, unsigned long flags, void *data) {
     // Get the inode at dst (this also pins the inode)
     vfs_inode_t *dst_inode;
     if (vfs_lookupat(parent, dst, &dst_inode, LOOKUP_DEFAULT)) {
@@ -462,6 +470,7 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
 
     // Create a new mount
     vfs_mount_t *mount_dst = kzalloc(sizeof(vfs_mount_t));
+    mount_dst->dev = (dev_t)atomic_fetch_add(&vfs_next_dev, 1);
     mount_dst->flags = flags;
     mount_dst->fs = filesystem;
     int mres = filesystem->mount(filesystem, mount_dst, src, flags, data);
@@ -487,9 +496,11 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
     ent->mount = mount_dst;
     inode_hold(ent->mountpoint);
 
-    mount_dst->root->flags |= INODE_FLAG_MOUNTPOINT;
+    mount_dst->covered = dst_inode;
+    mount_dst->parent = parent;
+    inode_hold(parent);
 
-    LOG(DEBUG, "mountpoint has %d refs\n", ent->mountpoint->refcount);
+    mount_dst->root->flags |= INODE_FLAG_MOUNTPOINT;
 
     // we will NOT drop the reference to the root inode, as it's now being referenced by ent.
 
@@ -510,7 +521,7 @@ int vfs_mountat(vfs2_filesystem_t *filesystem, vfs_inode_t *parent, char *src, c
  * @param data Mount additional data
  * @returns 0 on success.
  */
-int vfs2_mount(vfs2_filesystem_t *filesystem, char *src, char *dst, unsigned long flags, void *data) {
+int vfs_mount(vfs_filesystem_t *filesystem, char *src, char *dst, unsigned long flags, void *data) {
     if (!strncmp(dst, "/", PATH_MAX)) {
         // Wow, they just want to mount to root.
         LOG(ERR, "Cannot remount root from userspace.\n");
@@ -526,7 +537,9 @@ int vfs2_mount(vfs2_filesystem_t *filesystem, char *src, char *dst, unsigned lon
     vfs_pathLast(dst, &child_comp);
 
     LOG(DEBUG, "mounting %s to %p\n", child_comp, parent);
-    return vfs_mountat(filesystem, parent, src, child_comp, flags, data); // lol, due to VFS semantics this works
+    int result = vfs_mountat(filesystem, parent, src, child_comp, flags, data); // lol, due to VFS semantics this works
+    inode_release(parent);
+    return result;
 }
 
 /**
@@ -538,7 +551,7 @@ int vfs2_mount(vfs2_filesystem_t *filesystem, char *src, char *dst, unsigned lon
  * 
  * This will not preserve the old root filesystem or any mounts under it, it will be deleted.
  */
-int vfs_changeGlobalRoot(vfs2_filesystem_t *filesystem, char *src, unsigned long flags, void *data) {
+int vfs_changeGlobalRoot(vfs_filesystem_t *filesystem, char *src, unsigned long flags, void *data) {
     // TODO: I don't really know how to synchronize this very well. It is probably prone to crashing.
     // TODO: This shouldn't even be here, but I didn't make a mount namespace and I don't care enough to make one now. When a proper pivot_root is implemented, root will become process specific anyways.
 
@@ -556,6 +569,7 @@ int vfs_changeGlobalRoot(vfs2_filesystem_t *filesystem, char *src, unsigned long
 
     // First build the rootfs mount
     vfs_mount_t *mount_dst = kzalloc(sizeof(vfs_mount_t));
+    mount_dst->dev = (dev_t)atomic_fetch_add(&vfs_next_dev, 1);
     mount_dst->flags = flags;
     mount_dst->fs = filesystem;
     int mres = filesystem->mount(filesystem, mount_dst, src, flags, data);
@@ -709,6 +723,7 @@ int vfs_statvfs(vfs_mount_t *mount, vfs_mount_info_t *info) {
  * @returns Error code
  */
 int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) {
+    if (!path && !inode) return -EINVAL;
     int lookup_flags = LOOKUP_DEFAULT;
     if (flags & O_NOFOLLOW) lookup_flags |= LOOKUP_NO_FOLLOW;
 
@@ -721,9 +736,29 @@ int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) 
     } else {
         output_inode = inode;
         inode_hold(output_inode); // I hate inodes...
-    }    
+    }
 
-    vfs_file_t *f = vfs2_file(output_inode);
+    // Authorization time!
+    if (current_cpu->current_process && !(flags & O_CREAT)) {
+        uint32_t request = 0;
+        switch (flags & (O_WRONLY | O_RDWR)) {
+            case O_WRONLY: request = AUTH_FILE_WRITE; break;
+            case O_RDWR: request = AUTH_FILE_READ | AUTH_FILE_WRITE; break;
+            default: request = AUTH_FILE_READ; break;
+        }
+
+        if (flags & O_TRUNC) request |= AUTH_FILE_WRITE;
+
+        if (request) {
+            r = auth_filesystem(&current_cpu->current_process->cred, output_inode, NULL, request);
+            if (r) {
+                inode_release(output_inode);
+                return r;
+            }
+        }
+    }
+
+    vfs_file_t *f = vfs_file(output_inode);
     f->flags = flags;
     inode_release(output_inode); // Since vfs_file locks the inode anyways we can now release the reference
 
@@ -1145,7 +1180,7 @@ int vfs_syncFilesystems() {
 
     list_t *l = hashmap_values(vfs_fs_map);
     foreach(fsn,l) {
-        vfs2_filesystem_t *fs = fsn->value;
+        vfs_filesystem_t *fs = fsn->value;
         vfs_mount_t *iter = fs->fs_mounts;
         while (iter) {
             // TODO lock
@@ -1223,6 +1258,18 @@ loff_t vfs_seek(vfs_file_t *file, loff_t off, int whence) {
         case SEEK_END:
             file->pos = off + file->inode->attr.size;
             break;
+        case SEEK_DATA:
+            if (off < 0) return -EINVAL;
+            if (off >= file->inode->attr.size) return -ENXIO;
+            file->pos = off;
+            break;
+        case SEEK_HOLE:
+            if (off < 0) return -EINVAL;
+            if (off >= file->inode->attr.size) return -ENXIO;
+            file->pos = file->inode->attr.size;
+            break;
+        default:
+            return -EINVAL;
     }
 
     return file->pos;    
@@ -1258,6 +1305,47 @@ int vfs_unlinkat(vfs_inode_t *inode, char *path) {
     vfs_pathLast(path, &last);
 
     r = inode_unlink(parent, child, last);
+
+    // Only drop the cache reference once the last link is gone
+    if (r == 0 && child->attr.nlink == 0) {
+        inode_release(child);
+    }
+
+    inode_release(parent);
+    inode_release(child);
+    return r;
+}
+
+/**
+ * @brief Remove a directory
+ * @param inode The inode to unlink at
+ * @param path The relative path to unlink
+ * @returns 0 on success or error code
+ */
+int vfs_rmdirat(vfs_inode_t *inode, char *path) {
+    // Locate the child first
+    vfs_inode_t *child;
+    int r = vfs_lookupat(inode, path, &child, LOOKUP_NO_FOLLOW);
+    if (r < 0) return r;
+
+    if (child->attr.type != VFS_DIRECTORY) { inode_release(child); return -ENOTDIR; }
+    if (child->flags & INODE_FLAG_MOUNTPOINT) { inode_release(child); return -EINVAL; }
+
+    // Now locate the parent of the inode trying to be removed.
+    vfs_inode_t *parent;
+    r = vfs_lookupat(inode, path, &parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
+    if (r < 0) {
+        inode_release(child);
+        return r;
+    }
+
+    assert(parent->mount == child->mount);
+
+    // silly
+    char *last;
+    vfs_pathLast(path, &last);
+
+    r = inode_rmdir(parent, child, last);
 
     if (r == 0) {
         inode_release(child);
@@ -1317,6 +1405,58 @@ int vfs_renameat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode,
 }
 
 /**
+ * @brief VFS link
+ * @param src_inode The source inode to link at
+ * @param src_path The path to link
+ * @param dst_inode The destination inode to link at
+ * @param dst_path The path of the new link
+ * @param lookup_flags Lookup flags for the source path (LOOKUP_xxx)
+ */
+int vfs_linkat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, char *dst_path, uint32_t lookup_flags) {
+    // Locate the source inode
+    vfs_inode_t *child;
+    int err = vfs_lookupat(src_inode, src_path, &child, lookup_flags);
+    if (err) return err;
+
+    if (child->attr.type == VFS_DIRECTORY) { inode_release(child); return -EPERM; }
+
+    // Now for the destination side
+    vfs_inode_t *dest_parent;
+    err = vfs_lookupat(dst_inode, dst_path, &dest_parent, LOOKUP_PARENT | LOOKUP_NO_FOLLOW);
+    if (err) { inode_release(child); return err; }
+
+    // cross-device is not allowed
+    if (dest_parent->mount != child->mount) {
+        inode_release(child);
+        inode_release(dest_parent);
+        return -EXDEV;
+    }
+
+    char *last_dest;
+    vfs_pathLast(dst_path, &last_dest);
+
+    // The destination must not exist
+    vfs_inode_t *existing;
+    err = __lookupat(dest_parent, last_dest, &existing, LOOKUP_NO_FOLLOW);
+    if (err == 0) {
+        inode_release(existing);
+        inode_release(child);
+        inode_release(dest_parent);
+        return -EEXIST;
+    } else if (err != -ENOENT) {
+        inode_release(child);
+        inode_release(dest_parent);
+        return err;
+    }
+
+    // Perform the operation
+    err = inode_link(child, dest_parent, last_dest);
+    inode_release(child);
+    inode_release(dest_parent);
+    return err;
+}
+
+/**
  * @brief Set attribute VFS
  * @param inode The inode to get the attributes of
  * @param attr The attributes output pointer
@@ -1334,9 +1474,13 @@ int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) 
  * @returns 0 on success or error code 
  */
 int vfs_chmod(vfs_inode_t *inode, mode_t mode) {
+    if (current_cpu->current_process) {
+        int r = auth_filesystem(&current_cpu->current_process->cred, inode, NULL, AUTH_FILE_SETATTR);
+        if (r) return r;
+    }
     // to chmod, just do setattr 
     vfs_inode_attr_t attr = {
-        .mode = mode
+        .mode = mode & 07777
     };
 
     return vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_MODE);
@@ -1350,6 +1494,8 @@ int vfs_chmod(vfs_inode_t *inode, mode_t mode) {
  * @returns 0 on success or error code
  */
 int vfs_chown(vfs_inode_t *inode, uid_t uid, gid_t gid) {
+    if (current_cpu->current_process && !PROC_IS_ROOT(current_cpu->current_process)) return -EPERM;
+
     // to chown, just do setattr
     vfs_inode_attr_t attr = {
         .uid = uid,
@@ -1395,7 +1541,7 @@ vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
     }
 
     // create it
-    vfs_inode_t *inode = vfs2_inode();
+    vfs_inode_t *inode = vfs_inode();
     __atomic_fetch_or(&inode->state, INODE_STATE_NEW, __ATOMIC_SEQ_CST);
     inode_hold(inode); // Cache inode ref
     vfs_cacheInsertInode(mount,ino,inode);
@@ -1419,7 +1565,7 @@ void vfs_createdInode(vfs_inode_t *inode) {
  * @brief Get filesystem from VFS map
  * @param name The name of the filesystem to get
  */
-vfs2_filesystem_t *vfs_getFilesystem(char *name) {
+vfs_filesystem_t *vfs_getFilesystem(char *name) {
     return hashmap_get(vfs_fs_map, name);
 }
  
@@ -1427,7 +1573,7 @@ vfs2_filesystem_t *vfs_getFilesystem(char *name) {
  * @brief Register filesystem with the VFS
  * @param filesystem The filesystem to register
  */
-void vfs_register(vfs2_filesystem_t *filesystem) {
+void vfs_register(vfs_filesystem_t *filesystem) {
     assert(filesystem->mount != NULL);
     
     mutex_acquire(&vfs_fs_mut);
@@ -1439,7 +1585,7 @@ void vfs_register(vfs2_filesystem_t *filesystem) {
  * @brief Unregister filesystem from the VFS
  * @param filesystem The filesystem to unregister
  */
-void vfs_unregister(vfs2_filesystem_t *filesystem) {
+void vfs_unregister(vfs_filesystem_t *filesystem) {
     mutex_acquire(&vfs_fs_mut);
     hashmap_remove(vfs_fs_map, (void*)filesystem->name);
     mutex_release(&vfs_fs_mut);
@@ -1448,7 +1594,7 @@ void vfs_unregister(vfs2_filesystem_t *filesystem) {
 /**
  * @brief Creates and returns a blank inode (or NULL on no memory)
  */
-vfs_inode_t *VFS_PREFIX(inode)() {
+vfs_inode_t *vfs_inode() {
     vfs_inode_t *inode = slab_allocate(inode_cache);
     if (!inode) return NULL;
 
@@ -1507,7 +1653,7 @@ int vfs_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events, poll_ev
  * @brief Creates and returns a new file object
  * @param inode The inode for the file object
  */
-vfs_file_t *VFS_PREFIX(file)(vfs_inode_t *inode) {
+vfs_file_t *vfs_file(vfs_inode_t *inode) {
     vfs_file_t *file = slab_allocate(file_cache);
     if (!file) return NULL;
 

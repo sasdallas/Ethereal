@@ -267,10 +267,10 @@ int elf_buildAuxv(elf_image_t *image, elf_auxv_t *auxv) {
     AUXV_PUSH(AT_ENTRY, image->entrypoint);
     AUXV_PUSH(AT_BASE, image->load_bias);
     AUXV_PUSH(AT_PAGESZ, PAGE_SIZE);
-    AUXV_PUSH(AT_UID, current_cpu->current_process->uid);
-    AUXV_PUSH(AT_GID, current_cpu->current_process->gid);
-    AUXV_PUSH(AT_EUID, current_cpu->current_process->euid);
-    AUXV_PUSH(AT_EGID, current_cpu->current_process->egid);
+    AUXV_PUSH(AT_UID, current_cpu->current_process->cred.uid);
+    AUXV_PUSH(AT_GID, current_cpu->current_process->cred.gid);
+    AUXV_PUSH(AT_EUID, current_cpu->current_process->cred.euid);
+    AUXV_PUSH(AT_EGID, current_cpu->current_process->cred.egid);
     AUXV_PUSH(AT_NULL, 0);
 #undef AUXV_PUSH
 

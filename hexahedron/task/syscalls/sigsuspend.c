@@ -14,6 +14,5 @@
 #include <kernel/task/process.h>
 
 long sys_sigsuspend(const sigset_t *sigmask) {
-    SYSCALL_LOG(ERR, "sigsuspend is unimplemented\n");
     return -ENOSYS;
 }

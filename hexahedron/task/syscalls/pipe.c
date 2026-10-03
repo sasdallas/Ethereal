@@ -14,6 +14,7 @@
 #include <kernel/task/process.h>
 #include <kernel/fs/pipe.h>
 
-long sys_pipe(int fildes[2]) {
-    return pipe_create(fildes);
+long sys_pipe(int fildes[2], int flags) {
+    if (flags & ~(O_CLOEXEC | O_NONBLOCK)) return -EINVAL;
+    return pipe_create(fildes, flags);
 }

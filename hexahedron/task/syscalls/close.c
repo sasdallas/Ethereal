@@ -15,7 +15,6 @@
 
 int sys_close(int fd) {
     if (!FD_VALIDATE(fd)) {
-        SYSCALL_LOG(WARN, "Bad file descriptor close attempt on fd %d\n", fd);
         return -EBADF;
     }
 

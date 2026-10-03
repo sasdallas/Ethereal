@@ -123,9 +123,9 @@ ssize_t systemfs_proc_status(systemfs_node_t *n) {
         "Gid:%d %d\n"
         "Sid:%d\n"
         "State:%c\n",
-        p->name, p->pid, p->pgid,
-        p->uid, p->euid, p->gid, p->egid,
-        p->sid, systemfs_proc_to_state(p));
+        p->name, p->pid, session_getpgid(p),
+        p->cred.uid, p->cred.euid, p->cred.gid, p->cred.egid,
+        session_getsid(p), systemfs_proc_to_state(p));
 }
 
 /**
@@ -221,6 +221,8 @@ void systemfs_proc_destroy(process_t *proc) {
     systemfs_unregister(n, "times");
     systemfs_unregister(n, "mem_usage");
     systemfs_unregister(n, "cmdline");
+    hashmap_free(n->children);
+    kfree(n->children);
     systemfs_free(n);
 }
 

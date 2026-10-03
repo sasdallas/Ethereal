@@ -13,25 +13,25 @@
 
 #define _GNU_SOURCE
 #include <kernel/task/process.h>
+#include <string.h>
 
 static int __stat_common(vfs_file_t *f, struct stat *statbuf) {
     vfs_inode_attr_t attr; 
     int r = vfs_getattr(f->inode, &attr);
     if (r) return r;
 
-    // Convert VFS flags to st_dev
+    memset(statbuf, 0, sizeof(struct stat));
 
-    statbuf->st_dev = 0;
-    if (attr.type == VFS_DIRECTORY)      statbuf->st_dev |= S_IFDIR; // Directory
-    if (attr.type == VFS_BLOCKDEVICE)    statbuf->st_dev |= S_IFBLK; // Block device
-    if (attr.type == VFS_CHARDEVICE)     statbuf->st_dev |= S_IFCHR; // Character device
-    if (attr.type == VFS_FILE)           statbuf->st_dev |= S_IFREG; // Regular file
-    if (attr.type == VFS_SYMLINK)        statbuf->st_dev |= S_IFLNK; // Symlink
-    if (attr.type == VFS_PIPE)           statbuf->st_dev |= S_IFIFO; // FIFO or not, it's a pipe
-    if (attr.type == VFS_SOCKET)         statbuf->st_dev |= S_IFSOCK; // Socket
+    statbuf->st_dev = f->inode->mount ? f->inode->mount->dev : 0;
 
-    // st_mode is just st_dev with extra steps
-    statbuf->st_mode = statbuf->st_dev;
+    statbuf->st_mode = 0;
+    if (attr.type == VFS_DIRECTORY)      statbuf->st_mode |= S_IFDIR;
+    if (attr.type == VFS_BLOCKDEVICE)    statbuf->st_mode |= S_IFBLK;
+    if (attr.type == VFS_CHARDEVICE)     statbuf->st_mode |= S_IFCHR;
+    if (attr.type == VFS_FILE)           statbuf->st_mode |= S_IFREG;
+    if (attr.type == VFS_SYMLINK)        statbuf->st_mode |= S_IFLNK;
+    if (attr.type == VFS_PIPE)           statbuf->st_mode |= S_IFIFO;
+    if (attr.type == VFS_SOCKET)         statbuf->st_mode |= S_IFSOCK;
 
     // Setup other fields
     statbuf->st_ino = attr.ino; // Inode number
@@ -43,9 +43,14 @@ static int __stat_common(vfs_file_t *f, struct stat *statbuf) {
     statbuf->st_size = attr.size;
     statbuf->st_blksize = 512; // TODO: This would prove useful for file I/O
     statbuf->st_blocks = 0; // TODO
-    statbuf->st_atime = attr.atime;
-    statbuf->st_mtime = attr.mtime;
-    statbuf->st_ctime = attr.ctime;
+    
+    // TODO: nanosecond tracking
+    statbuf->st_atim.tv_sec = attr.atime;
+    statbuf->st_atim.tv_nsec = 0;
+    statbuf->st_mtim.tv_sec = attr.mtime;
+    statbuf->st_mtim.tv_nsec = 0;
+    statbuf->st_ctim.tv_sec = attr.ctime;
+    statbuf->st_ctim.tv_nsec = 0;
     return 0;
 }
 

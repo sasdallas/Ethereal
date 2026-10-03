@@ -20,7 +20,7 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
     }
 
     // The current process must be root to mount
-    if (current_cpu->current_process->uid != 0) {
+    if (current_cpu->current_process->cred.uid != 0) {
         return -EPERM;
     }
 
@@ -28,7 +28,7 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
     if (strlen(dst) > PATH_MAX) return -ENAMETOOLONG; 
 
     // get filesystem
-    vfs2_filesystem_t *fs = vfs_getFilesystem((char*)type);
+    vfs_filesystem_t *fs = vfs_getFilesystem((char*)type);
     if (!fs) { return -ENODEV; }
 
     // Canonicalize paths
@@ -39,7 +39,7 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
     if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)dst, dst_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
 
     // Try to mount filesystem type
-    int success = vfs2_mount(fs, src_canonicalized, (char*)dst_canonicalized, 0, NULL);
+    int success = vfs_mount(fs, src_canonicalized, (char*)dst_canonicalized, 0, NULL);
     kfree(src_canonicalized);
     kfree(dst_canonicalized);
 

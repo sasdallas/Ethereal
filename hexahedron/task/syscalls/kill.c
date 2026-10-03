@@ -17,14 +17,15 @@ long sys_kill(pid_t pid, int sig) {
     // Check signal
     if (sig < 0 || sig >= NSIG) return -EINVAL;
 
-    if (pid > 0 || pid < -1) {
-        if (pid < -1) pid *= -1;
-
+    if (pid > 0) {
         // !!! racey
         process_t *proc = process_getFromPID(pid);
         if (!proc) return -ESRCH;
-        signal_send(proc, sig);
+        if (sig) signal_send(proc, sig);
         return 0;
+    } else if (pid < -1) {
+        // TODO: group lookup
+        return -ENOTSUP;
     } else if (!pid) {
         SYSCALL_LOG(ERR, "Unimplemented: Send to every process group\n");
         return -ENOTSUP;

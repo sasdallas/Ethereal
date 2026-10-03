@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
-/* Fipipele operations */
+/* Pipe operations */
 static int pipe_open(vfs_file_t *file, unsigned long flags);
 static int pipe_close(vfs_file_t *file);
 static ssize_t pipe_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
@@ -68,8 +68,10 @@ static vfs_inode_ops_t pipe_inode_ops = {
 /* pipe cache */
 slab_cache_t *pipe_cache = NULL;
 
-/* is write */
-#define IS_WRITE(p) ((p)->flags & O_WRONLY)
+/* pipe endpoint access mode */
+#define PIPE_ACCESS_MODE(p) ((p)->flags & O_ACCMODE)
+#define IS_READ(p) (PIPE_ACCESS_MODE(p) == O_RDONLY || PIPE_ACCESS_MODE(p) == O_RDWR)
+#define IS_WRITE(p) (PIPE_ACCESS_MODE(p) == O_WRONLY || PIPE_ACCESS_MODE(p) == O_RDWR)
 
 /* utils */
 #define PIPE_LOCK(p) mutex_acquire(&(p)->lock)
@@ -82,10 +84,10 @@ static int pipe_initializer(slab_cache_t *cache, void *obj) {
     fs_pipe_t *p = obj;
     POLL_EVENT_INIT(&p->event);
     MUTEX_INIT(&p->lock);
-    p->dead = 0;
-    p->buf = ringbuffer_create(4096);
+    p->buf = ringbuffer_create(PIPE_DEFAULT_SIZE);
     p->readers = 0;
     p->writers = 0;
+    p->inodes = 2;
     return 0;
 }
 
@@ -105,8 +107,10 @@ static int pipe_open(vfs_file_t *file, unsigned long flags) {
     file->priv = file->inode->priv;
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
 
-    if (flags & O_RDONLY) pipe->readers++;
-    if (flags & O_WRONLY) pipe->writers++;
+    PIPE_LOCK(pipe);
+    if (IS_READ(file)) pipe->readers++;
+    if (IS_WRITE(file)) pipe->writers++;
+    PIPE_UNLOCK(pipe);
 
     return 0;
 }
@@ -119,15 +123,19 @@ static int pipe_close(vfs_file_t *file) {
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
 
     PIPE_LOCK(pipe);
-    if (IS_WRITE(file)) {
-        pipe->writers--;
-        if (pipe->writers == 0) {
-            poll_signal(&pipe->event, POLLHUP);
-        }
-    } else {
+    if (IS_READ(file)) {
+        assert(pipe->readers > 0);
         pipe->readers--;
         if (pipe->readers == 0) {
             poll_signal(&pipe->event, POLLERR);
+        }
+    }
+
+    if (IS_WRITE(file)) {
+        assert(pipe->writers > 0);
+        pipe->writers--;
+        if (pipe->writers == 0) {
+            poll_signal(&pipe->event, POLLHUP);
         }
     }
     PIPE_UNLOCK(pipe);
@@ -144,7 +152,7 @@ static ssize_t pipe_read(vfs_file_t *file, loff_t off, size_t size, char *buffer
     PIPE_LOCK(pipe);
 
     // Check for remaining space
-    while (ringbuffer_remaining_read(pipe->buf) == 0 && (pipe->dead == 0)) {
+    while (ringbuffer_remaining_read(pipe->buf) == 0 && pipe->writers > 0) {
         if (file->flags & O_NONBLOCK) {
             PIPE_UNLOCK(pipe);
             return -EAGAIN;
@@ -167,8 +175,7 @@ static ssize_t pipe_read(vfs_file_t *file, loff_t off, size_t size, char *buffer
         PIPE_LOCK(pipe);
     }
 
-    // only EOF on completely dead pipe
-    if (pipe->dead && ringbuffer_remaining_read(pipe->buf) == 0) {
+    if (pipe->writers == 0 && ringbuffer_remaining_read(pipe->buf) == 0) {
         PIPE_UNLOCK(pipe);
         return 0;
     }
@@ -188,44 +195,55 @@ static ssize_t pipe_read(vfs_file_t *file, loff_t off, size_t size, char *buffer
  */
 static ssize_t pipe_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer) {
     fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
+    size_t written = 0;
+
+    if (size == 0) return 0;
 
     PIPE_LOCK(pipe);
-    
-    // Check for remaining space
-    while (ringbuffer_remaining_write(pipe->buf) == 0 && (pipe->dead == 0)) {
-        if (file->flags & O_NONBLOCK) {
+    while (written < size) {
+        if (pipe->readers == 0) {
             PIPE_UNLOCK(pipe);
-            return -EAGAIN;
+            if (written) return (ssize_t)written;
+            signal_send(current_cpu->current_process, SIGPIPE);
+            return -EPIPE;
         }
 
-        // TODO Avoid holding lock while allocing
-        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
-        poll_add(w, &pipe->event, POLLOUT);
-        PIPE_UNLOCK(pipe);
+        size_t needed = (size <= PIPE_ATOMIC_WRITE) ? size : 1;
 
-        int wake = poll_wait(w, -1);
-        poll_exit(w);
-        poll_destroyWaiter(w);
+        if (ringbuffer_remaining_write(pipe->buf) < needed) {
+            if (file->flags & O_NONBLOCK) {
+                PIPE_UNLOCK(pipe);
+                return (written) ? (ssize_t)written : -EAGAIN;
+            }
 
-        if (wake != 0) {
-            return wake;
+            // TODO Avoid holding lock while allocing
+            poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+            poll_add(w, &pipe->event, POLLOUT);
+            PIPE_UNLOCK(pipe);
+
+            int wake = poll_wait(w, -1);
+            poll_exit(w);
+            poll_destroyWaiter(w);
+
+            if (wake != 0) {
+                return (written) ? (ssize_t)written : wake;
+            }
+
+            // Re-lock and try again
+            PIPE_LOCK(pipe);
+            continue;
         }
 
-        // Re-lock and try again
-        PIPE_LOCK(pipe);
+        // We hold the lock
+        ssize_t chunk = ringbuffer_write(pipe->buf, (char*)buffer + written, size - written);
+        if (chunk > 0) {
+            written += chunk;
+            poll_signal(&pipe->event, POLLIN);
+        }
     }
 
-    if (pipe->dead) {
-        PIPE_UNLOCK(pipe);
-        signal_send(current_cpu->current_process, SIGPIPE);
-        return -EPIPE;
-    }
-    
-    // We hold the lock
-    ssize_t written = ringbuffer_write(pipe->buf, (char*)buffer, size);
-    if (written) poll_signal(&pipe->event, POLLIN);
     PIPE_UNLOCK(pipe);
-    return written;
+    return (ssize_t)written;
 }
 
 /**
@@ -237,15 +255,14 @@ static poll_events_t pipe_poll_events(vfs_file_t *file) {
     PIPE_LOCK(pipe);
     poll_events_t events = 0;
 
-    if (IS_WRITE(file)) {
-        events |= (ringbuffer_remaining_write(pipe->buf) ? POLLOUT : 0);
-    } else {
+    if (IS_READ(file)) {
         events |= (ringbuffer_remaining_read(pipe->buf) ? POLLIN : 0);
+        if (pipe->writers == 0) events |= POLLHUP;
     }
 
-    if (pipe->dead) {
-        if (IS_WRITE(file)) events |= POLLERR;
-        else events |= POLLHUP;
+    if (IS_WRITE(file)) {
+        events |= (ringbuffer_remaining_write(pipe->buf) ? POLLOUT : 0);
+        if (pipe->readers == 0) events |= POLLERR;
     }
 
     PIPE_UNLOCK(pipe);
@@ -270,36 +287,107 @@ static int pipe_destroy(vfs_inode_t *inode) {
     fs_pipe_t *pipe = inode->priv;
     
     PIPE_LOCK(pipe);
-    
-    if (pipe->dead) {
+    assert(pipe->inodes > 0);
+    pipe->inodes--;
+    int destroy = (pipe->inodes == 0);
+    PIPE_UNLOCK(pipe);
+
+    if (destroy) slab_free(pipe_cache, pipe);
+    return 0;
+}
+
+/**
+ * @brief Resize a pipe's buffer
+ * @param pipe The pipe to resize
+ * @param size The requested capacity, rounded up to a power of two
+ * @returns The new capacity, or a negative error code
+ */
+static long pipe_resize(fs_pipe_t *pipe, size_t size) {
+    if (size == 0) return -EINVAL;
+    if (size > PIPE_MAXIMUM_SIZE) return -EPERM;
+    if (size < PIPE_MINIMUM_SIZE) size = PIPE_MINIMUM_SIZE;
+
+    // round up to a power of 2, Linux does this.
+    size_t capacity = PIPE_MINIMUM_SIZE;
+    while (capacity < size) capacity <<= 1;
+
+    PIPE_LOCK(pipe);
+
+    size_t queued = ringbuffer_remaining_read(pipe->buf);
+    if (capacity < queued) {
+        // Would drop data
         PIPE_UNLOCK(pipe);
-        slab_free(pipe_cache, pipe);
-        return 0;
+        return -EBUSY;
     }
 
-    pipe->dead = 1;
+    if (capacity == pipe->buf->buffer_size) {
+        PIPE_UNLOCK(pipe);
+        return (long)capacity;
+    }
+
+    ringbuffer_t *new_buf = ringbuffer_create(capacity);
+    ringbuffer_t *old = pipe->buf;
+
+    // copy queued data
+    if (queued) {
+        // !!! this is the stupidest way possible to copy the data, but im INCREDIBLY lazy and F_SETPIPE_SZ is rarely used
+        char *tmp = kmalloc(queued);
+        ringbuffer_read(old, tmp, queued);
+        ringbuffer_write(new_buf, tmp, queued);
+        kfree(tmp);
+    }
+
+    pipe->buf = new_buf;
+    ringbuffer_destroy(old);
+
+    // maybe a blocked reader can write now
+    poll_signal(&pipe->event, POLLOUT);
     PIPE_UNLOCK(pipe);
-    return 0;
+
+    return (long)capacity;
+}
+
+/**
+ * @brief Handle the pipe-specific fcntl() commands
+ */
+long pipe_fcntl(vfs_file_t *file, int cmd, int arg) {
+    if (file->inode->f_ops != &pipe_file_ops) return -EBADF;
+    fs_pipe_t *pipe = (fs_pipe_t*)file->priv;
+
+    switch (cmd) {
+        case F_GETPIPE_SZ: {
+            PIPE_LOCK(pipe);
+            long capacity = (long)pipe->buf->buffer_size;
+            PIPE_UNLOCK(pipe);
+            return capacity;
+        }
+
+        case F_SETPIPE_SZ:
+            return pipe_resize(pipe, (size_t)arg);
+
+        default:
+            return -EINVAL;
+    }
 }
 
 /**
  * @brief Create a new pipe set for a process
  * @param fildes The file descriptor array to fill with pipes
+ * @param flags O_CLOEXEC and/or O_NONBLOCK
  * @returns Error code
  */
-int pipe_create(int fildes[2]) {
+int pipe_create(int fildes[2], int flags) {
     fs_pipe_t *pipe = slab_allocate(pipe_cache);
     if (!pipe) return -ENOMEM;
 
-    // TODO: this is stupid but "reliable", i guess. will fix in pipe rev 2
-    vfs_inode_t *read_node = vfs2_inode();
+    vfs_inode_t *read_node = vfs_inode();
     read_node->attr.type = VFS_PIPE;
     read_node->attr.ino = vfs_getNextInode();
     read_node->ops = &pipe_inode_ops;
     read_node->f_ops = &pipe_file_ops;
     read_node->priv = pipe;
 
-    vfs_inode_t *write_node = vfs2_inode();
+    vfs_inode_t *write_node = vfs_inode();
     write_node->attr.type = VFS_PIPE;
     write_node->attr.ino = vfs_getNextInode();
     write_node->ops = &pipe_inode_ops;
@@ -309,8 +397,9 @@ int pipe_create(int fildes[2]) {
     vfs_file_t *read_file;
     vfs_file_t *write_file;
 
-    assert(vfs_openat(read_node, NULL, O_RDONLY, &read_file) == 0);
-    assert(vfs_openat(write_node, NULL, O_WRONLY, &write_file) == 0);
+    int status_flags = flags & O_NONBLOCK;
+    assert(vfs_openat(read_node, NULL, O_RDONLY | status_flags, &read_file) == 0);
+    assert(vfs_openat(write_node, NULL, O_WRONLY | status_flags, &write_file) == 0);
 
     inode_release(read_node);
     inode_release(write_node);
@@ -318,6 +407,11 @@ int pipe_create(int fildes[2]) {
     // Add file descriptors to process
     assert(fd_add(read_file, &fildes[0]) == 0);
     assert(fd_add(write_file, &fildes[1]) == 0);
+
+    if (flags & O_CLOEXEC) {
+        assert(fd_setCloseExecute(fildes[0], true) == 0);
+        assert(fd_setCloseExecute(fildes[1], true) == 0);
+    }
 
     return 0;
 }

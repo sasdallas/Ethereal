@@ -24,13 +24,13 @@ slab_cache_t *systemfs_node_cache;
 systemfs_node_t *systemfs_root;
 
 /* Protos */
-int systemfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
+int systemfs_mount(vfs_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:SYSTEMFS", __VA_ARGS__)
 
 /* Filesystem ops */
-vfs2_filesystem_t systemfs_filesystem = {
+vfs_filesystem_t systemfs_filesystem = {
     .flags = 0,
     .name  = "systemfs",
     .fs_mounts = NULL,
@@ -285,8 +285,8 @@ void systemfs_free(systemfs_node_t *node) {
 /**
  * @brief SystemFS mount
  */
-int systemfs_mount(vfs2_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data) {
-    vfs_inode_t *root_inode = vfs2_inode();
+int systemfs_mount(vfs_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data) {
+    vfs_inode_t *root_inode = vfs_inode();
     if (!root_inode) return -ENOMEM;
 
     root_inode->ops = &systemfs_inode_ops;
@@ -429,9 +429,15 @@ systemfs_node_t *systemfs_get(systemfs_node_t *parent, char *name) {
  * @brief Simple read systemfs
  */
 ssize_t systemfs_readSimple(systemfs_node_t *n, loff_t off, size_t size, char *buffer) {
-    if (off > (loff_t)n->buf.bufidx) return 0;
-    if (off + size > n->buf.bufidx) size = n->buf.bufidx - off;
-    memcpy(buffer, n->buf.buffer + off, size);
+    mutex_acquire(&n->lck);
+    if (off < 0 || off > (loff_t)n->buf.bufidx) {
+        mutex_release(&n->lck);
+        return 0;
+    }
+
+    if (size > n->buf.bufidx - off) size = n->buf.bufidx - off;
+    if (size) memcpy(buffer, n->buf.buffer + off, size);
+    mutex_release(&n->lck);
     return size;
 }
 
@@ -439,13 +445,16 @@ ssize_t systemfs_readSimple(systemfs_node_t *n, loff_t off, size_t size, char *b
  * @brief Simple open systemfs
  */
 int systemfs_openSimple(systemfs_node_t *n, unsigned long flags) {
-    if (n->ops && n->ops->read_simple) {
+    mutex_acquire(&n->lck);
+    if (!n->simple_opens && n->ops && n->ops->read_simple) {
         n->buf.bufidx = 0;
         n->buf.bufsize = 0;
         n->buf.buffer = NULL;
         n->attr.size = n->ops->read_simple(n);
     }
 
+    n->simple_opens++;
+    mutex_release(&n->lck);
     return 0;
 }
 
@@ -453,13 +462,16 @@ int systemfs_openSimple(systemfs_node_t *n, unsigned long flags) {
  * @brief Simple close systemfs
  */
 int systemfs_closeSimple(systemfs_node_t *n) {
-    if (n->buf.buffer) {
-        kfree(n->buf.buffer);
+    mutex_acquire(&n->lck);
+    assert(n->simple_opens);
+    if (--n->simple_opens == 0) {
+        if (n->buf.buffer) kfree(n->buf.buffer);
+        n->buf.buffer = NULL;
+        n->buf.bufsize = 0;
+        n->buf.bufidx = 0;
     }
 
-    n->buf.buffer = NULL;
-    n->buf.bufsize = 0;
-    n->buf.bufidx = 0;
+    mutex_release(&n->lck);
     return 0; 
 }
 
@@ -544,7 +556,7 @@ systemfs_node_t *systemfs_createDirectory(systemfs_node_t *parent, char *name) {
 static int __systemfs_xvasprintf(void *user, char c) {
     systemfs_node_t *n = (systemfs_node_t*)user;
     
-    if (n->buf.bufidx >= n->buf.bufsize) {
+    if (n->buf.bufidx + 1 >= n->buf.bufsize) {
         n->buf.buffer = krealloc(n->buf.buffer, n->buf.bufsize + 128);
         n->buf.bufsize += 128;
     }

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <errno.h>
 
 // Kernel includes
 #include <kernel/kernel.h>
@@ -55,6 +56,7 @@
 
 // Tasking
 #include <kernel/task/process.h>
+#include <kernel/task/sleep.h>
 #include <structs/ini.h>
 #include <structs/tinf.h>
 
@@ -275,7 +277,7 @@ void kmain() {
     INIT_RUN_PHASE(PHASE_FS);
 
     LOG(DEBUG, "Mounting tmpfs on root\n");
-    vfs2_filesystem_t *tmpfs = vfs_getFilesystem("tmpfs");
+    vfs_filesystem_t *tmpfs = vfs_getFilesystem("tmpfs");
     assert(tmpfs);
     vfs_changeGlobalRoot(tmpfs, NULL, 0, NULL);
     LOG(DEBUG, "tmpfs has been mounted to /\n");
@@ -337,8 +339,8 @@ void kmain() {
 
         // mount a device fs temporarily
         // !!!! THIS IS A HACK!!!!
-        vfs2_mkdir("/device", 0755, NULL);
-        vfs2_mount(vfs_getFilesystem("devfs"), "device", "device", 0, NULL);
+        vfs_mkdir("/device", 0755, NULL);
+        vfs_mount(vfs_getFilesystem("devfs"), "device", "device", 0, NULL);
 
         // Default to ext2 if no root filesystem was specified
         vfs_changeGlobalRoot(vfs_getFilesystem(fs?fs:"ext2"), r, 0, NULL);
@@ -393,8 +395,6 @@ void kernel_prepareForPowerState(int state) {
         return;
     }
 
-    hal_prepareForPowerState(state);
-
     // Enter shutdown state
     kernel_shutdown = 1;
 
@@ -405,16 +405,18 @@ extern int video_ks;
     terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
 
     printf(COLOR_CODE_YELLOW "System is preparing to enter power state: %s\n" COLOR_CODE_RESET, (state == HAL_POWER_SHUTDOWN) ? "SHUTDOWN" : "REBOOT");
-    printf("Waiting for all processes to exit\t\t\t\t\t\t\t\t\t\t\t\t\t");
+    printf("Waiting for all processes to exit... ");
 
-//     // Exit all other processes
-// extern list_t *process_list;
-//     foreach(process, process_list) {
-//         if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL) && (((process_t*)process->value)->pid != 0)) {
-//             dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
-//             process_exit((process_t*)process->value, 0);
-//         }
-//     }
+    // Exit all other processes
+extern list_t *process_list;
+    foreach(process, process_list) {
+        if (process->value != current_cpu->current_process && !(((process_t*)process->value)->flags & PROCESS_KERNEL) && (((process_t*)process->value)->pid != 0)) {
+            dprintf(INFO, "Exiting process: %s (%d)\n", ((process_t*)process->value)->name, ((process_t*)process->value)->pid);
+            signal_send(((process_t*)process->value), SIGKILL);
+        }
+    }
+
+    // TODO: wait for them to die off, im lazy
 
     printf("[" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
 
@@ -435,6 +437,8 @@ extern int video_ks;
             printf("   [" COLOR_CODE_GREEN "OK  " COLOR_CODE_RESET "]\n");
         }
     }
+
+    hal_prepareForPowerState(state);
 
     printf(COLOR_CODE_GREEN "System is ready to exit Ethereal. Bye!\n");
 }
