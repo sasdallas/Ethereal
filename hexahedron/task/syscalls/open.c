@@ -21,9 +21,11 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
         return -ENOENT;
     }
 
+#if 0
     if ((flags & ~(O_ACCMODE)) & UNSUPPORTED || ((flags & O_TMPFILE) == O_TMPFILE)) {
         SYSCALL_LOG(WARN, "open(%s, 0x%x, 0x%x) has unsupported flags (0x%x)\n", pathname, flags, mode, UNSUPPORTED);
     }
+#endif
 
     // Try and get it open
     vfs_file_t *file;
@@ -39,7 +41,7 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     if ((r != 0) && (flags & O_CREAT)) {
         // Ok, make the file using some garbage hacks
         vfs_inode_t *ino_output;
-        r = vfs_create(pathname, mode, &ino_output);
+        r = vfs_create(pathname, mode & ~current_cpu->current_process->umask, &ino_output);
         if (r < 0) {
             return r;
         }
