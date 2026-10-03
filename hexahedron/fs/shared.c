@@ -112,6 +112,7 @@ static int sharedfs_mmap(devfs_node_t *n, void *addr, size_t size, off_t off, mm
     for (uintptr_t i = 0; i < size; i += PAGE_SIZE) {
         uintptr_t block_idx = start_idx + (i / PAGE_SIZE);
         if (!obj->blocks[block_idx]) obj->blocks[block_idx] = pmm_allocatePage(ZONE_DEFAULT);
+        pmm_retain(obj->blocks[block_idx]); // The mapping owns a separate reference.
         arch_mmu_map(NULL, (uintptr_t)addr + i, obj->blocks[block_idx], flags);
     }
 
@@ -159,7 +160,11 @@ int sharedfs_new(process_t *proc, size_t size, int flags) {
 
     char name[256];
     snprintf(name, 256, "%d", obj->key);
-    assert(devfs_register(shared_directory, name, VFS_BLOCKDEVICE, &sharedfs_ops, 0, 0, obj));
+    devfs_node_t *node = devfs_register(shared_directory, name, VFS_BLOCKDEVICE, &sharedfs_ops, 0, 0, obj);
+    assert(node);
+    node->attr.uid = proc->cred.euid;
+    node->attr.gid = proc->cred.egid;
+    node->attr.mode = 0666 & ~proc->umask;
 
     snprintf(name, 256, "/device/shared/%d", obj->key);
 
