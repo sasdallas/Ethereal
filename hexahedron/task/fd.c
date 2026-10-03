@@ -154,6 +154,8 @@ static int fd_allocateFree(fd_table_t *table) {
  * @param file The file
  */
 int fd_get(int fd_number, vfs_file_t **file) {
+    if (fd_number < 0) return -EBADF;
+
     fd_table_t *target = current_cpu->current_process->fd_table;
     mutex_acquire(&target->lck);
     if (fd_number >= target->table_size || target->fds[fd_number] == NULL) {
@@ -229,7 +231,6 @@ int fd_remove(int fd_number) {
  * @returns 0 on success
  */
 int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact) {
-    LOG(DEBUG, "fd_duplicate %d %d\n", oldfd, newfd);
     fd_table_t *table = current_cpu->current_process->fd_table;
     if (oldfd < 0) return -EBADF;
     mutex_acquire(&table->lck);

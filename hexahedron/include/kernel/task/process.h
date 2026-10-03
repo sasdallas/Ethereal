@@ -29,7 +29,10 @@
 #include <kernel/task/ptrace.h>
 #include <kernel/task/syscall.h>
 #include <kernel/task/futex.h>
+#include <kernel/task/session.h>
 #include <kernel/fs/systemfs.h>
+
+#include <kernel/subsystems/auth.h>
 
 #include <kernel/processor_data.h>
 #include <structs/tree.h>
@@ -84,16 +87,13 @@ typedef struct process {
     char **cmdline;
 
     // IDs
-    pid_t pid;                          // Process ID
-    pid_t pgid;                         // Process group/job
-    pid_t sid;                          // Session ID
+    pid_t pid;
+    auth_cred_t cred;
 
-    uid_t uid;                          // Real user ID of the process
-    uid_t euid;                         // Effective user ID of the process
-    gid_t gid;                          // Real group ID of the process
-    gid_t egid;                         // Effective group ID of the process
-
-    gid_t *group_list;                  // Group list
+    // SESSION
+    process_group_t *pgrp;
+    DLIST_ENTRY(struct process) pgrp_entry;
+    spinlock_t pgrp_lock;
 
     // SCHEDULER INFORMATION
     unsigned int flags;                 // Scheduler flags (running/stopped/started) - these can also be used by other parts of code
@@ -106,16 +106,16 @@ typedef struct process {
     // THREADS
     thread_t *main_thread;              // Main thread in the process  - whatever the ELF entrypoint was
     thread_t *thread_list;              // Linked list for all threads in the process, *including the main thread*.
-    size_t nthreads;                    // Number of threads
+    size_t nthreads;
     spinlock_t thread_lock;
     bool exiting;                       // Small flag to prevent race in process_exit
     bool continued;                     // Continued state waiting for waitpid
 
     // FILE INFORMATION
-    char *wd_path;                      // Working directory path
-    vfs_inode_t *wd_node;               // Working directory node
-    fd_table_t *fd_table;               // File descriptor table
-    mode_t umask;                       // User-file creation mask
+    char *wd_path;
+    vfs_inode_t *wd_node;
+    fd_table_t *fd_table;
+    mode_t umask;
 
     // SIGNAL
     struct {
@@ -126,15 +126,15 @@ typedef struct process {
     } signal;
 
     // TIMER
-    process_timer_t itimers[3];         // setitimer timers
+    process_timer_t itimers[3];
     
     // DEBUG
-    process_ptrace_t ptrace;            // ptrace structure
+    process_ptrace_t ptrace;
 
     // OTHER
-    vmm_context_t *ctx;                 // VMM context
-    node_t proc_list_node;              // Process list node
-    systemfs_node_t *proc_sysfs;        // Process SystemFS
+    vmm_context_t *ctx;
+    node_t proc_list_node;
+    systemfs_node_t *proc_sysfs;
 
     struct {
         uint64_t cutime;
@@ -144,10 +144,9 @@ typedef struct process {
 
 /**** MACROS ****/
 
-#define PROC_IS_ROOT(proc) ((proc)->euid == 0)
-#define PROC_IS_LEADER(proc) ((proc)->pgid == (proc)->pid)
-
-#define NEEDS_ROOT if (current_cpu->current_process->euid != 0) return -EPERM;
+#define PROC_IS_ROOT(proc) ((proc)->cred.euid == 0)
+#define NEEDS_ROOT if (current_cpu->current_process->cred.euid != 0) return -EPERM;
+#define THIS_CRED() (current_cpu->current_process->cred)
 
 /**** FUNCTIONS ****/
 

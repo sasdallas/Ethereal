@@ -36,20 +36,21 @@ static hashmap_t *pty_map;
 #define TO_CTRL(ch) (('@' + (ch)) % 128)
 
 /* PTY device operations */
+static int tty_open(devfs_node_t *file, unsigned long flags);
 static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffer);
 static ssize_t tty_write(devfs_node_t *file, loff_t off, size_t size, const char *buffer);
 static int tty_ioctl(devfs_node_t *file, unsigned long request, void *argp);
 static int tty_poll(devfs_node_t *file, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t tty_poll_events(devfs_node_t *n);
 
-static ssize_t pty_master_read(devfs_node_t *file, loff_t off, size_t size, char *buffer);
+static ssize_t pty_master_read(devfs_node_t *file, loff_t off, size_t size, char *buffer, int flags);
 static ssize_t pty_master_write(devfs_node_t *file, loff_t off, size_t size, const char *buffer);
 static int pty_master_ioctl(devfs_node_t *file, unsigned long request, void *argp);
 static int pty_master_poll(devfs_node_t *file, poll_waiter_t *waiter, poll_events_t events);
 static poll_events_t pty_master_poll_events(devfs_node_t *n);
 
 static devfs_ops_t tty_ops = {
-    .open = NULL,
+    .open = tty_open,
     .close = NULL,
     .read = tty_read,
     .write = tty_write,
@@ -65,7 +66,7 @@ static devfs_ops_t tty_ops = {
 static devfs_ops_t pty_master_ops = {
     .open = NULL,
     .close = NULL,
-    .read = pty_master_read,
+    .read_ext = pty_master_read,
     .write = pty_master_write,
     .ioctl = pty_master_ioctl,
     .lseek = NULL,
@@ -77,17 +78,86 @@ static devfs_ops_t pty_master_ops = {
 };
 
 /**
+ * @brief Helper to read from a TTY's buffer
+ */
+static ssize_t tty_readBuffer(tty_t *tty, char *buffer, size_t size) {
+    mutex_acquire(&tty->mut);
+    while (ringbuffer_remaining_read(tty->read_buf) == 0) {
+        if (tty->is_nonblocking) {
+            mutex_release(&tty->mut);
+            return -EWOULDBLOCK;
+        }
+
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &tty->event, POLLIN);
+        mutex_release(&tty->mut);
+
+        int r = poll_wait(w, -1);
+        poll_exit(w);
+        poll_destroyWaiter(w);
+        if (r) return r;
+
+        mutex_acquire(&tty->mut);
+    }
+
+    ssize_t r = ringbuffer_read(tty->read_buf, buffer, size);
+    if (r > 0) poll_signal(&tty->event, POLLOUT);
+
+    mutex_release(&tty->mut);
+    return r;
+}
+
+/**
+ * @brief Helper to write to TTY buffer
+ */
+static ssize_t tty_writeBuffer(tty_t *tty, char *buffer, size_t size) {
+    size_t written = 0;
+
+    mutex_acquire(&tty->mut);
+    while (written < size) {
+        if (ringbuffer_remaining_write(tty->read_buf) == 0) {
+            poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+            poll_add(w, &tty->event, POLLOUT);
+            mutex_release(&tty->mut);
+
+            int r = poll_wait(w, -1);
+            poll_exit(w);
+            poll_destroyWaiter(w);
+            if (r) return written ? (ssize_t)written : r;
+
+            mutex_acquire(&tty->mut);
+            continue;
+        }
+
+        ssize_t r = ringbuffer_write(tty->read_buf, buffer + written, size - written);
+        written += r;
+        if (r) poll_signal(&tty->event, POLLIN);
+    }
+
+    mutex_release(&tty->mut);
+    return written;
+}
+
+/**
+ * @brief tty open
+ */
+static int tty_open(devfs_node_t *file, unsigned long flags) {
+    process_t *proc = current_cpu->current_process;
+    if (!(flags & O_NOCTTY) && proc && !(proc->flags & PROCESS_KERNEL)) {
+        session_claimTTY(file->priv, false);
+    }
+    return 0;
+}
+
+/**
  * @brief tty read
  */
 static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffer) {
+    if (!size) return 0;
     tty_t *tty = file->priv;
 
     if (tty->tios.c_lflag & ICANON || tty->tios.c_cc[VMIN] == 0) {
-        if (tty->is_nonblocking && circbuf_remaining_read(tty->read_buf) == 0) {
-            return -EWOULDBLOCK;
-        }
-        
-        return circbuf_read(tty->read_buf, size, (uint8_t*)buffer);
+        return tty_readBuffer(tty, buffer, size);
     } else {
         size_t sz_to_read = size;
         if (tty->tios.c_cc[VMIN] < sz_to_read) {
@@ -95,11 +165,7 @@ static ssize_t tty_read(devfs_node_t *file, loff_t off, size_t size, char *buffe
         }
 
         for (size_t i = 0; i < sz_to_read; i++) {
-            if (tty->is_nonblocking && circbuf_remaining_read(tty->read_buf) == 0) {
-                return -EWOULDBLOCK;
-            }
-        
-            ssize_t r = circbuf_read(tty->read_buf, 1, (uint8_t*)buffer+i);
+            ssize_t r = tty_readBuffer(tty, buffer+i, 1);
             if (r < 0) return r;
         }
 
@@ -153,11 +219,10 @@ static ssize_t tty_write(devfs_node_t *file, loff_t off, size_t size, const char
 void tty_flush(tty_t *tty) {
     if (tty->canon_idx) {
         LOG(DEBUG, "tty_flush\n");
+        tty_writeBuffer(tty, tty->canon_buffer, tty->canon_idx);
         mutex_acquire(&tty->mut);
-        circbuf_write(tty->read_buf, tty->canon_idx, (uint8_t*)tty->canon_buffer);
         tty->canon_idx = 0;
         tty->canon_buffer[0] = 0;
-        poll_signal(&tty->event, POLLIN);
         mutex_release(&tty->mut);
     }
 }
@@ -191,7 +256,7 @@ void tty_handle(tty_t *tty, char ch) {
                 char ctrl[2] = { '^', TO_CTRL(ch) };
                 tty->write(tty, ctrl, 2);
             }
-            if (tty->fg_proc) signal_sendGroup(tty->fg_proc, sig);
+            session_signalForeground(tty, sig);
             return;
         }
     }
@@ -251,10 +316,7 @@ void tty_handle(tty_t *tty, char ch) {
     } else {
         if (tty->tios.c_lflag & ECHO) tty->write(tty, &ch, 1);
 
-        mutex_acquire(&tty->mut);
-        circbuf_write(tty->read_buf, 1, (uint8_t*)&ch);
-        poll_signal(&tty->event, POLLIN);
-        mutex_release(&tty->mut);
+        tty_writeBuffer(tty, &ch, 1);
     }
 }
 
@@ -271,7 +333,10 @@ static int tty_poll(devfs_node_t *file, poll_waiter_t *waiter, poll_events_t eve
  */
 static poll_events_t tty_poll_events(devfs_node_t *n) {
     tty_t *tty = n->priv;
-    return POLLOUT | (circbuf_remaining_read(tty->read_buf) ? POLLIN : 0);
+    mutex_acquire(&tty->mut);
+    poll_events_t ret = POLLOUT | (ringbuffer_remaining_read(tty->read_buf) ? POLLIN : 0);
+    mutex_release(&tty->mut);
+    return ret;
 }
 
 /**
@@ -306,42 +371,36 @@ static int __tty_ioctl(tty_t *tty, unsigned long request, void *argp) {
             memcpy(argp, &tty->winsz, sizeof(struct winsize));
             return 0;
 
-        case TIOCSWINSZ:
-            SYSCALL_VALIDATE_PTR(argp);
-            memcpy(&tty->winsz, argp, sizeof(struct winsize));
-            // TODO: send sigwinch
+        case TIOCSWINSZ: {
+            SYSCALL_VALIDATE_PTR_SIZE(argp, sizeof(struct winsize));
+            struct winsize size = *(struct winsize *)argp;
+            mutex_acquire(&tty->mut);
+            bool changed = memcmp(&tty->winsz, &size, sizeof(size)) != 0;
+            tty->winsz = size;
+            mutex_release(&tty->mut);
+            if (changed) session_signalForeground(tty, SIGWINCH);
             return 0;
+        }
 
         case TIOCSCTTY:
-            if (current_cpu->current_process->pid == current_cpu->current_process->pgid) {
-                if (tty->control_proc == current_cpu->current_process->pid) return 0; // already controlling
-                
-                if (tty->control_proc) {
-                    // Can't steal control unless we are root and argp is 1
-                    if (!((uintptr_t)argp == 1 && PROC_IS_ROOT(current_cpu->current_process))) {
-                        return -EPERM;
-                    } 
-                }
-
-                tty->control_proc = current_cpu->current_process->pid;
-                return 0;
-            } else {
-                return -EPERM; // must be leader
-            }
+            return session_claimTTY(tty, (uintptr_t)argp == 1);
 
         case TIOCNOTTY:
-            assert(0 && "TIOCNOTTY");
-            break;
+            if (session_tcgetpgrp(current_cpu->current_process, tty) < 0) return -ENOTTY;
+            if (session_getsid(current_cpu->current_process) != current_cpu->current_process->pid) return -EPERM;
+            session_hangup(tty);
+            return 0;
 
         case TIOCGPGRP:
             SYSCALL_VALIDATE_PTR(argp);
-            *(int*)argp = tty->fg_proc;
+            pid_t pgid = session_tcgetpgrp(current_cpu->current_process, tty);
+            if (pgid < 0) return pgid;
+            *(pid_t*)argp = pgid;
             return 0;
 
         case TIOCSPGRP:
             SYSCALL_VALIDATE_PTR(argp);
-            tty->fg_proc = *(int*)argp;
-            return 0;
+            return session_tcsetpgrp(current_cpu->current_process, tty, *(pid_t*)argp);
 
         case TCSETS:
         case TCSETSW:
@@ -389,14 +448,35 @@ static int tty_ioctl(devfs_node_t *file, unsigned long request, void *argp) {
 /**
  * @brief pty master read
  */
-static ssize_t pty_master_read(devfs_node_t *file, loff_t off, size_t size, char *buffer) {
+static ssize_t pty_master_read(devfs_node_t *file, loff_t off, size_t size, char *buffer, int flags) {
+    if (size == 0) return 0;
     pty_t *pty = file->priv;
 
-    if (pty->is_nonblocking && circbuf_remaining_read(pty->out) == 0) {
-        return -EWOULDBLOCK;
+    mutex_acquire(&pty->mut);
+
+    bool nonblocking = (flags & O_NONBLOCK) || pty->is_nonblocking;
+    while (ringbuffer_remaining_read(pty->out) == 0) {
+        if (nonblocking) {
+            mutex_release(&pty->mut);
+            return -EWOULDBLOCK;
+        }
+
+        poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+        poll_add(w, &pty->out_event, POLLIN);
+        mutex_release(&pty->mut);
+
+        int r = poll_wait(w, -1);
+        poll_exit(w);
+        poll_destroyWaiter(w);
+        if (r) return r;
+
+        mutex_acquire(&pty->mut);
     }
 
-    return circbuf_read(pty->out, size, (uint8_t*)buffer);
+    ssize_t r = ringbuffer_read(pty->out, buffer, size);
+    if (r > 0) poll_signal(&pty->out_event, POLLOUT);
+    mutex_release(&pty->mut);
+    return r;
 }
 
 /**
@@ -443,7 +523,9 @@ static int pty_master_poll(devfs_node_t *n, poll_waiter_t *waiter, poll_events_t
  */
 static poll_events_t pty_master_poll_events(devfs_node_t *n) {
     pty_t *pty = (pty_t*)n->priv;
-    poll_events_t ret =  POLLOUT | (circbuf_remaining_read(pty->out) ? POLLIN : 0);
+    mutex_acquire(&pty->mut);
+    poll_events_t ret =  POLLOUT | (ringbuffer_remaining_read(pty->out) ? POLLIN : 0);
+    mutex_release(&pty->mut);
     return ret;
 }
 
@@ -452,9 +534,32 @@ static poll_events_t pty_master_poll_events(devfs_node_t *n) {
  */
 int pty_slave_write(tty_t *tty, char *buffer, size_t size) {
     pty_t *pty = tty->priv;
-    int r = (int)circbuf_write(pty->out, size, (uint8_t*)buffer);
-    if (r >= 0) poll_signal(&pty->out_event, POLLIN);
-    return r;
+
+    size_t written = 0;
+
+    mutex_acquire(&pty->mut);
+    while (written < size) {
+        if (ringbuffer_remaining_write(pty->out) == 0) {
+            poll_waiter_t *w = poll_createWaiter(current_cpu->current_thread, 1);
+            poll_add(w, &pty->out_event, POLLOUT);
+            mutex_release(&pty->mut);
+
+            int r = poll_wait(w, -1);
+            poll_exit(w);
+            poll_destroyWaiter(w);
+            if (r) return written ? (ssize_t)written : r;
+
+            mutex_acquire(&pty->mut);
+            continue;
+        }
+
+        ssize_t r = ringbuffer_write(pty->out, buffer + written, size - written);
+        written += r;
+        if (r) poll_signal(&pty->out_event, POLLIN);
+    }
+
+    mutex_release(&pty->mut);
+    return written;
 }
 
 /**
@@ -465,9 +570,10 @@ tty_t *tty_create(char *name) {
     tty_t *tty = kmalloc(sizeof(tty_t));
     memset(tty, 0, sizeof(tty_t));
     MUTEX_INIT(&tty->mut);
+    SPINLOCK_INIT(&tty->job_lock);
     POLL_EVENT_INIT(&tty->event);
     tty->name = strdup(name);
-    tty->read_buf = circbuf_create("tty input buffer", 4096);
+    tty->read_buf = ringbuffer_create(4096);
     tty->tios.c_iflag = ICRNL | BRKINT | ISIG;
     tty->tios.c_oflag = ONLCR | OPOST;
     tty->tios.c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG | IEXTEN;
@@ -497,6 +603,11 @@ tty_t *tty_create(char *name) {
         return NULL;
     }
 
+    if (current_cpu->current_process) {
+        tty->node->attr.uid = current_cpu->current_process->cred.uid;
+        tty->node->attr.gid = current_cpu->current_process->cred.gid;
+    }
+
     return tty;
 }
 
@@ -506,6 +617,7 @@ tty_t *tty_create(char *name) {
 int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
     pty_t *pty = kmalloc(sizeof(pty_t));
     memset(pty, 0, sizeof(pty_t));
+    MUTEX_INIT(&pty->mut);
     POLL_EVENT_INIT(&pty->out_event);
 
     // get new pty num
@@ -518,12 +630,12 @@ int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
     pty->slave->write = pty_slave_write;
     pty->slave->priv = pty;
     pty->slave->is_pty = true;
-    pty->out = circbuf_create("pty output buffer", 4096);
+    pty->out = ringbuffer_create(4096);
 
     // now set parameters
     snprintf(tmp, 64, "/device/pts/%d", num);
     if (slave) {
-        int r = vfs_open(tmp, O_RDWR, slave);
+        int r = vfs_open(tmp, O_RDWR | O_NOCTTY, slave);
         if (r) {
             // TODO: cleanup PTY
             return r;
@@ -535,6 +647,11 @@ int pty_create(pty_t **out, vfs_file_t **master, vfs_file_t **slave) {
     if ((pty->master_node = devfs_register(devfs_root, tmp, VFS_CHARDEVICE, &pty_master_ops, DEVFS_MAJOR_TTY, num, pty)) == NULL) {
         // TODO: Cleanup pty
         return -ENOMEM;
+    }
+
+    if (current_cpu->current_process) {
+        pty->master_node->attr.uid = current_cpu->current_process->cred.uid;
+        pty->master_node->attr.gid = current_cpu->current_process->cred.gid;
     }
 
     snprintf(tmp, 64, "/device/.ptmaster%d", num);

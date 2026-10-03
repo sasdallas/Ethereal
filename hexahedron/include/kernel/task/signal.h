@@ -90,14 +90,6 @@ static inline void signal_sendThread(struct thread *thread, int signal) {
 }
 
 /**
- * @brief Send a signal to a group of processes
- * @param pgid The process group ID of the processes to send to
- * @param signal The signal to send to the group
- * @returns 0 on success, otherwise error code 
- */
-int signal_sendGroup(pid_t pgid, int signal);
-
-/**
  * @brief sigprocmask
  */
 int signal_procmask(int how, const sigset_t *set, sigset_t *oset);

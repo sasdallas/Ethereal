@@ -91,6 +91,8 @@ static ssize_t keyboard_read(devfs_node_t *n, loff_t off, size_t size, char *buf
 
         if (flags & O_NONBLOCK) {
             spinlock_release(&keyboard_buffer_lock);
+            poll_exit(w);
+            poll_destroyWaiter(w);
             return -EAGAIN;
         }
         spinlock_release(&keyboard_buffer_lock);
@@ -150,6 +152,8 @@ static ssize_t mouse_read(devfs_node_t *n, loff_t off, size_t size, char *buffer
 
         if (flags & O_NONBLOCK) {
             spinlock_release(&mouse_buffer_lock);
+            poll_exit(w);
+            poll_destroyWaiter(w);
             return -EAGAIN;
         }
         spinlock_release(&mouse_buffer_lock);

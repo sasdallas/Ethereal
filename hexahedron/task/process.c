@@ -21,6 +21,8 @@
 #include <kernel/panic.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
 #include <kernel/loader/elf.h>
 #include <kernel/loader/elfv2.h>
 #include <kernel/misc/util.h>
@@ -59,23 +61,16 @@ void process_init() {
     // Mark PID 0 as in use
     process_allocatePID(); // !!!
 
-    // Initialize tree
     process_tree = tree_create("process tree");
     process_list = list_create("process list");
 
-    // Initialize scheduler
     sched_init();
-
-    // Initialize futexes
     futex_init();
+    session_init();
 
-    // Spawn idle task for this CPU
     current_cpu->idle_process = process_spawnIdleTask();
-
-    // Spawn init task for this CPU
     current_cpu->current_process = process_spawnInit();
-    
-    // Start the scheduler for this processor
+
     sched_start();
 
     LOG(INFO, "Process system initialized\n");
@@ -274,14 +269,14 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
     }
 
     if (parent) {
-        process->uid = parent->uid;
-        process->gid = parent->gid;
-        process->euid = parent->euid;
-        process->egid = parent->egid;
-        process->pgid = parent->pgid;
-        process->sid = parent->sid;
+        process->cred.uid = parent->cred.uid;
+        process->cred.gid = parent->cred.gid;
+        process->cred.euid = parent->cred.euid;
+        process->cred.egid = parent->cred.egid;
+        process->cred.suid = parent->cred.suid;
+        process->cred.sgid = parent->cred.sgid;
     } else {
-        process->gid = process->uid = 0;
+        process->cred.gid = process->cred.uid = 0;
     }
 
     process->thread_list = NULL;
@@ -338,6 +333,11 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         spinlock_acquire(&process_list_lock);
         list_append_node(process_list, &process->proc_list_node);
         spinlock_release(&process_list_lock);
+    }
+
+    // Initialize sessions
+    if ((process->flags & PROCESS_KERNEL) == 0) {
+        session_initProcess(parent, process);
     }
 
     // Create the SystemFS runtime
@@ -460,6 +460,7 @@ void process_destroyZombie(process_t *proc) {
     list_delete(process_list, &proc->proc_list_node);
     spinlock_release(&process_list_lock);
 
+    session_destroyProcess(proc);
     process_freePID(proc->pid);
     kfree(proc->name);
     kfree(proc);
@@ -535,8 +536,6 @@ extern void systemfs_proc_destroy(process_t *proc);
 process_t *process_spawnInit() {
     // Create a new process
     process_t *init = process_createStructure(NULL, "init", 0);
-    init->sid = 1;
-    init->pgid = 1;
 
     // !!!: hack
     process_freePID(init->pid);
@@ -659,14 +658,17 @@ int process_executeCommon(elf_image_t *img) {
     // Initialize the context
     arch_initialize_context(proc->main_thread, img->entrypoint, proc->main_thread->stack);
 
-    // We own this process
+    // Kill off the old thread
+    spinlock_acquire(&proc->thread_lock);
     thread_t *old = current_cpu->current_thread;
     current_cpu->current_thread = proc->main_thread;
     if (old) {
-        // !!! SEVERE HACK. BY SETTING OLD->KSTACK = 0 THEN IT WONT BE FREED IN THREAD_DESTROY
         old->kstack = 0;
-        // thread_destroy(old);
+        old->status = THREAD_STATUS_STOPPED;
+        old->next = proc->thread_list;
+        proc->thread_list = old;
     }
+    spinlock_release(&proc->thread_lock);
 
     // Done with ELF
     return 0; // Enough loaded
@@ -758,6 +760,20 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Load the file's image
     r = elf_loadImage(&file_img);
     assert(r == 0); // TODO: error handling
+
+    // SUID and SGID
+    if (!file->inode->mount || !(file->inode->mount->flags & MS_NOSUID)) {
+        if (file->inode->attr.mode & S_ISUID) {
+            proc->cred.euid = file->inode->attr.uid;
+        }
+
+        if (file->inode->attr.mode & S_ISGID) {
+            proc->cred.egid = file->inode->attr.gid;
+        }
+    }
+
+    proc->cred.suid = proc->cred.euid;
+    proc->cred.sgid = proc->cred.egid;
 
     // Now we need to start pushing argc, argv, and envp onto the thread stack
     // Calculate envc
@@ -884,6 +900,15 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     uintptr_t entry;
     assert(!process_executeCommon(&img));
     current_cpu->current_process->exe_image = file;
+
+    // SUID and SGID
+    if (!file->inode->mount || !(file->inode->mount->flags & MS_NOSUID)) {
+        if (file->inode->attr.mode & S_ISUID) current_cpu->current_process->cred.euid = file->inode->attr.uid;
+        if (file->inode->attr.mode & S_ISGID) current_cpu->current_process->cred.egid = file->inode->attr.gid;
+    }
+
+    current_cpu->current_process->cred.suid = current_cpu->current_process->cred.euid;
+    current_cpu->current_process->cred.sgid = current_cpu->current_process->cred.egid;
 
     // Build the auxiliary vector
     elf_auxv_t auxv;
@@ -1093,8 +1118,8 @@ long process_waitpid(pid_t pid, int *wstatus, int options) {
         foreach(cnode, proc->node->children) {
             process_t *child = ((tree_node_t*)cnode->value)->value;
             
-            if (pid < -1 && child->gid != (gid_t)(-pid)) continue;
-            else if (pid == 0 && child->gid != proc->gid) continue;
+            if (pid < -1 && child->cred.gid != (gid_t)(-pid)) continue;
+            else if (pid == 0 && child->cred.gid != proc->cred.gid) continue;
             else if (pid > 0 && child->pid != pid) continue;
             
             if (child->state == PROCESS_ZOMBIE) {

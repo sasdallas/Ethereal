@@ -17,7 +17,7 @@
 /**** INCLUDES ****/
 #include <stdint.h>
 #include <kernel/fs/devfs.h>
-#include <structs/circbuf.h>
+#include <structs/ringbuffer.h>
 
 #define _GNU_SOURCE
 #include <termios.h>
@@ -25,18 +25,22 @@
 
 /**** TYPES ***/
 
+struct session;
+struct process_group;
+
 typedef struct tty {
     char *name;                         // Name of the TTY
     mutex_t mut;                        // Locking mutex
     struct termios tios;                // Termios
     struct winsize winsz;               // Window size
-    circbuf_t *read_buf;                // TTY read buffer
+    ringbuffer_t *read_buf;             // TTY read buffer
     char *canon_buffer;                 // For ICANON
     size_t canon_idx;
     poll_event_t event;                 // Poll event to attach
 
-    pid_t control_proc;
-    pid_t fg_proc;
+    spinlock_t job_lock;
+    struct session *session;
+    struct process_group *foreground;
 
     // User-provided functions
     int (*write)(struct tty *tty, char *buffer, size_t size);
@@ -52,7 +56,8 @@ typedef struct tty {
 
 typedef struct pty {
     tty_t *slave;                       // Slave TTY
-    circbuf_t *out;                     // TTY output buffer
+    mutex_t mut;                        // Locking mutex
+    ringbuffer_t *out;                  // TTY output buffer
     poll_event_t out_event;             // Output event
     devfs_node_t *master_node;
     bool is_nonblocking;                // Is non blocking hack

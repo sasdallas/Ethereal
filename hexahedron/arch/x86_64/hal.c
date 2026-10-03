@@ -350,7 +350,7 @@ int hal_setPowerState(int state) {
 void hal_prepareForPowerState(int state) {
     if (state == HAL_POWER_SHUTDOWN || state == HAL_POWER_REBOOT) {
         smp_disableCores();
-    } 
+    }
 
     dprintf(ERR, "All cores disabled. Ready to reboot.\n");
 }
