@@ -295,11 +295,6 @@ void usb_removeDevice(usb_device_t *device) {
     DLIST_REMOVE(&usb_devices, usb_device_t, device, node);
     mutex_release(&usb_device_lock);
 
-    // Close the control pipe first, then close the rest.
-    if (device->control != NULL) {
-        usb_closePipe(device->control);
-    }
-
     // TODO: Make this safe under all conditions
     //       It's safe enough to unplug devices and mostly be okay, since multi-threaded processing should usually
     //       stop everything upon seeing that the pipe is closed butttt who knows.
@@ -328,6 +323,10 @@ void usb_removeDevice(usb_device_t *device) {
 
         kfree(config->interfaces);
         usb_freeObject(USB_OBJECT_TYPE_CONFIGURATION, config);
+    }
+
+    if (device->control != NULL) {
+        usb_closePipe(device->control);
     }
 
     // All pipes are closed, notify the HC of the device removal and allow it
