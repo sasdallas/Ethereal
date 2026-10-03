@@ -567,6 +567,7 @@ void cache_destroy(vfs_inode_t *inode) {
     xa_foreach(&c->xa, idx, ent) {
         page_entry_t *e = (page_entry_t*)ent;
         assert(!PAGE_IS_DIRTY(e->page));
+        __atomic_sub_fetch(&pages_active, 1, __ATOMIC_SEQ_CST);
         pmm_releasePage(e->page);
         slab_free(page_entry_cache, e);
     }
@@ -648,6 +649,8 @@ static void cache_insertDirty(page_cache_t *c, page_entry_t *e) {
  * @param range The range to mark as dirty
  */
 void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
+    if (range->npages == 0) return;
+
     // The pages are fully sequential
     bool have_dirty = false;
     int ndirty = 0;
@@ -672,6 +675,11 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
             have_dirty = true;
         }
     }
+
+    // Hack to update mtime
+    vfs_inode_t *inode = pmm_page(range->pages[0])->inode;
+    vfs_inode_attr_t attr = { .mtime = VFS_NOW() };
+    vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_MTIME);
 
     if (!have_dirty) return;
 
