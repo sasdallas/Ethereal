@@ -47,6 +47,13 @@ typedef struct unix_connection_req {
     struct thread *thr;
 } unix_connection_req_t; 
 
+typedef struct unix_control_message {
+    size_t position;
+    size_t length;
+    size_t file_count;
+    vfs_file_t *files[];
+} unix_control_message_t;
+
 typedef struct unix_socket {
     struct unix_socket *peer;   // socket peer, a ref is held on them
     char *path;                 // bound path
@@ -63,6 +70,9 @@ typedef struct unix_socket {
     struct {
         ringbuffer_t *rb;
         queue_rb_t queue; // for SEQPACKET/DGRAM
+        queue_rb_t control;
+        size_t bytes_read;
+        size_t bytes_written;
     } pkt;
 
     struct {

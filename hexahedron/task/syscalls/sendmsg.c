@@ -15,6 +15,5 @@
 #include <kernel/drivers/net/socket.h>
 
 long sys_sendmsg(int socket, struct msghdr *message, int flags) {
-    if (flags) SYSCALL_LOG(WARN, "sys_sendmsg: flags are 0x%x\n", flags);
     return socket_sendmsg(socket, message, flags);
 }

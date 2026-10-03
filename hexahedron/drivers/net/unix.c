@@ -51,8 +51,8 @@ static void unix_free(unix_socket_t *usock);
 
 /* Update cred */
 #define UNIX_UPDATE_CRED(usock)     (usock)->cred.pid = current_cpu->current_process->pid;\
-                                    (usock)->cred.uid = current_cpu->current_process->uid;\
-                                    (usock)->cred.gid = current_cpu->current_process->gid;
+                                    (usock)->cred.uid = current_cpu->current_process->cred.uid;\
+                                    (usock)->cred.gid = current_cpu->current_process->cred.gid;
 
 /* Ops */
 static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen);
@@ -110,8 +110,18 @@ static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t ad
 
     // TODO: this inode must be created as a socket
     vfs_inode_t *i;
-    int r = vfs_create(path, 0755, &i);
+    process_t *proc = current_cpu->current_process;
+    int r = vfs_create(path, 0777 & ~proc->umask, &i);
     if (r != 0) {
+        mutex_release(&usock->lock);
+        return r;
+    }
+
+    // When creating a socket it must be owned by the EUID/EGID and not UID/GID
+    r = vfs_chown(i, proc->cred.euid, proc->cred.egid);
+    if (r != 0) {
+        vfs_unlinkat(NULL, path);
+        inode_release(i);
         mutex_release(&usock->lock);
         return r;
     }
@@ -123,6 +133,7 @@ static int unix_bind(sock_t *sock, const struct sockaddr *sockaddr, socklen_t ad
     // Create socket datastructures if they dont exist
     if (usock->pkt.rb == NULL) {
         usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+        QUEUE_RB_INIT(&usock->pkt.control, UNIX_DEFAULT_QUEUE_SIZE);
         if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
             QUEUE_RB_INIT(&usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
         }
@@ -242,10 +253,14 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
 
     // we need to initialize the new unix socket's data structures
     new_usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+    QUEUE_RB_INIT(&new_usock->pkt.control, UNIX_DEFAULT_QUEUE_SIZE);
     new_usock->path = strdup(usock->path);
+    memcpy(&new_usock->bound, &usock->bound, sizeof(struct sockaddr_un));
     if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
         QUEUE_RB_INIT(&new_usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
     }
+
+    UNIX_UPDATE_CRED(new_usock);
 
     // advance both sockets to connected state
     UNIX_STATE_CHANGE(client, UNIX_SOCK_STATE_CONNECTED); // todo racey
@@ -258,17 +273,20 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
     if (thr) sleep_wakeup(thr);
 
     // we need to fill sockaddr if they want if
-    if (sockaddr) {
+    if (sockaddr && addrlen) {
         // TODO: This is buggy
-        assert(addrlen && (*addrlen) >= sizeof(struct sockaddr_un));
+        assert((*addrlen) >= sizeof(sa_family_t));
 
         struct sockaddr_un *un = (struct sockaddr_un *)sockaddr;
         un->sun_family = AF_UNIX;
         
-        if (client->path) {
-            strncpy(un->sun_path, client->path, 108);
-        } else {
-            un->sun_path[0] = 0;
+        size_t rem = sizeof(struct sockaddr_un) - sizeof(sa_family_t);
+        if (rem) {
+            if (client->path) {
+                strncpy(un->sun_path, client->path, rem);
+            } else {
+                un->sun_path[0] = 0;
+            }
         }
     }
 
@@ -281,7 +299,7 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
  * @brief unix connect
  */
 static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t addrlen) {
-    if (addrlen < sizeof(struct sockaddr_un)) {
+    if (addrlen < sizeof(sa_family_t)+1) {
         LOG(ERR, "Tried to connect but passed an address length of %d\n", addrlen);
         return -EINVAL;
     }
@@ -301,7 +319,7 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
 
     if (usock->state == UNIX_SOCK_STATE_CONNECTING) {
         mutex_release(&usock->lock);
-        return -EAGAIN;
+        return -EALREADY;
     }
 
     if (usock->state != UNIX_SOCK_STATE_INIT) {
@@ -314,6 +332,7 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     // Create the datastructures for the socket, if they dont exist
     if (usock->pkt.rb == NULL) {
         usock->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+        QUEUE_RB_INIT(&usock->pkt.control, UNIX_DEFAULT_QUEUE_SIZE);
         if (sock->type == SOCK_DGRAM || sock->type == SOCK_SEQPACKET) {
             QUEUE_RB_INIT(&usock->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
         }
@@ -412,7 +431,7 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
     mutex_release(&serv->lock);
     
     if (sock_nonblocking(sock)) {
-        return (usock->state == UNIX_SOCK_STATE_CONNECTED) ? 0 : -EWOULDBLOCK;
+        return (usock->state == UNIX_SOCK_STATE_CONNECTED) ? 0 : -EINPROGRESS;
     } else {
         int w = sleep_enter();
         if (w != WAKEUP_ANOTHER_THREAD) {
@@ -429,11 +448,152 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
 }
 
 /**
+ * @brief Release a UNIX control message
+ */
+static void unix_freeControl(unix_control_message_t *control) {
+    for (size_t i = 0; i < control->file_count; i++) {
+        FD_FINISH(control->files[i]);
+    }
+
+    kfree(control);
+}
+
+/**
+ * @brief Create a control message
+ */
+static int unix_createControl(struct msghdr *msg, unix_control_message_t **output) {
+    if (msg->msg_controllen < sizeof(struct cmsghdr)) {
+        LOG(WARN, "msg_controllen = %d\n", msg->msg_controllen);
+        return -EINVAL;
+    }
+
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
+    if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
+        LOG(WARN, "Unexpected cmsg_level %d cmsg_type %d\n", cmsg->cmsg_level, cmsg->cmsg_type);
+        return -EINVAL;
+    }
+
+    if (cmsg->cmsg_len < CMSG_LEN(sizeof(int)) || cmsg->cmsg_len > msg->msg_controllen) {
+        LOG(ERR, "Invalid cmsg_len %d\n", cmsg->cmsg_len);
+        return -EINVAL;
+    }
+
+    size_t data_size = cmsg->cmsg_len - CMSG_LEN(0);
+    if (data_size % sizeof(int)) {
+        LOG(ERR, "Invalid data_size %d\n", data_size);
+        return -EINVAL;
+    }
+
+    size_t count = data_size / sizeof(int);
+    if (count > PROCESS_MAX_FDS) {
+        LOG(ERR, "Too many file descriptors in SCM_RIGHTS (%d)\n", count);
+        return -EMSGSIZE;
+    }
+
+    // Create the control message
+    unix_control_message_t *control = kmalloc(sizeof(unix_control_message_t) + count * sizeof(vfs_file_t*));
+    control->position = 0;
+    control->length = 0;
+    control->file_count = count;
+
+    // Gather fds into message
+    int *fds = (int*)CMSG_DATA(cmsg);
+    for (size_t i = 0; i < count; i++) {
+        int r = fd_get(fds[i], &control->files[i]);
+        if (r != 0) {
+            control->file_count = i;
+            unix_freeControl(control);
+            return r;
+        }
+    }
+
+    *output = control;
+    return 0;
+}
+
+/**
+ * @brief Process a control message
+ */
+static int unix_processControl(struct msghdr *msg, int flags, size_t capacity, unix_control_message_t *control) {
+    size_t count = control->file_count;
+    while (count && CMSG_SPACE(count * sizeof(int)) > capacity) count--;
+
+    if (count != control->file_count) {
+        msg->msg_flags |= MSG_CTRUNC;
+    }
+    
+    if (count == 0 || msg->msg_control == NULL) {
+        return 0;
+    }
+
+    struct cmsghdr *cmsg = msg->msg_control;
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(count * sizeof(int));
+
+    int *fds = (int*)CMSG_DATA(cmsg);
+    for (size_t i = 0; i < count; i++) {
+        FD_HOLD(control->files[i]);
+        int r = fd_add(control->files[i], &fds[i]);
+        if (r != 0) {
+            FD_FINISH(control->files[i]);
+            for (size_t j = 0; j < i; j++) fd_remove(fds[j]);
+            return r;
+        }
+
+        if (flags & MSG_CMSG_CLOEXEC) {
+            fd_setCloseExecute(fds[i], true);
+        }
+    }
+
+    msg->msg_controllen = CMSG_SPACE(count * sizeof(int));
+    return 0;
+}
+
+/**
+ * @brief Receive a control message
+ */
+static int unix_receiveControl(unix_socket_t *usock, struct msghdr *msg, int flags, size_t capacity, size_t *length) {
+    if (queue_rb_empty(&usock->pkt.control)) return 0;
+
+    unix_control_message_t *control = NULL;
+    assert(queue_rb_peek(&usock->pkt.control, (void**)&control) == 0);
+
+    if (control->position > usock->pkt.bytes_read) {
+        *length = min(*length, control->position - usock->pkt.bytes_read);
+    } else if (*length) {
+        int r = unix_processControl(msg, flags, capacity, control);
+        if (r != 0) return r;
+
+        *length = min(*length, control->length);
+
+        if ((flags & MSG_PEEK) == 0) {
+            assert(queue_rb_pop(&usock->pkt.control, (void**)&control) == 0);
+            unix_freeControl(control);
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Send control message
+ */
+static void unix_sendControl(unix_socket_t *tgt, unix_control_message_t *control, size_t written) {
+    control->position = tgt->pkt.bytes_written;
+    control->length = written;
+    queue_rb_push(&tgt->pkt.control, control);
+}
+
+/**
  * @brief unix recvmsg
  */
 static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     unix_socket_t *usock = USOCK(sock);
     if (msg->msg_iovlen == 0) return 0;
+
+    size_t control_capacity = msg->msg_controllen;
+    msg->msg_controllen = 0;
 
     // No socket types support this yet unfortunately
     if (msg->msg_name != NULL) {
@@ -441,8 +601,6 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     mutex_acquire(&usock->lock);
-
-    assert(msg->msg_iovlen == 1 && "recvmsg multiple iovecs not supported");
 
     if (usock->state != UNIX_SOCK_STATE_CONNECTED && sock->type != SOCK_DGRAM) {
         mutex_release(&usock->lock);
@@ -452,6 +610,11 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     for (;;) {
         poll_events_t ev = unix_poll_events_inner(usock);
         if (ev & POLLIN) break;
+
+        if ((ev & POLLHUP) && sock->type != SOCK_DGRAM) {
+            mutex_release(&usock->lock);
+            return 0;
+        }
 
         if (sock_nonblocking(sock)) {
             mutex_release(&usock->lock);
@@ -472,20 +635,22 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
         mutex_acquire(&usock->lock);
 
-        if ((unix_poll_events_inner(usock) & POLLIN) == 0) {
-            LOG(INFO, "why were we woken up?\n");
-        }
     }
 
-    // We should have available content
-    // TODO: receive control message
+    // temporary iov hack
+    size_t length = 0;
+    for (int i = 0; i < msg->msg_iovlen; i++) length += msg->msg_iov[i].iov_len;
+    
+    // Receive control message if possible
+    int r = unix_receiveControl(usock, msg, flags, control_capacity, &length);
+    if (r != 0) {
+        mutex_release(&usock->lock);
+        return r;
+    }
 
-    ssize_t gotten = 0;
-    size_t length = msg->msg_iov[0].iov_len;
+    size_t pkt_length = 0;
     if (sock->type == SOCK_SEQPACKET || sock->type == SOCK_DGRAM) {
-        size_t pkt_length;
-
-        if (msg->msg_flags & MSG_PEEK) {
+        if (flags & MSG_PEEK) {
             assert(queue_rb_peek(&usock->pkt.queue, (void**)&pkt_length) == 0);
         } else {
             assert(queue_rb_pop(&usock->pkt.queue, (void**)&pkt_length) == 0);
@@ -500,10 +665,30 @@ static ssize_t unix_recvmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     ssize_t got = 0;
-    if (msg->msg_flags & MSG_PEEK) {
-        got = ringbuffer_peek(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
+    if (flags & MSG_PEEK) {
+        // ringbuffer_peek can only peek from the start of the buffer, so only the first vector is filled
+        got = ringbuffer_peek(usock->pkt.rb, msg->msg_iov[0].iov_base, min(length, msg->msg_iov[0].iov_len));
     } else {
-        got = ringbuffer_read(usock->pkt.rb, msg->msg_iov[0].iov_base, length);
+        for (int i = 0; i < msg->msg_iovlen && (size_t)got < length; i++) {
+            size_t chunk = min(msg->msg_iov[i].iov_len, length - got);
+            if (!chunk) continue;
+
+            ssize_t r = ringbuffer_read(usock->pkt.rb, msg->msg_iov[i].iov_base, chunk);
+            if (r <= 0) break;
+            got += r;
+            if ((size_t)r < chunk) break;
+        }
+
+        if (got >= 0 && (sock->type == SOCK_SEQPACKET || sock->type == SOCK_DGRAM)) {
+            if (pkt_length > (size_t)got) {
+                ringbuffer_discard(usock->pkt.rb, pkt_length - got);
+            }
+
+            usock->pkt.bytes_read += pkt_length;
+        } else if (got > 0) {
+            usock->pkt.bytes_read += got;
+        }
+
         if (got && (usock->state == UNIX_SOCK_STATE_CONNECTED)) {
             poll_signal(&usock->peer->event, POLLOUT);
         }
@@ -580,6 +765,17 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     unix_socket_t *usock = USOCK(sock);
     if (msg->msg_iovlen == 0) return 0;
 
+    size_t length = 0;
+    for (int i = 0; i < msg->msg_iovlen; i++) length += msg->msg_iov[i].iov_len;
+
+    // Create the control message if needed
+    unix_control_message_t *control = NULL;
+    if (msg->msg_control != NULL && msg->msg_controllen != 0) {
+        if (length == 0) return -EINVAL;
+        int r = unix_createControl(msg, &control);
+        if (r != 0) return r;
+    }
+
     // Other socket don't suport this yet
     if (sock->type != SOCK_DGRAM) {
         assert(msg->msg_name == NULL);
@@ -587,14 +783,13 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     mutex_acquire(&usock->lock);
 
-    assert(msg->msg_iovlen == 1 && "sendmsg multiple iovecs not supported");
-
     // !!! This is racey! Need to redo the locking pattern on this...
     unix_socket_t *tgt;
     int r = unix_resolve(usock, msg, &tgt);
     mutex_release(&usock->lock);
 
     if (r != 0) {
+        if (control) unix_freeControl(control);
         return r;
     }
 
@@ -603,19 +798,33 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
 
     // Wait until space is available
     for (;;) {
+        if (sock->type != SOCK_DGRAM && tgt->state != UNIX_SOCK_STATE_CONNECTED) {
+            unix_unlock(usock, tgt);
+            UNIX_RELEASE(tgt);
+            if (control) unix_freeControl(control);
+
+            if (!(flags & MSG_NOSIGNAL)) {
+                signal_send(current_cpu->current_process, SIGPIPE);
+            }
+            
+            return -EPIPE;
+        }
+
         if (sock->type == SOCK_STREAM) {
             poll_events_t ev = unix_poll_events_inner(usock);
-            if (ev & POLLOUT) break;
+            if ((ev & POLLOUT) && (!control || queue_rb_space(&tgt->pkt.control))) break;
         } else {
             // as message boundaries need to be preserved this doesnt work
             // we need to have enough content and a non-empty queue
-            if (ringbuffer_remaining_write(tgt->pkt.rb) >= msg->msg_iov[0].iov_len && queue_rb_space(&tgt->pkt.queue)) {
+            if (ringbuffer_remaining_write(tgt->pkt.rb) >= length && queue_rb_space(&tgt->pkt.queue) && (!control || queue_rb_space(&tgt->pkt.control))) {
                 break;
             }
         }
 
         if (sock_nonblocking(sock)) {
             unix_unlock(usock, tgt);
+            UNIX_RELEASE(tgt);
+            if (control) unix_freeControl(control);
             return -EWOULDBLOCK;
         }
 
@@ -628,6 +837,8 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
         poll_destroyWaiter(w);
 
         if (ret != 0) {
+            UNIX_RELEASE(tgt);
+            if (control) unix_freeControl(control);
             return ret;
         }
 
@@ -635,21 +846,39 @@ static ssize_t unix_sendmsg(sock_t *sock, struct msghdr *msg, int flags) {
     }
 
     // !!! we dont need to hold the lock for usock here
-    ssize_t written = ringbuffer_write(tgt->pkt.rb, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
+    ssize_t written = 0;
+    for (int i = 0; i < msg->msg_iovlen; i++) {
+        if (!msg->msg_iov[i].iov_len) continue;
+
+        ssize_t r = ringbuffer_write(tgt->pkt.rb, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
+        if (r <= 0) break;
+        written += r;
+        if ((size_t)r < msg->msg_iov[i].iov_len) break;
+    }
+
+    if (control) {
+        if (written > 0) {
+            unix_sendControl(tgt, control, written);
+            control = NULL; // stop it from being freed
+        }
+    }
+
+    tgt->pkt.bytes_written += written;
 
     if (sock->type == SOCK_SEQPACKET || sock->type == SOCK_DGRAM) {
-        assert(written == (ssize_t)msg->msg_iov[0].iov_len);
+        assert(written == (ssize_t)length);
         queue_rb_push(&tgt->pkt.queue, (void*)(uintptr_t)written);
     }
 
     if (written > 0) {
         poll_signal(&tgt->event, POLLIN);
     }
-    
+
     unix_unlock(usock, tgt);
 
     // tgt gets a reference regardless
     UNIX_RELEASE(tgt);
+    if (control) unix_freeControl(control);
     return written;
 }
 
@@ -677,7 +906,9 @@ static poll_events_t unix_poll_events_inner(unix_socket_t *usock) {
             if (usock->peer->state != UNIX_SOCK_STATE_CONNECTED) {
                 revents |= POLLHUP;
             } else {
-                if (ringbuffer_remaining_write(usock->peer->pkt.rb)) {
+                // Packet sockets need a queue slot as well as byte space.
+                if (ringbuffer_remaining_write(usock->peer->pkt.rb) &&
+                    (usock->sock->type == SOCK_STREAM || queue_rb_space(&usock->peer->pkt.queue))) {
                     revents |= POLLOUT;
                 }
             }
@@ -720,16 +951,20 @@ static int unix_close(sock_t *sock) {
 
     LOG(DEBUG, "unix_close\n");
 
-    mutex_acquire(&usock->lock);
-    if (usock->state == UNIX_SOCK_STATE_CONNECTED) {
-        UNIX_RELEASE(usock->peer);
-        poll_signal(&usock->peer->event, POLLHUP);
-    } else {
-        assert(usock->state != UNIX_SOCK_STATE_CONNECTING && "close while connecting is stupid not impl'd");
-    }
-    
+    unix_socket_t *peer = usock->state == UNIX_SOCK_STATE_CONNECTED ? usock->peer : NULL;
+    if (peer) unix_lock(usock, peer);
+    else mutex_acquire(&usock->lock);
+
+    assert(usock->state != UNIX_SOCK_STATE_CONNECTING && "close while connecting is stupid not impl'd");
     UNIX_STATE_CHANGE(usock, UNIX_SOCK_STATE_CLOSED);
-    mutex_release(&usock->lock);
+
+    if (peer) {
+        poll_signal(&peer->event, POLLHUP);
+        unix_unlock(usock, peer);
+        UNIX_RELEASE(peer);
+    } else {
+        mutex_release(&usock->lock);
+    }
 
     UNIX_RELEASE(usock);
     return 0;
@@ -739,20 +974,105 @@ static int unix_close(sock_t *sock) {
  * @brief unix getsockname
  */
 static int unix_getsockname(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
-    return -ENOTSUP;
+    unix_socket_t *usock = USOCK(sock);
+
+    // Create a copy of the socket's address
+    mutex_acquire(&usock->lock);
+    struct sockaddr_un out = { 0 };
+    out.sun_family = AF_UNIX;
+
+    socklen_t len = sizeof(sa_family_t);
+    if (usock->path) {
+        strncpy(out.sun_path, usock->bound.sun_path, sizeof(out.sun_path) - 1);
+        len = __builtin_offsetof(struct sockaddr_un, sun_path) + strlen(out.sun_path) + 1;
+    }
+    mutex_release(&usock->lock);
+
+    // Copy it out
+    size_t to_copy = min(len, *address_len);
+    memcpy(addr, &out, to_copy);
+    *address_len = len;
+    return 0;
 }
 
 /**
  * @brief unix getpeername
  */
 static int unix_getpeername(sock_t *sock, struct sockaddr *addr, socklen_t *address_len) {
-    return -ENOTSUP;
+    unix_socket_t *usock = USOCK(sock);
+
+    // Get the peer
+    mutex_acquire(&usock->lock);
+    if (UNIX_GET_STATE(usock) != UNIX_SOCK_STATE_CONNECTED || !usock->peer) {
+        mutex_release(&usock->lock);
+        return -ENOTCONN;
+    }
+
+    unix_socket_t *peer = usock->peer;
+    UNIX_HOLD(peer);
+    mutex_release(&usock->lock);
+
+    // Create a copy of the peer's bound socket
+    mutex_acquire(&peer->lock);
+    struct sockaddr_un out = { 0 };
+    out.sun_family = AF_UNIX;
+    socklen_t len = sizeof(sa_family_t);
+    if (peer->path) {
+        strncpy(out.sun_path, peer->bound.sun_path, sizeof(out.sun_path) - 1);
+        len = __builtin_offsetof(struct sockaddr_un, sun_path) + strlen(out.sun_path) + 1;
+    }
+    mutex_release(&peer->lock); 
+    UNIX_RELEASE(peer);
+
+    // Copy it out
+    size_t to_copy = min(len, *address_len);
+    memcpy(addr, &out, to_copy);
+    *address_len = len;
+    return 0;
 }
 
 /**
  * @brief unix getsockopt
  */
 static int unix_getsockopt(sock_t *sock, int level, int option_name, void *option_value, socklen_t *option_len) {
+    unix_socket_t *usock = USOCK(sock);
+
+    if (level != SOL_SOCKET) {
+        return -ENOPROTOOPT;
+    }
+
+    switch (option_name) {
+        case SO_PEERCRED: {
+            if (!option_value || !option_len) {
+                // dbus tried this at one point
+                LOG(ERR, "SO_PEERCRED with stupid parameters\n");
+                return -EINVAL;
+            }
+
+            size_t to_copy = min(*option_len, sizeof(struct ucred));
+
+            // !!! racey
+            mutex_acquire(&usock->lock);
+            if (usock->state != UNIX_SOCK_STATE_CONNECTED || !usock->peer) {
+                mutex_release(&usock->lock);
+                return -ENOTCONN;
+            }
+
+            unix_socket_t *peer = usock->peer;
+            UNIX_HOLD(peer);
+            mutex_release(&usock->lock);
+
+            mutex_acquire(&peer->lock);
+            memcpy(option_value, &peer->cred, to_copy);
+            mutex_release(&peer->lock);
+
+            UNIX_RELEASE(peer);
+
+            *option_len = sizeof(struct ucred);
+            return 0;
+        }
+    }
+
     return -ENOPROTOOPT;
 }
 
@@ -777,6 +1097,14 @@ static void unix_free(unix_socket_t *usock) {
 
     if (usock->pkt.rb) {
         ringbuffer_destroy(usock->pkt.rb);
+
+        if (usock->pkt.control) {
+            unix_control_message_t *control;
+            while (queue_rb_pop(&usock->pkt.control, (void**)&control) == 0) {
+                unix_freeControl(control);
+            }
+            QUEUE_RB_DEINIT(&usock->pkt.control);
+        }
         
         if (usock->pkt.queue) {
             QUEUE_RB_DEINIT(&usock->pkt.queue);
@@ -831,6 +1159,8 @@ static int unix_socketpair(int type, int protocol, sock_t* output[2]) {
 
     au->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
     bu->pkt.rb = ringbuffer_create(UNIX_DEFAULT_RB_SIZE);
+    QUEUE_RB_INIT(&au->pkt.control, UNIX_DEFAULT_QUEUE_SIZE);
+    QUEUE_RB_INIT(&bu->pkt.control, UNIX_DEFAULT_QUEUE_SIZE);
     if (type == SOCK_DGRAM || type == SOCK_SEQPACKET) {
         QUEUE_RB_INIT(&au->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);
         QUEUE_RB_INIT(&bu->pkt.queue, UNIX_DEFAULT_QUEUE_SIZE);

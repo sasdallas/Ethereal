@@ -40,7 +40,7 @@ int last_socket_id = 0;
 #define SOCKET_VALIDATE_OPT(optvalue, optlen) SYSCALL_VALIDATE_PTR_SIZE(optvalue, optlen)
 
 /* Set/get socket option in flags */
-#define SOCKET_CHECK_LEN(len, needed) { if (*len < sizeof(needed)) { return 0; }; }
+#define SOCKET_CHECK_LEN(len, needed) { if (*len < sizeof(needed)) { return -EINVAL; }; }
 #define SOCKET_CHANGE_FLAG(flag, value) { if (value) { sock->flags |= flag; } else { sock->flags &= ~(flag); } };
 #define SOCKET_GET_FLAG(flag, value, len) { if (sock->flags & flag) { *(int*)value = 1; } else { *(int*)value = 0; }; if (*len > sizeof(int)) *len = sizeof(int); }
 
@@ -293,15 +293,18 @@ static int socket_default_getsockopt(sock_t *sock, int option_name, void *option
             return 0;
         case SO_TYPE:
             SOCKET_CHECK_LEN(option_len, int);
-            *((int*)option_len) = sock->type;
+            *((int*)option_value) = sock->type;
+            *option_len = sizeof(int);
             return 0;
         case SO_PROTOCOL:
             SOCKET_CHECK_LEN(option_len, int);
-            *((int*)option_len) = sock->protocol;
+            *((int*)option_value) = sock->protocol;
+            *option_len = sizeof(int);
             return 0;
         case SO_DOMAIN:
             SOCKET_CHECK_LEN(option_len, int);
-            *((int*)option_len) = sock->domain;
+            *((int*)option_value) = sock->domain;
+            *option_len = sizeof(int);
             return 0;
     }
 
