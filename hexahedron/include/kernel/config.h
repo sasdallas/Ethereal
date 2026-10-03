@@ -29,7 +29,7 @@
 #define MAX_CPUS            32
 
 /* Default target scheduler */
-#define KERNEL_DEFAULT_SCHEDULER "dumb"
+#define KERNEL_DEFAULT_SCHEDULER "ule"
 
 /**** EXPOSED ****/
 
