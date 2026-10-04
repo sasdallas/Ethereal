@@ -156,6 +156,26 @@ int celestial_initDecorationsDefault(struct window *win);
 decor_handler_t *celestial_getDefaultDecorations();
 
 /**
+ * @brief Get a decoration theme
+ * @param name The name of the decoration theme
+ * @returns The theme or NULL
+ */
+decor_handler_t *celestial_getDecorationTheme(char *name);
+
+/**
+ * @brief Set a window theme
+ * @param win The window to set the theme on
+ * @param name Name of the theme (or NULL to use default)
+ * @returns 0 on success
+ */
+int celestial_setWindowTheme(struct window *win, char *name);
+
+/**
+ * @brief Update default theme
+ */
+void celestial_updateDefaultTheme(char *name);
+
+/**
  * @brief Get boundaries for decoration
 * @param handler The decoration handler to get boundaries for
  */

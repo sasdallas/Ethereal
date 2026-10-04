@@ -387,6 +387,19 @@ void input_get_mouse_pos(int *x, int *y) {
 
 
 void input_set_mouse_capture(wm_window_t *win) {
+    if (SERVER->mouse_capture == win) return;
+
+    if (win) {
+        damage_lock();
+        damage_add(input_cursorRect(SERVER->mouse_x, SERVER->mouse_y));
+        SERVER->mouse_x = renderer_getWidth() / 2;
+        SERVER->mouse_y = renderer_getHeight() / 2;
+        damage_unlock();
+
+        SERVER->mouse_window = win;
+        SERVER->mouse_grab = NULL;
+    }
+
     SERVER->mouse_capture = win;
 }
 

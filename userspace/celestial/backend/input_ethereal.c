@@ -1,5 +1,5 @@
 /**
- * @file userspace/celestia2/input.c
+ * @file userspace/celestial/input.c
  * @brief Input system for celestial
  * 
  * 
@@ -40,9 +40,9 @@ void *mouse_thread(void *arg) {
         }
         if (!ret) continue;
 
-
-        event.rel.x_difference *= 2;
-        event.rel.y_difference *= 2;
+        // uncomment if you need faster mouse
+        // event.rel.x_difference *= 2;
+        // event.rel.y_difference *= 2;
 
         // TRACE_DEBUG("Mouse event dx %d dy %d\n", event.x_difference, event.y_difference);
         int mouse_x;

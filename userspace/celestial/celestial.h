@@ -34,6 +34,10 @@
 
 /**** DEFINITIONS ****/
 
+#define RENDERER_FPS 120
+#define RENDERER_FRAME_TIME (1000000 / RENDERER_FPS)
+#define WINDOW_ANIMATION_TIME 125000
+
 /**** TYPES ****/
 
 typedef int wid_t;
@@ -179,6 +183,7 @@ typedef struct input_bind {
 /* Primary server state object */
 typedef struct celestial {
     int sock_fd;
+    char theme[CELESTIAL_THEME_NAME_MAX];
 
     // IPC
     int client_count;
@@ -295,6 +300,7 @@ void window_moveZ(wm_window_t *win, z_array_t new_z);
 void window_close(wm_window_t *win);
 void window_destroy(wm_window_t *win);
 void window_beginAnimation(wm_window_t *win);
+void window_processAnimations();
 void window_resize(wm_window_t *win, int nx, int ny, int w, int h);
 void window_resize_finish(wm_window_t *win);
 wm_window_t *window_top_exclude(wm_window_t *excl);
@@ -311,6 +317,8 @@ size_t renderer_getWidth();
 size_t renderer_getHeight();
 int renderer_initGeneric();
 void renderer_shutdownGeneric();
+void renderer_waitFrame();
+void renderer_framePresented();
 void render_request(render_request_t *upd);
 void renderer_buildFrame();
 

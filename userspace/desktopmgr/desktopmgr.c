@@ -192,18 +192,19 @@ static void add_item(struct dirent *ent) {
     }
 
     // TODO: sort these items
-    char *name = ent->d_name;
+    char name[sizeof(ent->d_name)];
+    snprintf(name, sizeof(name), "%s", ent->d_name);
     char *icon = "missing";
     char exec[1024];
-    strncpy(exec, "show-dialog --error --text=\"Cannot open this file, unknown extension\" --title=\"Error\"", 1024);
+    snprintf(exec, sizeof(exec), "show-dialog --error --text=\"Cannot open this file, unknown extension\" --title=\"Error\"");
 
     if (ent->d_type == DT_DIR) {
         icon = "folder";
-        snprintf(exec, 1024, "file-browser %s", home, ent->d_name);
+        snprintf(exec, sizeof(exec), "file-browser \"%s/Desktop/%s\"", home, ent->d_name);
     } else {
         icon = "file";
 
-        char *extension = strchr(name, '.');
+        char *extension = strrchr(name, '.');
         if (extension) {
             *extension = 0;
             extension++;
@@ -213,7 +214,7 @@ static void add_item(struct dirent *ent) {
                 // snprintf(exec, 1024, "text-editor %s", ent->d_name);
             } else if (!strcmp(extension, "jpg") || !strcmp(extension, "bmp") || !strcmp(extension, "png")) {
                 icon = "image";
-                snprintf(exec, 1024, "image-viewer %s", ent->d_name);
+                snprintf(exec, sizeof(exec), "image-viewer \"%s\"", ent->d_name);
             } else {
                 icon = "file";
             }
@@ -237,6 +238,9 @@ static void refresh() {
 
         nt_widget_free(desktop_grid);
     }
+
+    gx = 0;
+    gy = 0;
     
     desktop_grid = nt_grid_create(sw / 64, sh / 64);
     nt_widget_set_expansion(desktop_grid, NT_EXPAND_HORIZONTAL | NT_EXPAND_VERTICAL);
@@ -273,13 +277,17 @@ static void refresh() {
         
         if (ent->d_type == DT_REG) {
             // could be a launch, get extension
-            char *ext = strchr(ent->d_name, '.');
+            char *ext = strrchr(ent->d_name, '.');
             if (ext) {
                 ext++;
                 if (!strcmp(ext, "launch")) {
                     // This is a launcher!
-                    launchers = realloc(launchers, (num_launchers+1) * sizeof(char*));
-                    launchers[num_launchers++] = strdup(ent->d_name);
+                    char **new_launchers = realloc(launchers, (num_launchers+1) * sizeof(char*));
+                    launchers = new_launchers;
+                    launchers[num_launchers] = strdup(ent->d_name);
+                    if (launchers[num_launchers]) {
+                        num_launchers++;
+                    }
                 }
             }
         }
@@ -292,6 +300,7 @@ static void refresh() {
             ini_t *ini = ini_load(launchers[i]);
             if (!ini) {
                 TRACE_WARN("Error loading launcher %s (%s)\n", launchers[i], strerror(errno));
+                free(launchers[i]);
                 continue;
             }
 
@@ -317,8 +326,12 @@ static void refresh() {
             add_launch_item(name, icon, exec);
 
             ini_destroy(ini);
+            free(launchers[i]);
         }
+
     }
+
+    free(launchers);
 
     // Process the remaining files
     rewinddir(dirp);
@@ -326,13 +339,15 @@ static void refresh() {
         if (ent->d_name[0] == '.') continue;
         
         // check for launch extension
-        char *ext = strchr(ent->d_name, '.');
+        char *ext = strrchr(ent->d_name, '.');
         if (ext && !strcmp(ext, ".launch")) {
             continue;
         }
 
         add_item(ent);
     }
+
+    closedir(dirp);
 }
 
 
@@ -345,12 +360,25 @@ int main(int argc, char *argv[]) {
     }
 
     nt_platform_get_display_size(&sw, &sh);
+    if (sw <= 0 || sh <= 32) {
+        TRACE_ERROR("Invalid display size %dx%d\n", sw, sh);
+        return 1;
+    }
+
     sh -= 32; // taskbar width
 
     desktop_window = nt_window_create_undecorated(sw, sh);
+    if (!desktop_window) {
+        TRACE_ERROR("Could not create desktop window\n");
+        return 1;
+    }
+
     celestial_setZArray(desktop_window->platform, CELESTIAL_Z_BACKGROUND);
     nt_window_set_pos(desktop_window, 0, 0);
-    nt_platform_set_window_transparent(desktop_window);
+    if (nt_platform_set_window_transparent(desktop_window) < 0) {
+        TRACE_ERROR("Could not initialize the desktop framebuffer\n");
+        return 1;
+    }
 
     // Create the root box
     nt_widget_t *b = nt_box_create_vertical();
@@ -369,6 +397,8 @@ int main(int argc, char *argv[]) {
 
     gw = sw / 64;
     gh = sh / 64;
+    if (gw < 1) gw = 1;
+    if (gh < 1) gh = 1;
 
     refresh();
     nt_loop();

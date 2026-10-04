@@ -14,12 +14,14 @@
 #include "celestial.h"
 #include <graphics/gfx.h>
 #include <ethereal/celestial.h>
+#include <unistd.h>
 
 #define BLUR_RADIUS 8
 #define BLUR_SIGMA 3.0f
 
 static gfx_blur_t *render_blur = NULL;
 bool render_blur_enable = true;
+static uint64_t render_last_frame = 0;
 
 int renderer_initGeneric() {
     render_blur = gfx_createBlur(renderer_getWidth(), BLUR_RADIUS);
@@ -31,30 +33,41 @@ void renderer_shutdownGeneric() {
     gfx_destroyBlur(render_blur);
 }
 
+void renderer_waitFrame() {
+    uint64_t now = celestial_now();
+
+    while (render_last_frame && now - render_last_frame < RENDERER_FRAME_TIME) {
+        usleep(RENDERER_FRAME_TIME - (now - render_last_frame));
+        now = celestial_now();
+    }
+
+}
+
+void renderer_framePresented() {
+    render_last_frame = celestial_now();
+}
+
 void render_request(render_request_t *upd) {
     if (!upd->win) {
         gfx_drawRectangleFilled(RENDERER->ctx, &upd->rect, GFX_RGB(0, 0, 0));
         return;
     }
 
-    bool is_resizing = (upd->win->state == WINDOW_STATE_RESIZING || upd->win->resize.oneoff);
-
-    // !!! This is a penalty. Need to upgrade is_resizing to be better :(
+    // TODO: resize subsystem needs reworking, this is required since it prevents the system from changing stuff
     pthread_spin_lock(&upd->win->resize.resize_lck);
 
-    if (is_resizing) {
-        // A window that was resizing may have had its upd rect changed. Clamp it back
-        gfx_rect_t *r = &upd->rect;
-        wm_window_t *win = upd->win;
-        if (r->x > (unsigned)win->width || r->y > (unsigned)win->height) {
-            pthread_spin_unlock(&win->resize.resize_lck);
-            return;
-        }
-        if (r->x + r->width > (unsigned)win->width) r->width = win->width - r->x;
-        if (r->y + r->height > (unsigned)win->height) r->height = win->height - r->y;
+    gfx_rect_t *r = &upd->rect;
+    wm_window_t *win = upd->win;
+    if (win->width <= 0 || win->height <= 0 || r->x >= (unsigned)win->width || r->y >= (unsigned)win->height) {
+        pthread_spin_unlock(&win->resize.resize_lck);
+        window_release(win);
+        return;
     }
 
-    if (upd->win->flags & CELESTIAL_WINDOW_FLAG_BLURRED && render_blur_enable) {
+    if (r->x + r->width > (unsigned)win->width) r->width = win->width - r->x;
+    if (r->y + r->height > (unsigned)win->height) r->height = win->height - r->y;
+
+    if (upd->state != WINDOW_STATE_OPENING && upd->state != WINDOW_STATE_CLOSING && upd->win->flags & CELESTIAL_WINDOW_FLAG_BLURRED && render_blur_enable) {
         int left = GFX_MAX(upd->x + (int)upd->rect.x, 0);
         int top = GFX_MAX(upd->y + (int)upd->rect.y, 0);
         int right = GFX_MIN(upd->x + (int)(upd->rect.x + upd->rect.width), (int)renderer_getWidth());
@@ -74,7 +87,9 @@ void render_request(render_request_t *upd) {
             .alpha = SPRITE_ALPHA_BLEND
         };
 
-        double tdiff = (double)upd->win->anim.anim_time / (double)125000;
+        double progress = (double)upd->anim_time / (double)WINDOW_ANIMATION_TIME;
+        if (progress > 1.0) progress = 1.0;
+        double tdiff = progress * progress * (3.0 - 2.0 * progress);
 
         if (upd->win->flags & CELESTIAL_WINDOW_FLAG_FADE_ANIM) {
             double scale = 0.0 + tdiff * (1.0 - 0.0);
@@ -98,7 +113,9 @@ void render_request(render_request_t *upd) {
             .alpha = SPRITE_ALPHA_BLEND
         };
 
-        double tdiff = (double)upd->win->anim.anim_time / (double)125000;
+        double progress = (double)upd->anim_time / (double)WINDOW_ANIMATION_TIME;
+        if (progress > 1.0) progress = 1.0;
+        double tdiff = progress * progress * (3.0 - 2.0 * progress);
 
         if (upd->win->flags & CELESTIAL_WINDOW_FLAG_FADE_ANIM) {
             double scale = 1.0 + tdiff * (0.0 - 1.0);
@@ -123,8 +140,8 @@ void render_request(render_request_t *upd) {
         };
 
         if (upd->state == WINDOW_STATE_CLOSED) {
-            window_release(upd->win);
             pthread_spin_unlock(&upd->win->resize.resize_lck);
+            window_release(upd->win);
             return;
         }
         

@@ -59,6 +59,10 @@
 #define CELESTIAL_REQ_START_RESIZE          0x101A
 #define CELESTIAL_REQ_STOP_RESIZE           0x101B
 #define CELESTIAL_REQ_ACK_RESIZE            0x101C
+#define CELESTIAL_REQ_GET_THEME             0x101D
+#define CELESTIAL_REQ_SET_THEME             0x101E
+
+#define CELESTIAL_THEME_NAME_MAX            64
 
 #define CELESTIAL_REQ_COMMON                uint32_t magic;\
                                             uint16_t type; \
@@ -261,6 +265,15 @@ typedef struct celestial_req_ack_resize {
     wid_t wid;
 } celestial_req_ack_resize_t;
 
+typedef struct celestial_req_get_theme {
+    CELESTIAL_REQ_COMMON
+} celestial_req_get_theme_t;
+
+typedef struct celestial_req_set_theme {
+    CELESTIAL_REQ_COMMON
+    char theme[CELESTIAL_THEME_NAME_MAX];
+} celestial_req_set_theme_t;
+
 /* RESPONSES */
 
 /* Generic error response */
@@ -329,6 +342,11 @@ typedef struct celestial_resp_query_mouse {
     int y;
 } celestial_resp_query_mouse_t;
 
+typedef struct celestial_resp_get_theme {
+    CELESTIAL_REQ_COMMON
+    char theme[CELESTIAL_THEME_NAME_MAX];
+} celestial_resp_get_theme_t;
+
 /**** MACROS ****/
 
 /* Internal macro */
@@ -356,6 +374,21 @@ int celestial_connect(char *sockname);
  * @returns 0 on success
  */
 int celestial_sendRequest(void *req, size_t size);
+
+/**
+ * @brief Get the server's theme
+ * @param theme Output theme buffer
+ * @param size The size of the output buffer
+ * @returns 0 on success
+ */
+int celestial_getServerTheme(char *theme, size_t size);
+
+/**
+ * @brief Set the server theme
+ * @param theme The theme to set
+ * @returns 0 on success
+ */
+int celestial_setServerTheme(char *theme);
 
 /**
  * @brief Wait for a specific response type

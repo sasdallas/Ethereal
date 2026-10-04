@@ -73,17 +73,40 @@ int setup_tty(char *_tty) {
     return 0;
 }
 
-void setup_tios(int baud_rate) {
+void setup_tios(speed_t baud_rate) {
     struct termios tios;
-    tios.c_cflag = CS8 | HUPCL | CREAD | baud_rate; // Taken from agetty source code (https://kernel.googlesource.com/pub/scm/utils/util-linux/util-linux/+/v2.7.1/login-utils/agetty.c)
-    tios.c_iflag = 0;
-    tios.c_lflag = 0;
-    tios.c_oflag = 0;
+    if (tcgetattr(STDIN_FILENO, &tios) < 0) memset(&tios, 0, sizeof(tios));
+
+    tios.c_iflag = ICRNL | BRKINT | IXON;
+    tios.c_oflag = OPOST | ONLCR;
+    tios.c_lflag = ISIG | ICANON | ECHO | ECHOE | ECHOK | IEXTEN;
     tios.c_line = 0;
+
+    memset(tios.c_cc, 0, sizeof(tios.c_cc));
+    tios.c_cc[VINTR] = 3;
+    tios.c_cc[VQUIT] = 28;
+    tios.c_cc[VERASE] = 0x7f;
+    tios.c_cc[VKILL] = 21;
+    tios.c_cc[VEOF] = 4;
+    tios.c_cc[VSTART] = 17;
+    tios.c_cc[VSTOP] = 19;
+    tios.c_cc[VSUSP] = 26;
+    tios.c_cc[VWERASE] = 23;
     tios.c_cc[VMIN] = 1;
     tios.c_cc[VTIME] = 0;
-    ioctl(STDIN_FILENO, TCSETA, &tios);
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) & ~(O_NONBLOCK));
+
+    if (strcmp(tty, "-")) {
+        tios.c_cflag = CS8 | HUPCL | CREAD | CLOCAL;
+        cfsetispeed(&tios, baud_rate);
+        cfsetospeed(&tios, baud_rate);
+    }
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &tios);
+
+    if (strcmp(tty, "-")) {
+        fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) & ~(O_NONBLOCK));
+    }
+
     setsid();
     int _a = 1;
     ioctl(STDIN_FILENO, TIOCSCTTY, &_a);
@@ -185,7 +208,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Setup the termios
-    setup_tios(9600);
+    setup_tios(B9600);
 
     // /etc/issue
     show_issue();

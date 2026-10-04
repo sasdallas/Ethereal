@@ -14,6 +14,7 @@
 #include <ethereal/celestial.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 
 extern int __celestial_window_count;
 
@@ -113,12 +114,20 @@ int celestial_setHandler(window_t *win, uint32_t event, celestial_event_handler_
 void celestial_handleEvent(void *event) {
     celestial_event_header_t *hdr = (celestial_event_header_t*)event;
 
+    if (hdr->type == CELESTIAL_EVENT_THEME_CHANGED) {
+        celestial_event_theme_changed_t *changed = event;
+        celestial_updateDefaultTheme(changed->theme);
+        free(event);
+        return;
+    }
+
     // Check if we got a window
     window_t *win = celestial_getWindow(hdr->wid);
     if (!win) { free(event); return; }
 
     if (hdr->type != CELESTIAL_EVENT_WINDOW_CLOSE && win->state == CELESTIAL_STATE_CLOSED) {
         // stop accepting events
+        free(event);
         return;
     }
 

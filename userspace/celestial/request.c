@@ -141,6 +141,38 @@ REQUEST_HANDLER(get_server_info, CELESTIAL_REQ_GET_SERVER_INFO) {
     SEND_RESP(resp);
 }
 
+REQUEST_HANDLER(get_theme, CELESTIAL_REQ_GET_THEME) {
+    DECLARE_RESP(get_theme, resp, CELESTIAL_REQ_GET_THEME);
+    strcpy(resp.theme, SERVER->theme);
+    SEND_RESP(resp);
+}
+
+REQUEST_HANDLER(set_theme, CELESTIAL_REQ_SET_THEME) {
+    if (!strcmp(SERVER->theme, req->theme)) {
+        REQ_OK(req);
+        return;
+    }
+
+    strcpy(SERVER->theme, req->theme);
+    
+    celestial_event_theme_changed_t event = {
+        .magic = CELESTIAL_MAGIC_EVENT,
+        .type = CELESTIAL_EVENT_THEME_CHANGED,
+        .size = sizeof(event),
+        .wid = 0,
+    };
+    
+    strcpy(event.theme, SERVER->theme);
+
+    pthread_mutex_lock(&SERVER->client_lock);
+    for (wm_client_t *iter = SERVER->client_list; iter; iter = iter->next) {
+        event_send_int(iter, &event, sizeof(event));
+    }
+    pthread_mutex_unlock(&SERVER->client_lock);
+
+    REQ_OK(req);
+}
+
 REQUEST_HANDLER(flip, CELESTIAL_REQ_FLIP) {
     // No response for flip
     wm_window_t *win = window_get(client, req->wid);
@@ -545,6 +577,10 @@ void request_handle(wm_client_t *client, void *buffer, size_t size) {
         EXECUTE_REQUEST(resize, CELESTIAL_REQ_RESIZE);
     } else if (hdr->type == CELESTIAL_REQ_MAXIMIZE_WINDOW) {
         EXECUTE_REQUEST(maximize_window, CELESTIAL_REQ_MAXIMIZE_WINDOW);
+    } else if (hdr->type == CELESTIAL_REQ_GET_THEME) {
+        EXECUTE_REQUEST(get_theme, CELESTIAL_REQ_GET_THEME);
+    } else if (hdr->type == CELESTIAL_REQ_SET_THEME) {
+        EXECUTE_REQUEST(set_theme, CELESTIAL_REQ_SET_THEME);
     } else {
         TRACE_ERROR("Client %d sent unknown/unhandled request %d\n", client->client_fd, hdr->type);
         return request_send_error(client, hdr->type, -ENOSYS);

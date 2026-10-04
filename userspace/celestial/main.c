@@ -20,17 +20,13 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/signal.h>
-#include <sys/time.h>
+#include <time.h>
 #include <poll.h>
 
 /* primary server */
 celestial_t celestial_server = { 0 };
 
 pid_t main_thread = 0;
-
-extern pthread_mutex_t anim_lock;
-extern pthread_cond_t anim_cond;
-extern wm_window_anim_t *anim_list;
 
 void celestial_shutdown() {
     if (gettid() == main_thread) {
@@ -68,15 +64,7 @@ void sigint_handler(int signum) {
 // Primary loop
 void celestial_wm_loop() {
     for (;;) {
-        extern void window_processAnimations();
-        pthread_mutex_lock(&anim_lock);
-        while (anim_list == NULL) {
-            pthread_cond_wait(&anim_cond, &anim_lock);;
-        }
-
-        window_processAnimations();
-        pthread_mutex_unlock(&anim_lock);
-        usleep(10000);
+        pause();
     }
 }
 
@@ -96,6 +84,7 @@ extern bool render_blur_enable;
 
     main_thread = gettid();
     memset(SERVER, 0, sizeof(celestial_t));
+    strcpy(SERVER->theme, "mercury");
     signal(SIGUSR1, sigusr1_handler);
     signal(SIGINT, sigint_handler);
 
@@ -110,8 +99,8 @@ extern bool render_blur_enable;
 
     pid_t cpid = fork();
     if (!cpid) {
-        const char *argv[] = { "desktopv2", NULL }; 
-        execvp("desktopv2", (char *const *)argv);
+        const char *argv[] = { "desktop", NULL }; 
+        execvp("desktop", (char *const *)argv);
         TRACE_ERROR("Could not start desktop process: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
@@ -121,7 +110,7 @@ extern bool render_blur_enable;
 }
 
 uint64_t celestial_now() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }

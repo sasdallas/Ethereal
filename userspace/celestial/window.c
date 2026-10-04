@@ -355,20 +355,26 @@ void window_moveZ(wm_window_t *win, z_array_t new_z) {
 void window_processAnimations() {
     uint64_t now = celestial_now();
 
+    pthread_mutex_lock(&anim_lock);
+
     wm_window_anim_t *anim = anim_list;
     wm_window_anim_t *prev = NULL;
 
     while (anim) {
         if (anim->running == false) goto _next_anim;
         
-        // Calculate the delta
+        // this is a good balance between animations looking good and not stalling the system
+        // when they take too long (I have yet to figure out *why* they take too long sometimes)
         uint64_t dt = now - anim->anim_last_paint;
-        if (dt < 3) goto _next_anim;
-
+        uint64_t remaining = WINDOW_ANIMATION_TIME - anim->anim_time;
         anim->anim_last_paint = now;
-        anim->anim_time += dt;
+        if (dt >= remaining) {
+            anim->anim_time = WINDOW_ANIMATION_TIME;
+        } else {
+            anim->anim_time += dt;
+        }
 
-        if ((double)(anim->anim_time) / (double)125000.0 > 1.0f) {
+        if (anim->anim_time >= WINDOW_ANIMATION_TIME) {
             TRACE_DEBUG("window_processAnimations: animation finished\n");
             
             wm_window_anim_t *nxt = anim->next;
@@ -405,6 +411,8 @@ void window_processAnimations() {
         prev = anim;
         anim = anim->next;
     }
+
+    pthread_mutex_unlock(&anim_lock);
 }
 
 void window_beginAnimation(wm_window_t *win) {
@@ -426,6 +434,8 @@ void window_beginAnimation(wm_window_t *win) {
 
     pthread_cond_signal(&anim_cond);
     pthread_mutex_unlock(&anim_lock);
+
+    damage_window_locked(win);
 }
 
 

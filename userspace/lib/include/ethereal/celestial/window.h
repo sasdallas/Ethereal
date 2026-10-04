@@ -71,6 +71,8 @@ typedef struct window {
     gfx_context_t *ctx;                 // Context for the window
 
     decor_t *decor;                     // Decorations
+    decor_handler_t *theme_override;    // NULL = default
+    decor_handler_t *theme_pending;     // Hack for server wide updates
     uint32_t *decor_buffer;             // Decorations buffers
     decor_window_info_t *info;          // REAL window information. Our macros will use this
 
@@ -115,6 +117,16 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height);
  * @returns A window ID or -1
  */
 wid_t celestial_createWindow(int flags, size_t width, size_t height);
+
+/**
+ * @brief Create a new window in Ethereal (themed)
+ * @param flags The flags to use when creating the window
+ * @param width Width of the window
+ * @param height Height of the window
+ * @param theme The target theme to use
+ * @returns A window ID or -1
+ */
+wid_t celestial_createWindowTheme(int flags, size_t width, size_t height, char *theme);
 
 /**
  * @brief Set the title of a window (reflects in taskbar)

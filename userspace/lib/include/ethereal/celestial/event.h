@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <ethereal/celestial/types.h>
+#include <ethereal/celestial/request.h>
 #include <ethereal/celestial/window.h>
 #include <kernel/fs/periphfs.h> // I hate myself
 
@@ -42,6 +43,7 @@
 #define CELESTIAL_EVENT_WINDOW_CLOSE            0x0000000E
 #define CELESTIAL_EVENT_WINDOW_CHANGED          0x0000000F // Special event. Sent only to the root window (desktop). Sent on advertise and window close only.
 #define CELESTIAL_EVENT_BOUND_KEY               0x00000010
+#define CELESTIAL_EVENT_THEME_CHANGED           0x00000011
 #define CELESTIAL_EVENT_DEFAULT_SUBSCRIBED      0xFFFFFFFF
 
 #define CELESTIAL_EVENT_COMMON                  uint32_t magic;\
@@ -166,6 +168,11 @@ typedef struct celestial_event_bound_key {
     key_scancode_t sc;
     key_modifiers_t mods;
 } celestial_event_bound_key_t;
+
+typedef struct celestial_event_theme_changed {
+    CELESTIAL_EVENT_COMMON
+    char theme[CELESTIAL_THEME_NAME_MAX];
+} celestial_event_theme_changed_t;
 
 /**
  * @brief Celestial event handler

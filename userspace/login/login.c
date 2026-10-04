@@ -21,6 +21,7 @@
 #include <sys/ioctl_ethereal.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <ctype.h>
 
 char username[512];
 char password[512];
@@ -49,6 +50,9 @@ void show_prompt() {
 }
 
 void exec_fork(uid_t uid) {
+    // Display /etc/motd if needed
+    system("cat /etc/motd");
+
     pid_t p = fork();
     if (!p) {
         ioctl(STDIN_FILENO, IOCTLTTYLOGIN, &uid);
@@ -103,6 +107,7 @@ void prompt_loop() {
         char *buf = password;
         while (1) {
             int ch = getchar();
+            if (ch == EOF) break;
             if (ch == '\n') { putchar('\n'); break; }
             if (ch == '\b' || ch == 0x7f) {
                 if (buf != password) {
@@ -113,7 +118,8 @@ void prompt_loop() {
                 }
                 continue;
             } 
-            *buf++ = ch;
+
+            if (isprint(ch)) *buf++ = ch;
             if (buf >= password+512) {
                 break;
             }
@@ -137,8 +143,6 @@ void prompt_loop() {
         exec_fork(pw->pw_uid);
         break;
     }
-
-    
 }
 
 int main(int argc, char *argv[]) {

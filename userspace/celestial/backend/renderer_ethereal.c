@@ -36,6 +36,7 @@ void *render_main(void *arg) {
     TRACE_DEBUG("Render thread TID: %d\n", gettid());
     
     for (;;) {
+        renderer_waitFrame();
         RENDERER->frame = damage_build();
         if (!RENDERER->frame) continue;
         int cursor_x = 0;
@@ -69,6 +70,9 @@ void *render_main(void *arg) {
         if (draw_cursor) {
             input_restore_at(cursor_x, cursor_y);
         }
+
+        renderer_framePresented();
+        window_processAnimations();
     }
 }
 

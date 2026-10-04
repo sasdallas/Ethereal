@@ -21,13 +21,24 @@
 #include <errno.h>
 #include <poll.h>
 #include <string.h>
-#include <assert.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+/* getResponse */
+#define CELESTIAL_RESPONSE_TIMEOUT_MS 5000
 
 /* Celestial socket */
 int __celestial_socket = -1;
 
 /* Celestial queued responses */
 static list_t *celestial_resp_queue = NULL;
+
+static void celestial_disconnect() {
+    if (__celestial_socket >= 0) {
+        close(__celestial_socket);
+        __celestial_socket = -1;
+    }
+}
 
 /**
  * @brief Connect to a Celestial window server
@@ -46,19 +57,26 @@ int celestial_connect(char *sockname) {
         return -1;
     }
 
+    if (fcntl(__celestial_socket, F_SETFD, FD_CLOEXEC) < 0) {
+        celestial_disconnect();
+        return -1;
+    }
+
     // Connect to the server
     struct sockaddr_un un = {
         .sun_family = AF_UNIX
     };
 
-    strncpy(un.sun_path, sockname, 108);
+    strncpy(un.sun_path, sockname, sizeof(un.sun_path) - 1);
 
     if (connect(__celestial_socket, (const struct sockaddr*)&un, sizeof(struct sockaddr_un)) < 0) {
+        celestial_disconnect();
         return -1;
     }
 
     int i = 1;
     if (ioctl(__celestial_socket, FIONBIO, &i) < 0) {
+        celestial_disconnect();
         return -1;
     }
 
@@ -79,10 +97,66 @@ int celestial_sendRequest(void *req, size_t size) {
     } 
 
     // Send it
-    if (send(__celestial_socket, req, size, 0) < 0) {
+    ssize_t sent = send(__celestial_socket, req, size, 0);
+    if (sent < 0) {
         return -1;
     }
 
+    if ((size_t)sent != size) {
+        fprintf(stderr, "celestial-lib: only sent %zu/%zu bytes\n", sent, size);
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Get the server's theme
+ * @param theme Output theme buffer
+ * @param size The size of the output buffer
+ * @returns 0 on success
+ */
+int celestial_getServerTheme(char *theme, size_t size) {
+    celestial_req_get_theme_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .type = CELESTIAL_REQ_GET_THEME,
+        .size = sizeof(req),
+    };
+
+    if (celestial_sendRequest(&req, sizeof(req)) < 0) return -1;
+
+    celestial_resp_get_theme_t *resp = celestial_getResponse(CELESTIAL_REQ_GET_THEME);
+    if (!resp) return -1;
+
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    strncpy(theme, resp->theme, size - 1);
+    theme[size - 1] = 0;
+    free(resp);
+    return 0;
+}
+
+/**
+ * @brief Set the server theme
+ * @param theme The theme to set
+ * @returns 0 on success
+ */
+int celestial_setServerTheme(char *theme) {
+    celestial_req_set_theme_t req = {
+        .magic = CELESTIAL_MAGIC,
+        .type = CELESTIAL_REQ_SET_THEME,
+        .size = sizeof(req),
+    };
+
+    strcpy(req.theme, theme);
+    if (celestial_sendRequest(&req, sizeof(req)) < 0) return -1;
+
+    celestial_resp_ok_t *resp = celestial_getResponse(CELESTIAL_REQ_SET_THEME);
+    if (!resp) return -1;
+    
+    CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
+
+    free(resp);
     return 0;
 }
 
@@ -107,6 +181,7 @@ void *celestial_getResponse(int type) {
                 celestial_req_header_t *h = (celestial_req_header_t*)resp_node->value;
                 if (h->type == type || type == -1) {
                     list_delete(celestial_resp_queue, resp_node);
+                    free(resp_node);
                     return h;
                 }
             }
@@ -116,7 +191,17 @@ void *celestial_getResponse(int type) {
         fds[0].fd = __celestial_socket;
         fds[0].events = POLLIN;
 
-        int p = poll(fds, 1, -1);
+        int p = poll(fds, 1, CELESTIAL_RESPONSE_TIMEOUT_MS);
+        if (p == 0) {
+            errno = ETIMEDOUT;
+            fprintf(stderr, "celestial_lib: Timed out waiting for response %d\n", type);
+            return NULL;
+        }
+
+        if (p < 0 && errno == EINTR) {
+            continue;
+        }
+
         if (p <= 0 || !(fds[0].revents & POLLIN)) {
             fprintf(stderr, "celestial_lib: Poll failed (%d): %s\n", p, strerror(errno));
             return NULL;
@@ -130,16 +215,21 @@ void *celestial_getResponse(int type) {
             continue;
         }
 
-        if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) {
-            fprintf(stderr, "celestial_lib: recv failed (%d): %s\n", r, strerror(errno));
+        if (r <= 0 || r < (ssize_t)sizeof(celestial_req_header_t)) {
+            fprintf(stderr, "celestial_lib: recv failed (%zd): %s\n", r, strerror(errno));
             return NULL;
         }
-        
-        assert(((celestial_req_header_t*)data)->size < 4096);
+
+        celestial_req_header_t *header = (celestial_req_header_t*)data;
+        if (header->size < sizeof(celestial_req_header_t) || header->size > (size_t)r) {
+            errno = EPROTO;
+            fprintf(stderr, "celestial_lib: invalid response size %zu (received %zd)\n", header->size, r);
+            return NULL;
+        }
 
         // Malloc and move it
-        void *m = malloc(((celestial_req_header_t*)data)->size);
-        memcpy(m, data, ((celestial_req_header_t*)data)->size);
+        void *m = malloc(header->size);
+        memcpy(m, data, header->size);
 
         // Is it an event? Process those immediately
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
@@ -165,6 +255,10 @@ void *celestial_getResponse(int type) {
  * @param timeout The timeout to wait for
  */
 void celestial_pollTimeout(int timeout) {
+    if (__celestial_socket < 0) {
+        return;
+    }
+
     // Anything in queue?
     if (celestial_resp_queue && celestial_resp_queue->length) {
         foreach (resp_node, celestial_resp_queue) {
@@ -194,11 +288,14 @@ void celestial_pollTimeout(int timeout) {
         // TODO bail out on this
         if (r < 0 || r < (ssize_t)sizeof(celestial_req_header_t)) return;
 
-        assert(((celestial_req_header_t*)data)->size < 4096);
+        celestial_req_header_t *header = (celestial_req_header_t*)data;
+        if (header->size < sizeof(celestial_req_header_t) || header->size > (size_t)r) {
+            return;
+        }
         
         // Malloc and move it
-        void *m = malloc(((celestial_req_header_t*)data)->size);
-        memcpy(m, data, ((celestial_req_header_t*)data)->size);
+        void *m = malloc(header->size);
+        memcpy(m, data, header->size);
 
         // Is it an event? Process those immediately
         if (((celestial_req_header_t*)m)->magic == CELESTIAL_MAGIC_EVENT) {
@@ -234,7 +331,8 @@ void celestial_pollIndefinite() {
  * @returns 1 if content is available
  */
 int celestial_query() {
-    if (celestial_resp_queue->length) return 1;
+    if (celestial_resp_queue && celestial_resp_queue->length) return 1;
+    if (__celestial_socket < 0) return 0;
 
     struct pollfd fds[1];
     fds[0].fd = __celestial_socket;
@@ -300,8 +398,10 @@ int celestial_queryWindow(wid_t wid, window_info_t *output) {
     output->focused = resp->focused;
     output->flags = resp->flags;
     output->z_array = resp->z_array;
-    strncpy(output->name, resp->name, 128);
-    strncpy(output->icon, resp->icon, 128);
+    memcpy(output->name, resp->name, sizeof(output->name) - 1);
+    memcpy(output->icon, resp->icon, sizeof(output->icon) - 1);
+    output->name[127] = 0;
+    output->icon[127] = 0;
 
     free(resp);
     return 0;
@@ -328,8 +428,11 @@ int celestial_queryWindowIDs(size_t *nids, wid_t **wids) {
     CELESTIAL_HANDLE_RESP_ERROR(resp, -1);
 
     *(nids) = resp->nwids;
-    *(wids) = malloc(sizeof(wid_t) * resp->nwids);
-    memcpy(*(wids), resp->wids, sizeof(wid_t) * resp->nwids);
+    *(wids) = NULL;
+    if (resp->nwids) {
+        *(wids) = malloc(sizeof(wid_t) * resp->nwids);
+        memcpy(*(wids), resp->wids, sizeof(wid_t) * resp->nwids);
+    }
 
     free(resp);
     return 0;
