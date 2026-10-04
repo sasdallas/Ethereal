@@ -6,4 +6,4 @@ if cmdline "--no-audio-server"; then
 fi
 
 # Daemonize symphonyd
-symphonyd --daemon
+symphonyd --daemon 2> /tmp/symphonyd.log

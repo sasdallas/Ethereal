@@ -1,0 +1,4 @@
+[Application]
+Name="Terminal"
+Exec="termemu"
+Icon=terminal

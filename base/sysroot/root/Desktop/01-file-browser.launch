@@ -1,0 +1,4 @@
+[Application]
+Name="File Browser"
+Exec="file-browser"
+Icon=folder

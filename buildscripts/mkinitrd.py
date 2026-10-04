@@ -19,6 +19,7 @@ except FileNotFoundError:
 mode_overrides = {
     "tmp": 0o775,       # /tmp: drwxrwxr-x
     "var": 0o775,       # /var: drwxrwxr-x
+    "usr/bin/sudo": 0o4755,
 }
 
 def ramdisk_filter(tarinfo):
