@@ -195,6 +195,10 @@ int gfx_loadSprite(sprite_t *sprite, FILE *file) {
  */
 int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rect, int x, int y) {
 #pragma GCC diagnostic ignored "-Wsign-compare"
+    if (rect->x >= sprite->width || rect->y >= sprite->height || rect->width > sprite->width - rect->x || rect->height > sprite->height - rect->y) {
+        return 1;
+    }
+
     // Calculate bounds of sprite
     int32_t _left = GFX_MAX(x, 0);
     int32_t _top = GFX_MAX(y, 0);
@@ -236,7 +240,7 @@ int gfx_renderSpriteRegion(gfx_context_t *ctx, sprite_t *sprite, gfx_rect_t *rec
         }
 
         // Now actually do the SSE drawing
-        for (; _x < rect->x + rect->width - 3 && _x + x + 3 <= _right; _x += 4) {
+        for (; _x + 3 < rect->x + rect->width && (int64_t)x + _x + 3 <= _right; _x += 4) {
             __m128i d = _mm_loadu_si128((void*)&GFX_PIXEL(ctx, x + _x, y + _y));
             __m128i s = _mm_loadu_si128((void*)&SPRITE_PIXEL(sprite, _x, _y));
 
