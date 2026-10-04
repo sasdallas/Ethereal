@@ -1,301 +1,284 @@
 /**
  * @file userspace/desktop/desktop.c
- * @brief Main desktop interface of Ethereal
+ * @brief Desktop application
  * 
- * The desktop interface! Handles the system clock, background, etc.
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
+ * This file is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2025 Samuel Stuart
  */
 
-#include "menu.h"
-#include "widget.h"
 #include <ethereal/celestial.h>
+#include <ethereal/version.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <sys/utsname.h>
 #include <graphics/gfx.h>
-#include <getopt.h>
-#include <time.h>
-#include <unistd.h>
 #include <structs/ini.h>
-#include <sys/signal.h>
-#include <errno.h>
-#include <poll.h>
+#include <strings.h>
+#include "desktop.h"
+#include <getopt.h>
+#include <unistd.h>
 
-/* Disable background drawing */
-int disable_bg = 0;
+/* Desktop object */
+desktop_t __desktop = { 0 };
 
-/* Background window */
-window_t *background_window = NULL;
-
-/* Default startup app */
-#define DEFAULT_STARTUP         "termemu"
-
-/* Default wallpaper */
-#define DEFAULT_WALLPAPER       "/usr/share/wallpapers/lines.bmp"
-
-/* Current wallpaper sprite */
-sprite_t *background_sprite = NULL;
-
-/* Desktop taskbar window */
-window_t *taskbar_window = NULL;
-
-/* Fonts */
-gfx_font_t *taskbar_font = NULL;
-
-/* Taskbar active */
-int menu_active = 0;
-
-
-/* Current wallpaper */
-char *wallpaper = DEFAULT_WALLPAPER;
-
-void config_load();
-
-/**
- * @brief Reload signal
- * 
- * Desktop uses SIGUSR2 to signal a reload
- */
-void reload_signal(int signum) {
-    // Refresh signal means we should check /comm/wallpaper to see if it 1. exists and 2. has a valid wallpaper
-    fprintf(stderr, "Reloading desktop environment\n");
-    FILE *wallpaper_file = fopen("/comm/wallpaper", "r");
-    if (wallpaper_file) {
-        char tmp_buffer[256] = { 0 };
-        fread(tmp_buffer, 256, 1, wallpaper_file);
-        wallpaper = strdup(tmp_buffer); 
-        fclose(wallpaper_file);
-    }
-
-    gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
-
-    fprintf(stderr, "Loading wallpaper: %s\n", wallpaper);
-    FILE *bg_file = fopen(wallpaper, "r");
-    if (!bg_file) {
-        fprintf(stderr, "Error loading wallpaper %s, fallback to default wallpaper\n", wallpaper);
-
-        bg_file = fopen(DEFAULT_WALLPAPER, "r");
-        if (!bg_file) goto _fallback;
-    }
-
-    // Load from file
-    sprite_t *new = gfx_createSprite(0, 0);
-
-    if (gfx_loadSprite(new, bg_file)) {
-        fclose(bg_file);
-        goto _fallback;
-    }
-
-    fclose(bg_file);
-    background_sprite = new;
-    gfx_renderSpriteScaled(bg_ctx, background_sprite, GFX_RECT(0,0,background_window->width, background_window->height));
-    gfx_render(bg_ctx);
-    celestial_flip(background_window);
-    return;
-
-_fallback:
-    gfx_clear(bg_ctx, GFX_RGB(0, 0, 0));
-    gfx_render(bg_ctx);
-    celestial_flip(background_window);
-}
-
-/**
- * @brief Usage
- */
 void usage() {
-    printf("Usage: desktop [-b] [PROGRAM]\n");
+    printf("Usage: desktop [-h] [-v]\n");
     printf("Main Ethereal desktop interface, providing the background, system clock, etc.\n");
     printf(" -h, --help                 Display this help message\n");
     printf(" -v, --version              Display the version of desktop\n");
     exit(1);
 }
 
-/**
- * @brief Version
- */
 void version() {
-    printf("desktop version 1.0.0\n");
-    printf("Copyright (C) 2025 The Ethereal Development Team\n");
+    printf("desktop v%d.%d.%d\n", DESKTOP_MAJOR, DESKTOP_MINOR, DESKTOP_LOWER);
+    printf("Copyright (C) 2026 The Ethereal Development Team\n");
     exit(1);
 }
 
-/**
- * @brief Create taskbar gradient
- * @param ctx The context to draw the taskbar gradient in
- * @param start_x The starting X to use (for covering things up)
- */
-void create_taskbar_gradient(gfx_context_t *ctx, uint16_t start_x) {
-    gfx_color_t grad_start = GFX_RGB(0x66, 0x62, 0x6a);
-    gfx_color_t grad_end = GFX_RGB(0x27, 0x24, 0x29);
+void desktop_fatal() {
+    TRACE_ERROR("Fatal error encountered.\n");
+    exit(EXIT_FAILURE);
+}
 
-    float step_a = (float)(GFX_RGB_A(grad_start) - GFX_RGB_A(grad_end)) / (float)GFX_HEIGHT(ctx);
-    float step_r = (float)(GFX_RGB_R(grad_start) - GFX_RGB_R(grad_end)) / (float)GFX_HEIGHT(ctx);
-    float step_g = (float)(GFX_RGB_G(grad_start) - GFX_RGB_G(grad_end)) / (float)GFX_HEIGHT(ctx);
-    float step_b = (float)(GFX_RGB_B(grad_start) - GFX_RGB_B(grad_end)) / (float)GFX_HEIGHT(ctx);
+void desktop_draw_info() {
+    if (!DESKTOP->show_info) return;
 
-    for (uintptr_t y = 0; y < GFX_HEIGHT(ctx); y++) {
-        gfx_color_t color = 0 |
-            ((uint8_t)(GFX_RGB_A(grad_start) - y * step_a) & 0xFF) << 24 |
-            ((uint8_t)(GFX_RGB_R(grad_start) - y * step_r) & 0xFF) << 16 |
-            ((uint8_t)(GFX_RGB_G(grad_start) - y * step_g) & 0xFF) << 8 |
-            ((uint8_t)(GFX_RGB_B(grad_start) - y * step_b) & 0xFF) << 0;
+    const ethereal_version_t *ver = ethereal_getVersion();
+    struct utsname utsname;
+    uname(&utsname);
 
-        uintptr_t x = start_x;
-        uintptr_t x_max = GFX_WIDTH(ctx);
+    window_t *bg_win = DESKTOP->bg_window;
+    gfx_context_t *ctx = celestial_getGraphicsContext(DESKTOP->bg_window);
+    static gfx_font_t *font = NULL;
 
-        for (; x < x_max; x++) {
-            GFX_PIXEL(ctx, x, y) = color;
+    if (font == NULL) {
+        font = gfx_loadFont(ctx, "/usr/share/fonts/DejaVuSans.ttf");
+    }
+
+    if (!font) return;
+
+    char str[256];
+    gfx_setFontSize(font, 12);
+    
+    gfx_string_size_t ss;
+    snprintf(str, 256, "Ethereal v%d.%d.%d", ver->version_major, ver->version_minor, ver->version_lower);
+    gfx_getStringSize(font, str, &ss);
+    gfx_renderStringShadow(ctx, font, str, bg_win->width - ss.width - 10, bg_win->height - 80, GFX_RGB(255, 255, 255), 1);
+    snprintf(str, 256, "Codename \"%s\"", ver->codename);
+    gfx_getStringSize(font, str, &ss);
+    gfx_renderStringShadow(ctx, font, str, bg_win->width - ss.width - 10, bg_win->height - 65, GFX_RGB(255, 255, 255), 1);
+    snprintf(str, 256, "Kernel: %s %s", utsname.sysname, utsname.release);
+    gfx_getStringSize(font, str, &ss);
+    gfx_renderStringShadow(ctx, font, str, bg_win->width - ss.width - 10, bg_win->height - 50, GFX_RGB(255, 255, 255), 1);
+}
+
+void desktop_init_bg(celestial_info_t *info) {
+    wid_t wid = celestial_createWindowUndecorated(0, info->screen_width, info->screen_height);
+    if (wid < 0) {
+        DESKTOP_FAILED("celestial_createWindowUndecorated");
+    }
+
+    DESKTOP->bg_window = celestial_getWindow(wid);
+    if (DESKTOP->bg_window == NULL) {
+        DESKTOP_FAILED("celestial_getWindow");
+    }
+
+    DESKTOP_ASSERT_PERROR(celestial_setZArray(DESKTOP->bg_window, CELESTIAL_Z_BACKGROUND) == 0);
+    DESKTOP_ASSERT_PERROR(celestial_setWindowPosition(DESKTOP->bg_window, 0, 0) == 0);
+
+    gfx_context_t *ctx = celestial_getGraphicsContext(DESKTOP->bg_window);
+
+    // Try to load the background
+    FILE *bg_f = fopen(DESKTOP->wallpaper_path, "r");
+    if (!bg_f) {
+        TRACE_WARN("Failed to open %s: %s\n", DESKTOP->wallpaper_path, strerror(errno));
+        bg_f = fopen("/usr/share/wallpapers/lines.bmp", "r");
+        if (!bg_f) {
+            TRACE_ERROR("Failed to open /usr/share/wallpapers/lines.bmp: %s\n", strerror(errno));
+            goto _no_bg;
         }
     }
-}
 
-/**
- * @brief Load configuration method
- */
-void config_load() {
-    ini_t *ini = ini_load("/etc/desktop.ini");
-    if (!ini) {
-        fprintf(stderr, "Error loading /etc/desktop.ini\n");
-        return; // Hopefully default values are enough
+    sprite_t bg = {
+        .width = 0,
+        .height = 0,
+        .bitmap = NULL,
+        .alpha = SPRITE_ALPHA_SOLID
+    };
+
+    if (gfx_loadSprite(&bg, bg_f) != 0) {
+        TRACE_WARN("Failed to load wallpaper sprite\n");
+        goto _no_bg;
     }
 
+    // Render bg
+    gfx_renderSpriteScaled(ctx, &bg, GFX_RECT(0,0,info->screen_width,info->screen_height));
 
-    // Load sections
-    char *wp = ini_get(ini, "wallpaper", "file");
-    if (wp) wallpaper = wp;
-    else fprintf(stderr, "Missing directive: section=\"wallpaper\" value=\"file\"\n");
+    desktop_draw_info();
+    gfx_render(ctx);
+    celestial_flip(DESKTOP->bg_window);
+    free(bg.bitmap);
 
-    // Save this wallpaper in /comm/wallpaper
-    FILE *f = fopen("/comm/wallpaper", "w+");
-    if (f) {
-        fprintf(f, "%s\n", wp);
-        fclose(f);
-    } else {
-        fprintf(stderr, "Failed to open /comm/wallpaper: %s\n", strerror(errno));
-    }
-
-    // TODO: More stuff
-    hashmap_free(ini->sections);
-    free(ini);
-}
-
-
-/**
- * @brief Background method
- */
-void create_background() {
-    celestial_info_t *info = celestial_getServerInformation();
-    if (!info) {
-        perror("celestial_getServerInformation");
-        exit(1);
-    }
-
-    wid_t bgwid = celestial_createWindowUndecorated(CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS, info->screen_width, info->screen_height);
-    if (bgwid < 0) {
-        perror("celestial_createWindowUndecorated");
-        exit(1);
-    }
-
-    background_window = celestial_getWindow(bgwid);
-    if (!background_window) {
-        perror("celestial_getWindow");
-        exit(1);
-    }
-
-    // Set Z order
-    celestial_setZArray(background_window, CELESTIAL_Z_BACKGROUND);
-
-    // Unsubscribe from all events
-    celestial_unsubscribe(background_window, 0xFFFFFFFF);
-
-    gfx_context_t *bg_ctx = celestial_getGraphicsContext(background_window);
-
-    FILE *bg_file = fopen(wallpaper, "r");
-    if (!bg_file) {
-        fprintf(stderr, "Error loading wallpaper %s, fallback to default wallpaper\n", wallpaper);
-
-        bg_file = fopen(DEFAULT_WALLPAPER, "r");
-        if (!bg_file) goto _fallback;
-    }
-
-    // Load from file
-    background_sprite = gfx_createSprite(0, 0);
-    if (gfx_loadSprite(background_sprite, bg_file)) {
-        fclose(bg_file);
-        goto _fallback;
-    }
-
-    fclose(bg_file);
-    gfx_renderSpriteScaled(bg_ctx, background_sprite, GFX_RECT(0,0,background_window->width, background_window->height));
-    gfx_render(bg_ctx);
-    celestial_flip(background_window);
     return;
 
-_fallback:
-    gfx_clear(bg_ctx, GFX_RGB(255,255,255));
-    gfx_render(bg_ctx);
-    celestial_flip(background_window);
+_no_bg:
+    gfx_clear(ctx, GFX_RGB(0,0,0));
+    gfx_render(ctx);
+    celestial_flip(DESKTOP->bg_window);
 }
 
-/**
- * @brief Click event for the taskbar
- * @c menu_active controls whether the menu will spawn
- */
-void mouse_event_taskbar(window_t *win, uint32_t event_type, void *event) {
-    if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_DOWN && win == taskbar_window) {
-        celestial_event_mouse_button_down_t *down = (celestial_event_mouse_button_down_t*)event;
-        if (down->x >= 0 && down->x < 150 && down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
-            menu_active ^= 1;
-        
-            // TODO: Menu system completion
-            menu_show(menu_active);
-        } else {
-            if (down->held & CELESTIAL_MOUSE_BUTTON_LEFT) {
-                widget_mouseClick(down->x, down->y);
-            }
-        }
-    } else if (event_type == CELESTIAL_EVENT_MOUSE_MOTION && win == taskbar_window) {
-        celestial_event_mouse_motion_t *motion = (celestial_event_mouse_motion_t*)event;
-        widget_mouseMovement(motion->x, motion->y);
-    } else if (event_type == CELESTIAL_EVENT_MOUSE_EXIT) {
-        widget_mouseExit();
-    } else if (event_type == CELESTIAL_EVENT_MOUSE_BUTTON_UP) {
-        celestial_event_mouse_button_up_t *up = (celestial_event_mouse_button_up_t*)event;
-        widget_mouseRelease(up->x, up->y);
+void reload_signal(int signum) {
+    TRACE_DEBUG("Reloading desktop environment.\n");
+
+    FILE *wallpaper_file = fopen("/comm/wallpaper", "r");
+    if (wallpaper_file) {
+        char tmp_buffer[256] = { 0 };
+        fread(tmp_buffer, 256, 1, wallpaper_file);
+        free(DESKTOP->wallpaper_path);
+        DESKTOP->wallpaper_path = strdup(tmp_buffer);
+        fclose(wallpaper_file);
     }
+
+    gfx_context_t *ctx = celestial_getGraphicsContext(DESKTOP->bg_window);
+
+    TRACE_DEBUG("Loading wallpaper: %s\n", DESKTOP->wallpaper_path);
+
+    // Try to load the background
+    FILE *bg_f = fopen(DESKTOP->wallpaper_path, "r");
+    if (!bg_f) {
+        TRACE_WARN("Failed to open %s: %s\n", DESKTOP->wallpaper_path, strerror(errno));
+        bg_f = fopen("/usr/share/wallpapers/lines.bmp", "r");
+        if (!bg_f) {
+            TRACE_ERROR("Failed to open /usr/share/wallpapers/lines.bmp: %s\n", strerror(errno));
+            goto _no_bg;
+        }
+    }
+
+    sprite_t bg = {
+        .width = 0,
+        .height = 0,
+        .bitmap = NULL,
+        .alpha = SPRITE_ALPHA_SOLID
+    };
+
+    if (gfx_loadSprite(&bg, bg_f) != 0) {
+        TRACE_WARN("Failed to load wallpaper sprite\n");
+        goto _no_bg;
+    }
+
+    fclose(bg_f);
+
+    size_t size = GFX_SIZE(ctx);
+    gfx_color_t *old_bg = malloc(size);
+    gfx_color_t *new_bg = malloc(size);
+    
+    memcpy(old_bg, ctx->backbuffer, size);
+
+    gfx_context_t new_ctx = *ctx;
+    new_ctx.backbuffer = new_bg;
+    gfx_renderSpriteScaled(&new_ctx, &bg, GFX_RECT(0,0,DESKTOP->screen_width,DESKTOP->screen_height));
+
+    // super sick transition that took surprisingly long to implement
+    sprite_t transition = {
+        .width = DESKTOP->screen_width,
+        .height = DESKTOP->screen_height,
+        .bitmap = new_bg,
+        .alpha = SPRITE_ALPHA_BLEND
+    };
+
+    for (int alpha = 16; alpha < 255; alpha += 16) {
+        memcpy(ctx->backbuffer, old_bg, size);
+        gfx_renderSpriteAlpha(ctx, &transition, 0, 0, alpha);
+        desktop_draw_info();
+
+        gfx_render(ctx);
+        celestial_flip(DESKTOP->bg_window);
+
+        usleep(25000);
+    }
+    
+    memcpy(ctx->backbuffer, new_bg, size);
+    desktop_draw_info();
+    gfx_render(ctx);
+
+    celestial_flip(DESKTOP->bg_window);
+
+    free(old_bg);
+    free(new_bg);
+    free(bg.bitmap);
+
+    return;
+
+_no_bg:
+    gfx_clear(ctx, GFX_RGB(0,0,0));
+    gfx_render(ctx);
+    celestial_flip(DESKTOP->bg_window);
 }
 
 int main(int argc, char *argv[]) {
-    struct option options[] = {
-        { .name = "help", .has_arg = no_argument, .flag = NULL, .val = 'h', },
-        { .name = "version", .has_arg = no_argument, .flag = NULL, .val = 'v' },
-        { .name = NULL, .has_arg = no_argument, .flag = NULL, .val = 0 },
+    struct option opts[] = {
+        { .name = "help", .flag = NULL, .has_arg = no_argument, .val = 'h' },
+        { .name = "version", .flag = NULL, .has_arg = no_argument, .val = 'v' },
+        { 0,0,0,0 }
     };
 
-    int ch;
-    int index;
-    while ((ch = getopt_long(argc, argv, "vh", (const struct option*)options, &index)) != -1) {
-        if (!ch && options[index].flag == NULL) {
-            ch = options[index].val;
-        }
-        
-        switch (ch) {
+    int optindex;
+    char c;
+    while ((c = getopt_long(argc, argv, "hv", (const struct option*)opts, &optindex)) != -1) {
+        if (!c) c = opts[optindex].val;
+
+        switch (c) {
             case 'v':
                 version();
                 break;
-            
+
             case 'h':
+            default:
                 usage();
                 break;
         }
     }
 
-    // Create helpful little file
+    // hello!
+    TRACE_INFO("desktop v%d.%d.%d\n", DESKTOP_MAJOR, DESKTOP_MINOR, DESKTOP_LOWER);
+
+    // Config parser
+    DESKTOP->desktop_cfg = ini_load("/etc/desktop.conf");
+    if (!DESKTOP->desktop_cfg) {
+        TRACE_ERROR("Failed to load /etc/desktop.conf. Bailing.\n");
+        return 1;
+    }
+
+    // Load the settings
+    DESKTOP->wallpaper_path = DESKTOP_CFG("desktop", "wallpaper", "/usr/share/wallpapers/EtherealWallpaper1.bmp");
+    char *launch_path = DESKTOP_CFG("desktop", "launch_path", "termemu");
+
+    // Begin!
+    celestial_info_t *info = celestial_getServerInformation();
+    if (!info) {
+        DESKTOP_FAILED("celestial_getServerInformation");
+    }
+
+    DESKTOP->screen_width = info->screen_width;
+    DESKTOP->screen_height = info->screen_height;
+    TRACE_DEBUG("%dx%d screen\n", info->screen_width, info->screen_height);
+
+    char *info_enable = DESKTOP_CFG("desktop", "show_build_info", "true");
+    if (!strcasecmp(info_enable, "true")) {
+        DESKTOP->show_info = true;
+    } else {
+        DESKTOP->show_info = false;
+    }
+
+    // Create windows
+    desktop_init_bg(info);
+    free(info);
+
+    // Initialize the background switching runtime
     FILE *pid_file = fopen("/comm/desktop.pid", "w+");
     if (pid_file) {
         char buf[25] = { 0 };
@@ -304,81 +287,45 @@ int main(int argc, char *argv[]) {
         fclose(pid_file);
     }
 
-    // Set reload signal
     signal(SIGUSR2, reload_signal);
 
-    // Load config
-    config_load();
-
-    // Create the background
-    create_background();
-
-    // Create the taskbar window
-    wid_t taskbar_wid = celestial_createWindowUndecorated(0, celestial_getServerInformation()->screen_width, TASKBAR_HEIGHT);
-    if (taskbar_wid < 0) {
-        fprintf(stderr, "desktop: Create window failed with error %s\n", strerror(errno));
-        return 1;
-    }
-
-    taskbar_window = celestial_getWindow(taskbar_wid);
-    if (!taskbar_window) return 1;
-    celestial_setWindowPosition(taskbar_window, 0, celestial_getServerInformation()->screen_height - TASKBAR_HEIGHT);
-
-    // Set event
-    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_DOWN, mouse_event_taskbar);
-    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_MOTION, mouse_event_taskbar);
-    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_EXIT, mouse_event_taskbar);
-    celestial_setHandler(taskbar_window, CELESTIAL_EVENT_MOUSE_BUTTON_UP, mouse_event_taskbar);
-
-    // Get taskbar + make gradient
-    gfx_context_t *taskbar_ctx = celestial_getGraphicsContext(taskbar_window);
-    create_taskbar_gradient(taskbar_ctx, 0);
-
-    // Load the fonts
-    taskbar_font = gfx_loadFont(taskbar_ctx, "/usr/share/DejaVuSans.ttf");
-
-    sprite_t *start_btn = gfx_createSprite(0, 0);
-    gfx_loadSprite(start_btn, fopen("/usr/share/EtherealStartButton.bmp", "r"));
-    gfx_renderSprite(taskbar_ctx, start_btn, 10, 4);
-
-    // Fonts have been loaded, draw them in
-    gfx_render(taskbar_ctx);
-    celestial_flip(taskbar_window);
-
-    // Init menu
-    menu_init();
-
-    // Now launch the startup task
     pid_t cpid = fork();
-    if (!cpid) {
-        // Depends on whether we have an extra argv
-        char *start = DEFAULT_STARTUP;
-        if (argc-optind) {
-            start = argv[optind];
-        }       
-
-        char *args[] = { start, NULL };
-        execvp(start, args);
-        return 1;
+    if (cpid == 0) {
+        char *argv[] = {"desktopmgr", NULL};
+        execvp("desktopmgr", (char *const*)argv);
+        TRACE_WARN("Failed to launch desktopmgr\n");
+        exit(EXIT_FAILURE);
     }
 
-    // Load the widgets
-    widgets_load();
-
-    while (1) {
-        struct pollfd fds[] = {{ .fd = celestial_getSocketFile(), .events = POLLIN }};
-        int p = poll(fds, 1, 1000);
-        if (!p) continue;
-
-        create_taskbar_gradient(taskbar_ctx, 0);
-        celestial_poll();
-
-        widgets_update();
-
-        if (taskbar_ctx->clip) {
-            celestial_flip(taskbar_window);
-        }
+    cpid = fork();
+    if (cpid == 0) {
+        char *argv[] = {"taskbar", NULL};
+        execvp("taskbar", (char *const*)argv);
+        TRACE_WARN("Failed to launch taskbar\n");
+        exit(EXIT_FAILURE);  
     }
 
+    // Launch the initial application
+    cpid = fork();
+    if (cpid == 0) {
+        char *argv[] = {launch_path, NULL};
+        execvp(launch_path, (char *const*)argv);
+        TRACE_WARN("Failed to launch %s\n", launch_path);
+        exit(EXIT_FAILURE);    
+    }
+
+    cpid = fork();
+    if (cpid == 0) {
+        char *argv[] = { "alive-counter", NULL };
+        execvp("alive-counter", (char *const*)argv);
+        TRACE_WARN("Failed to launch alive-counter\n");
+        exit(EXIT_FAILURE);    
+    }
+
+    while (celestial_running()) {
+        celestial_pollIndefinite();
+    }
+
+    TRACE_DEBUG("TODO: desktop_shutdown");
     return 0;
 }

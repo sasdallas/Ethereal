@@ -1,5 +1,5 @@
 /**
- * @file userspace/desktopv2/desktop.h
+ * @file userspace/desktop/desktop.h
  * @brief Desktop
  * 
  * 
