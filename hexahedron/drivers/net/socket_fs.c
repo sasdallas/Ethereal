@@ -15,6 +15,12 @@
 #include <kernel/debug.h>
 #include <kernel/fs/vfs_new.h>
 #include <asm/ioctls.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+
+#ifndef SIOCGIFHWADDR
+#define SIOCGIFHWADDR 0x8927
+#endif
 
 /* File operations */
 static int socketfs_open(vfs_file_t *file, unsigned long flags);
@@ -172,11 +178,11 @@ static int socketfs_check_flags(vfs_file_t *f) {
  * @param sock The socket to create the inode on
  */
 vfs_inode_t *socketfs_create(sock_t *sock) {
-    vfs_inode_t *i = vfs2_inode();
+    vfs_inode_t *i = vfs_inode();
     i->priv = (void*)sock;
     i->attr.type = VFS_SOCKET;
-    i->attr.uid = current_cpu->current_process->uid;
-    i->attr.gid = current_cpu->current_process->gid;
+    i->attr.uid = current_cpu->current_process->cred.uid;
+    i->attr.gid = current_cpu->current_process->cred.gid;
     i->attr.ino = vfs_getNextInode();
     i->attr.mode = 0775;
     i->attr.nlink = 1;
