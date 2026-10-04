@@ -39,6 +39,8 @@ nt_window_t *alt_tab = NULL;
 bool alt_tab_visible = false;
 int alt_tab_index = 0;
 int alt_tab_num_windows = 0;
+wid_t *alt_tab_windows = NULL;
+struct taskbar_window *recent_window = NULL;
 
 /* Screen */
 int screen_width, screen_height;
@@ -57,12 +59,42 @@ static nt_color_t premultiply(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
 // Silly little window structure
 struct taskbar_window {
     wid_t window_id;
+    struct taskbar_window *recent_prev;
+    struct taskbar_window *recent_next;
     nt_fade_t *fade;
     bool highlighted;
     nt_widget_t *w;
     nt_widget_t *label;
     nt_widget_t *icon;
 };
+
+static void taskbar_recent_remove(struct taskbar_window *tb) {
+    if (tb->recent_prev) tb->recent_prev->recent_next = tb->recent_next;
+    else if (recent_window == tb) recent_window = tb->recent_next;
+    if (tb->recent_next) tb->recent_next->recent_prev = tb->recent_prev;
+    tb->recent_prev = NULL;
+    tb->recent_next = NULL;
+}
+
+static void taskbar_recent_focus(struct taskbar_window *tb) {
+    if (recent_window == tb) return;
+    taskbar_recent_remove(tb);
+    tb->recent_next = recent_window;
+    if (recent_window) recent_window->recent_prev = tb;
+    recent_window = tb;
+}
+
+static void taskbar_recent_append(struct taskbar_window *tb) {
+    if (!recent_window) {
+        recent_window = tb;
+        return;
+    }
+
+    struct taskbar_window *last = recent_window;
+    while (last->recent_next) last = last->recent_next;
+    last->recent_next = tb;
+    tb->recent_prev = last;
+}
 
 struct start_item {
     bool folder;
@@ -232,12 +264,16 @@ void taskbar_set_highlighted(struct taskbar_window *tb, bool highlighted) {
 }
 
 void taskbar_add_window(wid_t window_id, char *window_name, char *window_icon, bool highlighted) {
+    if (!window_name || !window_name[0]) window_name = "Unnamed Window";
+    if (!window_icon || !window_icon[0]) window_icon = "missing";
+
     struct taskbar_window *exist = taskbar_get_window(window_id);
     if (exist) {
         nt_image_wdgt_t *img = (nt_image_wdgt_t*)exist->icon;
         img->img = nt_icon_get(window_icon, NULL, 16);
         nt_label_set_text(exist->label, window_name);
         taskbar_set_highlighted(exist, highlighted);
+        if (highlighted) taskbar_recent_focus(exist);
         nt_widget_invalidate(exist->icon);
         return;
     }
@@ -245,6 +281,7 @@ void taskbar_add_window(wid_t window_id, char *window_name, char *window_icon, b
     nt_widget_t *w = nt_box_create_horizontal();
     
     struct taskbar_window *tb = malloc(sizeof(struct taskbar_window));
+    memset(tb, 0, sizeof(struct taskbar_window));
     tb->window_id = window_id;
     tb->fade = nt_fade_create(250, taskbar_window_fade, w);
     tb->highlighted = highlighted;
@@ -290,6 +327,8 @@ void taskbar_add_window(wid_t window_id, char *window_name, char *window_icon, b
     tb->w = w;
 
     nt_box_append(window_list, w);
+    if (highlighted) taskbar_recent_focus(tb);
+    else taskbar_recent_append(tb);
 }
 
 void taskbar_render(nt_widget_t *w, nt_render_surface_t *surf) {
@@ -403,18 +442,20 @@ void start_item_pressed(nt_widget_t *w, nt_signal_t *sig, void *ctx) {
 
 void start_add_item(nt_widget_t *w, char *item_name, char *item_icon, char *item_exec, bool folder) {
     struct start_item *start = malloc(sizeof(struct start_item));
+    memset(start, 0, sizeof(struct start_item));
 
     if (folder) item_icon = "folder";
     if (item_exec) {
-        strncpy(start->exec, item_exec, 256);
-
-        if (strlen(item_exec) >= 256) {
-            TRACE_ERROR("Exec \"%s\" is too long!\n");    
+        if (strlen(item_exec) >= sizeof(start->exec)) {
+            TRACE_ERROR("Exec \"%s\" is too long!\n", item_exec);
+            free(start);
             return;
         }
+
+        snprintf(start->exec, sizeof(start->exec), "%s", item_exec);
     } else {
         NT_WARN("Missing Exec entry in start menu item!\n");
-        strncpy(start->exec, "show-dialog --error --text=\"Corrupt start menu entry\" --title=\"Taskbar\"", 256);
+        snprintf(start->exec, sizeof(start->exec), "show-dialog --error --text=\"Corrupt start menu entry\" --title=\"Taskbar\"");
     }
 
     if (!item_name) item_name = "[bad INI file]";
@@ -483,13 +524,16 @@ nt_widget_t *start_build_list_view() {
             continue;
         }
 
-        TRACE_DEBUG("Test name: %s (%d)\n", ent->d_name, ent->d_type);
         if (ent->d_type == DT_DIR) {
-            folders = realloc(folders, (num_folders+1) * sizeof(char*));
-            folders[num_folders++] = strdup(ent->d_name);
+            char *folder = strdup(ent->d_name);
+            char **new_folders = realloc(folders, (num_folders+1) * sizeof(char*));
+            folders = new_folders;
+            folders[num_folders++] = folder;
         } else if (ent->d_type == DT_REG && isdigit(ent->d_name[0])) {
-            files = realloc(files, (num_files+1) * sizeof(char*));
-            files[num_files++] = strdup(ent->d_name);
+            char *file = strdup(ent->d_name);
+            char **new_files = realloc(files, (num_files+1) * sizeof(char*));
+            files = new_files;
+            files[num_files++] = file;
         } else {
             TRACE_DEBUG("Extra entry: %s\n", ent->d_name);
         }
@@ -497,11 +541,11 @@ nt_widget_t *start_build_list_view() {
 
     closedir(dirp);
 
-    qsort(files, num_files, sizeof(char*), start_sort);
-    qsort(folders, num_folders, sizeof(char*), start_sort);
+    if (num_files > 1) qsort(files, num_files, sizeof(char*), start_sort);
+    if (num_folders > 1) qsort(folders, num_folders, sizeof(char*), start_sort);
 
     if (folders) {
-        for (unsigned i = 0; i < num_folders; i++) {
+        for (int i = 0; i < num_folders; i++) {
             if (!strcmp(folders[i], "Back")) {
                 start_add_item(list_view, folders[i], "folder", "..", true);
             } else {
@@ -516,10 +560,11 @@ nt_widget_t *start_build_list_view() {
 
 
     if (files) {
-        for (unsigned i = 0; i < num_files; i++) {
+        for (int i = 0; i < num_files; i++) {
             ini_t *ini = ini_load(files[i]);
             if (ini == NULL) {
                 TRACE_WARN("Failed to open %s\n", files[i]);
+                free(files[i]);
                 continue;
             }
 
@@ -550,24 +595,25 @@ void tab_render(nt_widget_t *w, nt_render_surface_t *surf) {
 
     nt_rect_t rect = NT_RECT(0, 0, surf->width, surf->height);
     nt_render_rounded_rect_gradient(surf, &rect, 4, premultiply(0x32, 0x30, 0x38, 195), premultiply(0x24, 0x22, 0x28, 220), false);
-
 }
 
-void unfocused_handler(window_t *win, uint32_t event_type, void *event) {
-    start_window_shown = false;
-    nt_window_set_visible(start_menu_window, false);
+bool start_window_event(nt_widget_t *widget, nt_event_t *event) {
+    if (event->type == NT_EVENT_WINDOW_UNFOCUS) {
+        start_window_shown = false;
+        nt_window_set_visible(start_menu_window, false);
+    }
+
+    return true;
 }
 
-void start_create() {
+int start_create() {
     start_menu_window = nt_window_create_flags(410, 448, CELESTIAL_WINDOW_FLAG_BLURRED);
     nt_window_set_visible(start_menu_window, start_window_shown);
     nt_window_set_pos(start_menu_window, 0, screen_height-31-448);
 
-    // When this window loses focus it should go invisible
-    celestial_setHandler((window_t*)start_menu_window->platform, CELESTIAL_EVENT_UNFOCUSED, unfocused_handler);
-
     // Create the root box
     nt_widget_t *root = nt_box_create_horizontal();
+    nt_event_set_handler(root, NT_EVENT_WINDOW_UNFOCUS, start_window_event);
     nt_style_set_margin_all(&root->style, 0);
     nt_widget_set_expansion(root, NT_EXPAND_HORIZONTAL | NT_EXPAND_VERTICAL);
     nt_window_set_root(start_menu_window, root);
@@ -635,6 +681,8 @@ void start_create() {
     nt_style_set_margin_all(&right->style, 2);
     nt_style_set_margin(&right->style, RIGHT, 4);
     nt_box_append(root, right);
+
+    return 0;
 }
 
 
@@ -648,7 +696,11 @@ void change_directory(char *path) {
     nt_scroll_container_set_child(start_scroll, new);
 
     NT_ITERATE_CHILDREN(start_list) {
-        free(start_list->priv);
+        nt_list_item_t *item = (nt_list_item_t*)child;
+        if (item->child) {
+            free(item->child->priv);
+            item->child->priv = NULL;
+        }
     }
 
     nt_widget_free(start_list);
@@ -665,7 +717,39 @@ void app_hook(nt_widget_t *w, nt_render_surface_t *surf) {
     }
 }
 
-void alt_tab_show() {
+static void alt_tab_close(bool activate) {
+    wid_t selected = (wid_t)-1;
+    if (activate && alt_tab_index < alt_tab_num_windows) {
+        selected = alt_tab_windows[alt_tab_index];
+    }
+
+    nt_window_t *window = alt_tab;
+    alt_tab = NULL;
+    alt_tab_visible = false;
+    alt_tab_index = 0;
+    alt_tab_num_windows = 0;
+    free(alt_tab_windows);
+    alt_tab_windows = NULL;
+
+    if (window) nt_window_close(window);
+    if (selected != (wid_t)-1 && taskbar_get_window(selected)) {
+        celestial_setFocusID(selected, true);
+    }
+}
+
+void alt_tab_show(wid_t focused) {
+    if (recent_window == NULL) {
+        alt_tab_visible = false;
+        return;
+    }
+
+    int count = 0;
+    for (struct taskbar_window *tb = recent_window; tb; tb = tb->recent_next) {
+        count++;
+    }
+
+    alt_tab_windows = malloc(count * sizeof(wid_t));
+    memset(alt_tab_windows, 0, count * sizeof(wid_t));
     alt_tab = nt_window_create_flags(screen_width, 125, 0);
     nt_window_set_visible(alt_tab, true);
 
@@ -685,13 +769,13 @@ void alt_tab_show() {
 
     int idx = 0;
 
-    NT_ITERATE_CHILDREN(window_list) {
-        struct taskbar_window *tb = child->priv;
-
-        window_info_t info;
+    for (struct taskbar_window *tb = recent_window; tb; tb = tb->recent_next) {
+        window_info_t info = { 0 };
         if (celestial_queryWindow(tb->window_id, &info)) {
             continue;
         }
+
+        alt_tab_windows[idx] = tb->window_id;
 
         nt_widget_t *w = nt_box_create_vertical();
         nt_widget_set_expansion(w, NT_EXPAND_VERTICAL);
@@ -718,30 +802,24 @@ void alt_tab_show() {
 
     alt_tab_num_windows = idx;
 
+    if (alt_tab_num_windows == 0) {
+        alt_tab_close(false);
+        return;
+    }
+
+    alt_tab_index = 0;
+    for (int i = 0; i < alt_tab_num_windows; i++) {
+        if (alt_tab_windows[i] == focused) {
+            alt_tab_index = (i + 1) % alt_tab_num_windows;
+            break;
+        }
+    }
+
     celestial_setFocus((window_t*)alt_tab->platform, true);
 }
 
 void alt_tab_hide() {
-    if (alt_tab == NULL) return;
-    
-    nt_window_close(alt_tab);
-    alt_tab = NULL;
-
-    // find the window being referenced by alt-tab index.
-    // this is hacky and may not work perfectly
-    int i = 0;
-    NT_ITERATE_CHILDREN(window_list) {
-        if (i == alt_tab_index) {
-            struct taskbar_window *tb = child->priv;
-            celestial_setFocusID(tb->window_id, true);
-            
-        }
-
-        i++;
-    }
-
-    alt_tab_visible = false;
-    alt_tab_index = 0;
+    if (alt_tab) alt_tab_close(true);
 }
 
 void announce_handler(window_t *win, uint32_t event_type, void *event) {
@@ -750,7 +828,7 @@ void announce_handler(window_t *win, uint32_t event_type, void *event) {
         struct taskbar_window *tb = taskbar_get_window(change->changed_window);
 
         if (change->changed_event == CELESTIAL_WINDOW_CHANGE_ADVERTISED) {
-            window_info_t info;
+            window_info_t info = { 0 };
             if (celestial_queryWindow(change->changed_window, &info) != 0) {
                 TRACE_ERROR("celestial_queryWindow failed: %s\n", strerror(errno));
                 return;
@@ -767,11 +845,15 @@ void announce_handler(window_t *win, uint32_t event_type, void *event) {
             }
         } else if (change->changed_event == CELESTIAL_WINDOW_CHANGE_CLOSING) {
             if (!tb) return;
+            if (alt_tab_visible) alt_tab_close(false);
+            taskbar_recent_remove(tb);
+            tb->fade = NULL;
             nt_widget_mark_recalc(tb->w);
             nt_widget_free(tb->w);
             free(tb);
         } else if (change->changed_event == CELESTIAL_WINDOW_CHANGE_FOCUSED) {
             if (!tb) return;
+            taskbar_recent_focus(tb);
             taskbar_set_highlighted(tb, true);
         } else if (change->changed_event == CELESTIAL_WINDOW_CHANGE_UNFOCUSED) {
             if (!tb) return;
@@ -807,11 +889,13 @@ void key_handler(window_t *win, uint32_t event_type, void *event) {
             if (key->pressed == false) return;
             if (!alt_tab_visible) {
                 alt_tab_visible = true;
-                alt_tab_show();
-            } else {
+                alt_tab_show(key->focused);
+            } else if (alt_tab_num_windows > 0 && alt_tab) {
                 alt_tab_index = (alt_tab_index + 1) % alt_tab_num_windows;
-                nt_widget_invalidate(alt_tab->root_frame->children); // anything below a root_frame
-                nt_window_update(alt_tab); // << hack
+                NT_ITERATE_CHILDREN(alt_tab->root_frame->children) {
+                    nt_widget_invalidate(child);
+                }
+                nt_window_update(alt_tab);
             }
         } else if (key->sc == SCANCODE_LEFT_ALT) {
             if (key->pressed == true) return;
@@ -842,11 +926,9 @@ int main(int argc, char *argv[]) {
 
     // Create the taskbar
     taskbar_create();
-    TRACE_DEBUG("taskbar_create succeeded\n");
 
     // Create the start menu
     start_create();
-    TRACE_DEBUG("start_create succeeded\n");
 
     // Set us at root window
     window_t *win = (window_t*)taskbar_window->platform;
@@ -862,13 +944,12 @@ int main(int argc, char *argv[]) {
     celestial_bindKey(win, 't', KEYBOARD_MOD_LEFT_CTRL | KEYBOARD_MOD_LEFT_ALT, true);
 
     // Query all the currently available window IDs
-    wid_t *wids;
-    size_t nwids;
+    wid_t *wids = NULL;
+    size_t nwids = 0;
     int r = celestial_queryWindowIDs(&nwids, &wids);
     if (r == 0) {
-        // if (nwids > 5) nwids = 5;
         for (unsigned i = 0; i < nwids; i++) {
-            window_info_t info;
+            window_info_t info = { 0 };
             if (celestial_queryWindow(wids[i], &info)) {
                 continue;
             }
@@ -877,6 +958,8 @@ int main(int argc, char *argv[]) {
                 taskbar_add_window(wids[i], info.name, info.icon, info.focused);
             }
         }
+
+        free(wids);
     } else {
         TRACE_ERROR("celestial_queryWindowIDs failed: %s\n", strerror(errno));
     }
