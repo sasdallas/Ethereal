@@ -105,6 +105,12 @@ void *stream_thread(void *arg) {
 
     _retry:
         while (stream->buffers.length == 0) {
+            if (was_playing) {
+                audio_stream_request_t req = AUDIO_STREAM_DRAIN;
+                ioctl(stream->fd, IO_AUDIO_REQUEST, &req);
+                was_playing = false;
+            }
+
             pthread_cond_wait(&stream->avail, &stream->lock);
         } 
         
@@ -197,6 +203,7 @@ int stream_configure(server_stream_t *stream, audio_stream_config_t *config) {
     memcpy(&stream->config, config, sizeof(audio_stream_config_t));
     return 0;
 }
+
 
 // init stream
 int stream_init(server_stream_t *stream) {
@@ -321,13 +328,11 @@ void *client_thread(void *arg) {
             continue;
         }
 
-        TRACE_DEBUG("Received packet %d from client %d\n", hdr.type, cli->fd);
 
         // yes this is stupid
         void *buffer = hdr.size ? malloc(hdr.size) : NULL;
         if (hdr.size != 0) {
             memset(buffer, 0xab, hdr.size);
-            TRACE_DEBUG("receiving %d bytes\n", hdr.size);
             r = client_recvFull(cli, buffer, hdr.size);
             if (r != hdr.size) {
                 TRACE_ERROR("Client %d encountered error %s\n", cli->fd, strerror(errno));
@@ -699,4 +704,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
