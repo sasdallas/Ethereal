@@ -397,13 +397,14 @@ static void xhci_completionThread(void *arg) {
  */
 int xhci_sendCommand(xhci_t *xhci, void *trb, xhci_command_completion_trb_t *trbout) {
     memset(trbout, 0, sizeof(xhci_command_completion_trb_t));
-    
-    spinlock_acquireRaw(&xhci->command_lock);
+
+    spinlock_acquire(&xhci->command_lock);
     wait_queue_node_t n;
     waitqueue_add(&xhci->command_waiters, &n);
     xhci_enqueueRing(xhci->cmd_ring, trb);
+    assert(queue_rb_space(&xhci->command_trbs) && "xHCI command completion queue overflow");
     queue_rb_push(&xhci->command_trbs, trbout);
-    spinlock_releaseRaw(&xhci->command_lock);
+    spinlock_release(&xhci->command_lock);
 
     XHCI_DOORBELL(xhci, 0) = 0;
 
@@ -443,6 +444,8 @@ static usb_status_t xhci_open_pipe(usb_bus_t *bus, usb_pipe_t *pipe) {
         pipe->ops = &xhci_control_ep_ops;
     } else if (USB_ENDP_TYPE(pipe->endp->desc.bmAttributes) == USB_ENDP_TYPE_INT) {
         pipe->ops = &xhci_intr_ep_ops;
+    } else if (USB_ENDP_TYPE(pipe->endp->desc.bmAttributes) == USB_ENDP_TYPE_BULK) {
+        pipe->ops = &xhci_bulk_ep_ops;
     } else {
         assert(0 && "unhandled");
     }
@@ -664,7 +667,7 @@ static int xhci_init(pci_device_t *dev) {
     SPINLOCK_INIT(&xhci->completion_lock);
     TASKLET_INIT(&xhci->tasklet, "xhci tasklet", xhci_tasklet, xhci);
     QUEUE_OBJ_INIT(&xhci->completions, sizeof(xhci_completion_t), XHCI_MAX_COMPLETIONS);
-    QUEUE_RB_INIT(&xhci->command_trbs, 5);
+    QUEUE_RB_INIT(&xhci->command_trbs, XHCI_RING_SIZE - 1);
     WAIT_QUEUE_INIT(&xhci->completion_waiters);
     WAIT_QUEUE_INIT(&xhci->command_waiters);
 

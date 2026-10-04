@@ -167,6 +167,7 @@ void xhci_freeRing(xhci_ring_t *ring);
 /* xHCI pipe */
 extern usb_pipe_ops_t xhci_control_ep_ops;
 extern usb_pipe_ops_t xhci_intr_ep_ops;
+extern usb_pipe_ops_t xhci_bulk_ep_ops;
 usb_status_t xhci_configurePipe(xhci_t *xhci, usb_pipe_t *pipe);
 void xhci_freePipe(xhci_t *xhci, usb_pipe_t *pipe);
 
