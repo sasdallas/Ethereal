@@ -101,7 +101,7 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
 
     int timeout = -1;
     if (time) {
-        timeout = time->tv_sec * 1000 + time->tv_nsec / 1000000;
+        timeout = time->tv_sec * 1000 + (time->tv_nsec + 999999) / 1000000;
     }
 
     // we own the futex lock now, its time to sleepy
