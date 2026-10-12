@@ -55,7 +55,6 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
                 continue;
             }
-#define DISABLE_COW
 #ifndef DISABLE_COW
             // Retain the physical page
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
