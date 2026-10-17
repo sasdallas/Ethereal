@@ -20,7 +20,6 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <kernel/task/process.h>
-#include <structs/circbuf.h>
 
 /**** DEFINITIONS ****/
 
@@ -97,10 +96,6 @@ typedef struct sock {
     spinlock_t *recv_lock;              // Receive lock
     sleep_queue_t *recv_wait_queue;     // Receive sleep queue
     list_t *recv_queue;                 // Received packet queue
-
-    // RECEIVE 2
-    spinlock_t queue_lock;
-    circbuf_t *queue;
 
     // OTHER
     struct sockaddr *connected_addr;    // Connected socket address

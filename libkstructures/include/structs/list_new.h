@@ -164,7 +164,7 @@ struct {\
     if (DLIST_FIRST(list)) {\
         DLIST_PREV(DLIST_FIRST(list), field) = (node);\
     } else {\
-        DLIST_LAST(list) = DLIST_FIRST(list);\
+        DLIST_LAST(list) = (node);\
     }\
     DLIST_FIRST(list) = (node);\
 })
@@ -210,5 +210,8 @@ struct {\
 
 #define DLIST_FOREACH(type, name, head, field) \
 for (type * (name) = DLIST_FIRST(head); (name); (name) = DLIST_NEXT(name, field))
+
+#define DLIST_FOREACH_REVERSE(type, name, head, field) \
+for (type * (name) = DLIST_LAST(head); (name); (name) = DLIST_PREV(name, field))
 
 #endif

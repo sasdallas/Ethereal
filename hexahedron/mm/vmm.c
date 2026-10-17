@@ -455,7 +455,6 @@ _finish:
  * @param ctx The context to switch to
  */
 void vmm_switch(vmm_context_t *ctx) {
-    assert(ctx);
     if (current_cpu->current_thread) current_cpu->current_thread->ctx = ctx;
     if (ctx == current_cpu->current_context) return; // No switching actually needed
     

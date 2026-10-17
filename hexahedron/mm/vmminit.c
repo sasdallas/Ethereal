@@ -86,8 +86,6 @@ void vmm_init(pmm_region_t *region) {
     alloc_init();
     memleak_init();
     cache_init();
-
-    vmm_dumpContext(current_cpu->current_context);
 }
 
 /**

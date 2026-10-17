@@ -131,6 +131,8 @@ void hashmap_set(hashmap_t *hashmap, void *key, void *value) {
  * @returns The value set by @c hashmap_set
  */
 void *hashmap_get(hashmap_t *hashmap, void *key) {
+    if (hashmap->size == 0) return NULL;
+
     // Find the start of the chain.
     unsigned long hash = HASHMAP_HASH(key) % hashmap->size;
     hashmap_node_t *entry = hashmap->entries[hash];
