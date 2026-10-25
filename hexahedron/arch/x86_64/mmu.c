@@ -63,9 +63,7 @@ static int arch_mmu_pf_readable(uintptr_t addr) {
 /**
  * @brief MMU user page fault debugger
  */
-void arch_mmu_pf_user(registers_t *regs) {
-    uintptr_t cr2;
-    asm volatile ("movq %%cr2, %0" : "=r"(cr2));
+void arch_mmu_pf_user(registers_t *regs, uintptr_t cr2) {
     dprintf(ERR, "Could not resolve #PF exception (%p) from IP %04x:%016llX SP %016llX\n", cr2, regs->cs, regs->rip, regs->rsp);
     if (current_cpu->current_thread) {
         dprintf(ERR, "Executing on thread %d\n", current_cpu->current_thread->tid);
@@ -175,7 +173,7 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
 _die:
     
     if (info.from == VMM_FAULT_FROM_USER) {
-        arch_mmu_pf_user(regs);
+        arch_mmu_pf_user(regs, regs_extended->cr2);
         return 0;
     }
 
