@@ -227,6 +227,7 @@ static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrl
     unix_connection_req_t *req = NULL;
     queue_rb_pop(&usock->listen.backlog, (void**)&req);
     assert(req);
+    poll_signal(&usock->event, POLLOUT);
 
     // TODO: redo this once i add timeouts, right now client is forever sleeping    
     mutex_release(&usock->lock);
@@ -418,15 +419,13 @@ static int unix_connect(sock_t *sock, const struct sockaddr *sockaddr, socklen_t
         mutex_acquire(&serv->lock);
     }
 
+    if (!sock_nonblocking(sock)) {
+        sleep_prepare();
+    }
+
     // Push
     queue_rb_push(&serv->listen.backlog, req);
     poll_signal(&serv->event, POLLIN);
-
-    if (!sock_nonblocking(sock)) {
-        // we will need to be asleep for this
-        // TODO: timeout
-        sleep_prepare();
-    }
 
     mutex_release(&serv->lock);
     
