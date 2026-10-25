@@ -336,6 +336,12 @@ void pmm_release(uintptr_t page) {
 }
 
 /**
+ * @brief Free a PMM page
+ * @param page The page to free
+ */
+void pmm_freePage(uintptr_t page) __attribute__((alias("pmm_release")));
+
+/**
  * @brief Release a reference to a PMM page
  * @param pg The page metadata to release
  */

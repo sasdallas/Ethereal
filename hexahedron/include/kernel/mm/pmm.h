@@ -78,8 +78,8 @@ typedef struct pmm_run {
     size_t npages;
 } pmm_run_t;
 
-typedef struct pmm_section2 {
-    struct pmm_section2 *next;
+typedef struct pmm_section {
+    struct pmm_section *next;
     uintptr_t start;
     size_t npages;
     mutex_t lock;
@@ -121,12 +121,18 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone);
 uintptr_t pmm_allocatePages(size_t npages, pmm_zone_t zone);
 
 /**
+ * @brief Release a page
+ * @param page The page to release
+ * 
+ * Decrements the page refcount
+ */
+void pmm_release(uintptr_t page);
+
+/**
  * @brief Free a PMM page
  * @param page The page to free
  */
-static inline void pmm_freePage(uintptr_t page) {
-    pmm_release(page);
-}
+void pmm_freePage(uintptr_t page);
 
 /**
  * @brief Free PMM pages
@@ -150,14 +156,6 @@ void pmm_retain(uintptr_t page);
  * Increments the page refcount to prevent it from being freed.
  */
 void pmm_retainPage(pmm_page_t *page);
-
-/**
- * @brief Release a page
- * @param page The page to release
- * 
- * Decrements the page refcount
- */
-void pmm_release(uintptr_t page);
 
 /**
  * @brief Release a page
