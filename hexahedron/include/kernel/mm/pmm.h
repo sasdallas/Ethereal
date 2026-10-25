@@ -65,17 +65,27 @@ typedef struct pmm_page {
     volatile uint8_t flags;     // Page flags
     struct page_entry *ent;     // Parent page entry
     uintptr_t refcount;
+
+    struct {
+        size_t npages; // valid only on first and last pages of a run
+        size_t run_prev; // valid on first page only, index into page array, SIZE_MAX when no previous runs
+        size_t run_next; // valid on first page only, index into page array, SIZE_MAX when no next run
+    } run;
 } pmm_page_t;
 
-typedef struct pmm_section {
-    struct pmm_section *next; 
-    mutex_t *mutex;             // Mutex for the section
-    uintptr_t start;            // Start
-    size_t size;                // Size of the region, in bytes
-    uint8_t *bmap;              // Bitmap
-    uint64_t ffb;               // First free byte index
-    volatile uint64_t nfree;    // Number of free blocks
-    pmm_page_t *pages;          // List of pages
+typedef struct pmm_run {
+    uintptr_t run_prev;         // Phys address of previous run
+    size_t npages;
+} pmm_run_t;
+
+typedef struct pmm_section2 {
+    struct pmm_section2 *next;
+    uintptr_t start;
+    size_t npages;
+    mutex_t lock;
+    uint64_t nfree;
+    pmm_page_t *pages;
+    pmm_page_t *first_run;
 } pmm_section_t;
 
 /**** MACROS ****/
@@ -88,6 +98,14 @@ typedef struct pmm_section {
  * @brief Initialize the physical memory manager
  */
 void pmm_init(pmm_region_t *region);
+
+/**
+ * @brief Allocate a PMM page
+ * @param zone The zone to allocate from
+ * @param flags The flags to allocate the page with
+ * @returns The page or 0x0 for no memory
+ */
+uintptr_t pmm_allocatePageFlags(pmm_zone_t zone, uint32_t flags);
 
 /**
  * @brief Allocate a PMM page
@@ -106,7 +124,9 @@ uintptr_t pmm_allocatePages(size_t npages, pmm_zone_t zone);
  * @brief Free a PMM page
  * @param page The page to free
  */
-void pmm_freePage(uintptr_t page);
+static inline void pmm_freePage(uintptr_t page) {
+    pmm_release(page);
+}
 
 /**
  * @brief Free PMM pages
