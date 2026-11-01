@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/include/kernel/drivers/usb2/protocol.h
+ * @file hexahedron/include/kernel/drivers/usb/protocol.h
  * @brief USB protocol-specific definitions and macros
  * 
  * 

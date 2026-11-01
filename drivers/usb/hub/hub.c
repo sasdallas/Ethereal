@@ -15,7 +15,7 @@
 
 #include "hub.h"
 #include <kernel/loader/driver.h>
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/clock.h>
 #include <kernel/debug.h>
 

@@ -16,7 +16,7 @@
 
 /**** INCLUDES ****/
 #include "xhci_definitions.h"
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/task/process.h>
 #include <kernel/misc/mutex.h>

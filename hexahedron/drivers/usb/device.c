@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/drivers/usb2/device.c
+ * @file hexahedron/drivers/usb/device.c
  * @brief Handles device initialization
  * 
  * 
@@ -11,7 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 

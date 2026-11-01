@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/drivers/usb2/roothub.c
+ * @file hexahedron/drivers/usb/roothub.c
  * @brief USB root hub handler
  * 
  * Provides fake operations for the USB root hub.
@@ -13,7 +13,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/mm/alloc.h>
 #include <kernel/debug.h>
 

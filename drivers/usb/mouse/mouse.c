@@ -11,7 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/loader/driver.h>
 #include <kernel/fs/periphfs.h>
 #include <kernel/misc/mutex.h>

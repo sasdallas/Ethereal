@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/drivers/usb2/hid.c
+ * @file hexahedron/drivers/usb/hid.c
  * @brief HID parser
  * 
  * 
@@ -11,7 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
 #include <kernel/init.h>

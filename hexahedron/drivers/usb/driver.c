@@ -1,254 +1,175 @@
 /**
  * @file hexahedron/drivers/usb/driver.c
- * @brief Driver (for specific USB devices) handler
+ * @brief USB driver manager
  * 
- * @warning Some of this, specifically priorities/binds, is really weird and hacky. If you have a problem, please report it - thank you
+ * @todo The attach code really needs a cleanup
  * 
  * @copyright
- * This file is part of the Hexahedron kernel, which is apart of the Ethereal Operating System.
+ * This file is part of the Hexahedron kernel, which is part of the Ethereal Operating System.
  * It is released under the terms of the BSD 3-clause license.
  * Please see the LICENSE file in the main repository for more details.
  * 
- * Copyright (C) 2024 Samuel Stuart
+ * Copyright (C) 2026 Samuel Stuart
  */
 
 #include <kernel/drivers/usb/usb.h>
-#include <kernel/mm/alloc.h>
+#include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
-#include <structs/list.h>
-#include <string.h>
 
-/* Device driver list */
-list_t *usb_driver_list = NULL;
+/* Drivers */
+mutex_t usb_drivers_lock = MUTEX_INITIALIZER;
+SLIST_HEAD(usb_drivers, usb_driver_t);
+
+extern DLIST_HEAD(usb_devices, usb_device_t);
+extern mutex_t usb_device_lock;
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "USB:DRIVER", __VA_ARGS__)
 
-
-
 /**
- * @brief Create a new device driver structure
- * @returns A new @c USBDriver_t structure
+ * @brief Attempt to attach a driver to an interface
+ * @param driver The driver to attach
+ * @param intf The interface to attach it to
  */
-USBDriver_t *usb_createDriver() {
-    USBDriver_t *driver = kmalloc(sizeof(USBDriver_t));
-    memset(driver, 0, sizeof(USBDriver_t));
-    return driver;
-}
+static usb_status_t usb_attachToInterface(usb_driver_t *driver, usb_interface_t *intf) {
+    // TODO: locking
+    int match = driver->ops.match(intf->device, intf);
+    if (match == USB_MATCH_NONE) return USB_SUCCESS;
 
-/**
- * @brief Internal method to check a USB device against a specific driver
- * @param driver The driver
- * @param dev The device
- * 
- * @returns @c USB_SUCCESS on success
- */
-static USB_STATUS usb_driverInitializeDevice(USBDriver_t *driver, USBDevice_t *dev, USBInterface_t *intf) {
-    if (!driver || !dev || !intf) return USB_FAILURE;
+    if (intf->driver != NULL) {
+        int prev_match = intf->driver->ops.match(intf->device, intf);
 
-    if (driver->find) {
-        // Check parameters
-        if (driver->find->classcode && intf->desc.bInterfaceClass != driver->find->classcode) return USB_FAILURE;
-        if (driver->find->subclasscode && intf->desc.bInterfaceSubClass != driver->find->subclasscode) return USB_FAILURE;
-        if (driver->find->protocol && intf->desc.bInterfaceProtocol != driver->find->protocol) return USB_FAILURE;
-    }
-
-    if (driver->ops->match) {
-        if (driver->ops->match(driver, intf) == false) {
-            return USB_FAILURE;
-        }
-    }
-
-
-    // Create a copy of the driver
-    USBDriver_t *driver_clone = kmalloc(sizeof(USBDriver_t));
-    memcpy((void*)driver_clone, (void*)driver, sizeof(USBDriver_t));
-    
-    // If there's already a driver given to the device, make sure this driver and the one that's currently loaded isn't a weak bind
-    if (intf->driver) {
-        #if 0
-        // No find parameters? Skip this driver.
-        if (!driver->find) goto _error;
-
-        // We know that this driver specifically wants this device, and that there's already a driver loaded onto it
-
-        if (driver->weak_bind) {
-            // The current driver has a weak bind, meaning we can assume the currently loaded driver is better.
-            goto _error;
-        } else if (intf->driver->weak_bind) {
-            // The currently loaded driver has a weak bind, meaning we can do a weird unload/load sequence
-            // !!!: Clean this up
-            USBDriver_t *prev_driver = intf->driver; // Save a copy of the previous driver
-            if (intf->driver->ops->deinit(intf) != USB_SUCCESS) {
-                LOG(WARN, "Failed to deinitialize driver '%s' from device (loading new driver '%s')\n", prev_driver->name, driver->name);
-            }
-
-            intf->driver = driver_clone;
-
-            if (driver->ops->init(intf) != USB_SUCCESS) {
-                // The new driver failed to initialize, try to fallback to the old one.
-                LOG(WARN, "Failed to initialize driver '%s', fallback to previous driver '%s'\n", driver->name, prev_driver->name);
-                prev_driver->ops->init(intf);
-                intf->driver = prev_driver;
-                goto _error;
-            }
-
+        if (prev_match >= match) {
             return USB_SUCCESS;
-        } else {
-            // Both drivers do not have weak binds or both do have weak binds. What the hell do we do?
-            // This cannot be resolved easily in any way I can think of without a full USB stack restructure, and god knows I am not doing that.
-            LOG(ERR, "Collision detected while initializing USB driver.");
-            LOG(ERR, "Device loaded driver '%s' has a weak bind, but driver '%s' matches find parameters and also does/doesnot a weak bind.\n", intf->driver->name, driver->name);
-            LOG(ERR, "This situation cannot be resolved with the current USB stack structure. Please contact the developer.\n");
-            goto _error;
         }
-        #endif
+
+        usb_status_t status = intf->driver->ops.detach(intf->device, intf);
+        if (USB_ERROR(status)) {
+            // ??? what do we do here?
+            LOG(WARN, "Failed to detach driver \"%s\" from interface: %s\n", intf->driver->name, usb_strerror(status));
+
+            // we ball, that's we do. continue on.
+        }
         
-        // Depending on weight
-        if (intf->driver->weight > driver->weight) {
-            goto _error;
-        } else if (intf->driver->weight < driver->weight) {
-            // Deinitialize the old driver
-            USBDriver_t *old = intf->driver;
-            if (old->ops->deinit) {
-                USB_STATUS r = old->ops->deinit(intf);
-                if (r != USB_SUCCESS) {
-                    LOG(ERR, "Failed to deinitialize driver \"%s\" when loading new driver \"%s\"\n", old->name, driver->name);
-                    
-                    // i guess fall through anyways
-                }
-            }
+        status = driver->ops.attach(intf->device, intf);
 
-            LOG(INFO, "Initializing driver \"%s\"\n", driver->name);
-            intf->driver = driver_clone;
-            if (driver->ops->init) {
-                USB_STATUS r = driver->ops->init(intf);
+        if (USB_ERROR(status)) {
+            LOG(ERR, "Failed to attach better driver \"%s\" on interface: %s\n", driver->name, usb_strerror(status));
 
-                if (r != USB_SUCCESS) {
-                    LOG(ERR, "Failed to initialize driver \"%s\", falling back to driver \"%s\"\n", driver->name, old->name);
-
-                    // re-initialize old
-                    intf->driver = old;
-
-                    if (old->ops->init) {
-                        r = old->ops->init(intf);
-                        if (r != USB_SUCCESS) {
-                            LOG(ERR, "Failed to fallback. Kaboom\n");
-                            intf->driver = NULL;
-                            kfree(old);
-                            kfree(driver_clone);
-                            return USB_FAILURE;
-                        }
-                    }
-
-                    goto _error;
-                }
-            }
-
-            return USB_SUCCESS;
-        } else {
-            // They are equal...
-            // TODO
-            LOG(ERR, "Collision detected while initializing USB driver.");
-            LOG(ERR, "Device loaded driver '%s' has a weak bind, but driver '%s' matches find parameters and also does/doesnot a weak bind.\n", intf->driver->name, driver->name);
-            LOG(ERR, "This situation cannot be resolved with the current USB stack structure. Please contact the developer.\n");
-            goto _error;
-        }
-    }
-
-    // Try to initialize
-    if (driver->ops->init) {
-        // Prematurely assign intf->driver
-        USBDriver_t *prev_driver = intf->driver;
-        intf->driver = driver_clone;
-
-        USB_STATUS ret = driver->ops->init(intf);
-        if (ret == USB_SUCCESS) {
-            return ret;
+            // ??? now what
+            usb_driver_t *old = intf->driver;
+            intf->driver = NULL;
+            return usb_attachToInterface(old, intf);
         }
 
-        intf->driver = prev_driver; // Reassign old driver and fall through to _error
+        intf->driver = driver;
+    } else {
+        usb_status_t status = driver->ops.attach(intf->device, intf);
+        if (USB_ERROR(status)) {
+            LOG(ERR, "Failed to attach driver \"%s\" on interface: %s\n", driver->name, usb_strerror(status));
+            return status;
+        }
+
+        intf->driver = driver;
     }
- 
-_error:
-    kfree(driver_clone);
-    return USB_FAILURE;
+
+    LOG(INFO, "Attached driver \"%s\" to interface %d\n", driver->name, intf->desc.bInterfaceNumber);
+
+    return USB_SUCCESS;
 }
 
 /**
- * @brief Register your driver and use it to find devices
+ * @brief Try to attach driver to device
+ * @param driver The driver to attach
+ * @param device The device to attach it to
+ */
+static usb_status_t usb_attachToDevice(usb_driver_t *driver, usb_device_t *device) {
+    int score = driver->ops.match(device, NULL);
+    if (score <= USB_MATCH_GENERIC) {
+        return USB_INVALID;
+    }
+
+    assert(0 && "unimpl");
+} 
+
+/**
+ * @brief Register a new USB driver
  * @param driver The driver to register
- * @returns @c USB_SUCCESS on success
  */
-USB_STATUS usb_registerDriver(USBDriver_t *driver) {
-    if (!driver) return USB_FAILURE;
+void usb_registerDriver(usb_driver_t *driver) {
+    LOG(INFO, "Adding new USB driver \"%s\"\n", driver->name);
+    mutex_acquire(&usb_drivers_lock);
+    SLIST_INSERT_HEAD(&usb_drivers, driver, node);
+    mutex_release(&usb_drivers_lock);
 
-    // Add it to the list
-    list_append(usb_driver_list, (void*)driver);
+    mutex_acquire(&usb_device_lock);
+    usb_device_t *device = DLIST_FIRST(&usb_devices);
+    while (device != NULL) {
+        if (usb_attachToDevice(driver, device) == USB_SUCCESS) {
+            // The device was claimed.
+            goto _next_device;
+        }
 
-    // Now get all devices and try them all.
-    // !!!: Hacky
+        if (device->num_configs == 0 || !device->selected) {
+            goto _next_device;
+        }
 
-extern list_t *usb_controller_list;
-    foreach(contnode, usb_controller_list) {
-        USBController_t *cont = (USBController_t*)(contnode->value);
-        if (!cont || !cont->devices->head) continue;
-
-        foreach(devnode, cont->devices) {
-            USBDevice_t *dev = (USBDevice_t*)(devnode->value);
-            if (!dev) continue;
+        for (unsigned i = 0; i < device->selected->num_interfaces; i++) {
+            usb_interface_t *intf = device->selected->interfaces[i];
             
-            if (driver->find->vid && dev->device_desc.idVendor != driver->find->vid) continue;
-            if (driver->find->pid && dev->device_desc.idProduct != driver->find->pid) continue; // I mean, this is kinda weird if you have a NULL VID but want a PID, but whatever
-            
-
-            // Now we need to iterate through the interfaces to find the correct one
-            foreach(intf_node, dev->config->interface_list) {
-                USBInterface_t *intf = (USBInterface_t*)(intf_node->value);
-                if (!intf) continue;
-                if (usb_driverInitializeDevice(driver, dev, intf) == USB_SUCCESS) {
-                    return USB_SUCCESS; // All done
-                }       
+            usb_status_t status = usb_attachToInterface(driver, intf);
+            if (USB_ERROR(status)) {
+                // An error occurred while attaching the driver, what do we do?
+                LOG(ERR, "Failed to attach driver \"%s\" to interface %p\n", driver->name, intf);
             }
         }
-    }
 
-    return USB_SUCCESS;
+    _next_device:
+        device = DLIST_NEXT(device, node);
+    }
+    mutex_release(&usb_device_lock);
 }
 
-
 /**
- * @brief Try to initialize a device using currently registered drivers
- * @param dev The device to try and initialize
- * 
- * @note This is specific to the USB stack
- * @returns USB_SUCCESS on a found driver and USB_FAILURE on a failure.
+ * @brief Find and attach driver for new device
+ * @param dev The device to attach a driver for
  */
-USB_STATUS usb_initializeDeviceDriver(USBDevice_t *dev) {
-    int initialized_interfaces = 0;
-
-    foreach(drv_node, usb_driver_list) {
-        USBDriver_t *driver = (USBDriver_t*)(drv_node->value);
-        if (!driver) continue;
-
-        // Check VID/PID
-        if (driver->find) {
-            if (driver->find->vid && dev->device_desc.idVendor != driver->find->vid) continue;
-            if (driver->find->pid && dev->device_desc.idProduct != driver->find->pid) continue;
-        }
-
-        // Now we need to iterate through the interfaces to find the correct one
-        foreach(intf_node, dev->config->interface_list) {
-            USBInterface_t *intf = (USBInterface_t*)(intf_node->value);
-            if (!intf) continue;
-            if (usb_driverInitializeDevice(driver, dev, intf) == USB_SUCCESS) {
-                initialized_interfaces++;
-            }       
-        }
-        
+void usb_attachDriver(usb_device_t *device) {
+    usb_configuration_t *config = device->selected;
+    if (config == NULL) {
+        // no config = no drivers
+        return;
     }
 
-    LOG(INFO, "Initialized %d interfaces\n", initialized_interfaces);
+    mutex_acquire(&usb_drivers_lock);
+    
+    // Try to match the entire device first
+    SLIST_FOREACH(usb_driver_t, driver, &usb_drivers, node) {
+        if (usb_attachToDevice(driver, device) == USB_SUCCESS) {
+            mutex_release(&usb_drivers_lock);
+            return;
+        }
+    }
 
-    return USB_SUCCESS;
+    // Now iterate through interfaces
+    for (unsigned i = 0; i < config->num_interfaces; i++) {
+        usb_interface_t *intf = config->interfaces[i];
+        usb_driver_t *best = NULL;
+        int best_score = USB_MATCH_NONE;
+        SLIST_FOREACH(usb_driver_t, driver, &usb_drivers, node) {
+            int score = driver->ops.match(device, intf);
+            if (score > best_score) {
+                best_score = score;
+                best = driver;
+            }
+        }
+
+        if (best) {
+            usb_attachToInterface(best, intf);
+        } else {
+            LOG(INFO, "No driver detected for interface %d\n", intf->desc.bInterfaceNumber);
+        }
+    }
+
+    mutex_release(&usb_drivers_lock);
 }

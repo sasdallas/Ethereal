@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/include/kernel/drivers/usb2/hid.h
+ * @file hexahedron/include/kernel/drivers/usb/hid.h
  * @brief HID data
  * 
  * 
@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <structs/list.h>
-#include <kernel/drivers/usb2/protocol.h>
-#include <kernel/drivers/usb2/status.h>
+#include <kernel/drivers/usb/protocol.h>
+#include <kernel/drivers/usb/status.h>
 
 /**** DEFINITIONS ****/
 

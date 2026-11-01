@@ -15,7 +15,7 @@
 #define _HUB_H
 
 /**** INCLUDES ****/
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 #include <stdint.h>
 
 /**** DEFINITIONS ****/

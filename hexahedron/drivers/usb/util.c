@@ -1,5 +1,5 @@
 /**
- * @file hexahedron/drivers/usb2/util.c
+ * @file hexahedron/drivers/usb/util.c
  * @brief Utility wrappers for 
  * 
  * 
@@ -11,7 +11,7 @@
  * Copyright (C) 2026 Samuel Stuart
  */
 
-#include <kernel/drivers/usb2/usb.h>
+#include <kernel/drivers/usb/usb.h>
 
 /**
  * @brief Perform a control request on a device with flags
