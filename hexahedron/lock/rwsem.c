@@ -13,6 +13,7 @@
 
 #include <kernel/lock/rwsem.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #define RWSEM_WRITER_ACTIVE(s) (!!((s) & (1u << 31)))
 #define RWSEM_READERS_ACTIVE(s) ((s) & ~(1u << 31))
@@ -22,17 +23,25 @@
  * @param rwsem The semaphore to read
  */
 int rwsem_startRead(rwsem_t *rwsem) {
+    bool queued = false;
     while (1) {
         int old = atomic_load(&rwsem->state);
         if (RWSEM_WRITER_ACTIVE(old) || atomic_load(&rwsem->writers_waiting) > 0) {
             // There's a writer active right now
-            sleep_inQueue(&rwsem->reader_queue);
-            sleep_enter();
+            if (!queued) {
+                sleep_inQueue(&rwsem->reader_queue);
+                queued = true;
+            } else {
+                sleep_enter();
+                queued = false;
+            }
             continue;
         }
 
         if (atomic_compare_exchange_weak(&rwsem->state, &old, old+1)) break;
     }
+
+    if (queued) sleep_exit();
 
     return 0;
 }
@@ -58,16 +67,24 @@ void rwsem_finishRead(rwsem_t *rwsem) {
  */
 int rwsem_startWrite(rwsem_t *rwsem) {
     atomic_fetch_add(&rwsem->writers_waiting, 1);
+    bool queued = false;
     while (1) {
         int old = atomic_load(&rwsem->state);
         if (RWSEM_WRITER_ACTIVE(old) || RWSEM_READERS_ACTIVE(old) > 0) {
-            sleep_inQueue(&rwsem->writer_queue);
-            sleep_enter();
+            if (!queued) {
+                sleep_inQueue(&rwsem->writer_queue);
+                queued = true;
+            } else {
+                sleep_enter();
+                queued = false;
+            }
             continue;
         }
 
         if (atomic_compare_exchange_weak(&rwsem->state, &old, old | (1u << 31))) break;
     }
+
+    if (queued) sleep_exit();
 
     atomic_fetch_sub(&rwsem->writers_waiting, 1);
     return 0;
