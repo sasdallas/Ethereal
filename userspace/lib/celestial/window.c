@@ -18,7 +18,6 @@
 #include <errno.h>
 #include <structs/hashmap.h>
 #include <unistd.h>
-#include <assert.h>
 
 /* Global celestial window map (WID -> Window object) */
 hashmap_t *celestial_window_map = NULL;
@@ -93,6 +92,7 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
 
     // Get window object
     window_t *win = celestial_getWindow(wid);
+    if (!win) return -1;
     win->flags = flags;
 
     // Ready to start receiving events
@@ -110,13 +110,20 @@ wid_t celestial_createWindowUndecorated(int flags, size_t width, size_t height) 
  * @param height Height of the window
  * @returns A window ID or -1
  */
-wid_t celestial_createWindow(int flags, size_t width, size_t height) {
+wid_t celestial_createWindowTheme(int flags, size_t width, size_t height, char *theme_name) {
     if (!width) width = CELESTIAL_DEFAULT_WINDOW_WIDTH;
     if (!height) height = CELESTIAL_DEFAULT_WINDOW_HEIGHT;
 
     // We need to adjust width and height for our decorations
     // Get decoration borders
-    decor_borders_t borders = celestial_getDecorationBorders(celestial_getDefaultDecorations());
+    decor_handler_t *theme = theme_name ? celestial_getDecorationTheme(theme_name) : celestial_getDefaultDecorations();
+    if (!theme) {
+        fprintf(stderr, "celestial-lib: bad theme %s\n", theme_name);
+        errno = EINVAL;
+        return -1;
+    }
+
+    decor_borders_t borders = celestial_getDecorationBorders(theme);
 
     // Now that we have borders, we can start working
     size_t width_real = width + borders.left_width + borders.right_width;
@@ -147,11 +154,13 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
 
     // Now we need to create a window object
     window_t *win = celestial_getWindow(wid);
+    if (!win) return -1;
 
     win->flags = flags;
 
     // Setup real info
     win->info = malloc(sizeof(decor_window_info_t));
+    memset(win->info, 0, sizeof(decor_window_info_t));
     win->info->width = width_real;
     win->info->height = height_real;
 
@@ -159,7 +168,12 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
     win->decor_buffer = celestial_getFramebuffer(win);
     
     // Initialize decorations sets up win->decor and win->buffer
-    celestial_initDecorationsDefault(win);
+    if (celestial_initDecorations(win, theme) != 0) return -1;
+
+    win->info->x = win->x;
+    win->info->y = win->y;
+    win->x += win->decor->borders.left_width;
+    win->y += win->decor->borders.top_height;
 
     // Fix window width and height
     win->width = width;
@@ -167,12 +181,26 @@ wid_t celestial_createWindow(int flags, size_t width, size_t height) {
 
     // Now update flags so decoration functions start running
     win->flags |= CELESTIAL_WINDOW_FLAG_DECORATED;
+    if (theme_name || celestial_getDecorationTheme(getenv("CELESTIAL_THEME"))) {
+        win->theme_override = theme;
+    }
 
     // Ready to start receiving events
-    celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED);
+    if (celestial_subscribe(win, CELESTIAL_EVENT_DEFAULT_SUBSCRIBED) < 0) return -1;
 
     __celestial_window_count++;
     return wid;
+}
+
+/**
+ * @brief Create a new window in Ethereal (decorated)
+ * @param flags The flags to use when creating the window
+ * @param width Width of the window
+ * @param height Height of the window
+ * @returns A window ID or -1
+ */
+wid_t celestial_createWindow(int flags, size_t width, size_t height) {
+    return celestial_createWindowTheme(flags, width, height, NULL);
 }
 
 /**
@@ -198,7 +226,7 @@ void celestial_setTitle(window_t *win, char *title) {
         .rtype = 1,
     };
 
-    strncpy(req.name, title, 128);
+    strncpy(req.name, title, sizeof(req.name) - 1);
 
     if (celestial_sendRequest(&req, req.size) < 0 ) {
         return;
@@ -227,7 +255,7 @@ void celestial_setIcon(window_t *win, char *icon) {
         .rtype = 2,
     };
 
-    strncpy(req.icon, icon, 128);
+    strncpy(req.icon, icon, sizeof(req.icon) - 1);
 
     if (celestial_sendRequest(&req, req.size) < 0 ) {
         return;
@@ -311,6 +339,9 @@ uint32_t *celestial_getFramebuffer(window_t *win) {
         // Map it into memory
         win->buffer = mmap(NULL, win->width * win->height * 4, PROT_READ | PROT_WRITE, MAP_SHARED, win->shmfd, 0);
         if (win->buffer == MAP_FAILED) {
+            close(win->shmfd);
+            win->shmfd = -1;
+            win->buffer = NULL;
             return NULL;
         }
     }
@@ -404,7 +435,8 @@ gfx_context_t *celestial_initGraphics(window_t *win, int flags) {
         return win->ctx; 
     }
 
-    win->ctx = gfx_createContext(flags, (uint8_t*)celestial_getFramebuffer(win), win->width, win->height);
+    uint32_t *framebuffer = celestial_getFramebuffer(win);
+    win->ctx = gfx_createContext(flags, (uint8_t*)framebuffer, win->width, win->height);
     return win->ctx;
 }
 
@@ -662,13 +694,30 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
 
     // Update the window data. Depending on whether the window is decorated we need to fake it.
     if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
+        decor_t *old_decor = win->decor;
+        size_t old_width = win->width;
+        size_t old_height = win->height;
+        uint32_t *pixels = NULL;
+
+        if (win->theme_pending) {
+            pixels = malloc(old_width * old_height * sizeof(uint32_t));
+            uint8_t *source = old_decor->ctx->backbuffer ? old_decor->ctx->backbuffer : old_decor->ctx->buffer;
+            for (size_t y = 0; y < old_height; y++) {
+                memcpy(
+                    pixels + y * old_width,
+                    source + (y + old_decor->borders.top_height) * old_decor->ctx->pitch + old_decor->borders.left_width * 4,
+                    old_width * sizeof(uint32_t)
+                );
+            }
+        }
+
         // Ah, this will be fun. We have to reinitialize decorations basically.
         // First, update the shared memory object key
         win->shmfd = -1; // celestial_getFramebuffer opens it
         win->key = resize_event->buffer_key;
 
         // Almost nothing that isn't in the decorations can be trusted
-        munmap(win->decor->ctx->buffer, win->width * win->height * 4);
+        munmap(win->decor->ctx->buffer, win->info->width * win->info->height * 4);
         win->buffer = NULL; // So that celestial_getFramebuffer returns a proper framebuffer from our buffer key
 
         // Update the window width + height
@@ -684,6 +733,21 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
         win->decor->ctx->buffer = celestial_getFramebuffer(win);
         win->decor->ctx->pitch = resize_event->new_width * 4;
 
+        if (win->theme_pending) {
+            decor_t *decor = win->theme_pending->load(win->theme_pending, win);
+            win->theme_pending = NULL;
+            if (decor) {
+                decor->ctx = old_decor->ctx;
+                decor->titlebar = old_decor->titlebar;
+                decor->focused = old_decor->focused;
+                decor->resizable = old_decor->resizable;
+                win->decor = decor;
+                decor->init(win);
+                if (old_decor->font) gfx_destroyFont(old_decor->font);
+                free(old_decor);
+            }
+        }
+
         // Move window graphics context
         win->ctx->buffer = &GFX_PIXEL_REAL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
         if (win->decor->ctx->backbuffer) win->ctx->backbuffer = &GFX_PIXEL(win->decor->ctx, win->decor->borders.left_width, win->decor->borders.top_height);
@@ -695,6 +759,21 @@ void celestial_completeWindowResize(window_t *win, celestial_event_resize_t *res
         win->height = resize_event->new_height - (win->decor->borders.bottom_height + win->decor->borders.top_height);
 
         win->decor->render(win);
+        if (pixels) {
+            size_t copy_width = old_width < win->width ? old_width : win->width;
+            size_t copy_height = old_height < win->height ? old_height : win->height;
+            uint8_t *target = win->decor->ctx->backbuffer ? win->decor->ctx->backbuffer : win->decor->ctx->buffer;
+            for (size_t y = 0; y < copy_height; y++) {
+                memcpy(
+                    target + (y + win->decor->borders.top_height) * win->decor->ctx->pitch + win->decor->borders.left_width * 4,
+                    pixels + y * old_width,
+                    copy_width * sizeof(uint32_t)
+                );
+            }
+
+            free(pixels);
+        }
+
         gfx_render(win->decor->ctx);
 
         // adjust resize event
@@ -795,8 +874,8 @@ int celestial_announceWindow(window_t *win, char *name, char *icon) {
         .rtype = 0,
     };
 
-    strncpy(req.name, name, 128);
-    strncpy(req.icon, icon, 128);
+    strncpy(req.name, name, sizeof(req.name) - 1);
+    strncpy(req.icon, icon, sizeof(req.icon) - 1);
 
     if (celestial_sendRequest(&req, req.size) < 0) {
         return -1;

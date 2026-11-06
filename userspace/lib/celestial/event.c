@@ -140,8 +140,8 @@ void celestial_handleEvent(void *event) {
         if (win->flags & CELESTIAL_WINDOW_FLAG_DECORATED) {
             win->info->x = pos_change->x;
             win->info->y = pos_change->y;
-            win->x = win->info->x - win->decor->borders.left_width;
-            win->y = win->info->y - win->decor->borders.top_height;
+            win->x = win->info->x + win->decor->borders.left_width;
+            win->y = win->info->y + win->decor->borders.top_height;
         } else {
             win->x = pos_change->x;
             win->y = pos_change->y;
