@@ -57,11 +57,6 @@ void hal_initializeInterrupts();
 void hal_initializeExceptionHandlers();
 
 /**
- * @brief Handle ending an interrupt
- */
-void hal_endInterrupt(uintptr_t interrupt_number);
-
-/**
  * @brief Load kernel stack
  * @param stack The stack to load
  */

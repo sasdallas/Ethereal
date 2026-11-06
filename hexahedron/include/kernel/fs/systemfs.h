@@ -56,17 +56,20 @@ typedef struct systemfs_buffer {
 } systemfs_buffer_t;
 
 typedef struct systemfs_node {
-    struct systemfs_node *parent;       // Parent
-    char *name;                         // Name of the node
-    systemfs_ops_t *ops;                // SystemFS operations
-    hashmap_t *children;                // Children
-    void *priv;                         // Private
-    vfs_inode_attr_t attr;              // Attribute
-    mutex_t lck;                        // Lock
-    char *link_contents;                // Link contents
-    systemfs_buffer_t buf;              // SystemFS buffer
+    struct systemfs_node *parent;
+    char *name;
+    systemfs_ops_t *ops;
+    hashmap_t *children;
+    void *priv;
+    vfs_inode_attr_t attr;
+    mutex_t lck;
+    refcount_t refs;
+    bool dead;
+    ino_t parent_ino;                   // .. entry
+    char *link_contents;
+    systemfs_buffer_t buf;
     size_t simple_opens;                // STUPID HACK that keeps buffer alive..
-    bool is_simple;                     // Is simple ops
+    bool is_simple;
 } systemfs_node_t;
 
 /**** MACROS ****/
@@ -153,5 +156,7 @@ systemfs_node_t *systemfs_node();
  * @brief Free SystemFS node
  */
 void systemfs_free(systemfs_node_t *node);
+/** Remove a node already detached from its parent. */
+void systemfs_removeNode(systemfs_node_t *node);
 
 #endif

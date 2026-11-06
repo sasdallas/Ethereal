@@ -22,6 +22,7 @@
 
 static int systemfs_proc_read_entry(systemfs_node_t *node, vfs_dir_context_t *ctx);
 static int systemfs_proc_lookup(systemfs_node_t *node, char *name, systemfs_node_t **output);
+static systemfs_node_t *systemfs_proc_dir;
 static systemfs_ops_t systemfs_proc_dir_ops = {
     .open = NULL,
     .close = NULL,
@@ -199,9 +200,10 @@ extern slab_cache_t *systemfs_node_cache;
     if (!systemfs_node_cache) return NULL; // To stop the idle process from trying to allocate bullshit...
     systemfs_node_t *n = systemfs_node();
     n->attr.type = VFS_DIRECTORY;
-    n->name = "proc"; // n->name is never actually used
+    n->name = NULL;
     n->children = hashmap_create("proc children", 10);
     n->priv = proc;
+    if (systemfs_proc_dir) n->parent_ino = systemfs_proc_dir->attr.ino;
 
     systemfs_registerSimple(n, "status", systemfs_proc_status, NULL, proc);
     systemfs_registerSimple(n, "maps", systemfs_proc_maps, NULL, proc);
@@ -216,14 +218,24 @@ extern slab_cache_t *systemfs_node_cache;
  */
 void systemfs_proc_destroy(process_t *proc) {
     systemfs_node_t *n = proc->proc_sysfs;
-    systemfs_unregister(n, "status");
-    systemfs_unregister(n, "maps");
-    systemfs_unregister(n, "times");
-    systemfs_unregister(n, "mem_usage");
-    systemfs_unregister(n, "cmdline");
-    hashmap_free(n->children);
-    kfree(n->children);
-    systemfs_free(n);
+    if (!n) return;
+
+    if (systemfs_proc_dir) mutex_acquire(&systemfs_proc_dir->lck);
+    proc->proc_sysfs = NULL;
+    if (systemfs_proc_dir) mutex_release(&systemfs_proc_dir->lck);
+
+    char *names[] = { "status", "maps", "times", "mem_usage", "cmdline" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        systemfs_node_t *child = hashmap_get(n->children, names[i]);
+        if (!child) continue;
+        mutex_acquire(&child->lck);
+        __atomic_store_n(&child->dead, true, __ATOMIC_SEQ_CST);
+        child->priv = NULL;
+        mutex_release(&child->lck);
+    }
+
+    n->priv = NULL;
+    systemfs_removeNode(n);
 }
 
 
@@ -231,18 +243,26 @@ void systemfs_proc_destroy(process_t *proc) {
  * @brief proc dir lookup
  */
 static int systemfs_proc_lookup(systemfs_node_t *node, char *name, systemfs_node_t **output) {
-    process_t *proc = NULL;
+    *output = NULL;
     if (!strcmp(name, "self")) {
-        proc = current_cpu->current_process;    
+        process_t *proc = current_cpu->current_process;
+        if (proc) *output = proc->proc_sysfs;
     } else {
-        proc = process_getFromPID(strtol(name, NULL, 10));
+        pid_t pid = strtol(name, NULL, 10);
+extern list_t *process_list;
+extern spinlock_t process_list_lock;
+        spinlock_acquire(&process_list_lock);
+        foreach(procnode, process_list) {
+            process_t *proc = procnode->value;
+            if (proc && proc->pid == pid) {
+                *output = proc->proc_sysfs;
+                break;
+            }
+        }
+        spinlock_release(&process_list_lock);
     }
 
-    if (!proc || proc->pid == -1) return -ENOENT;
-
-
-    *output = proc->proc_sysfs;
-    return 0;
+    return *output ? 0 : -ENOENT;
 }
 
 /**
@@ -259,20 +279,23 @@ static int systemfs_proc_read_entry(systemfs_node_t *node, vfs_dir_context_t *ct
     int i = ctx->dirpos - 3;
     int j = 0;
 
-    // !!!: unsafe without RCU
 extern list_t *process_list;
+extern spinlock_t process_list_lock;
+    spinlock_acquire(&process_list_lock);
     foreach(procnode, process_list) {
         process_t *proc = procnode->value;
         if (proc->pid < 0) continue;
         if (i == j) {
             snprintf(ctx->name, NAME_MAX, "%ld", proc->pid);
             ctx->ino = proc->pid; // !!!
+            spinlock_release(&process_list_lock);
             return 0;
         }
         
         j++;
     }
 
+    spinlock_release(&process_list_lock);
     return 1;
 }
 
@@ -319,7 +342,7 @@ static int systemfs_kernel_init() {
     systemfs_registerSimple(systemfs_root, "cmdline", systemfs_kernel_cmdline, NULL, NULL);
     systemfs_registerSimple(systemfs_root, "uptime", systemfs_kernel_uptime, NULL, NULL);
     systemfs_registerSimple(systemfs_root, "times", systemfs_kernel_times, NULL, NULL);
-    systemfs_register(systemfs_root, "processes", VFS_DIRECTORY, &systemfs_proc_dir_ops, NULL);
+    systemfs_proc_dir = systemfs_register(systemfs_root, "processes", VFS_DIRECTORY, &systemfs_proc_dir_ops, NULL);
 
     return 0;
 }

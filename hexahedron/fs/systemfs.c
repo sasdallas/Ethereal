@@ -25,6 +25,7 @@ systemfs_node_t *systemfs_root;
 
 /* Protos */
 int systemfs_mount(vfs_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data);
+static void systemfs_releaseNode(systemfs_node_t *node);
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "FS:SYSTEMFS", __VA_ARGS__)
@@ -65,9 +66,10 @@ static vfs_file_ops_t systemfs_file_ops = {
 /* Inode operations */
 static int systemfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
 static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_output);
+static int systemfs_destroy(vfs_inode_t *inode);
 static vfs_inode_ops_t systemfs_inode_ops = {
     .create     = NULL,
-    .destroy    = NULL,
+    .destroy    = systemfs_destroy,
     .getattr    = systemfs_getattr,
     .link       = NULL,
     .lookup     = systemfs_lookup,
@@ -88,6 +90,7 @@ static vfs_inode_ops_t systemfs_inode_ops = {
 static int systemfs_open(vfs_file_t *file, unsigned long flags) {
     file->priv = file->inode->priv;
     systemfs_node_t *n = file->priv;
+    if (__atomic_load_n(&n->dead, __ATOMIC_SEQ_CST)) return -ENOENT;
     if (n->ops && n->ops->open) return n->ops->open(n, flags);
     return 0;
 }
@@ -160,7 +163,7 @@ static int systemfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
         return 0;
     } else if (ctx->dirpos == 1) {
         strncpy(ctx->name, "..", NAME_MAX);
-        if (n->parent) ctx->ino = n->parent->attr.ino;
+        if (n->parent_ino) ctx->ino = n->parent_ino;
         else ctx->ino = file->inode->attr.ino;
         ctx->type = DT_DIR;
         return 0;
@@ -170,6 +173,7 @@ static int systemfs_get_entries(vfs_file_t *file, vfs_dir_context_t *ctx) {
     int j = 0;
 
     mutex_acquire(&n->lck);
+    if (n->dead) { mutex_release(&n->lck); return -ENOENT; }
 
     if (n->ops && n->ops->read_entry) {
         mutex_release(&n->lck);
@@ -227,6 +231,7 @@ static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_out
     systemfs_node_t *n = (systemfs_node_t*)inode->priv;
     
     mutex_acquire(&n->lck);
+    if (n->dead) { mutex_release(&n->lck); return -ENOENT; }
     systemfs_node_t *child;
     if (n->ops && n->ops->lookup) {
         int r = n->ops->lookup(n, name, &child);
@@ -235,13 +240,13 @@ static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_out
         child = hashmap_get(n->children, name);
     }
 
-    mutex_release(&n->lck);
-    if (!child) return -ENOENT;
+    if (!child) { mutex_release(&n->lck); return -ENOENT; }
 
     vfs_inode_t *ret = vfs_iget(inode->mount, child->attr.ino);
-    if (!ret) return -ENOMEM;
+    if (!ret) { mutex_release(&n->lck); return -ENOMEM; }
 
     if (ret->state & INODE_STATE_NEW) {
+        refcount_inc(&child->refs);
         memcpy(&ret->attr, &child->attr, sizeof(vfs_inode_attr_t));
         ret->ops = &systemfs_inode_ops;
         ret->f_ops = &systemfs_file_ops;
@@ -250,7 +255,16 @@ static int systemfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **ino_out
         vfs_createdInode(ret);
     }
 
+    mutex_release(&n->lck);
     *ino_output = ret;
+    return 0;
+}
+
+/**
+ * @brief systemfs destroy
+ */
+static int systemfs_destroy(vfs_inode_t *inode) {
+    systemfs_releaseNode((systemfs_node_t*)inode->priv);
     return 0;
 }
 
@@ -263,6 +277,7 @@ systemfs_node_t *systemfs_node() {
 
     memset(n, 0, sizeof(systemfs_node_t));
     MUTEX_INIT(&n->lck);
+    refcount_init(&n->refs, 1);
 
     n->attr.atime = n->attr.mtime = n->attr.ctime = VFS_NOW();
     n->attr.ino = vfs_getNextInode();
@@ -283,6 +298,22 @@ void systemfs_free(systemfs_node_t *node) {
 }
 
 /**
+ * @brief Release a SystemFS node
+ */
+static void systemfs_releaseNode(systemfs_node_t *node) {
+    if (refcount_dec(&node->refs) != 0) return;
+
+    if (node->children) {
+        hashmap_free(node->children);
+        kfree(node->children);
+    }
+    if (node->attr.type == VFS_SYMLINK) kfree(node->link_contents);
+    if (node->buf.buffer) kfree(node->buf.buffer);
+    if (node->name) kfree(node->name);
+    systemfs_free(node);
+}
+
+/**
  * @brief SystemFS mount
  */
 int systemfs_mount(vfs_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *src, unsigned long flags, void *data) {
@@ -292,6 +323,7 @@ int systemfs_mount(vfs_filesystem_t *filesystem, vfs_mount_t *mount_dst, char *s
     root_inode->ops = &systemfs_inode_ops;
     root_inode->f_ops = &systemfs_file_ops;
     memcpy(&root_inode->attr, &systemfs_root->attr, sizeof(vfs_inode_attr_t));
+    refcount_inc(&systemfs_root->refs);
     root_inode->priv = systemfs_root;
     root_inode->mount = mount_dst;
 
@@ -351,6 +383,7 @@ systemfs_node_t *systemfs_register(systemfs_node_t *parent, char *name, int type
 
     assert(parent->children);
     node->parent = parent;
+    node->parent_ino = parent->attr.ino;
     mutex_acquire(&parent->lck);
     hashmap_set(parent->children, pch, node);
     mutex_release(&parent->lck);
@@ -373,28 +406,31 @@ int systemfs_unregister(systemfs_node_t *parent, char *name) {
 
     if (!child) return 1;
 
-    // Directories need more work
-    if (child->attr.type == VFS_DIRECTORY) {
-        list_t *k = hashmap_keys(child->children);
+    systemfs_removeNode(child);
+    return 0;
+}
+
+/**
+ * @brief Remove a node after it has been detached from its parent
+ */
+void systemfs_removeNode(systemfs_node_t *node) {
+    mutex_acquire(&node->lck);
+    __atomic_store_n(&node->dead, true, __ATOMIC_SEQ_CST);
+    mutex_release(&node->lck);
+
+    if (node->children) {
+        list_t *k = hashmap_keys(node->children);
         if (k) {
             foreach (n, k) {
-                systemfs_unregister(child, n->value); // !!!: Recursion  
-            } 
+                systemfs_unregister(node, n->value);
+            }
 
             list_destroy(k, false);
         }
-
-        hashmap_free(child->children);
-    } else if (child->attr.type == VFS_SYMLINK) {
-        kfree(child->link_contents);
-    } else {
-        if (child->buf.buffer) kfree(child->buf.buffer);
     }
 
-    kfree(child->name);
-
-    systemfs_free(child);
-    return 0;
+    vfs_invalidateInode(&systemfs_filesystem, node->attr.ino);
+    systemfs_releaseNode(node);
 }
 
 /**
@@ -446,6 +482,7 @@ ssize_t systemfs_readSimple(systemfs_node_t *n, loff_t off, size_t size, char *b
  */
 int systemfs_openSimple(systemfs_node_t *n, unsigned long flags) {
     mutex_acquire(&n->lck);
+    if (n->dead) { mutex_release(&n->lck); return -ENOENT; }
     if (!n->simple_opens && n->ops && n->ops->read_simple) {
         n->buf.bufidx = 0;
         n->buf.bufsize = 0;

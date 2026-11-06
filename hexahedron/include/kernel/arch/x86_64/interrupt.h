@@ -74,7 +74,7 @@ typedef struct _x86_64_tss_entry {
 } __attribute__((packed)) x86_64_tss_entry_t;
 
 typedef struct _x86_64_gdt_table{
-    x86_64_gdt_entry_t      entries[7];
+    x86_64_gdt_entry_t      entries[8];
     x86_64_gdt_entry_hi_t   tss_extra; // I hate you so much Intel. This is horrible.
 } __attribute__((packed)) __attribute__((aligned(0x10))) x86_64_gdt_table_t;
 
