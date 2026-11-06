@@ -33,7 +33,7 @@ fd_table_t *fd_createTable(int fd_count) {
     table->fds = kzalloc(sizeof(vfs_file_t*) * fd_count);
     table->table_size = fd_count;
     table->lowest_avl = 0;
-    table->cloexec = kmalloc(BITMAP_TO_SIZE(fd_count));
+    table->cloexec = kmalloc(BITMAP_TO_SIZE_LONG(fd_count) * sizeof(unsigned long));
     bitmap_fill(table->cloexec, 0, fd_count);
     return table;
 }
@@ -92,19 +92,11 @@ int fd_destroyTable(struct process *process) {
  * @brief Recalculate lowest available
  */
 static inline int fd_recalculateFirstFree(fd_table_t *table) {
-    if (table->lowest_avl >= table->table_size) {
-        return 1;    
-    }
-
-    while (table->fds[table->lowest_avl] != NULL) {
-        if (table->lowest_avl >= table->table_size) {
-            return 1;
-        }
-
+    while (table->lowest_avl < table->table_size && table->fds[table->lowest_avl] != NULL) {
         table->lowest_avl++;
     }
 
-    return 0;
+    return table->lowest_avl == table->table_size;
 }
 
 /**
@@ -119,7 +111,8 @@ static int fd_growTable(fd_table_t *table, int new_fd_count) {
     table->fds = krealloc(table->fds, sizeof(vfs_file_t*) * new_fd_count);
     table->table_size = new_fd_count;
 
-    table->cloexec = krealloc(table->cloexec, BITMAP_TO_SIZE(new_fd_count));
+    table->cloexec = krealloc(table->cloexec,
+            BITMAP_TO_SIZE_LONG(new_fd_count) * sizeof(unsigned long));
 
     if (new_fd_count > old_fd_count) {
         memset(&table->fds[old_fd_count], 0, sizeof(vfs_file_t*) * (new_fd_count - old_fd_count));
@@ -205,6 +198,7 @@ int fd_add(vfs_file_t *file, int *fd_out) {
  * @param fd The file descriptor to remove
  */
 int fd_remove(int fd_number) {
+    if (fd_number < 0) return -EBADF;
     fd_table_t *table = current_cpu->current_process->fd_table;
     mutex_acquire(&table->lck);
 
@@ -233,6 +227,7 @@ int fd_remove(int fd_number) {
 int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact) {
     fd_table_t *table = current_cpu->current_process->fd_table;
     if (oldfd < 0) return -EBADF;
+    if (newfd < -1) return -EBADF;
     mutex_acquire(&table->lck);
 
     if (oldfd >= table->table_size || table->fds[oldfd] == NULL) {
@@ -242,7 +237,13 @@ int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact) {
 
     if (newfd != -1 && newfd >= PROCESS_MAX_FDS) {
         mutex_release(&table->lck);
-        return -EINVAL;
+        return -EBADF;
+    }
+
+    if (is_exact && oldfd == newfd) {
+        *ret = newfd;
+        mutex_release(&table->lck);
+        return 0;
     }
 
     // depending on whether this is a generic duplication, do different things
@@ -262,7 +263,22 @@ int fd_duplicate(int oldfd, int newfd, int *ret, bool is_exact) {
         }
 
         if (!is_exact) {
-            while (table->fds[newfd] != NULL) newfd++; 
+            while (newfd < table->table_size && table->fds[newfd] != NULL) {
+                newfd++;
+            }
+
+            if (newfd >= table->table_size) {
+                if (newfd >= PROCESS_MAX_FDS) {
+                    mutex_release(&table->lck);
+                    return -EMFILE;
+                }
+
+                int r = fd_growTable(table, newfd + 1);
+                if (r < 0) {
+                    mutex_release(&table->lck);
+                    return r;
+                }
+            }
         }
     }
 
