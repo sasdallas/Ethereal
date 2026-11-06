@@ -85,6 +85,7 @@ uintptr_t vmm_findFree(vmm_space_t *space, uintptr_t address, size_t size) {
  * @param range The range to insert into the VMM context
  */
 void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
+    space->mapping_generation++;
     space->range_cache = NULL;
     range->end = PAGE_ALIGN_UP(range->end);
     range->start = PAGE_ALIGN_DOWN(range->start);
@@ -98,7 +99,7 @@ void vmm_insertRange(vmm_space_t *space, vmm_memory_range_t *range) {
         return;
     }
 
-    if (range->end < space->range->start) {
+    if (range->end <= space->range->start) {
         space->range->prev = range;
         range->next = space->range;
         range->prev = NULL;
@@ -207,6 +208,7 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
                     r->end = end;
                     r->vmm_flags = vmm_flags;
                     r->mmu_flags = mmu_flags;
+                    memset(&r->fault_info, 0, sizeof(r->fault_info));
                     r->next = r->prev = NULL;
                     return r;
                 }
@@ -231,33 +233,52 @@ vmm_memory_range_t *vmm_createRange(uintptr_t start, uintptr_t end, vmm_flags_t 
  * @brief Internal function to demark pages
  */
 void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offset, size_t npages) {
-    // assert(space == current_cpu->current_context->space || space == vmm_kernel_space);
-    // !!!: Will need to update later, a lot of type support will be needed
-    for (uintptr_t i = range->start + offset; i < range->start + offset + (npages * PAGE_SIZE); i += PAGE_SIZE) {
-        uintptr_t pg = arch_mmu_physical(NULL, i);
-        if (range->vmm_flags & VM_FLAG_FILE) {
-            if (pg) space->metrics.file_resident -= PAGE_SIZE;
-            space->metrics.file_usage -= PAGE_SIZE;
-        } else if (range->vmm_flags & VM_FLAG_DEVICE) {
-            // Device memory is never freed
-        } else {
-            if (range->vmm_flags & VM_FLAG_ALLOC) {
-                space->metrics.anon_usage -= PAGE_SIZE;
-                if (pg != 0x0) {
-                    space->metrics.anon_resident -= PAGE_SIZE;
+    // To avoid freeing pages all at once we batch them into 256-page chunks
+    // that each encounter a TLB shootdown.
+
+    // The trade off is that vmm_freePages doesn't need to allocate memory, can set the pages
+    // as immediately non-present on their unmap, and can do the proper sequence of unmap -> shootdown -> release
+    // :-)
+    uintptr_t pages[256];
+    uintptr_t start = range->start + offset;
+
+    for (size_t done = 0; done < npages;) {
+        size_t count = min(npages - done, (size_t)256);
+        uintptr_t batch_start = start + done * PAGE_SIZE;
+        
+        for (size_t j = 0; j < count; j++) {
+            uintptr_t i = batch_start + j * PAGE_SIZE;
+            uintptr_t pg = arch_mmu_physical(NULL, i);
+            pages[j] = pg;
+
+            if (range->vmm_flags & VM_FLAG_FILE) {
+                if (pg) space->metrics.file_resident -= PAGE_SIZE;
+                space->metrics.file_usage -= PAGE_SIZE;
+            } else if (range->vmm_flags & VM_FLAG_DEVICE) {
+                // Device memory is never freed
+            } else {
+                if (range->vmm_flags & VM_FLAG_ALLOC) {
+                    space->metrics.anon_usage -= PAGE_SIZE;
+                    if (pg != 0x0 && pg != vmm_zero_page) {
+                        space->metrics.anon_resident -= PAGE_SIZE;
+                    }
                 }
+            }
+
+            arch_mmu_unmap(NULL, i);
+        }
+
+        arch_mmu_invalidate_range(batch_start, batch_start + count * PAGE_SIZE);
+
+        for (size_t j = 0; j < count; j++) {
+            uintptr_t pg = pages[j];
+            if (pg && !(range->vmm_flags & VM_FLAG_DEVICE) && (range->vmm_flags & (VM_FLAG_FILE | VM_FLAG_ALLOC))) {
+                pmm_freePage(pg);
             }
         }
 
-        arch_mmu_unmap(NULL, i);
-
-        // Every non-device mapping owns a page reference
-        if (pg && !(range->vmm_flags & VM_FLAG_DEVICE) && (range->vmm_flags & (VM_FLAG_FILE | VM_FLAG_ALLOC))) {
-            pmm_freePage(pg);
-        }
+        done += count;
     }
-
-    arch_mmu_invalidate_range(range->start + offset, range->start + offset + (npages * PAGE_SIZE));
 }
 
 
@@ -267,6 +288,7 @@ void vmm_freePages(vmm_space_t *space, vmm_memory_range_t *range, uintptr_t offs
  * @param range The range to destroy
  */
 void vmm_destroyRange(vmm_space_t *space, vmm_memory_range_t *range) {
+    space->mapping_generation++;
     space->range_cache = NULL;
     if (range->next) range->next->prev = range->prev;
     if (range->prev) range->prev->next = range->next;

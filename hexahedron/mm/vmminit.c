@@ -86,6 +86,9 @@ void vmm_init(pmm_region_t *region) {
     alloc_init();
     memleak_init();
     cache_init();
+
+    // Create a zero page
+    vmm_zero_page = pmm_allocatePageFlags(ZONE_DEFAULT, PMM_ALLOC_ZEROED);
 }
 
 /**

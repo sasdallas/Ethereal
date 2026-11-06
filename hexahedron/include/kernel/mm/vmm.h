@@ -59,7 +59,8 @@
 #define VMM_FAULT_EXECUTE           0x4 // Set if attempted execution
 
 #define VMM_FAULT_RESOLVED          0
-#define VMM_FAULT_UNRESOLVED        1
+#define VMM_FAULT_UNRESOLVED        1 // unresolved, send SIGSEGV
+#define VMM_FAULT_BUS               2 // unresolved, send SIGBUS
 
 /* Validation constraints */
 #define VMM_PTR_USER                0x01    // Usermode or kernel pointer (STRICT: Only usermode pointer)
@@ -84,6 +85,14 @@ typedef struct vmm_memory_range {
     vmm_flags_t vmm_flags;
     mmu_flags_t mmu_flags;
     vmm_file_t file;
+
+    struct {
+        uintptr_t last_fault;
+        uint8_t last_filled;
+        int8_t direction;
+        uint8_t sequential_hits;
+        uint8_t cluster_size;
+    } fault_info;
 } vmm_memory_range_t;
 
 typedef struct vmm_metrics_t {
@@ -101,6 +110,8 @@ typedef struct vmm_space {
     vmm_memory_range_t *range;
     vmm_memory_range_t *range_cache;
     mutex_t *mut;
+    uint64_t mapping_generation;        // Used in stuff like vmm_backFileFault where its better to drop the space lock
+                                        // to perform cache I/O
     vmm_metrics_t metrics;
 } vmm_space_t;
 
@@ -119,6 +130,7 @@ typedef struct vmm_fault_information {
 
 extern vmm_context_t *vmm_kernel_context;
 extern vmm_space_t *vmm_kernel_space;
+extern uintptr_t vmm_zero_page;
 
 /**** FUNCTIONS ****/
 

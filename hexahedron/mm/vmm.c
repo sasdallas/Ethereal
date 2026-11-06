@@ -36,6 +36,9 @@ static vmm_context_t __vmm_kernel_context = {
     .space = &__vmm_kernel_space,
 };
 
+/* Zero page */
+uintptr_t vmm_zero_page = 0;
+
 /* Kernel context + space */
 vmm_context_t *vmm_kernel_context = &__vmm_kernel_context;
 vmm_space_t *vmm_kernel_space = &__vmm_kernel_space;
@@ -80,6 +83,7 @@ int vmm_initializeContext(slab_cache_t *cache, void *object) {
     sp->mut = mutex_create("mut");
     sp->range = NULL;
     sp->range_cache = NULL;
+    sp->mapping_generation = 0;
     memset(&sp->metrics, 0, sizeof(vmm_metrics_t));
 
     return 0;
@@ -108,15 +112,24 @@ vmm_context_t *vmm_createContext() {
 
 /**
  * @brief Get the flags to actually use
- * @param vmm_flags The VMM flags of the range being updated
+ * @param range The range being updated
+ * @param addr The page being updated
  * @param mmu_flags The MMU flags the range is being set to
  * 
- * This is used because private mappings of a file are shared across the page cache meaning
- * they cannot have their write bit set.
+ * Pages like private file pages and the zero page can't have write bit set
  */
-static inline mmu_flags_t vmm_getMapFlags(vmm_flags_t vmm_flags, mmu_flags_t mmu_flags) {
-    if ((vmm_flags & VM_FLAG_FILE) && !(vmm_flags & VM_FLAG_SHARED)) {
-        return mmu_flags & ~(MMU_FLAG_WRITE);
+static inline mmu_flags_t vmm_getMapFlags(vmm_memory_range_t *range, uintptr_t addr, mmu_flags_t mmu_flags) {
+    if (range->vmm_flags & VM_FLAG_FILE) {
+        if (!(range->vmm_flags & VM_FLAG_SHARED) || (!range->file.node->ops->mmap && VFS_CACHEABLE(range->file.node->inode))) {
+            return mmu_flags & ~MMU_FLAG_WRITE;
+        }
+    }
+
+    if (!(range->vmm_flags & (VM_FLAG_SHARED | VM_FLAG_DEVICE))) {
+        uintptr_t phys = arch_mmu_physical(NULL, addr);
+        if (phys && (phys == vmm_zero_page || PMM_REFCOUNT(phys) > 1)) {
+            return mmu_flags & ~MMU_FLAG_WRITE;
+        }
     }
 
     return mmu_flags;
@@ -130,6 +143,7 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
     assert(size % PAGE_SIZE == 0);
 
     space->range_cache = NULL;
+    space->mapping_generation++;
 
     uintptr_t start = (uintptr_t)_start;
     uintptr_t end = start + size;
@@ -142,9 +156,8 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_SET_FLAGS) {
                 // Change the MMU flags for the region
-                mmu_flags_t map_flags = vmm_getMapFlags(r->vmm_flags, mmu_flags);
                 for (uintptr_t i = r->start; i < r->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, map_flags);
+                    arch_mmu_setflags(NULL, i, vmm_getMapFlags(r, i, mmu_flags));
                 }
 
                 r->mmu_flags = mmu_flags;
@@ -169,6 +182,12 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             if (op_type == VM_OP_FREE) {
                 // No need to create another range.
+                if (r->vmm_flags & VM_FLAG_FILE) {
+                    new_range->file = r->file;
+                    new_range->file.offset += end - r->start;
+                    file_hold(new_range->file.node);
+                }
+
                 vmm_freePages(space, r, start - r->start, size / PAGE_SIZE);
                 if (r->next) r->next->prev = new_range;
                 new_range->next = r->next;
@@ -209,9 +228,8 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
 
             // Now apply operation to new_range2
             if (op_type == VM_OP_SET_FLAGS) {
-                mmu_flags_t map_flags = vmm_getMapFlags(new_range2->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range2->start; i < new_range2->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, map_flags);
+                    arch_mmu_setflags(NULL, i, vmm_getMapFlags(new_range2, i, mmu_flags));
                 }
 
                 new_range2->mmu_flags = mmu_flags;
@@ -250,9 +268,8 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;
 
-                mmu_flags_t map_flags = vmm_getMapFlags(new_range->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, map_flags);
+                    arch_mmu_setflags(NULL, i, vmm_getMapFlags(new_range, i, mmu_flags));
                 }
 
                 r = new_range;
@@ -295,9 +312,8 @@ int __vmm_update(vmm_space_t *space, void *_start, size_t size, int op_type, mmu
             if (op_type == VM_OP_SET_FLAGS) {
                 new_range->mmu_flags = mmu_flags;
 
-                mmu_flags_t map_flags = vmm_getMapFlags(new_range->vmm_flags, mmu_flags);
                 for (uintptr_t i = new_range->start; i < new_range->end; i += PAGE_SIZE) {
-                    arch_mmu_setflags(NULL, i, map_flags);
+                    arch_mmu_setflags(NULL, i, vmm_getMapFlags(new_range, i, mmu_flags));
                 }
             } else {
                 assert(0);
@@ -326,6 +342,21 @@ int vmm_update(void *start, size_t size, int op_type, mmu_flags_t mmu_flags) {
     if (!space) return -EINVAL; 
 
     mutex_acquire(space->mut);
+
+    if (op_type == VM_OP_SET_FLAGS) {
+        // clamp VM_OP_SET_FLAGS to a range size
+        uintptr_t end = (uintptr_t)start + size;
+        uintptr_t cursor = (uintptr_t)start;
+        while (cursor < end) {
+            vmm_memory_range_t *range = vmm_getRange(space, cursor, 1);
+            if (!range) {
+                mutex_release(space->mut);
+                return -ENOMEM;
+            }
+            cursor = min(end, range->end);
+        }
+    }
+
     int err = __vmm_update(space, start, size, op_type, mmu_flags);
     if (op_type == VM_OP_SET_FLAGS) {
         arch_mmu_invalidate_range((uintptr_t)start, (uintptr_t)start + size);
@@ -405,17 +436,20 @@ void *vmm_map(void *addr, size_t size, vmm_flags_t vm_flags, mmu_flags_t prot, .
     // Not worth demand paging these in
     bool just_fill_it = (sp != &__vmm_kernel_space && size <= VMM_FILL_THRESHOLD && !(vm_flags & VM_FLAG_FILE) && (prot & MMU_FLAG_PRESENT));
 
-    if ((vm_flags & VM_FLAG_ALLOC) && (sp == &__vmm_kernel_space || (vm_flags & VM_FLAG_FAKE_ME_NOT) || just_fill_it)) {
+    bool shared_anon = (vm_flags & VM_FLAG_SHARED) && !(vm_flags & (VM_FLAG_FILE | VM_FLAG_DEVICE));
+    if ((vm_flags & VM_FLAG_ALLOC) && (sp == &__vmm_kernel_space || (vm_flags & VM_FLAG_FAKE_ME_NOT) || just_fill_it || shared_anon)) {
         assert((vm_flags & VM_FLAG_FILE) == 0);
         // Back the pages now
         for (uintptr_t i = range->start; i < range->end; i += PAGE_SIZE) {
-            uintptr_t p = pmm_allocatePage(ZONE_DEFAULT);
+            uintptr_t p;
 
-            // Physical pages may contain data from another process.
+            // Kernel space doesn't need zeroed memory in Hexahedron, since it's
+            // pointless. Most of the time the kernel will set it to 0 anyways.
+            // TODO: Add a VM_FLAG_ZEROED for kernel space and use it!
             if (sp != &__vmm_kernel_space) {
-                uintptr_t mapped = arch_mmu_remap_physical(p, PAGE_SIZE, REMAP_TEMPORARY);
-                memset((void*)mapped, 0, PAGE_SIZE);
-                arch_mmu_unmap_physical(mapped, PAGE_SIZE);
+                p = pmm_allocatePageFlags(ZONE_DEFAULT, PMM_ALLOC_ZEROED);
+            } else {
+                p = pmm_allocatePageFlags(ZONE_DEFAULT, 0);
             }
 
             arch_mmu_map(NULL, i, p, prot);

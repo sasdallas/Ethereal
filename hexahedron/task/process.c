@@ -58,7 +58,8 @@ pid_t process_allocatePID();
  * BSP.
  */
 void process_init() {
-    // Mark PID 0 as in use
+    // Mark PIDs 0 and 1 as in use
+    process_allocatePID(); // !!!
     process_allocatePID(); // !!!
 
     process_tree = tree_create("process tree");
@@ -475,6 +476,9 @@ void process_destroyZombie(process_t *proc) {
 void process_destroy(process_t *proc) {
     assert(proc->nthreads == 0);
 
+extern void systemfs_proc_destroy(process_t *proc);
+    systemfs_proc_destroy(proc);
+
     if (proc->exe_image) vfs_close(proc->exe_image);
     inode_release(proc->wd_node);
 
@@ -504,9 +508,6 @@ void process_destroy(process_t *proc) {
         proc->ptrace.tracer = NULL;
         spinlock_release(&trace->lock);
     }
-
-extern void systemfs_proc_destroy(process_t *proc);
-    systemfs_proc_destroy(proc);
 
     if (proc->cmdline) {
         int i = 0;
@@ -650,7 +651,6 @@ int process_executeCommon(elf_image_t *img) {
     fd_table_t *tbl = current_cpu->current_process->fd_table;
     for (int fd = 0; fd < tbl->table_size; fd++) {
         if (fd_isCloseExecute(fd)) {
-            LOG(DEBUG, "Closing file descriptor %d, it is marked as O_CLOEXEC (0x%x)\n", fd, tbl->fds[fd]->flags);
             fd_remove(fd);
         }
     }

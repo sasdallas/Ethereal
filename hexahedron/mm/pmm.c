@@ -19,6 +19,7 @@
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/panic.h>
+#include <kernel/init.h>
 #include <string.h>
 #include <assert.h>
 
@@ -32,6 +33,7 @@ static size_t pmm_memory_pages = 0; // # of pages
 /* Memory tracking */
 static size_t pmm_total_blocks = 0;
 static size_t pmm_used_blocks = 0;
+static size_t pmm_zero_pages = 0;
 
 /* Sections */
 pmm_section_t *pmm_zones[NZONES] = { 0 };
@@ -67,6 +69,7 @@ static pmm_section_t *pmm_insertSection(int zone, pmm_region_t *region) {
     section->next = NULL;
     section->pages = NULL;
     section->first_run = NULL; // page array must be allocated and setup before a run can be created
+    section->first_zero = NULL;
 
     pmm_total_blocks += section->npages;
 
@@ -182,31 +185,12 @@ void pmm_oom(uintptr_t req) {
     kernel_panic_finalize();
 }
 
-
 /**
- * @brief Allocate a PMM page
- * @param zone The zone to allocate from
- * @returns The page or 0x0 for no memory
+ * @brief Claim the first run page
  */
-uintptr_t pmm_allocatePage(pmm_zone_t zone) {
-    pmm_section_t *s = pmm_zones[zone];
-    while (true) {
-        while (s && __atomic_load_n(&s->nfree, __ATOMIC_RELAXED) == 0) {
-            s = s->next;
-        }
-
-        if (!s) pmm_oom(1);
-
-        // acquire lock, check nfree, if the race was lost retry
-        mutex_acquire(&s->lock);
-        if (s->nfree) break;
-        mutex_release(&s->lock);
-        s = pmm_zones[zone];
-    }
-
-    // we exited holding the section's lock
-    assert(s->first_run != NULL);
+static pmm_page_t *pmm_takeRunPageLocked(pmm_section_t *s) {
     pmm_page_t *rf = s->first_run;
+    assert(rf != NULL);
 
     // this can be the only page in the run or just the first
     rf->run.npages -= 1;
@@ -240,16 +224,130 @@ uintptr_t pmm_allocatePage(pmm_zone_t zone) {
     }
 
     // done
-    assert(rf->flags & PAGE_FLAG_FREE);
+    assert(rf->flags == PAGE_FLAG_FREE);
+    assert(rf->refcount == 0);
     rf->flags &= ~(PAGE_FLAG_FREE);
     rf->refcount = 1;
     __atomic_sub_fetch(&s->nfree, 1, __ATOMIC_RELAXED);
+    return rf;
+}
+
+/**
+ * @brief Allocate a PMM page
+ * @param zone The zone to allocate from
+ * @returns The page or 0x0 for no memory
+ */
+uintptr_t pmm_allocatePage(pmm_zone_t zone) {
+    pmm_section_t *s = NULL;
+
+    // Do two passes because we really don't want to take a zero page
+    for (int pass = 0; pass < 2 && !s; pass++) {
+        for (pmm_section_t *candidate = pmm_zones[zone]; candidate; candidate = candidate->next) {
+            if (__atomic_load_n(&candidate->nfree, __ATOMIC_RELAXED) == 0) continue;
+
+            mutex_acquire(&candidate->lock);
+            if (pass == 0 ? candidate->first_run : candidate->first_zero) {
+                s = candidate;
+                break;
+            }
+            mutex_release(&candidate->lock);
+        }
+    }
+
+    if (!s) {
+        pmm_oom(1);
+    }
+
+    // we exited holding the section's lock
+    if (!s->first_run) {
+        // we can consume a zero page if no others are available
+        pmm_page_t *pg = s->first_zero;
+        assert(pg != NULL);
+
+        s->first_zero = pg->run.run_next == SIZE_MAX ? NULL : &s->pages[pg->run.run_next];
+        assert(pg->flags == (PAGE_FLAG_FREE | PAGE_FLAG_ZEROED));
+        pg->flags = 0;
+        pg->refcount = 1;
+
+        __atomic_sub_fetch(&s->nfree, 1, __ATOMIC_RELAXED);
+        mutex_release(&s->lock);
+
+        __atomic_sub_fetch(&pmm_zero_pages, 1, __ATOMIC_RELAXED);
+        __atomic_add_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
+        return pmm_address(pg);
+    }
+
+    pmm_page_t *rf = pmm_takeRunPageLocked(s);
     mutex_release(&s->lock);
 
     __atomic_add_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
     
-    size_t pgidx = ((uintptr_t)rf - (uintptr_t)s->pages) / sizeof(pmm_page_t);
-    return (uintptr_t)(s->start + pgidx * PAGE_SIZE);
+    return pmm_address(rf);
+}
+
+/**
+ * @brief Allocate a page with flags
+ * @param zone The zone to allocate from
+ * @param flags The flags to allocate with
+ */
+uintptr_t pmm_allocatePageFlags(pmm_zone_t zone, uint32_t flags) {
+    if (!(flags & PMM_ALLOC_ZEROED)) return pmm_allocatePage(zone);
+
+    for (pmm_section_t *s = pmm_zones[zone]; s; s = s->next) {
+        mutex_acquire(&s->lock);
+        pmm_page_t *pg = s->first_zero;
+
+        if (pg) {
+            s->first_zero = pg->run.run_next == SIZE_MAX ? NULL : &s->pages[pg->run.run_next];
+            assert(pg->flags == (PAGE_FLAG_FREE | PAGE_FLAG_ZEROED));
+            pg->flags = 0;
+            pg->refcount = 1;
+
+            __atomic_sub_fetch(&s->nfree, 1, __ATOMIC_RELAXED);
+            mutex_release(&s->lock);
+
+            __atomic_sub_fetch(&pmm_zero_pages, 1, __ATOMIC_RELAXED);
+            __atomic_add_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
+            return pmm_address(pg);
+        }
+
+        mutex_release(&s->lock);
+    }
+
+    // otherwise, zero a normal page
+    uintptr_t page = pmm_allocatePage(zone);
+    uintptr_t tmp = arch_mmu_remap_physical(page, PAGE_SIZE, REMAP_TEMPORARY);
+    memset((void*)tmp, 0, PAGE_SIZE);
+    arch_mmu_unmap_physical(tmp, PAGE_SIZE);
+    return page;
+}
+
+/**
+ * @brief Zero one ordinary free page
+ * 
+ * Returns false when there aren't any pages to zero
+ */
+bool pmm_zeroPage(void) {
+    pmm_page_t *pg = NULL;
+    for (pmm_section_t *s = pmm_zones[ZONE_DEFAULT]; s; s = s->next) {
+        mutex_acquire(&s->lock);
+        if (s->first_run) pg = pmm_takeRunPageLocked(s);
+        mutex_release(&s->lock);
+        if (pg) break;
+    }
+
+    if (!pg) return false;
+
+    __atomic_add_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
+
+    uintptr_t page = pmm_address(pg);
+    uintptr_t tmp = arch_mmu_remap_physical(page, PAGE_SIZE, REMAP_TEMPORARY);
+    memset((void*)tmp, 0, PAGE_SIZE);
+    arch_mmu_unmap_physical(tmp, PAGE_SIZE);
+
+    pg->flags |= PAGE_FLAG_ZEROED;
+    pmm_releasePage(pg);
+    return true;
 }
 
 /**
@@ -354,7 +452,8 @@ void pmm_releasePage(pmm_page_t *pg) {
     assert(pg->refcount > 0);
     assert(!(pg->flags & PAGE_FLAG_FREE));
 
-    if (__atomic_sub_fetch(&pg->refcount, 1, __ATOMIC_SEQ_CST) != 0) {
+    uintptr_t refs = __atomic_sub_fetch(&pg->refcount, 1, __ATOMIC_SEQ_CST);
+    if (refs != 0) {
         mutex_release(&s->lock);
         return;
     }
@@ -363,11 +462,25 @@ void pmm_releasePage(pmm_page_t *pg) {
     pg->inode = NULL;
     pg->ent = NULL;
     pg->offset = 0;
-    pg->flags = PAGE_FLAG_FREE;
+
+    // if the page is zeroed, it needs to be inserted into freelist
+    // the zero flag is cleared on allocate
+    bool zeroed = !!(pg->flags & PAGE_FLAG_ZEROED);
+    pg->flags = PAGE_FLAG_FREE | (zeroed ? PAGE_FLAG_ZEROED : 0);
+    if (zeroed) {
+        pg->run.run_next = s->first_zero ? (size_t)(s->first_zero - s->pages) : SIZE_MAX;
+        s->first_zero = pg;
+        __atomic_add_fetch(&s->nfree, 1, __ATOMIC_RELAXED);
+        mutex_release(&s->lock);
+
+        __atomic_add_fetch(&pmm_zero_pages, 1, __ATOMIC_RELAXED);
+        __atomic_sub_fetch(&pmm_used_blocks, 1, __ATOMIC_RELAXED);
+        return;
+    }
 
     // check the neighbors to see how to coalesce
-    bool left_free = idx > 0 && (s->pages[idx - 1].flags & PAGE_FLAG_FREE);
-    bool right_free = idx + 1 < s->npages && (s->pages[idx + 1].flags & PAGE_FLAG_FREE);
+    bool left_free = idx > 0 && s->pages[idx - 1].flags == PAGE_FLAG_FREE;
+    bool right_free = idx + 1 < s->npages && s->pages[idx + 1].flags == PAGE_FLAG_FREE;
 
     if (left_free && right_free) {
         // case 1: both neighbors are free, coalesce the runs together maybe 
@@ -430,7 +543,8 @@ void pmm_releasePage(pmm_page_t *pg) {
  */
 void pmm_retainPage(pmm_page_t *page) {
     pmm_section_t *s = page->sect;
-    mutex_acquire(&s->lock); // !! do we actually need to hold the lock here?
+    mutex_acquire(&s->lock);
+    assert(page->refcount > 0 && !(page->flags & PAGE_FLAG_FREE));
     __atomic_add_fetch(&page->refcount, 1, __ATOMIC_SEQ_CST);
     mutex_release(&s->lock);
 }
@@ -517,5 +631,12 @@ uintptr_t pmm_getUsedBlocks() {
  * @brief Gets the free amount of blocks
  */
 uintptr_t pmm_getFreeBlocks() {
-    return pmm_total_blocks - pmm_used_blocks;
+    return pmm_total_blocks - __atomic_load_n(&pmm_used_blocks, __ATOMIC_RELAXED);
+}
+
+/**
+ * @brief Get the total amount of active zero pages in the system
+ */
+size_t pmm_getZeroPages() {
+    return __atomic_load_n(&pmm_zero_pages, __ATOMIC_RELAXED);
 }

@@ -43,10 +43,6 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
 
         // Copy the data
         for (uintptr_t i = nrange->start; i < nrange->end; i += PAGE_SIZE) {
-            if ((arch_mmu_read_flags(NULL, i) & MMU_FLAG_PRESENT) == 0) {
-                continue;
-            }
-
             uintptr_t phys = arch_mmu_physical(NULL, i);
             if (!phys) continue;
 
@@ -55,11 +51,23 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
                 continue;
             }
+
+            if (phys == vmm_zero_page) {
+                pmm_retain(phys);
+                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
+                continue;
+            }
+
 #ifndef DISABLE_COW
             // Retain the physical page
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
                 pmm_retain(phys);
-                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags); // shared memory
+                mmu_flags_t flags = nrange->mmu_flags;
+                if ((nrange->vmm_flags & VM_FLAG_FILE) && !nrange->file.node->ops->mmap && VFS_CACHEABLE(nrange->file.node->inode)) {
+                    flags &= ~MMU_FLAG_WRITE;
+                }
+
+                arch_mmu_map(new_ctx->dir, i, phys, flags); // shared memory
             } else {
                 arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags & ~MMU_FLAG_WRITE);
                 pmm_retain(phys);
@@ -68,11 +76,18 @@ vmm_context_t *vmm_clone(vmm_context_t *ctx) {
 #else
             if (nrange->vmm_flags & VM_FLAG_SHARED) {
                 pmm_retain(phys);
-                arch_mmu_map(new_ctx->dir, i, phys, nrange->mmu_flags);
+                mmu_flags_t flags = nrange->mmu_flags;
+                if ((nrange->vmm_flags & VM_FLAG_FILE) && !nrange->file.node->ops->mmap && VFS_CACHEABLE(nrange->file.node->inode)) {
+                    flags &= ~MMU_FLAG_WRITE;
+                }
+
+                arch_mmu_map(new_ctx->dir, i, phys, flags);
             } else {
                 uintptr_t new = pmm_allocatePage(ZONE_DEFAULT);
                 uintptr_t m1 = arch_mmu_remap_physical(new, PAGE_SIZE, REMAP_TEMPORARY);
-                memcpy((void*)m1, (void*)i, PAGE_SIZE);
+                uintptr_t m2 = arch_mmu_remap_physical(phys, PAGE_SIZE, REMAP_TEMPORARY);
+                memcpy((void*)m1, (void*)m2, PAGE_SIZE);
+                arch_mmu_unmap_physical(m2, PAGE_SIZE);
                 arch_mmu_unmap_physical(m1, PAGE_SIZE);
                 arch_mmu_map(new_ctx->dir, i, new, nrange->mmu_flags);
             }

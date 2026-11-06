@@ -53,7 +53,7 @@ static DLIST_HEAD(dirty_list, page_cache_t);
 #define LOG(status, ...) dprintf_module(status, "MM:CACHE", __VA_ARGS__)
 
 /* atomicity helpers */
-#define PAGE_TEST_FLAG(pg, flag)  (__atomic_load_n(&(pg)->flags, __ATOMIC_SEQ_CST) & flag)
+#define PAGE_TEST_FLAG(pg, flag)  (__atomic_load_n(&(pg)->flags, __ATOMIC_SEQ_CST) & (flag))
 #define PAGE_IS_LOADING(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_LOADING)
 #define PAGE_IS_READY(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_READY)
 #define PAGE_IS_ERROR(pg) PAGE_TEST_FLAG(pg, PAGE_FLAG_ERROR)
@@ -109,6 +109,28 @@ page_cache_t* cache_create() {
     DLIST_INSERT_TAIL(&cache_list, cache, node);
     mutex_release(&cache_list_lock);
     return cache;
+}
+
+/**
+ * @brief Some bs to ensure inode has a page cache
+ */
+page_cache_t* cache_ensure(vfs_inode_t *inode) {
+    page_cache_t *cache = __atomic_load_n(&inode->cache, __ATOMIC_ACQUIRE);
+    if (cache) return cache;
+
+    cache = cache_create();
+    page_cache_t *expected = NULL;
+    if (__atomic_compare_exchange_n(&inode->cache, &expected, cache, false, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)) {
+        return cache;
+    }
+
+    // lost race, discard
+    mutex_acquire(&cache_list_lock);
+    DLIST_REMOVE(&cache_list, page_cache_t, cache, node);
+    mutex_release(&cache_list_lock);
+    xa_destroy(&cache->xa);
+    slab_free(page_cache_cache, cache);
+    return expected;
 }
 
 /**
@@ -175,6 +197,8 @@ static int cache_place(vfs_inode_t *inode, loff_t offset, pmm_page_t *page) {
  * Cache must be locked already
  */
 static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
+    // A truncate can remove this page while we sleep without the cache lock
+    pmm_retainPage(page);
     CACHE_FINISH_READ(cache);
     int r = 0;
     while (PAGE_IS_LOADING(page)) {
@@ -186,6 +210,7 @@ static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
             EVENT_DETACH(&l);
             EVENT_DESTROY_LISTENER(&l);
             CACHE_START_READ(cache);
+            pmm_releasePage(page);
             return 0;
         }
 
@@ -197,6 +222,7 @@ static int cache_wait(page_cache_t *cache, pmm_page_t *page) {
     }
 
     CACHE_START_READ(cache);
+    pmm_releasePage(page);
     return r;
 }
 
@@ -220,14 +246,15 @@ static void cache_pageLoadFinished(page_cache_t *cache, pmm_page_t *page, int fi
 /**
  * @brief Cache finished loading a bunch of pages
  */
-static void cache_pageRangeFinished(page_cache_t *cache, page_range_t *range, int final_state) {
+static void cache_pageRangeFinished(page_cache_t *cache, page_range_t *range, page_range_t *io_range, int final_state) {
     for (unsigned i = 0; i < range->npages; i++) {
-        if (range->pages[i]) {
+        if (range->pages[i] && range->pages[i] == io_range->pages[i]) {
             pmm_page_t *pg = pmm_page(range->pages[i]);
             assert(pg->ent->being_evicted == false);
             PAGE_MARK_STATE(pg, final_state);
         }
     }
+
     EVENT_SIGNAL(&cache->ready_event);
 }
 
@@ -246,12 +273,17 @@ int cache_getPage(struct vfs_inode *inode, loff_t offset, pmm_page_t **output) {
     pmm_page_t *page = cache_get(cache, offset); // updates entry period
     if (page) {
         // already got the page, but is it ready?
-        if (PAGE_IS_LOADING(page)) {
+        while (page && PAGE_IS_LOADING(page)) {
             int ret = cache_wait(cache, page);
             if (ret < 0) {
                 CACHE_FINISH_READ(cache);
                 return ret;
             }
+            page = cache_get(cache, offset);
+        }
+        if (!page) {
+            CACHE_FINISH_READ(cache);
+            return cache_getPage(inode, offset, output);
         }
 
         // Now what's going on with this page
@@ -261,20 +293,17 @@ int cache_getPage(struct vfs_inode *inode, loff_t offset, pmm_page_t **output) {
             *output = page;
             return 0;
         } else if (PAGE_IS_ERROR(page)) {
-            // An error occurred while trying to take this page
-            // Annoying but we need the write lock to do this
+            pmm_retainPage(page);
             CACHE_FINISH_READ(cache);
-
             CACHE_START_WRITE(cache);
-
-            // !!! Is this check necessary?
-            if (cache_get(cache, offset)) {
+            if (cache_get(cache, offset) == page) {
+                page_entry_t *entry = page->ent;
                 cache_remove(cache, page);
+                pmm_releasePage(page); // Cache reference.
+                slab_free(page_entry_cache, entry);
             }
-            
             CACHE_FINISH_WRITE(cache);
-
-            pmm_releasePage(page);
+            pmm_releasePage(page); // Lock-upgrade reference.
             return -EIO; // TODO: better error code passing
         } else {
             assert(0);
@@ -329,6 +358,7 @@ int cache_getPage(struct vfs_inode *inode, loff_t offset, pmm_page_t **output) {
     if (r < 0) {
         cache_pageLoadFinished(cache, page, PAGE_FLAG_ERROR);
         CACHE_FINISH_WRITE(cache);
+        pmm_releasePage(page); // The failed request does not return its reference.
         return r;
     }
 
@@ -340,12 +370,31 @@ int cache_getPage(struct vfs_inode *inode, loff_t offset, pmm_page_t **output) {
 }
 
 /**
+ * @brief Function of doom and despair
+ * 
+ * (Fills ranges page by page instead of batching them all)
+ */
+static int cache_getRangeIndividual(struct vfs_inode *inode, loff_t offset, size_t npages, page_range_t *range) {
+    loff_t this_off = offset;
+    for (unsigned i = 0; i < npages; i++) {
+        if (range->pages[i] == 0x0) {
+            pmm_page_t *pg;
+            int ret = cache_getPage(inode, this_off, &pg);
+            if (ret != 0) return ret;
+            range->pages[i] = pmm_address(pg);
+        }
+        this_off += PAGE_SIZE;
+    }
+    return 0;
+}
+
+/**
  * @brief Get a page range
- * @param inode The inode to get the page range for
- * @param offset The offset in the inode to retrieve a range
+ * @param inode The inode to get the range for
+ * @param offset The first file offset
  * @param npages The number of pages to receive
- * @param range The range to output to
- * @param flags Flags
+ * @param range The output range
+ * @param flags Cache flags
  * @returns 0 on success
  */
 int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_range_t *range, int flags) {
@@ -364,33 +413,38 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
         // Try to get the page here, then handle based on what's happening
         pmm_page_t *pg = cache_get(cache, this_off);
         if (pg) {
-            if (PAGE_IS_LOADING(pg)) {
-                // !!! avoid having to sleep here maybe just re-read it kek
+            while (pg && PAGE_IS_LOADING(pg)) {
                 int ret = cache_wait(cache, pg);
                 if (ret < 0) {
                     CACHE_FINISH_READ(cache);
                     return ret;
                 }
+                pg = cache_get(cache, this_off);
             }
-            
+            if (!pg) {
+                this_off += PAGE_SIZE;
+                continue;
+            }
+
             if (PAGE_IS_READY(pg)) {
                 // We successfully filled a page
                 if (PAGE_IS_DIRTY(pg) || PAGE_IS_WRITEBACK(pg) || PAGE_TEST_FLAG(pg, PAGE_FLAG_PERMANENT)) {
-                    // Dirty pages cannot be batched, nor permanent pages since tmpfs just sets them to 0 anyways.
                     have_dirty = true;
                 }
-
                 filled++;
                 pmm_retainPage(pg);
                 range->pages[i] = pmm_address(pg);
             } else if (PAGE_IS_ERROR(pg)) {
+                pmm_retainPage(pg);
                 CACHE_FINISH_READ(cache);
                 CACHE_START_WRITE(cache);
-
-                if (cache_get(cache, offset)) {
+                if (cache_get(cache, this_off) == pg) {
+                    page_entry_t *entry = pg->ent;
                     cache_remove(cache, pg);
+                    pmm_releasePage(pg); // Cache reference
+                    slab_free(page_entry_cache, entry);
                 }
-                
+
                 CACHE_FINISH_WRITE(cache);
                 pmm_releasePage(pg);
                 return -EIO; // TODO: better error code passing
@@ -417,13 +471,15 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
             if (range->pages[i] == 0x0) {
                 pmm_page_t *pg = cache_get(cache, this_off);
                 if (pg) {
-                    // todo im lazy
-                    assert(pg->flags & PAGE_FLAG_READY && "alignedwrite waiting not impl'd");
+                    if (!PAGE_IS_READY(pg)) {
+                        CACHE_FINISH_WRITE(cache);
+                        return cache_getRangeIndividual(inode, offset, npages, range);
+                    }
                     pmm_retainPage(pg);
                     range->pages[i] = pmm_address(pg);
                 } else {
                     // allocate some dummy memory thatll be filled anyways
-                    uintptr_t addr = pmm_allocatePage(ZONE_DEFAULT);
+                    uintptr_t addr = pmm_allocatePageFlags(ZONE_DEFAULT, PMM_ALLOC_ZEROED);
                     pg = pmm_page(addr);
                     pmm_retainPage(pg);
                     pg->flags |= PAGE_FLAG_READY; // TODO: what if a read comes in at this exact moment?
@@ -440,81 +496,85 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
         return 0;
     }
 
-    // On certain disks it is way faster to drop a couple of pages in order to do a big sequential read
-    // We should batch them if 50% pages were missing
+    // Sparse or dirty ranges are cheaper to fill page by page
+    // If the range is very big it's better to just re-read an entire thing without
+    // sparsely filling in each gap. To accomplish this gap pages are allocated and then destroyed later.
     size_t missed = npages - filled;
     if (have_dirty || missed < npages/2 || !inode->c_ops->read_range) {
-        // Read individual pages
+        return cache_getRangeIndividual(inode, offset, npages, range);
+    } else {
+        page_range_t *io_range = kmalloc(sizeof(page_range_t) + npages * sizeof(uintptr_t));
+        io_range->offset = offset;
+        io_range->npages = npages;
+
+        CACHE_START_WRITE(cache);
         this_off = offset;
         for (unsigned i = 0; i < npages; i++) {
-            if (range->pages[i] == 0x0) {
-                pmm_page_t *pg;
-                int r = cache_getPage(inode, this_off, &pg);
-                if (r != 0) {
-                    return r;
-                }
-
-                range->pages[i] = pmm_address(pg);
-            }
-
-            this_off += PAGE_SIZE;
-        }
-        
-        return 0;
-    } else {
-        // Else, batch the entire thing
-        CACHE_START_WRITE(cache);
-        this_off = offset; 
-        for (unsigned i = 0; i < npages; i++) {
-            if (range->pages[i] != 0x0) {
-                // This page could not have been evicted
-                // Probably
-                pmm_page_t *pg = pmm_page(range->pages[i]);
-                PAGE_MARK_LOADING(pg);
-                goto _batch_next;
-            } else {
-                // Make sure another thread didnt sneakily put one in
+            if (!range->pages[i]) {
                 pmm_page_t *pg = cache_get(cache, this_off);
-                if (pg) {
-                    pmm_retainPage(pg);
-                    PAGE_MARK_LOADING(pg);
-                    range->pages[i] = pmm_address(pg);
-                    goto _batch_next;
+
+                if (pg && !PAGE_IS_READY(pg)) {
+                    // A page in our target range is loading right now
+                    // TODO This doesn't have to defer to slowpath getRangeIndividual
+                    LOG(WARN, "getRange: Lost race with something else (a page is still loading)\n");
+                    CACHE_FINISH_WRITE(cache);
+                    kfree(io_range);
+                    return cache_getRangeIndividual(inode, offset, npages, range);
                 }
             }
-
-
-            // Allocate a new page
-            uintptr_t addr = pmm_allocatePage(ZONE_DEFAULT);
-            pmm_page_t *pg = pmm_page(addr);
-            pmm_retainPage(pg);
-            pg->flags |= PAGE_FLAG_LOADING;
-            cache_place(inode, this_off, pg);
-            range->pages[i] = addr;
-
-        _batch_next:
             this_off += PAGE_SIZE;
         }
 
-        // all pages are batched and ready
-        CACHE_FINISH_WRITE(cache);
+        this_off = offset;
+        for (unsigned i = 0; i < npages; i++) {
+            pmm_page_t *pg = range->pages[i] ? pmm_page(range->pages[i]) : cache_get(cache, this_off);
+            if (pg) {
+                // Zamn this already has a page, thus there needs to be a gap page in io_range
+                if (!range->pages[i]) {
+                    pmm_retainPage(pg);
+                    range->pages[i] = pmm_address(pg);
+                }
 
-        // begin!
-        int r = inode->c_ops->read_range(inode, range);
+                io_range->pages[i] = pmm_allocatePage(ZONE_DEFAULT);
+            } else {
+                // Allocate a loading page and emplace it into the cache
+                uintptr_t addr = pmm_allocatePage(ZONE_DEFAULT);
+                pg = pmm_page(addr);
+                pmm_retainPage(pg);
 
-        CACHE_START_WRITE(cache);
-        
-        if (r == 0) {
-            // success!
-            cache_pageRangeFinished(cache, range, PAGE_FLAG_READY);
-        } else {
-            // not success!
-            LOG(ERR, "read_range failed with error code %d\n", r);
-            cache_pageRangeFinished(cache, range, PAGE_FLAG_ERROR);
+                pg->flags |= PAGE_FLAG_LOADING;
+                cache_place(inode, this_off, pg);
+
+                range->pages[i] = addr;
+                io_range->pages[i] = addr;
+            }
+
+            this_off += PAGE_SIZE;
         }
 
         CACHE_FINISH_WRITE(cache);
-        return r;
+
+        int r = inode->c_ops->read_range(inode, io_range);
+
+        CACHE_START_WRITE(cache);
+        cache_pageRangeFinished(cache, range, io_range, r == 0 ? PAGE_FLAG_READY : PAGE_FLAG_ERROR);
+        CACHE_FINISH_WRITE(cache);
+
+        // Kill all gap pages
+        for (unsigned i = 0; i < npages; i++) {
+            if (io_range->pages[i] != range->pages[i]) {
+                pmm_release(io_range->pages[i]);
+            }
+        }
+
+        kfree(io_range);
+
+        if (r != 0) {
+            LOG(ERR, "read_range failed with error code %d\n", r);
+            return r;
+        }
+
+        return 0;
     }
 }
 
@@ -524,7 +584,7 @@ int cache_getRange(struct vfs_inode *inode, loff_t offset, size_t npages, page_r
  */
 void cache_releaseRange(page_range_t *range) {
     for (unsigned i = 0; i < range->npages; i++) {
-        pmm_release(range->pages[i]);
+        if (range->pages[i]) pmm_release(range->pages[i]);
     }
 }
 
@@ -534,26 +594,21 @@ void cache_releaseRange(page_range_t *range) {
 void cache_destroy(vfs_inode_t *inode) {
     page_cache_t *c = inode->cache;
     if (!c) return;
-    
-    dprintf(DEBUG, "cache_destroy on inode %p\n", inode);
 
-    // !!! THIS FUNCTION IS RACY AND WILL PROBABLY CRASH.
-    // !!! A few assertions should help cause a known crash but UAFs are possible with this.
-    // !!! TO BE FIXED.
+    // No syncing can occur while this is happening
+    // TODO A better way of doing this rather than stalling pending syncers every time
+    //      an inode is unlinked
 
-    // HACK: Sync the cache now to remove all the dirty pages
+    mutex_acquire(&sync_lock);
     cache_syncInode(inode);
 
-    // !!!: this is a hack
-    // basically the cache has no way of knowing whether the inode is actively being processed by the syncer thread
-    // this is because i am bad at designing a dirty cache system
-    // however this is fine because we have hacks, this just defers the syncer thread to process it next sync IF its not possible to pop it.
     CACHE_START_WRITE(c);
     
     // remove the cache from the dirty list
     mutex_acquire(&dirty_lock);
     if (c->dirty.on_dirty_list) {
         DLIST_REMOVE(&dirty_list, page_cache_t, c, dirty.node);
+        c->dirty.on_dirty_list = false;
     }
     mutex_release(&dirty_lock);
 
@@ -580,7 +635,9 @@ void cache_destroy(vfs_inode_t *inode) {
     DLIST_REMOVE(&cache_list, page_cache_t, c, node);
     mutex_release(&cache_list_lock);
 
+    inode->cache = NULL;
     slab_free(page_cache_cache, c);
+    mutex_release(&sync_lock);
 }
 
 /**
@@ -588,7 +645,7 @@ void cache_destroy(vfs_inode_t *inode) {
  * @param page The page to mark as dirty
  */
 void cache_markDirty(pmm_page_t *page) {
-    if (page->flags & PAGE_FLAG_PERMANENT) return; // permanent pages like those in tmpfs do not need syncing
+    if (PAGE_TEST_FLAG(page, PAGE_FLAG_PERMANENT | PAGE_FLAG_TRUNCATED)) return;
 
     page_cache_t *c = page->inode->cache;
     CACHE_DEFINE_PAGE_RANGE(range, 1);
@@ -651,6 +708,8 @@ static void cache_insertDirty(page_cache_t *c, page_entry_t *e) {
 void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
     if (range->npages == 0) return;
 
+    CACHE_START_WRITE(cache);
+
     // The pages are fully sequential
     bool have_dirty = false;
     int ndirty = 0;
@@ -658,10 +717,10 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
         assert(range->pages[i]);
         pmm_page_t *pg = pmm_page(range->pages[i]);
         
-        if (pg->flags & PAGE_FLAG_PERMANENT) {
+        if (pg->flags & (PAGE_FLAG_PERMANENT | PAGE_FLAG_TRUNCATED)) {
             // permanent pages are NEVER synced back to disk
             // TODO think of a case where a range could be half permanent, its just tmpfs right now and all tmpfs pages are permanent
-            return;
+            continue;
         }
 
         if (!PAGE_MARK_DIRTY(pg)) {
@@ -676,21 +735,26 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
         }
     }
 
-    // Hack to update mtime
-    vfs_inode_t *inode = pmm_page(range->pages[0])->inode;
-    vfs_inode_attr_t attr = { .mtime = VFS_NOW() };
-    vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_MTIME);
+    // no dirty pages? then we're done here
+    if (!have_dirty) {
+        CACHE_FINISH_WRITE(cache);
 
-    if (!have_dirty) return;
+        pmm_page_t *first = pmm_page(range->pages[0]);
 
-    // account these pages
+        if (!PAGE_TEST_FLAG(first, PAGE_FLAG_PERMANENT | PAGE_FLAG_TRUNCATED)) {
+            vfs_inode_attr_t attr = { .mtime = VFS_NOW() };
+            vfs_setattr(first->inode, &attr, INODE_ATTR_CHANGE_MTIME);
+        }
+
+        return;
+    }
+
     __atomic_add_fetch(&pages_dirty, ndirty, __ATOMIC_SEQ_CST);
-
-    CACHE_START_WRITE(cache);
 
     unsigned rindex = 0;
     while (rindex < range->npages) {
         pmm_page_t *rpage = pmm_page(range->pages[rindex]);
+        if (PAGE_TEST_FLAG(rpage, PAGE_FLAG_PERMANENT | PAGE_FLAG_TRUNCATED)) { rindex++; continue; }
         page_entry_t *ent = rpage->ent;
 
         if (ent->in_dirty_list) {
@@ -711,6 +775,10 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
     }
 
     CACHE_FINISH_WRITE(cache);
+
+    vfs_inode_t *inode = pmm_page(range->pages[0])->inode;
+    vfs_inode_attr_t attr = { .mtime = VFS_NOW() };
+    vfs_setattr(inode, &attr, INODE_ATTR_CHANGE_MTIME);
 
     if (__atomic_exchange_n(&cache->dirty.is_dirty, true, __ATOMIC_SEQ_CST) == false) {
         // This cache is now dirty, but it might also have already been processed and is still in the list
@@ -737,9 +805,14 @@ static void cache_evictLocked(pmm_page_t *page) {
         return;
     }
 
+    if (PAGE_IS_LOADING(page) || PMM_REFCOUNT(pmm_address(page)) != 1) return;
+
     // remove the page from cache as it is clean
     page_cache_t *c = page->inode->cache;
+    page_entry_t *entry = page->ent;
     cache_remove(c, page);
+    page->ent = NULL;
+    slab_free(page_entry_cache, entry);
 
     // release the page
     pmm_releasePage(page);
@@ -796,6 +869,7 @@ static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
         range->npages = 0;
         range->offset = 0;
         loff_t expected_offset = 0;
+        CACHE_START_WRITE(c);
         while (cur && range->npages < CACHE_SYNC_MAX_PAGES) {
             pmm_page_t *pg = cur->page;
             page_entry_t *dnext = cur->dirty[0];
@@ -851,6 +925,7 @@ static int cache_syncInodeInner(vfs_inode_t *inode, page_entry_t *dirty) {
             cur = dnext;
         }
 
+        CACHE_FINISH_WRITE(c);
         if (range->npages > 0) {
             int r = -ENXIO;
             if (inode->c_ops->write_range) {
@@ -910,13 +985,35 @@ int cache_syncInode(vfs_inode_t *inode) {
  * @param inode The inode cache to truncate
  * @param new_size The new size of the cache
  */
-void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
-    if (new_size >= inode->attr.size || (inode->attr.size-new_size) < PAGE_SIZE) {
-        return; // we only care when pages are lost
-    }
+int cache_truncate(vfs_inode_t *inode, loff_t new_size) {
+    if (new_size == inode->attr.size) return 0;
 
     page_cache_t *c = inode->cache;
     mutex_acquire(&c->dirty.sync_lock); // no syncing can take place during this
+
+    // !!! Keep the ending page zero after EOF
+    // Note that this has the consequence of loading this useless page into the page cache
+    loff_t boundary = min(new_size, inode->attr.size);
+    if (boundary & (PAGE_SIZE - 1)) {
+        pmm_page_t *page;
+        int r = cache_getPage(inode, boundary & ~((loff_t)PAGE_SIZE - 1), &page);
+        if (r != 0) {
+            mutex_release(&c->dirty.sync_lock);
+            return r;
+        }
+
+        uintptr_t p = arch_mmu_remap_physical(pmm_address(page), PAGE_SIZE, REMAP_TEMPORARY);
+        memset((void*)(p + (boundary & (PAGE_SIZE - 1))), 0, PAGE_SIZE - (boundary & (PAGE_SIZE - 1)));
+        arch_mmu_unmap_physical(p, PAGE_SIZE);
+        cache_markDirty(page);
+        pmm_releasePage(page);
+    }
+
+    if (new_size >= inode->attr.size) {
+        mutex_release(&c->dirty.sync_lock);
+        return 0;
+    }
+
     CACHE_START_WRITE(c);
 
     loff_t start_loss = PAGE_ALIGN_UP(new_size);
@@ -926,12 +1023,36 @@ void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
         page_entry_t *e = ent;
         pmm_page_t *page = e->page;
 
+        // If the page is still loading we can't kill it yet! Have to wait on that...
+        if (PAGE_IS_LOADING(page)) {
+            pmm_retainPage(page);
+            CACHE_FINISH_WRITE(c);
+
+            CACHE_START_READ(c);
+            int ret = cache_wait(c, page);
+            CACHE_FINISH_READ(c);
+
+            pmm_releasePage(page);
+            if (ret < 0) {
+                LOG(WARN, "Error waiting on loading page during truncate (%d)\n", ret);
+                mutex_release(&c->dirty.sync_lock);
+                return ret;
+            }
+
+            CACHE_START_WRITE(c);
+            idx = start_loss / PAGE_SIZE;
+            ent = xa_find(&c->xa, &idx, ULONG_MAX);
+            continue;
+        }
+
         if (PAGE_IS_DIRTY(page)) {
             PAGE_MARK_TRUNC(page);
             cache_remove(c, page);
             pmm_releasePage(page);
         } else {
+            PAGE_MARK_TRUNC(page);
             cache_remove(c, page);
+            page->ent = NULL;
             pmm_releasePage(page);
             slab_free(page_entry_cache, e);
         }
@@ -941,12 +1062,14 @@ void cache_truncate(vfs_inode_t *inode, loff_t new_size) {
 
     CACHE_FINISH_WRITE(c);
     mutex_release(&c->dirty.sync_lock);
+    return 0;
 }
 
 /**
  * @brief Sync cache now
  */
 void cache_sync() {
+    mutex_acquire(&sync_lock);
     while (true) {
         // pop a cache from the list
         mutex_acquire(&dirty_lock);
@@ -982,6 +1105,8 @@ void cache_sync() {
     _next:
         mutex_release(&cache->dirty.sync_lock);
     }
+
+    mutex_release(&sync_lock);
 
     // sync every filesystem
     vfs_syncFilesystems();

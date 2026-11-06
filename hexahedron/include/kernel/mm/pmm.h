@@ -44,6 +44,10 @@
 #define PAGE_FLAG_PERMANENT             0x20    // The page is permanent and cannot be removed UNLESS the cache is truncated
 #define PAGE_FLAG_TRUNCATED             0x40    // The page was truncated and is dead
 #define PAGE_FLAG_WRITEBACK             0x80    // The page is being written back
+#define PAGE_FLAG_ZEROED                0x100   // The page is zeroed
+
+/* PMM alloc flags */
+#define PMM_ALLOC_ZEROED                0x1     // Get a zeroed page
 
 /**** TYPES ****/
 
@@ -62,10 +66,9 @@ typedef struct pmm_page {
     struct pmm_section *sect;   // The section this belongs to
     struct vfs_inode *inode;    // Backed inode
     loff_t offset;              // Offset in the file
-    volatile uint8_t flags;     // Page flags
+    volatile uint16_t flags;    // Page flags
     struct page_entry *ent;     // Parent page entry
     uintptr_t refcount;
-
     struct {
         size_t npages; // valid only on first and last pages of a run
         size_t run_prev; // valid on first page only, index into page array, SIZE_MAX when no previous runs
@@ -86,11 +89,12 @@ typedef struct pmm_section {
     uint64_t nfree;
     pmm_page_t *pages;
     pmm_page_t *first_run;
+    pmm_page_t *first_zero;     // zeroed free pages, linked through run.run_next
 } pmm_section_t;
 
 /**** MACROS ****/
 
-#define PMM_REFCOUNT(pg) ({ pmm_page_t *page = pmm_page(pg); assert(page); page->refcount; })
+#define PMM_REFCOUNT(pg) ({ pmm_page_t *_pmm_ref_page = pmm_page(pg); assert(_pmm_ref_page); __atomic_load_n(&_pmm_ref_page->refcount, __ATOMIC_SEQ_CST); })
 
 /**** FUNCTIONS ****/
 
@@ -106,6 +110,13 @@ void pmm_init(pmm_region_t *region);
  * @returns The page or 0x0 for no memory
  */
 uintptr_t pmm_allocatePageFlags(pmm_zone_t zone, uint32_t flags);
+
+/**
+ * @brief Zero one ordinary free page
+ * 
+ * Returns false when there aren't any pages to zero
+ */
+bool pmm_zeroPage(void);
 
 /**
  * @brief Allocate a PMM page
@@ -187,5 +198,10 @@ uintptr_t pmm_getUsedBlocks();
  * @brief Gets the free amount of blocks
  */
 uintptr_t pmm_getFreeBlocks();
+
+/**
+ * @brief Get the total amount of active zero pages in the system
+ */
+size_t pmm_getZeroPages();
 
 #endif

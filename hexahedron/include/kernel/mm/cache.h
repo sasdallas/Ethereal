@@ -85,7 +85,13 @@ void cache_init();
 /**
  * @brief Initialize cache for inode
  */
-page_cache_t* cache_create() ;
+page_cache_t* cache_create();
+
+
+/**
+ * @brief Some bs to ensure inode has a page cache
+ */
+page_cache_t* cache_ensure(struct vfs_inode *inode);
 
 /**
  * @brief Get a page from the page cache
@@ -137,7 +143,7 @@ void cache_evict(pmm_page_t *page);
  * @param inode The inode cache to truncate
  * @param new_size The new size of the cache
  */
-void cache_truncate(struct vfs_inode *inode, loff_t new_size);
+int cache_truncate(struct vfs_inode *inode, loff_t new_size);
 
 /**
  * @brief Destroy and free an inode cache

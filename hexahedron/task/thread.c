@@ -128,7 +128,6 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
  */
 int thread_destroy(thread_t *thr) {
     // Free the thread's stack
-    LOG(DEBUG, "******************************************** Thread %p destroying\n", thr);
     if (thr->kstack) kfree((void*)(thr->kstack - PROCESS_KSTACK_SIZE));
 
     sched_freeThread(thr);
@@ -165,9 +164,6 @@ __attribute__((no_caller_saved_registers)) void thread_safeExit(thread_t *arg) {
 void thread_exit() {
     thread_t *t = current_cpu->current_thread;
     timemonitor_updateThreadExit();
-
-    // process_yield() will kill us
-    LOG(DEBUG, "thread_exit %p\n", t);
 
     // IRQs should be disabled from now on to prevent preemption
     hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
