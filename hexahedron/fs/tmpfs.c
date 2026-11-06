@@ -241,7 +241,8 @@ static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_na
 
     MUTEX_INIT(&new_node->lck);
     new_node->parent = n;
-    
+
+    memset(&new_node->attr, 0, sizeof(new_node->attr));
     new_node->attr.type = VFS_SYMLINK;
     new_node->attr.ino = vfs_getNextInode();
     new_node->attr.atime = new_node->attr.mtime = new_node->attr.ctime = VFS_NOW();
@@ -252,6 +253,7 @@ static int tmpfs_symlink(vfs_inode_t *parent, char *link_contents, char *link_na
     new_node->attr.gid = (n->attr.mode & S_ISGID) ? n->attr.gid : (proc ? proc->cred.egid : 0);
 
     new_node->symlink.path = strdup(link_contents);
+    new_node->attr.size = strlen(new_node->symlink.path);
 
         // Create an inode
     vfs_inode_t *ino = vfs_inode();
@@ -488,7 +490,7 @@ static int tmpfs_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_
         return -ENXIO; // should send a SIGBUS
     }
 
-    if (!f->inode->cache) return -EINVAL;
+    cache_ensure(f->inode);
 
     size = PAGE_ALIGN_UP(size);
 
