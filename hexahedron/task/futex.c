@@ -9,16 +9,13 @@
  * Please see the LICENSE file in the main repository for more details.
  * 
  * Copyright (C) 2025 Samuel Stuart
- * 
- * @note Some ideas derived from @Bananymous
- * @todo Check this for security issues. Messing with physical pointers seems like, well, a bad idea..
  */
 
 #include <kernel/task/process.h>
 #include <kernel/misc/mutex.h>
 #include <kernel/debug.h>
-#include <structs/hashmap.h>
 #include <kernel/mm/alloc.h>
+#include <kernel/mm/vmm.h>
 #include <kernel/misc/util.h>
 #include <kernel/panic.h>
 #include <kernel/event.h>
@@ -29,8 +26,20 @@
 #define LOG(status, ...) dprintf_module(status, "TASK:FUTEX", __VA_ARGS__)
 
 slab_cache_t *futex_cache = NULL;
-hashmap_t *futex_map = NULL;
 mutex_t *futex_mutex = NULL;
+
+/* futex_entry is because of CoW pages */
+/* CoW can change the physical address of the page which previously the futexes keyed on */
+/* ideally, there would be an interface to lock/ensure a PMM page is not CoW + cannot be CoWed */
+/* and yet there isn't so we key by address/space */
+typedef struct futex_entry {
+    struct futex_entry *next;
+    futex_t futex;
+    vmm_space_t *space;
+    uintptr_t address;
+} futex_entry_t;
+
+static futex_entry_t *futex_entries = NULL;
 
 #define FUTEX_LOCK() mutex_acquire(futex_mutex);
 #define FUTEX_UNLOCK() mutex_release(futex_mutex);
@@ -39,7 +48,8 @@ mutex_t *futex_mutex = NULL;
  * @brief Futex object initializer
  */
 static int futex_initializer(slab_cache_t *cache, void *obj) {
-    futex_t *f = obj;
+    futex_entry_t *entry = obj;
+    futex_t *f = &entry->futex;
     MUTEX_INIT(&f->lock);
     WAIT_QUEUE_INIT(&f->queue);
     f->waiters = 0;
@@ -49,18 +59,52 @@ static int futex_initializer(slab_cache_t *cache, void *obj) {
 }
 
 /**
+ * @brief Make futex key
+ */
+static int futex_make_key(uint32_t *pointer, futex_entry_t *key) {
+    vmm_space_t *space = vmm_getSpaceForAddress(pointer);
+    if (!space) return -EFAULT;
+
+    mutex_acquire(space->mut);
+    vmm_memory_range_t *range = vmm_getRange(space, (uintptr_t)pointer, sizeof(*pointer));
+    if (!range) {
+        mutex_release(space->mut);
+        return -EFAULT;
+    }
+    mutex_release(space->mut);
+
+    key->space = (range->vmm_flags & VM_FLAG_SHARED) ? NULL : space;
+    key->address = (range->vmm_flags & VM_FLAG_SHARED) ? arch_mmu_physical(NULL, (uintptr_t)pointer) : (uintptr_t)pointer;
+    return key->address ? 0 : -EFAULT;
+}
+
+/**
+ * @brief Find futex by key
+ */
+static futex_entry_t *futex_find(futex_entry_t *key) {
+    for (futex_entry_t *entry = futex_entries; entry; entry = entry->next) {
+        if (entry->space == key->space && entry->address == key->address) return entry;
+    }
+    return NULL;
+}
+
+/**
  * @brief Release a futex
  */
-static void futex_release(uintptr_t phys, futex_t *ftx) {
+static void futex_release(futex_entry_t *entry) {
     FUTEX_LOCK();
+    futex_t *ftx = &entry->futex;
     assert(ftx->references > 0);
 
     ftx->references--;
     if (ftx->references == 0) {
         assert(ftx->waiters == 0);
-        hashmap_remove(futex_map, (void*)phys);
+        futex_entry_t **link = &futex_entries;
+        while (*link && *link != entry) link = &(*link)->next;
+        assert(*link);
+        *link = entry->next;
         FUTEX_UNLOCK();
-        slab_free(futex_cache, ftx);
+        slab_free(futex_cache, entry);
         return;
     }
 
@@ -74,25 +118,23 @@ static void futex_release(uintptr_t phys, futex_t *ftx) {
  * @param time Time to wait on
  */
 int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
-    // get the futex itself
+    futex_entry_t key;
+    int ret = futex_make_key(pointer, &key);
+    if (ret) return ret;
+
     FUTEX_LOCK();
-    uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
-    assert(phys);
 
     // create the futex maybe
-    futex_t *ftx = NULL;
-    if (!hashmap_has(futex_map, (void*)phys)) {
-        ftx = slab_allocate(futex_cache);
-        if (!ftx) {
-            FUTEX_UNLOCK();
-            return -ENOMEM;
-        }
-        hashmap_set(futex_map, (void*)phys, ftx);
-    } else {
-        ftx = hashmap_get(futex_map, (void*)phys);
+    futex_entry_t *entry = futex_find(&key);
+    if (!entry) {
+        entry = slab_allocate(futex_cache);
+        entry->space = key.space;
+        entry->address = key.address;
+        entry->next = futex_entries;
+        futex_entries = entry;
     }
 
-
+    futex_t *ftx = &entry->futex;
     ftx->references++;
 
     // this ordering should be fine
@@ -105,7 +147,6 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
     }
 
     // we own the futex lock now, its time to sleepy
-    int ret = 0;
     ftx->waiters++;
     for (;;) {
         wait_queue_node_t n;
@@ -139,7 +180,7 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
 
     mutex_release(&ftx->lock);
 
-    futex_release(phys, ftx);
+    futex_release(entry);
     return ret;
 }
 
@@ -149,25 +190,24 @@ int futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
  * @param val How many waiters to wakeup
  */
 int futex_wakeup(uint32_t *pointer, uint32_t val) {
-    // get the futex itself
-    FUTEX_LOCK();
-    uintptr_t phys = arch_mmu_physical(NULL, (uintptr_t)pointer);
-    assert(phys);
+    futex_entry_t key;
+    int ret = futex_make_key(pointer, &key);
+    if (ret) return ret;
 
-    futex_t *ftx = NULL;
-    if (!hashmap_has(futex_map, (void*)phys)) {
+    FUTEX_LOCK();
+    futex_entry_t *entry = futex_find(&key);
+    if (!entry) {
         FUTEX_UNLOCK();
         return 0;
-    } else {
-        ftx = hashmap_get(futex_map, (void*)phys);
     }
+    futex_t *ftx = &entry->futex;
     ftx->references++;
 
     // this ordering should be fine
     mutex_acquire(&ftx->lock);
     FUTEX_UNLOCK();
 
-    int ret = ftx->waiters - ftx->wakers;
+    ret = ftx->waiters - ftx->wakers;
     assert(ret >= 0);
     if (ret > (int)val) {
         ret = (int)val;
@@ -177,7 +217,7 @@ int futex_wakeup(uint32_t *pointer, uint32_t val) {
     if (ret) waitqueue_wakeup(&ftx->queue, ret);
     mutex_release(&ftx->lock);
 
-    futex_release(phys, ftx);
+    futex_release(entry);
     return ret;
 }
 
@@ -185,7 +225,6 @@ int futex_wakeup(uint32_t *pointer, uint32_t val) {
  * @brief Initialize futexes
  */
 void futex_init() {
-    futex_cache = slab_createCache("futex cache", SLAB_CACHE_DEFAULT, sizeof(futex_t), 0, futex_initializer, NULL);
+    futex_cache = slab_createCache("futex cache", SLAB_CACHE_DEFAULT, sizeof(futex_entry_t), 0, futex_initializer, NULL);
     futex_mutex = mutex_create("futex");
-    futex_map = hashmap_create_int("futex map", 10);
 }
