@@ -284,8 +284,8 @@ static inline int file_get_entries(vfs_file_t *f, vfs_dir_context_t *ctx) { if (
 static inline int file_poll(vfs_file_t *f, poll_waiter_t *waiter, poll_events_t events) { if (f->ops->poll) { return f->ops->poll(f, waiter, events); } else { return -ENOTSUP; }} // ambig. if file doesn't support polling. poll()/select() should exit on file_poll_events tho
 static inline int file_mmap(vfs_file_t *f, void *addr, size_t size, off_t off, uint64_t flags) { if (f->ops->mmap) { return f->ops->mmap(f, addr, size, off, flags); } else { return -ENOTSUP; }}
 static inline int file_mmap_prepare(vfs_file_t *f, void *range) {
-    if ((f->inode->attr.type == VFS_FILE || f->inode->attr.type == VFS_BLOCKDEVICE) && !(f->inode->flags & INODE_FLAG_NOT_CACHEABLE) && f->inode->c_ops && !f->inode->cache) {
-        f->inode->cache = cache_create();
+    if ((f->inode->attr.type == VFS_FILE || f->inode->attr.type == VFS_BLOCKDEVICE) && !(f->inode->flags & INODE_FLAG_NOT_CACHEABLE) && f->inode->c_ops) {
+        cache_ensure(f->inode);
     }
 
     if (f->ops->mmap_prepare) {
@@ -629,6 +629,16 @@ ino_t vfs_getNextInode();
  * alternative APIs.
  */
 vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino);
+
+/**
+ * @brief Force drop a cache reference on an inode
+ * @param filesystem The filesystem to invalidate the inode on
+ * @param ino The inode number to invalidate
+ * 
+ * This is used by filesystems that need to remove an inode from the cache like SystemFS,
+ * instead of just unlinking them. 
+ */
+void vfs_invalidateInode(vfs_filesystem_t *filesystem, ino_t ino);
 
 /**
  * @brief Finished creating inode

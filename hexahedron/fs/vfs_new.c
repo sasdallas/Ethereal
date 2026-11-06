@@ -263,6 +263,8 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
 
     mutex_acquire(&vfs_inode_cache_mut);
     vfs_icache_entry_t *ent = vfs_inode_cache[hash % 40];
+    while (ent && ent != &inode->c_entry) ent = ent->next;
+    if (!ent) { mutex_release(&vfs_inode_cache_mut); return; }
 
     // Delink
     if (inode->c_entry.next) inode->c_entry.next->prev = inode->c_entry.prev;
@@ -273,6 +275,43 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
     }
     
     mutex_release(&vfs_inode_cache_mut);
+}
+
+/**
+ * @brief Force drop a cache reference on an inode
+ * @param filesystem The filesystem to invalidate the inode on
+ * @param ino The inode number to invalidate
+ * 
+ * This is used by filesystems that need to remove an inode from the cache like SystemFS,
+ * instead of just unlinking them. 
+ */
+void vfs_invalidateInode(vfs_filesystem_t *filesystem, ino_t ino) {
+    while (1) {
+        vfs_inode_t *inode = NULL;
+        mutex_acquire(&vfs_inode_cache_mut);
+
+        for (int bucket = 0; bucket < 40 && !inode; bucket++) {
+            vfs_icache_entry_t *ent = vfs_inode_cache[bucket];
+            while (ent) {
+                vfs_inode_t *cur = CONTAINER_OF(ent, vfs_inode_t, c_entry);
+                if (cur->mount && cur->mount->fs == filesystem && cur->attr.ino == ino) {
+                    if (ent->next) ent->next->prev = ent->prev;
+                    if (ent->prev) ent->prev->next = ent->next;
+                    else vfs_inode_cache[bucket] = ent->next;
+                    inode = cur;
+                    break;
+                }
+                ent = ent->next;
+            }
+
+            if (inode) break;
+        }
+
+        mutex_release(&vfs_inode_cache_mut);
+        if (!inode) return;
+
+        inode_release(inode);
+    }
 }
 
 /**
@@ -927,9 +966,7 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
         return file_read(file, off, size, buffer);
     }
     
-    if (file->inode->cache == NULL) {
-        file->inode->cache = cache_create();
-    }
+    cache_ensure(file->inode);
     
     if (off >= file->inode->attr.size) {
         return 0;
@@ -952,6 +989,8 @@ ssize_t vfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer) {
     range = kmalloc(sizeof(page_range_t) + (npages*sizeof(uintptr_t)));
     int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, 0);
     if (r) {
+        cache_releaseRange(range);
+        kfree(range);
         return r;
     }
 
@@ -998,9 +1037,7 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
         return file_write(file, off, size, buffer);
     }
 
-    if (!file->inode->cache) {
-        file->inode->cache = cache_create();
-    }
+    cache_ensure(file->inode);
 
     // While files can grow, block devices cannot
     if (file->inode->attr.type == VFS_FILE && (size_t)file->inode->attr.size < off+size) {
@@ -1031,6 +1068,8 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
     page_range_t *range = kmalloc(sizeof(page_range_t) + (npages * sizeof(uintptr_t)));
     int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, flags);
     if (r) {
+        cache_releaseRange(range);
+        kfree(range);
         return r;
     }
 
@@ -1117,6 +1156,7 @@ ssize_t vfs_writeSync(vfs_file_t *file, loff_t off, size_t size, const char *buf
     page_range_t *range = kmalloc(sizeof(page_range_t) + (npages * sizeof(uintptr_t)));
     int r = cache_getRange(file->inode, pg_ind_start * PAGE_SIZE, npages, range, flags);
     if (r) {
+        cache_releaseRange(range);
         kfree(range);
         return r;
     }
@@ -1224,9 +1264,15 @@ int vfs_truncate(vfs_inode_t *inode, size_t size) {
         return inode_truncate(inode, size);
     }
 
-    // First truncate page cache
+    loff_t boundary = min((loff_t)size, inode->attr.size);
+    if ((loff_t)size != inode->attr.size && (boundary & (PAGE_SIZE - 1))) {
+        cache_ensure(inode);
+    }
+
+    // Prepare the page cache before changing the inode size
     if (inode->cache) {
-        cache_truncate(inode, size);
+        int r = cache_truncate(inode, size);
+        if (r != 0) return r;
     }
 
     return inode_truncate(inode, size);
