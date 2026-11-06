@@ -318,7 +318,11 @@ int arch_prepare_signal_frame(thread_t *thread, int signal, registers_t *regs, u
     gregs[MCONTEXT_REG_ERR] = regs->err_code;
     gregs[MCONTEXT_REG_TRAPNO] = regs->int_no;
     gregs[MCONTEXT_REG_OLDMASK] = blocked;
-    gregs[MCONTEXT_REG_CSGSFS] = 0x1B; // todo
+
+    uint16_t fs, gs;
+    asm volatile ("movw %%fs,%0" : "=rm" (fs));
+    asm volatile ("movw %%gs,%0" : "=rm" (gs));
+    gregs[MCONTEXT_REG_CSGSFS] = ((unsigned long)fs << 32) | ((unsigned long)gs << 16) | (regs->cs & 0xffff);
 
 	// !!! hack but due to the way SIGSEGV is sent, CR2 should still have the fault address...
 	// !!! this is very hit or miss, and CR2 should probably be saved in trap frame
@@ -341,6 +345,10 @@ int arch_prepare_signal_frame(thread_t *thread, int signal, registers_t *regs, u
     regs->rax = 0;
     regs->rsp = stack;
     regs->rip = handler;
+
+    regs->cs = 0x1b;
+    regs->ss = 0x23;
+    regs->ds = 0x23;
 
 	return 0;
 }
@@ -378,7 +386,15 @@ int arch_restore_signal_frame(thread_t *thr, registers_t *regs, void *_uctx) {
     regs->rsp = gregs[MCONTEXT_REG_RSP];
     regs->rip = gregs[MCONTEXT_REG_RIP];
     regs->rflags = (gregs[MCONTEXT_REG_EFL] & 0x50DD5) | 0x202;
-    regs->cs = 0x1b;
+    switch (gregs[MCONTEXT_REG_CSGSFS] & 0xffff) {
+        case 0x1b:
+        case 0x2b:
+        case 0x33:
+            regs->cs = gregs[MCONTEXT_REG_CSGSFS] & 0xffff;
+            break;
+        default:
+            return -EINVAL;
+    }
     regs->ss = 0x23;
 
     // amazing code
