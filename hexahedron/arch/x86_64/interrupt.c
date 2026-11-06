@@ -35,8 +35,9 @@ x86_64_gdt_t gdt[MAX_CPUS] __attribute__((used)) = {{
             {0xFFFF, 0x0000, 0x00, 0x9A, 0xAF, 0x00},       // 64-bit kernel-mode code segment
             {0xFFFF, 0x0000, 0x00, 0x92, 0xAF, 0x00},       // 64-bit kernel-mode data segment
             {0xFFFF, 0x0000, 0x00, 0xFA, 0xAF, 0x00},       // 64-bit user-mode code segment
-            {0xFFFF, 0x0000, 0x00, 0xF2, 0xAF, 0x00},       // 64-bit user-mode data segment
+            {0xFFFF, 0x0000, 0x00, 0xF2, 0xCF, 0x00},       // User data (+ 32-bit compatibility stack segment)
             {0xFFFF, 0x0000, 0x00, 0xFA, 0xAF, 0x00},       // (another) 64-bit user-mode code segment for SYSCALL instruction
+            {0xFFFF, 0x0000, 0x00, 0xFA, 0xCF, 0x00},       // 32-bit user-mode compatibility code segment
             {0x0067, 0x0000, 0x00, 0xE9, 0x00, 0x00},       // 64-bit TSS
         },
         {0x00000000, 0x00000000}                            // Additional TSS data
@@ -48,7 +49,7 @@ x86_64_gdt_t gdt[MAX_CPUS] __attribute__((used)) = {{
 /* IDT */
 x86_64_interrupt_descriptor_t hal_idt_table[X86_64_MAX_INTERRUPTS];
 
-/* Exception handler table - TODO: More than one handler per exception? */
+/* Exception handler table */
 exception_handler_t hal_exception_handler_table[X86_64_MAX_EXCEPTIONS] = { 0 };
 
 /* String table for exceptions */
@@ -103,10 +104,10 @@ static void hal_setupGDTCoreData(int core) {
 
     // Configure the TSS entry
     uintptr_t tss = (uintptr_t)&gdt[core].tss;
-    gdt[core].table.entries[6].limit = sizeof(gdt[core].tss);
-    gdt[core].table.entries[6].base_lo = (tss & 0xFFFF);
-    gdt[core].table.entries[6].base_mid = (tss >> 16) & 0xFF;
-    gdt[core].table.entries[6].base_hi = (tss >> 24) & 0xFF;
+    gdt[core].table.entries[7].limit = sizeof(gdt[core].tss);
+    gdt[core].table.entries[7].base_lo = (tss & 0xFFFF);
+    gdt[core].table.entries[7].base_mid = (tss >> 16) & 0xFF;
+    gdt[core].table.entries[7].base_hi = (tss >> 24) & 0xFF;
     gdt[core].table.tss_extra.base_higher = (tss >> 32) & 0xFFFFFFFFF;
 }
 
@@ -137,7 +138,7 @@ void hal_gdtInitCore(int core, uintptr_t rsp) {
         "movw %%ax, %%ds\n"
         "movw %%ax, %%es\n"
         "movw %%ax, %%ss\n"
-        "movw $0x30, %%ax\n" // 0x30 = 7th entry in the GDT (TSS)
+        "movw $0x38, %%ax\n" // 0x38 = 8th entry in the GDT (TSS)
         "ltr %%ax\n"
         :: "m"(gdt[core].gdtr) : "rax"
     ); 
@@ -161,29 +162,16 @@ void hal_gdtInit() {
         "movw %%ax, %%ds\n"
         "movw %%ax, %%es\n"
         "movw %%ax, %%ss\n"
-        "movw $0x30, %%ax\n" // 0x30 = 7th entry in the GDT (TSS)
+        "movw $0x38, %%ax\n" // 0x38 = 8th entry in the GDT (TSS)
         "ltr %%ax\n"
         :: "m"(gdt[0].gdtr) : "rax"
     ); 
 }
 
 /**
- * @brief Register a vector in the IDT table.
- * @warning THIS IS FOR INTERNAL USE ONLY. @see hal_registerInterruptHandler for
- *          a proper handler register 
- * 
- * @note This isn't static because some more advanced functions will need
- *       to set vectors up as usermode (with differing CPL/DPL)
- * 
- * @param index Index in the kernel IDT table (side note: this value cannot be wrong.)
- * @param flags The flags. Recommended to use X86_64_IDT_DESC_PRESENT | X86_64_IDT_DESC_BIT32 for kernel mode,
- *              although you can OR by X86_64_IDT_DESC_RING3 for usermode
- * @param segment The segment selector. Should always be 0x08.
- * @param base The interrupt handler
- *
- * @returns 0. Anything else, and you're in for a REALLY bad day. 
+ * @brief Register a vector in the IDT table
  */
-int hal_registerInterruptVector(uint8_t index, uint8_t flags, uint16_t segment, uint64_t base) {
+void hal_registerInterruptVector(uint8_t index, uint8_t flags, uint16_t segment, uint64_t base) {
     hal_idt_table[index].base_lo = (base & 0xFFFF);
     hal_idt_table[index].base_mid = (base >> 16) & 0xFFFF;
     hal_idt_table[index].base_hi = (base >> 32) & 0xFFFFFFFF;
@@ -191,16 +179,6 @@ int hal_registerInterruptVector(uint8_t index, uint8_t flags, uint16_t segment, 
     hal_idt_table[index].flags = flags;
     hal_idt_table[index].reserved = 0;
     hal_idt_table[index].ist = 0;
-
-    return 0;
-}
-
-
-/**
- * @brief Handle ending an interrupt
- */
-inline void hal_endInterrupt(uintptr_t interrupt_number) {
-    pic_eoi(interrupt_number);
 }
 
 /**
@@ -258,6 +236,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         dprintf(ERR, "ERR %016llX RIP %016llX RFL %016llX\n", regs->err_code, regs->rip, regs->rflags);
         dprintf(ERR, "CS %04X DS %04X SS %04X\n", regs->cs, regs->ds, regs->ss);
         dprintf(ERR, "CR0 %08X CR2 %016llX CR3 %016llX\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3);
+
         dprintf(ERR, "Killing process.\n");
 
         process_exit(current_cpu->current_process, 1);
@@ -266,17 +245,7 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
     
     // Looks like no one caught this exception.
     kernel_panic_prepare(CPU_EXCEPTION_UNHANDLED);
-
-    if (exception_index == 14) {
-        // Page fault, get the address
-        uintptr_t page_fault_addr = 0x0;
-        asm volatile ("movq %%cr2, %0" : "=a"(page_fault_addr));
-
-        // Print it out
-        dprintf(NOHEADER, "*** ISR detected exception: Page fault at address 0x%016llX\n\n", page_fault_addr);
-        printf("*** Page fault at address 0x%016llX detected in kernel.\n", page_fault_addr);
-    } else if (exception_index < X86_64_MAX_EXCEPTIONS) {
-        // Other exception
+    if (exception_index < X86_64_MAX_EXCEPTIONS) {
         dprintf(NOHEADER, "*** ISR detected exception %i - %s\n\n", exception_index, hal_exception_table[exception_index]);
         printf("*** ISR detected exception %i - %s\n", exception_index, hal_exception_table[exception_index]);
     } else {
@@ -284,31 +253,22 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         printf("*** ISR detected unknown exception: %i\n", exception_index);
     }
     
-    
-
     dprintf(NOHEADER, "\033[1;31mFAULT REGISTERS:\n\033[0;31m");
-
     dprintf(NOHEADER, "RAX %016llX RBX %016llX RCX %016llX RDX %016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
     dprintf(NOHEADER, "RDI %016llX RSI %016llX RBP %016llX RSP %016llX\n", regs->rdi, regs->rsi, regs->rbp, regs->rsp);
     dprintf(NOHEADER, "R8  %016llX R9  %016llX R10 %016llX R11 %016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
     dprintf(NOHEADER, "R12 %016llX R13 %016llX R14 %016llX R15 %016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
     dprintf(NOHEADER, "ERR %016llX RIP %016llX RFL %016llX\n\n", regs->err_code, regs->rip, regs->rflags);
-
     dprintf(NOHEADER, "CS %04X DS %04X SS %04X\n\n", regs->cs, regs->ds, regs->ss);
     dprintf(NOHEADER, "CR0 %08X CR2 %016llX CR3 %016llX\n", regs_extended->cr0, regs_extended->cr2, regs_extended->cr3);
     dprintf(NOHEADER, "GDTR %016llX %04X\n", regs_extended->gdtr.base, regs_extended->gdtr.limit);
     dprintf(NOHEADER, "IDTR %016llX %04X\n", regs_extended->idtr.base, regs_extended->idtr.limit);
 
-    // !!!: not conforming (should call kernel_panic_finalize) but whatever
-    // We want to do our own traceback.
     arch_panic_traceback(10, regs);
 
-    // Show core processes
     dprintf(NOHEADER, COLOR_CODE_RED_BOLD "\nCPU DATA:\n" COLOR_CODE_RED);
-
     for (int i = 0; i < MAX_CPUS; i++) {
         if (processor_data[i].cpu_id || !i) {
-            // We have valid data here
             if (processor_data[i].current_thread != NULL) {
                 dprintf(NOHEADER, COLOR_CODE_RED "CPU%d: Executing thread %d (%p) (process '%s', PID %d)\n", i, processor_data[i].current_thread->tid, processor_data[i].current_thread, processor_data[i].current_process->name, processor_data[i].current_process->pid);
             } else {
@@ -317,11 +277,9 @@ void hal_exceptionHandler(registers_t *regs, extended_registers_t *regs_extended
         }
     }
 
-    // Display message
     dprintf(NOHEADER, COLOR_CODE_RED "\nThe kernel will now permanently halt. Connect a debugger for more information.\n");
-
-    // Disable interrupts & halt
-    asm volatile ("cli\nhlt");
+    asm volatile ("cli");
+    asm volatile ("hlt");
     for (;;);
 }
 
@@ -378,9 +336,6 @@ void hal_interruptHandler(registers_t *regs, extended_registers_t *regs_extended
         // HACK
         current_cpu->current_thread->regs = regs;
         current_cpu->current_thread->syscall = &syscall;
-
-        // End the interrupt now
-        hal_endInterrupt(int_number);
 
         // Handle system call
         syscall_handle(&syscall);
