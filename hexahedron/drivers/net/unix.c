@@ -181,8 +181,6 @@ static int unix_listen(sock_t *sock, int backlog) {
 static int unix_accept(sock_t *sock, struct sockaddr *sockaddr, socklen_t *addrlen) {
     unix_socket_t *usock = USOCK(sock);
 
-    LOG(DEBUG, "trace: unix_accept on socket %p\n", usock);
-
     mutex_acquire(&usock->lock);
     if (UNIX_GET_STATE(usock) != UNIX_SOCK_STATE_LISTEN) {
         LOG(ERR, "UNIX socket cannot accept if not in listening state\n");
@@ -948,8 +946,6 @@ static int unix_poll(sock_t *sock, poll_waiter_t *w, poll_events_t e) {
 static int unix_close(sock_t *sock) {
     unix_socket_t *usock = USOCK(sock);
 
-    LOG(DEBUG, "unix_close\n");
-
     unix_socket_t *peer = usock->state == UNIX_SOCK_STATE_CONNECTED ? usock->peer : NULL;
     if (peer) unix_lock(usock, peer);
     else mutex_acquire(&usock->lock);
@@ -1192,4 +1188,4 @@ static int unix_init() {
     return 0;
 }
 
-NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init);
+NET_INIT_ROUTINE(unix, INIT_FLAG_DEFAULT, unix_init, socket);
