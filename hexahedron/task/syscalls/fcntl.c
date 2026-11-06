@@ -21,6 +21,11 @@ long sys_fcntl(int fd, int cmd, int extra) {
     long ret = 0;
     switch (cmd) {
         case F_DUPFD: {
+            if (extra < 0 || extra >= PROCESS_MAX_FDS) {
+                ret = -EINVAL;
+                break;
+            }
+
             int output;
             int e = fd_duplicate(fd, extra, &output, false);
         
@@ -30,11 +35,20 @@ long sys_fcntl(int fd, int cmd, int extra) {
         }
 
         case F_DUPFD_CLOEXEC: {
+            if (extra < 0 || extra >= PROCESS_MAX_FDS) {
+                ret = -EINVAL;
+                break;
+            }
+
             int output;
             int e = fd_duplicate(fd, extra, &output, false);
-            if (e != 0) ret = e;
-            else ret = output;
-            fd_setCloseExecute(output, true);
+            if (e != 0) {
+                ret = e;
+            } else {
+                ret = output;
+                fd_setCloseExecute(output, true);
+            }
+
             break;
         }
 
