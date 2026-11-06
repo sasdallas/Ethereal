@@ -35,7 +35,8 @@ typedef enum symphony_packet_type {
     SYMPHONY_PACKET_GET_STREAM,
     SYMPHONY_PACKET_ADD_BUFFER,
     SYMPHONY_PACKET_START,
-    SYMPHONY_PACKET_STOP
+    SYMPHONY_PACKET_STOP,
+    SYMPHONY_PACKET_REMOVE_BUFFER
 } symphony_packet_type_t;
 
 typedef struct symphony_header {
@@ -69,6 +70,10 @@ typedef struct symphony_packet_start {
 typedef struct symphony_packet_stop {
     int buffer_id;
 } symphony_packet_stop_t;
+
+typedef struct symphony_packet_remove_buffer {
+    int buffer_id;
+} symphony_packet_remove_buffer_t;
 
 typedef struct symphony_packet_get_device {
     unsigned char device_id;
@@ -159,6 +164,13 @@ symphony_buffer_id_t symphony_addBuffer(uint16_t stream_id, audio_format_t forma
  * @returns Pointer to Symphony buffer object or NULL
  */
 symphony_buffer_t *symphony_getBuffer(symphony_buffer_id_t id);
+
+/**
+ * @brief Remove a buffer from Symphony
+ * @param id The buffer ID to remove
+ * @returns 0 on success
+ */
+int symphony_removeBuffer(symphony_buffer_id_t id);
 
 /**
  * @brief Start playback

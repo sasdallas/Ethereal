@@ -31,6 +31,8 @@ hashmap_t *buffer_map = NULL;
 
 struct symphony_buffer_info {
     symphony_buffer_t *buf;
+    size_t buflen;
+    int fd;
     size_t samples;
     unsigned short channels;
     audio_format_t format;
@@ -56,6 +58,8 @@ int symphony_connect() {
 
     if (connect(symphony_socket, (const struct sockaddr*)&tgt, sizeof(struct sockaddr_un)) < 0) {
         fprintf(stderr, "libsymphony: connect: %s\n", strerror(errno));
+        close(symphony_socket);
+        symphony_socket = -1;
         return -1;
     }
 
@@ -207,6 +211,7 @@ symphony_buffer_id_t symphony_addBuffer(uint16_t stream_id, audio_format_t forma
     symphony_buffer_t *buf = mmap(NULL, buflen, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FILE, buf_fd, 0);
     if (buf == MAP_FAILED) {
         fprintf(stderr, "libsymphony: mmap: %s\n", strerror(errno));
+        close(buf_fd);
         return -1;
     }
 
@@ -235,11 +240,15 @@ symphony_buffer_id_t symphony_addBuffer(uint16_t stream_id, audio_format_t forma
     symphony_buffer_id_t id;
     int r = symphony_sendPacket(SYMPHONY_PACKET_ADD_BUFFER, &pkt, sizeof(pkt), &id, sizeof(id));
     if (r != 0) {
-        return r;
+        munmap(buf, buflen);
+        close(buf_fd);
+        return -1;
     }
 
     struct symphony_buffer_info *i = malloc(sizeof(struct symphony_buffer_info));
     i->buf = buf;
+    i->buflen = buflen;
+    i->fd = buf_fd;
     i->samples = size;
     i->format = format;
     i->channels = channels;
@@ -258,6 +267,30 @@ symphony_buffer_t *symphony_getBuffer(symphony_buffer_id_t id) {
     struct symphony_buffer_info *info = hashmap_get(buffer_map, (void*)(uintptr_t)id);
     if (!info) return NULL;
     return info->buf;
+}
+
+/**
+ * @brief Remove a buffer from Symphony
+ * @param id The buffer ID to remove
+ * @returns 0 on success
+ */
+int symphony_removeBuffer(symphony_buffer_id_t id) {
+    struct symphony_buffer_info *info = hashmap_get(buffer_map, (void*)(uintptr_t)id);
+    if (!info) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    symphony_packet_remove_buffer_t pkt = { .buffer_id = id };
+    if (symphony_sendPacket(SYMPHONY_PACKET_REMOVE_BUFFER, &pkt, sizeof(pkt), NULL, 0) != 0) {
+        return -1;
+    }
+
+    hashmap_remove(buffer_map, (void*)(uintptr_t)id);
+    munmap(info->buf, info->buflen);
+    close(info->fd);
+    free(info);
+    return 0;
 }
 
 /**

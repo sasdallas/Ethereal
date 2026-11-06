@@ -225,6 +225,18 @@ int stream_init(server_stream_t *stream) {
     return 0;
 }
 
+// destroy a buffer
+static void buffer_destroy(server_buffer_t *b) {
+    pthread_mutex_lock(&b->stream->lock);
+    list_delete(&b->stream->buffers, &b->node);
+    pthread_mutex_unlock(&b->stream->lock);
+
+    hashmap_remove(buffer_map, (void*)(uintptr_t)b->id);
+    close(b->shmfd);
+    munmap(b->buffer, b->buffer_size);
+    free(b);
+}
+
 // remove a client
 void client_remove(server_client_t *cli) {
     pthread_mutex_lock(&client_list_lock);
@@ -234,24 +246,15 @@ void client_remove(server_client_t *cli) {
     pthread_mutex_unlock(&client_list_lock);
 
     pthread_mutex_lock(&buffer_list_lock);
-    server_buffer_t *b = buffer_list;
-    server_buffer_t *prev = NULL;
-    while (b) {
-        server_buffer_t *nxt = b->next;
+    server_buffer_t **link = &buffer_list;
+    while (*link) {
+        server_buffer_t *b = *link;
         if (b->client == cli) {
-            if (prev) prev->next = nxt;
-            else buffer_list = nxt;
-
-            pthread_mutex_lock(&b->stream->lock);
-            list_delete(&b->stream->buffers, &b->node);
-            pthread_mutex_unlock(&b->stream->lock);
-
-            close(b->shmfd);
-            munmap(b->buffer, b->buffer_size);
-            free(b);
+            *link = b->next;
+            buffer_destroy(b);
+        } else {
+            link = &b->next;
         }
-
-        b = nxt;
     }
     pthread_mutex_unlock(&buffer_list_lock);
 
@@ -391,6 +394,7 @@ void *client_thread(void *arg) {
             if (stream == NULL) {
                 TRACE_ERROR("no such stream for stream 0x%x\n", pkt->stream_id);
                 client_sendResponse(cli, &hdr, ENOENT);
+                free(buffer);
                 continue;
             }
 
@@ -399,6 +403,7 @@ void *client_thread(void *arg) {
             if (shmfd < 0) {
                 TRACE_ERROR("shared_open failed with error %s\n", strerror(errno));
                 client_sendResponse(cli, &hdr, errno);
+                free(buffer);
                 continue;
             }
 
@@ -415,9 +420,13 @@ void *client_thread(void *arg) {
             buf->stream = stream;
 
             // TODO: MULTI FORMAT SUPPORT WITH RESAMPLING!!
-            if (buf->channels != 2 && buf->sample_rate != 48000 && buf->format != AUDIO_FORMAT_S16_LE) {
+            if (buf->channels != 2 || buf->sample_rate != 48000 || buf->format != AUDIO_FORMAT_S16_LE) {
                 TRACE_ERROR("Buffer is using unimplemented parameters\n");
-                assert(0);
+                close(shmfd);
+                free(buf);
+                client_sendResponse(cli, &hdr, EINVAL);
+                free(buffer);
+                continue;
             }
 
             // Map the shm buffer
@@ -425,13 +434,15 @@ void *client_thread(void *arg) {
             if (buf->buffer == MAP_FAILED) {
                 TRACE_ERROR("mmap failed with error %s\n", strerror(errno));
                 client_sendResponse(cli, &hdr, errno);
+                close(shmfd);
+                free(buf);
+                free(buffer);
                 continue;
             }
 
             pthread_mutex_lock(&buffer_list_lock);
             buf->next = buffer_list;
             buffer_list = buf;
-            pthread_mutex_unlock(&buffer_list_lock);
 
             pthread_mutex_lock(&stream->lock);
             list_append_node(&stream->buffers, &buf->node);
@@ -439,6 +450,7 @@ void *client_thread(void *arg) {
 
             // Add to map
             hashmap_set(buffer_map, (void*)(uintptr_t)buf->id, buf);
+            pthread_mutex_unlock(&buffer_list_lock);
             
             // Don't signal avail just yet! The buffer is not ready.
 
@@ -448,9 +460,12 @@ void *client_thread(void *arg) {
         } else if (hdr.type == SYMPHONY_PACKET_START) {
             symphony_packet_start_t *pkt = buffer;
 
+            pthread_mutex_lock(&buffer_list_lock);
             server_buffer_t *buf = hashmap_get(buffer_map, (void*)(uintptr_t)pkt->buffer_id);
-            if (buf == NULL) {
+            if (buf == NULL || buf->client != cli) {
+                pthread_mutex_unlock(&buffer_list_lock);
                 client_sendResponse(cli, &hdr, ENOENT);
+                free(buffer);
                 continue;
             }
 
@@ -458,21 +473,46 @@ void *client_thread(void *arg) {
             buf->playing = true;
             pthread_cond_signal(&buf->stream->avail);
             pthread_mutex_unlock(&buf->stream->lock);
+            pthread_mutex_unlock(&buffer_list_lock);
 
             client_sendResponse(cli, &hdr, 0);
         } else if (hdr.type == SYMPHONY_PACKET_STOP) {
             symphony_packet_stop_t *pkt = buffer;
 
+            pthread_mutex_lock(&buffer_list_lock);
             server_buffer_t *buf = hashmap_get(buffer_map, (void*)(uintptr_t)pkt->buffer_id);
-            if (buf == NULL) {
+            if (buf == NULL || buf->client != cli) {
+                pthread_mutex_unlock(&buffer_list_lock);
                 client_sendResponse(cli, &hdr, ENOENT);
+                free(buffer);
                 continue;
             }
 
             pthread_mutex_lock(&buf->stream->lock);
             buf->playing = false;
             pthread_mutex_unlock(&buf->stream->lock);
+            pthread_mutex_unlock(&buffer_list_lock);
 
+            client_sendResponse(cli, &hdr, 0);
+        } else if (hdr.type == SYMPHONY_PACKET_REMOVE_BUFFER) {
+            symphony_packet_remove_buffer_t *pkt = buffer;
+            pthread_mutex_lock(&buffer_list_lock);
+            server_buffer_t **link = &buffer_list;
+            while (*link && (*link)->id != pkt->buffer_id) {
+                link = &(*link)->next;
+            }
+
+            if (*link == NULL || (*link)->client != cli) {
+                pthread_mutex_unlock(&buffer_list_lock);
+                client_sendResponse(cli, &hdr, ENOENT);
+                free(buffer);
+                continue;
+            }
+
+            server_buffer_t *buf = *link;
+            *link = buf->next;
+            buffer_destroy(buf);
+            pthread_mutex_unlock(&buffer_list_lock);
             client_sendResponse(cli, &hdr, 0);
         } else {
             TRACE_ERROR("Unknown or unimplemented request 0x%x\n", hdr.type);
