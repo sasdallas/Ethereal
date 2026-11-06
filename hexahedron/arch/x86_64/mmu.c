@@ -156,18 +156,32 @@ int arch_mmu_pf(uintptr_t useless, registers_t *regs, extended_registers_t *regs
         goto _die;
     }
 
+    int fault_result;
     if (regs->rflags & (1 << 9)) {
         int state = hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 
-        if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
+        fault_result = vmm_fault(&info);
+        if (fault_result == VMM_FAULT_RESOLVED) {
             return 0;
         }
 
         hal_setInterruptState(state);
     } else {
-        if (vmm_fault(&info) == VMM_FAULT_RESOLVED) {
+        fault_result = vmm_fault(&info);
+        if (fault_result == VMM_FAULT_RESOLVED) {
             return 0;
         }
+    }
+
+    if (fault_result == VMM_FAULT_BUS && info.from == VMM_FAULT_FROM_USER) {
+        siginfo_t bus_info = {
+            .si_signo = SIGBUS,
+            .si_errno = 0,
+            .si_code = BUS_ADRERR,
+            .si_addr = (void*)regs_extended->cr2,
+        };
+        signal_sendThreadInfo(current_cpu->current_thread, SIGBUS, &bus_info);
+        return 0;
     }
 
 _die:
