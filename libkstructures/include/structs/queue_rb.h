@@ -29,6 +29,8 @@ typedef struct queue_obj {
 #define QUEUE_DEFAULT_SIZE      64
 
 #define QUEUE_OBJ_INIT(q, objsize, qsize) ({ (q)->osize = (objsize); (q)->rb = ringbuffer_create((qsize) * (objsize)); })
+#define QUEUE_OBJ_DEINIT(q) (ringbuffer_destroy((q)->rb))
+
 #define QUEUE_RB_INIT(q, qsize) (*(q) = ringbuffer_create((qsize) * sizeof(void*)))
 #define QUEUE_RB_DEINIT(q) (ringbuffer_destroy(*(q)))
 
