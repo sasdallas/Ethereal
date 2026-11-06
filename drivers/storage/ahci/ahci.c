@@ -78,7 +78,9 @@ void ahci_handlePortError(ahci_port_t *port, int ccs) {
         while ((port->regs->cmd & (AHCI_PORT_CMD_CR)) == 0) arch_pause_single();
 
         // Send all slots
-        port->regs->ci = __atomic_load_n(&port->slot_bitmap, __ATOMIC_RELAXED);
+        spinlock_acquire(&port->issue_lock);
+        port->regs->ci = port->slot_issued;
+        spinlock_release(&port->issue_lock);
     }
 }
 
@@ -99,8 +101,11 @@ void ahci_tasklet(void *context) {
     }
 
     // Notify
+    thread_t *wake[32];
+    size_t wake_count = 0;
+    spinlock_acquire(&p->issue_lock);
     uint32_t ci = p->regs->ci;
-    uint32_t bmap = __atomic_load_n(&p->slot_bitmap, __ATOMIC_RELAXED);
+    uint32_t bmap = p->slot_issued;
 
     while (bmap) {
         int s = __builtin_ctzl(bmap);
@@ -112,11 +117,13 @@ void ahci_tasklet(void *context) {
         // LOG(INFO, "Slot %d complete.\n", s);
         bmap &= ~(1 << s);
 
-        __atomic_fetch_or(&p->slot_complete, (1 << s), __ATOMIC_RELAXED);
-        if (p->waiters[s]) {
-            sleep_wakeup(p->waiters[s]);
-        }
+        p->slot_issued &= ~(1U << s);
+        __atomic_fetch_or(&p->slot_complete, (1U << s), __ATOMIC_RELEASE);
+        if (p->waiters[s]) wake[wake_count++] = p->waiters[s];
     }
+    spinlock_release(&p->issue_lock);
+
+    for (size_t i = 0; i < wake_count; i++) sleep_wakeup(wake[i]);
 
     // ready to go!
     p->regs->is = p->regs->is;
@@ -207,16 +214,17 @@ static int ahci_submitWait(ahci_port_t *port, ahci_cmd_header_t *cmd) {
     if (thr) {
         sleep_prepare();
     }
-    
-    // barrier this so that the OR operation is synced
-    BARRIER();
+
+    spinlock_acquire(&port->issue_lock);
+    port->slot_issued |= (1U << slot);
     port->regs->ci |= (1U << slot);
+    spinlock_release(&port->issue_lock);
 
     // enter sleep
     if (thr) {
         sleep_enter();
     } else {
-        while (!(port->slot_complete & (1 << slot))) {
+        while (!(__atomic_load_n(&port->slot_complete, __ATOMIC_ACQUIRE) & (1U << slot))) {
             asm volatile (  "sti\n"
                             "hlt\n");
         }
@@ -329,13 +337,15 @@ static int ahci_initPort(ahci_t *ahci, int pnum, volatile ahci_hba_port_t *hbapo
     LOG(INFO, "Initializing port %d...\n", pnum);
 
     // allocate
-    ahci_port_t *port = kmalloc(sizeof(ahci_port_t));
+    ahci_port_t *port = kzalloc(sizeof(ahci_port_t));
     WAIT_QUEUE_INIT(&port->slot_wait);
     TASKLET_INIT(&port->tasklet, "ahci tasklet", ahci_tasklet, port);
     port->controller = ahci;
     port->regs = hbaport;
     port->num = pnum;
     port->slot_bitmap = 0;
+    SPINLOCK_INIT(&port->issue_lock);
+    port->slot_issued = 0;
     port->slot_errors = 0;
     port->slot_complete = 0;
 

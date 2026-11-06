@@ -19,6 +19,7 @@
 #include <kernel/tasklet.h>
 #include <kernel/misc/util.h>
 #include <kernel/misc/waitqueue.h>
+#include <kernel/misc/spinlock.h>
 #include <kernel/drivers/pci.h>
 #include <structs/bitmap.h>
 
@@ -369,6 +370,8 @@ typedef struct ahci_port {
     struct thread *waiters[32];
     
     uint32_t slot_bitmap;
+    spinlock_t issue_lock;
+    uint32_t slot_issued;
     uint32_t slot_errors;
     uint32_t slot_complete; // hack, only used a few times.
 } ahci_port_t;
