@@ -22,6 +22,7 @@ unsigned char mouse_type = CELESTIAL_MOUSE_DEFAULT;
 static int input_ready = 0;
 static bool mouse_drawn = false;
 static keyboard_t *keyboard = NULL;
+static pthread_mutex_t keyboard_lock = PTHREAD_MUTEX_INITIALIZER;
 static gfx_context_t mouse_ctx = { 0 };
 
 int mw_off_x = 0;
@@ -235,7 +236,7 @@ _rel_goto:
             SERVER->mouse_grab = SERVER->mouse_window;
         }
 
-        if (BUTTON_PRESSED(MOUSE_BUTTON_LEFT) && SERVER->mouse_window != SERVER->focused) {
+        if (SERVER->mouse_window != SERVER->focused) {
             window_focus(SERVER->mouse_window);
         }
 
@@ -281,7 +282,9 @@ _rel_goto:
 
 void keyboard_process_event(key_event_t event) {
     keyboard_event_t kev;
+    pthread_mutex_lock(&keyboard_lock);
     keyboard_event2(keyboard, &event, &kev);
+    pthread_mutex_unlock(&keyboard_lock);
 
     // check server binds
     if (SERVER->binds) {
@@ -289,7 +292,7 @@ void keyboard_process_event(key_event_t event) {
 
         while (bind) {
             // TODO: there is a bug where if the bound window exits this will crash
-            if (bind->sc == kev.scancode && keyboard->mods == bind->mods) {
+            if (bind->sc == kev.scancode && kev.mods == bind->mods) {
                 EVENT_SEND(bind->win, celestial_event_bound_key_t, CELESTIAL_EVENT_BOUND_KEY, .pressed = (kev.type == KEYBOARD_EVENT_PRESS), .focused = SERVER->focused ? SERVER->focused->id : (wid_t)-1, .sc = bind->sc, .mods = bind->mods);
                 if (bind->capture) {
                     return;

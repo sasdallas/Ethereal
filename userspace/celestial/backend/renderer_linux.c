@@ -32,12 +32,12 @@ XImage *img;
 
 gfx_font_t *font;
 static pthread_t x11_pthread;
-uint64_t last_redraw = 0;
 
 void *render_main(void *arg) {
     TRACE_DEBUG("Render thread TID: %d\n", gettid());
 
     for (;;) {
+        renderer_waitFrame();
         render_request_t *req = damage_build();
         if (!req) continue;
         int cursor_x = 0;
@@ -54,15 +54,14 @@ void *render_main(void *arg) {
 
         if (draw_cursor) input_draw_at(cursor_x, cursor_y);
         gfx_render(RENDERER->ctx);
+        // vnc_frame_presented();
+        if (draw_cursor) input_restore_at(cursor_x, cursor_y);
+
         XPutImage(display, w, gc, img, 0, 0, 0, 0, 1920, 1080);
         XFlush(display);
 
-        uint64_t now = celestial_now();
-        if (now - last_redraw < 15000) {
-            usleep(15000 - (now - last_redraw));
-        }
-
-        last_redraw = now;
+        renderer_framePresented();
+        window_processAnimations();
     }
 }
 
@@ -184,6 +183,7 @@ void renderer_shutdown() {
 
     pthread_cancel(SERVER->render_thread);
     pthread_cancel(x11_pthread);
+    renderer_shutdownGeneric();
 
     if (RENDERER->ctx) {
         free(RENDERER->ctx->backbuffer);

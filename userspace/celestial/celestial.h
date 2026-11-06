@@ -36,7 +36,7 @@
 
 #define RENDERER_FPS 120
 #define RENDERER_FRAME_TIME (1000000 / RENDERER_FPS)
-#define WINDOW_ANIMATION_TIME 125000
+#define WINDOW_ANIMATION_TIME 80000
 
 /**** TYPES ****/
 
@@ -333,6 +333,7 @@ void input_draw_at(int x, int y);
 void input_restore_at(int x, int y);
 bool input_frameCursor(render_request_t *frame, int *x, int *y);
 void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns);
+void keyboard_process_event(key_event_t event);
 void input_get_mouse_pos(int *x, int *y);
 void input_set_mouse(int mouse);
 void input_set_mouse_capture(wm_window_t *win);

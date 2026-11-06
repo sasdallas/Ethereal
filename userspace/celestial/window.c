@@ -118,7 +118,7 @@ wm_window_t *window_create(wm_client_t *client, int flags, size_t width, size_t 
     CHANGED_EVENT(window->id, CELESTIAL_WINDOW_CHANGE_FOCUSED);
     
     // Update window flags
-    if (flags & CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS) {
+    if (flags & (CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS | CELESTIAL_WINDOW_FLAG_NO_OPEN_ANIMATION)) {
         window->presented = true;
         WINDOW_CHANGE_STATE(window, WINDOW_STATE_NORMAL);
     } else {
@@ -291,10 +291,6 @@ wm_window_t *window_top_nobg(int x, int y) {
 }
 
 void window_focus(wm_window_t *win) {
-    if (win->z_array == Z_BACKGROUND) {
-        return; // can't focus a background window
-    }
-
     if (win->visible == false) return;
 
     if (win == SERVER->focused) return;
@@ -308,6 +304,11 @@ void window_focus(wm_window_t *win) {
         SERVER->focused = NULL;
 
         CHANGED_EVENT(prev->id, CELESTIAL_WINDOW_CHANGE_UNFOCUSED);
+    }
+
+    if (win->z_array == Z_BACKGROUND) {
+        pthread_mutex_unlock(&SERVER->window_lock);
+        return;
     }
 
     // Move us to the front of the Z list
