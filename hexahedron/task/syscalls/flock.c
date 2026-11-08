@@ -14,6 +14,5 @@
 #include <kernel/task/syscall.h>
 
 long sys_flock(int fd, int options) {
-    SYSCALL_LOG(WARN, "Unimplemented (fd=%d options=%d)\n", fd, options);
     return 0;
 }

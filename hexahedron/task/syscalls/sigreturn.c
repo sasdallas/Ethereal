@@ -42,5 +42,5 @@ long sys_sigreturn(void *uctx) {
     }
 #endif
 
-    return (long)thr->regs->rax;
+    return (long)REGS_RETVAL(thr->regs);
 }

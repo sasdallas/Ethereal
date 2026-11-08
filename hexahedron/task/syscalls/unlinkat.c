@@ -29,7 +29,6 @@ long sys_unlinkat(int dirfd, const char *path, int flags) {
     }
 
 
-    SYSCALL_LOG(INFO, "unlinkat at=%p dirfd=%d path=%s flags=%d\n", at, dirfd, path, flags);
     if (at) inode_hold(at);
 
     int ret;

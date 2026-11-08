@@ -64,15 +64,6 @@ const char *__kernel_ascii_art_formatted = "\
 const int __debug_output_com_port = DEBUG_COM_PORT;
 const int __debug_output_baud_rate = DEBUG_BAUD_RATE;
 
-#define DEBUGGER_COM_PORT 2     // This is the default COM port that Hexahedron will (try to) initialize and provide debug packets on
-#define DEBUGGER_BAUD_RATE 9600 
-
-const int __debugger_com_port = DEBUGGER_COM_PORT;
-const int __debugger_baud_rate = DEBUGGER_BAUD_RATE;
-const int __debugger_enabled = 1;       // The debugger may annoy you because it requires a connection.
-const int __debugger_wait_time = 5000;  // Wait time (in ms) for the debugger to wait on a packet
-
-
 /**** AUTO-GENERATED VERSIONING INFO ****/
 
 

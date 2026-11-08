@@ -51,7 +51,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_POLL]              = (syscall_func_t)(uintptr_t)sys_poll,
     [SYS_MKDIRAT]           = (syscall_func_t)(uintptr_t)sys_mkdirat,
     [SYS_PSELECT]           = (syscall_func_t)(uintptr_t)sys_pselect,
-    [SYS_READLINK]          = (syscall_func_t)(uintptr_t)sys_readlink,
+    [SYS_READLINKAT]        = (syscall_func_t)(uintptr_t)sys_readlinkat,
     [SYS_ACCESS]            = (syscall_func_t)(uintptr_t)sys_access,
     /* gap */
     [SYS_FCNTL]             = (syscall_func_t)(uintptr_t)sys_fcntl,
@@ -142,7 +142,7 @@ static syscall_func_t syscall_table[] = {
     [SYS_LINKAT]            = (syscall_func_t)(uintptr_t)sys_linkat,
     [SYS_SYMLINKAT]         = (syscall_func_t)(uintptr_t)sys_symlinkat,
     [SYS_FCHMODAT]          = (syscall_func_t)(uintptr_t)sys_fchmodat,
-    [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)0xdeadbeef,
+    [SYS_MKNODAT]           = (syscall_func_t)(uintptr_t)sys_mknodat,
     [SYS_FLOCK]             = (syscall_func_t)(uintptr_t)sys_flock,
     [SYS_UMASK]             = (syscall_func_t)(uintptr_t)sys_umask,
     [SYS_CLOCK_GETTIME]     = (syscall_func_t)(uintptr_t)sys_clock_gettime,

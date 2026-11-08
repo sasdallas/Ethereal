@@ -22,8 +22,6 @@
 #include <kernel/misc/mutex.h>
 #include <sys/time.h>
 
-/**** DEFINITIONS ****/
-
 /**** TYPES ****/
 
 typedef struct futex {

@@ -35,7 +35,7 @@ char *syscall_table[] = {
     [SYS_POLL] = "poll",
     [SYS_MKDIRAT] = "mkdirat",
     [SYS_PSELECT] = "pselect",
-    [SYS_READLINK] = "readlink",
+    [SYS_READLINKAT] = "readlinkat",
     [SYS_ACCESS] = "access",
     [SYS_FCNTL] = "fcntl",
     [SYS_UNLINKAT] = "unlink",
@@ -157,7 +157,7 @@ char *syscall_formats[] = {
     [SYS_POLL] = "fds %p nfds %d timeout %d",
     [SYS_MKDIRAT] = "dirfd %d pathname %s mode 0x%x",
     [SYS_PSELECT] = "nfds %d readfds %p writefds %p exceptfds %p timeout %p sigmask %p",
-    [SYS_READLINK] = "pathname %s buf %s bufsiz %zu",
+    [SYS_READLINKAT] = "dirfd %d pathname %s buf %p bufsiz %zu",
     [SYS_ACCESS] = "pathname %s mode %d",
     [SYS_FCNTL] = "fd %d cmd %d arg %ld",
     [SYS_UNLINKAT] = "dfd %d pathname %s flag %d",
@@ -169,7 +169,7 @@ char *syscall_formats[] = {
     [SYS_USLEEP] = "usec %u",
     [SYS_EXECVE] = "pathname %s argv %p envp %p",
     [SYS_WAIT] = "wstatus %p",
-    [SYS_GETCWD] = "buf %s size %zu",
+    [SYS_GETCWD] = "buf %p size %zu",
     [SYS_CHDIR] = "path %s",
     [SYS_FCHDIR] = "fd %d",
     [SYS_UNAME] = "buf %p",
@@ -217,7 +217,7 @@ char *syscall_formats[] = {
     [SYS_EPOLL_CREATE] = "size %d",
     [SYS_EPOLL_CTL] = "epfd %d op %d fd %d event %p",
     [SYS_EPOLL_PWAIT] = "epfd %d events %p maxevents %d timeout %d sigmask %p",
-    [SYS_OPENPTY] = "amaster %p aslave %p name %s termp %p winp %p",
+    [SYS_OPENPTY] = "amaster %p aslave %p name %p termp %p winp %p",
     [SYS_GETUID] = "",
     [SYS_SETUID] = "uid %d",
     [SYS_SETRESUID] = "ruid %d euid %d suid %d",
@@ -269,9 +269,11 @@ char *syscall_formats[] = {
 spinlock_t lk = SPINLOCK_INITIALIZER;
 
 static inline void write_e9(char *str) {
-    while (*str) {
-        outportb(0xe9, *str++);
-    }
+#ifdef __ARCH_X86_64__
+    while (*str) outportb(0xe9, *str++);
+#else
+    (void)str; /* No QEMU debug I/O port on AArch64. */
+#endif
 }
 
 
@@ -404,12 +406,18 @@ void syscall_trace_enter(syscall_t *s) {
     thread_t *thr = current_cpu->current_thread;
     process_t *p = current_cpu->current_process;
 
-    char *fmt =  syscall_formats[s->syscall_number];
-    char *name = syscall_table[s->syscall_number];
-
+    char *name = "unknown";
+    char *fmt = "args [%p, %p, %p, %p, %p, %p]";
+    if (s->syscall_number >= 0 && s->syscall_number < (int)(sizeof(syscall_table) / sizeof(*syscall_table))) {
+        if (syscall_table[s->syscall_number]) {
+            name = syscall_table[s->syscall_number];
+        }
+        if (syscall_formats[s->syscall_number]) {
+            fmt = syscall_formats[s->syscall_number];
+        }
+    }
 
     char sysbuf[512];
-    
     if (s->syscall_number == SYS_MMAP) {
         sys_mmap_context_t *c = (typeof(c))s->parameters[0];
         snprintf(sysbuf, 512, fmt, c->addr, c->len, c->prot, c->flags, c->filedes, c->off);
@@ -420,7 +428,7 @@ void syscall_trace_enter(syscall_t *s) {
         sys_pselect_context_t *c = (typeof(c))s->parameters[0];
         snprintf(sysbuf, 512, fmt, c->nfds, c->readfds, c->writefds, c->errorfds, c->timeout, c->sigmask);
     } else {
-        snprintf(sysbuf, 512, fmt, s->parameters[0], s->parameters[1], s->parameters[2], s->parameters[3], s->parameters[4]);
+        snprintf(sysbuf, 512, fmt, s->parameters[0], s->parameters[1], s->parameters[2], s->parameters[3], s->parameters[4], s->parameters[5]);
     }
 
     char buffer[1024];
@@ -436,7 +444,11 @@ void syscall_trace_exit(syscall_t *s) {
     process_t *p = current_cpu->current_process;
 
     char buffer[1024];
-    char *name = syscall_table[s->syscall_number];
+    char *name = "unknown";
+    if (s->syscall_number >= 0 && s->syscall_number < (int)(sizeof(syscall_table) / sizeof(*syscall_table)) &&
+        syscall_table[s->syscall_number]) {
+        name = syscall_table[s->syscall_number];
+    }
 
     if ((long)s->return_value < 0) {
         snprintf(buffer, 1024, "return: process %s:%d thread %d: %s: %s (0x%llx)\r\n", p->name, p->pid, thr->tid, name, strerror(-s->return_value), s->return_value);

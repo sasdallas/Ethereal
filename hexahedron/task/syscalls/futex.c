@@ -14,13 +14,9 @@
 #include <kernel/task/process.h>
 
 long sys_futex_wait(uint32_t *pointer, uint32_t val, const struct timespec *time) {
-    SYSCALL_VALIDATE_PTR(pointer);
-    if (time) SYSCALL_VALIDATE_PTR(time);
-
     return futex_wait(pointer, val, time);
 }
 
 long sys_futex_wake(uint32_t *pointer, int wakeup) {
-    SYSCALL_VALIDATE_PTR(pointer);
     return futex_wakeup(pointer, wakeup);
 }
