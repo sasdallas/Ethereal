@@ -101,9 +101,54 @@
 #define XHCI_PORTSC_WRC                 (1 << 19)
 #define XHCI_PORTSC_OCC                 (1 << 20)
 #define XHCI_PORTSC_PRC                 (1 << 21)
+#define XHCI_PORTSC_PLC                 (1 << 22)
+#define XHCI_PORTSC_CEC                 (1 << 23)
 // i dont care enough
 #define XHCI_PORTSC_DR                  (1 << 30)
 #define XHCI_PORTSC_WPR                 (1 << 31)
+
+/* TRB status codes */
+#define XHCI_TRB_STATUS_INVALID                      0
+#define XHCI_TRB_STATUS_SUCCESS                      1
+#define XHCI_TRB_STATUS_DATA_BUFFER_ERROR            2
+#define XHCI_TRB_STATUS_BABBLE_DETECTED              3
+#define XHCI_TRB_STATUS_TRANSACTION_ERROR            4
+#define XHCI_TRB_STATUS_TRB_ERROR                    5
+#define XHCI_TRB_STATUS_STALL                        6
+#define XHCI_TRB_STATUS_RESOURCE_ERROR               7
+#define XHCI_TRB_STATUS_BANDWIDTH_ERROR              8
+#define XHCI_TRB_STATUS_NO_SLOTS_AVAILABLE           9
+#define XHCI_TRB_STATUS_INVALID_STREAM_TYPE          10
+#define XHCI_TRB_STATUS_SLOT_NOT_ENABLED             11
+#define XHCI_TRB_STATUS_ENDPOINT_NOT_ENABLED         12
+#define XHCI_TRB_STATUS_SHORT_PACKET                 13
+#define XHCI_TRB_STATUS_RING_UNDERRUN                14
+#define XHCI_TRB_STATUS_RING_OVERRUN                 15
+#define XHCI_TRB_STATUS_VF_EVENT_RING_FULL           16
+#define XHCI_TRB_STATUS_PARAMETER_ERROR              17
+#define XHCI_TRB_STATUS_BANDWIDTH_OVERRUN_ERROR      18
+#define XHCI_TRB_STATUS_CONTEXT_STATE_ERROR          19
+#define XHCI_TRB_STATUS_NO_PING_RESPONSE             20
+#define XHCI_TRB_STATUS_EVENT_RING_FULL              21
+#define XHCI_TRB_STATUS_INCOMPATIBLE_DEVICE_ERROR    22
+#define XHCI_TRB_STATUS_MISSED_SERVICE               23
+#define XHCI_TRB_STATUS_COMMAND_RING_STOPPED         24
+#define XHCI_TRB_STATUS_COMMAND_RING_ABORTED         25
+#define XHCI_TRB_STATUS_STOPPED                      26
+#define XHCI_TRB_STATUS_STOPPED_LEN                  27
+#define XHCI_TRB_STATUS_STOPPED_SHORT                28
+#define XHCI_TRB_STATUS_LATENCY_TOO_LARGE            29
+#define XHCI_TRB_STATUS_ERROR_RESERVED               30
+#define XHCI_TRB_STATUS_BUFFER_OVERRUN               31
+#define XHCI_TRB_STATUS_EVENT_LOST                   32
+#define XHCI_TRB_STATUS_ERROR_UNDEFINED              33
+#define XHCI_TRB_STATUS_INVALID_STREAM_ID            34
+#define XHCI_TRB_STATUS_SECONDARY_BANDWIDTH_ERROR    35
+#define XHCI_TRB_STATUS_SPLIT_TRANSACTION_ERROR      36
+#define XHCI_TRB_STATUS_VENDOR_ERROR_START           192
+#define XHCI_TRB_STATUS_VENDOR_ERROR_END             223
+#define XHCI_TRB_STATUS_VENDOR_INFO_START            224
+#define XHCI_TRB_STATUS_VENDOR_INFO_END              255
 
 /* Speed */
 #define XHCI_USB_SPEED_FULL_SPEED           1
@@ -140,43 +185,31 @@ typedef struct xhci_cap_regs {
     uint32_t revision_minor:8;
     uint32_t revision_major:8;
 
-    union {
-        struct {
-            uint32_t max_slots:8;
-            uint32_t max_interrupters:11;
-            uint32_t rsvd1:5;
-            uint32_t max_ports:8;
-        };
+    struct {
+        uint32_t max_slots:8;
+        uint32_t max_interrupters:11;
+        uint32_t rsvd1:5;
+        uint32_t max_ports:8;
+    } hcsparams1;
 
-        uint32_t hcsparams1;
-    };
-
-    union {
-        struct {
-            uint32_t ist:4;
-            uint32_t erst_max:4;
-            uint32_t rsvd2:13;
-            uint32_t max_scratchpad_buffers_hi:5;
-            uint32_t scratchpad_restore:1;
-            uint32_t max_scratchpad_buffers_lo:5;
-        };
-
-        uint32_t hcsparams2;
-    };
+    struct {
+        uint32_t ist:4;
+        uint32_t erst_max:4;
+        uint32_t rsvd2:13;
+        uint32_t max_scratchpad_buffers_hi:5;
+        uint32_t scratchpad_restore:1;
+        uint32_t max_scratchpad_buffers_lo:5;
+    } hcsparams2;
 
     uint32_t hcsparams3;
 
-    union {
-        struct {
-            uint32_t dontcare:2;
-            uint32_t context_size:1;
-            uint32_t dontcare2:13;
-            uint32_t extended_cap_pointer:16;
-        };
-
-        uint32_t hccparams1;
-    };
-    
+    struct {
+        uint32_t ac64:1;
+        uint32_t bnc:1;
+        uint32_t context_size:1;
+        uint32_t dontcare2:13;
+        uint32_t xECP:16;
+    } hccparams1;
     
     uint32_t dboff;
     uint32_t rtsoff;
@@ -363,6 +396,26 @@ typedef struct xhci_address_device_trb {
 
 STATIC_ASSERT(sizeof(xhci_address_device_trb_t) == 0x10);
 
+typedef struct xhci_stop_endpoint_trb {
+    uint32_t reserved0;
+    uint32_t reserved1;
+    uint32_t reserved2;
+
+    union {
+        struct {
+            uint32_t c:1;
+            uint32_t reserved3:9;
+            uint32_t type:6;
+            uint32_t endpoint:5;
+            uint32_t reserved4:2;
+            uint32_t suspend:1;
+            uint32_t slot_id:8;
+        };
+        
+        uint32_t control;
+    };
+} __attribute__((packed)) xhci_stop_endpoint_trb_t;
+
 typedef struct xhci_setup_stage_trb {
     uint32_t bmRequestType:8;
     uint32_t bRequest:8;
@@ -539,13 +592,7 @@ typedef struct xhci_event_ring_entry {
 
 STATIC_ASSERT(sizeof(xhci_event_ring_entry_t) == 0x10);
 
-typedef struct xhci_extended_capability {
-    uint32_t id:8;
-    uint32_t next:8;
-    uint32_t reserved:16;
-} xhci_extended_capability_t;
-
-STATIC_ASSERT(sizeof(xhci_extended_capability_t) == sizeof(uint32_t));
+typedef uint32_t xhci_extended_capability_t;
 
 typedef struct xhci_legsup_capability {
     uint32_t id:8;
@@ -655,5 +702,11 @@ STATIC_ASSERT(sizeof(xhci_slot_context_t) == 0x20);
 /**** MACROS ****/
 #define TRB_SUCCESS(trb) ((trb)->cc == 1)
 #define XHCI_ENDPOINT_NUMBER_FROM_DESC(desc) (((desc.bEndpointAddress & USB_ENDP_NUMBER_MASK) * 2) + (desc.bEndpointAddress & USB_ENDP_DIRECTION_IN ? 1 : 0))
+
+#define XHCI_CAP_ID(cap) (*(cap) & 0xFF)
+#define XHCI_CAP_NEXT(cap) ((*(cap) >> 8) & 0xFF)
+
+#define XHCI_PORTSC_CHANGE_BITS (XHCI_PORTSC_CSC | XHCI_PORTSC_PEC | XHCI_PORTSC_WRC | XHCI_PORTSC_OCC | XHCI_PORTSC_PRC | XHCI_PORTSC_PLC | XHCI_PORTSC_CEC)
+#define XHCI_PORTSC_PRESERVE_BITS XHCI_PORTSC_PP
 
 #endif
