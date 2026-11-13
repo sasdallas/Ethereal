@@ -36,6 +36,12 @@ ssize_t sys_readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz) {
         return r;
     }
 
+    if (i->attr.type != VFS_SYMLINK) {
+        inode_release(i);
+        if (dir) inode_release(dir);
+        return -EINVAL;
+    }
+
     ssize_t b = inode_readlink(i, buf, bufsiz);
     inode_release(i);
     if (dir) inode_release(dir);
