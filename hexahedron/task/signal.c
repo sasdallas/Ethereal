@@ -318,7 +318,7 @@ int signal_sigaltstack(const stack_t *ss, stack_t *oss) {
 
     spinlock_acquire(&thr->signal.lock);
 
-    bool on_alt_stack = signal_onAltStack(thr, thr->regs->rip);
+    bool on_alt_stack = signal_onAltStack(thr, REGS_IP(thr->regs));
     
     stack_t saved = thr->signal.altstack;
     
@@ -454,7 +454,9 @@ _retry:
     }
 
     signal_action_t saved_action = *act;
-    sigset_t saved_mask = thr->signal.blocked;
+
+    sigset_t saved_mask = thr->signal.suspend_active ? thr->signal.suspend_saved : thr->signal.blocked;
+    thr->signal.suspend_active = false;
 
     // The signal stays blocked for the duration of the handler
     thr->signal.blocked |= saved_action.mask;
@@ -481,13 +483,20 @@ _retry:
         process_exit(proc, target_signal);
     }
 
+#ifdef __ARCH_X86_64__
     if (thr->syscall) {
         thr->syscall->force_iret = 1;
     }
+#endif
 
     return;
 
 _leave:
+    if (thr->signal.suspend_active) {
+        thr->signal.blocked = thr->signal.suspend_saved;
+        thr->signal.suspend_active = false;
+    }
+
     __atomic_store_n(&proc->signal.have_pending, proc->signal.pending != 0, __ATOMIC_RELEASE);
     __atomic_store_n(&thr->signal.have_pending, !!(thr->signal.pending & ~thr->signal.blocked), __ATOMIC_RELEASE);
     spinlock_release(&thr->signal.lock);

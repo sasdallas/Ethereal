@@ -91,7 +91,10 @@ typedef struct thread {
         siginfo_t info[_NSIG];
         stack_t altstack;
         bool have_pending;
+        bool suspend_active;
+        sigset_t suspend_saved;
     } signal;
+
 } thread_t;
 
 /* ASM constraints */

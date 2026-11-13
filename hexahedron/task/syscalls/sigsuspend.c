@@ -12,7 +12,29 @@
  */
 
 #include <kernel/task/process.h>
+#include <kernel/mm/vmm.h>
 
 long sys_sigsuspend(const sigset_t *sigmask) {
-    return -ENOSYS;
+    sigset_t mask = *sigmask;
+    SIGNAL_CLR(mask, SIGKILL);
+    SIGNAL_CLR(mask, SIGSTOP);
+
+    thread_t *thread = current_cpu->current_thread;
+
+    int irq_state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+    spinlock_acquireRaw(&thread->signal.lock);
+
+    thread->signal.suspend_saved = thread->signal.blocked;
+    thread->signal.suspend_active = true;
+    thread->signal.blocked = mask;
+    __atomic_store_n(&thread->signal.have_pending, !!(thread->signal.pending & ~mask), __ATOMIC_RELEASE);
+
+    sleep_prepareIRQ(irq_state);
+    spinlock_releaseRaw(&thread->signal.lock);
+
+    for (;;) {
+        int reason = sleep_enter();
+        if (reason == WAKEUP_SIGNAL) return -EINTR;
+        sleep_prepare();
+    }
 }
