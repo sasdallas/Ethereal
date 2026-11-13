@@ -15,6 +15,7 @@
  */
 
 #include <kernel/drivers/x86/local_apic.h>
+#include <kernel/hal.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/debug.h>
 #include <kernel/drivers/x86/clock.h>
@@ -111,6 +112,8 @@ void lapic_setEnabled(int enabled) {
  * @param flags The flags to use
  */
 void lapic_sendIPI(uint8_t lapic_id, uint8_t irq_no, uint32_t flags) {
+    int irq_state = hal_setInterruptState(HAL_INTERRUPTS_DISABLED);
+
     // Write the local APIC ID to the high ICR
     lapic_write(LAPIC_REGISTER_ICR + 0x10, lapic_id << LAPIC_ICR_HIGH_ID_SHIFT);
 
@@ -119,6 +122,8 @@ void lapic_sendIPI(uint8_t lapic_id, uint8_t irq_no, uint32_t flags) {
 
     // Wait for send to be completed
     while (lapic_read(LAPIC_REGISTER_ICR) & LAPIC_ICR_SENDING);
+
+    hal_setInterruptState(irq_state);
 }
 
 /**
