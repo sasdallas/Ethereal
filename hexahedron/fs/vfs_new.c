@@ -896,6 +896,7 @@ int vfs_createat(vfs_inode_t *inode, char *path, mode_t mode, vfs_inode_t **inod
         mutex_release(&vfs_inode_cache_mut);
     }
 
+    inode_release(tmp);
     inode_release(parent);
     return 0;
 }
