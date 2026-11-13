@@ -107,11 +107,6 @@ void ext2_bcacheInit(ext2_t *fs) {
 
         ext2_bcacheInsertLru(&fs->bcache, buf);
     }
-
-
-    DLIST_FOREACH_REVERSE(ext2_buffer_t, buf, &fs->bcache.lru, lru) {
-        LOG(DEBUG, "Buffer %p\n", buf);
-    }
 }
 
 void ext2_bcacheDestroy(ext2_t *fs) {
@@ -122,8 +117,9 @@ void ext2_bcacheDestroy(ext2_t *fs) {
 }
 
 static ext2_buffer_t *ext2_bcacheGetInternal(ext2_t *fs, uint64_t page, bool initialize) {
-
     ext2_bcache_t *bc = &fs->bcache;
+
+_retry:
     mutex_acquire(&bc->lock);
 
     // first check the hash list to see if it is valid
@@ -138,44 +134,39 @@ static ext2_buffer_t *ext2_bcacheGetInternal(ext2_t *fs, uint64_t page, bool ini
         // No, we have to load it. Find the first unpinned
         buffer = ext2_bcacheFindLru(bc);
 
-        uint64_t flush_page = EXT2_BCACHE_NONE;
+        refcount_inc(&buffer->refs);
+        mutex_release(&bc->lock);
+        mutex_acquire(&buffer->lock);
+
+        if (buffer->dirty) {
+            int r = ext2_bio(fs, (loff_t)buffer->device_page * PAGE_SIZE, &buffer->phys_backing, 1, true);
+            if (r != 0) {
+                LOG(ERR, "Failed to writeback metadata block at page %llu (error %d)\n", buffer->device_page, r);
+                ext2_markError(fs);
+                ext2_bcacheFinish(fs, buffer);
+                return NULL;
+            }
+            buffer->dirty = false;
+        }
+
+        mutex_acquire(&bc->lock);
+
+        // did we lose the cache race?
+        if (buffer->refs != 1 || ext2_bcacheFindHash(bc, page)) {
+            mutex_release(&bc->lock);
+            ext2_bcacheFinish(fs, buffer);
+            goto _retry;
+        }
+
         if (buffer->device_page != EXT2_BCACHE_NONE) {
-            // this was previously loaded
-            if (buffer->dirty) flush_page = buffer->device_page;
             ext2_bcacheRemoveHash(bc, buffer);
         }
 
-        refcount_inc(&buffer->refs);
         buffer->device_page = page;
-        buffer->valid = false; // needs a re-read
-
-        // insert it here, even if something else catches it, it will just be read anyways 
-        // that is, unless we have to do a writeback first, then we have to do worst-case locking
-        if (flush_page == EXT2_BCACHE_NONE) {
-            ext2_bcacheInsertHash(bc, buffer);
-        }
-
+        buffer->valid = false;
+        ext2_bcacheInsertHash(bc, buffer);
         ext2_bcacheTouchLru(bc, buffer);
         mutex_release(&bc->lock);
-
-        if (flush_page != EXT2_BCACHE_NONE) {
-            // the buffer right now isn't owned by anyone except for us, so locking it isn't a necessity
-            int r = ext2_bio(fs, (loff_t)flush_page * PAGE_SIZE, &buffer->phys_backing, 1, true);
-            if (r != 0) {
-                LOG(ERR, "Failed to writeback metadata block at page %llu (error %d)\n", flush_page, r);
-                LOG(ERR, "Filesystem corruption is likely!\n");
-                ext2_markError(fs);
-            }
-
-            buffer->dirty = false;
-
-            // now we can insert it into the hash list
-            mutex_acquire(&bc->lock);
-            ext2_bcacheInsertHash(bc, buffer);
-            mutex_release(&bc->lock);
-        }
-
-        mutex_acquire(&buffer->lock);
     }
 
     // buffer lock is held here

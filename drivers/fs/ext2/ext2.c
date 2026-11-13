@@ -137,49 +137,87 @@ _error:
  * @brief Sync inode groups
  */
 static int ext2_syncGroups(ext2_t *fs) {
-    int r = 0;
+    if (!fs->groups) return 0;
+
+    // !!! scratch is necessary to prevent a race with ext2_map in lock acquisition order
+    // silly fix but im lazy
+    char *scratch = kmalloc(fs->blksize);
+    if (!scratch) return -ENOMEM;
+
+    int ret = 0;
+
     for (uint32_t g = 0; g < fs->ngroups; g++) {
         ext2_group_t *grp = EXT2_GROUP(fs, g);
+        ext2_bgd_t bgd;
+        uint32_t blkbm_blk = 0, inobm_blk = 0;
+        bool want_bg;
 
+        // Handle block bitmap
         GROUP_START_WRITE(fs, g);
         if (grp->blkbm && grp->blkbm_dirty) {
-            int err = ext2_blockWrite(fs,grp->bg.block_usage_bitmap, grp->blkbm);
-            if (err != 0) {
-                LOG(ERR, "Failed to syncronize block group %d due to error %d\n", g, err);
-                r = err;
-            } else {
-                grp->blkbm_dirty = false;
+            memcpy(scratch, grp->blkbm, fs->blksize);
+            blkbm_blk = grp->bg.block_usage_bitmap;
+            grp->blkbm_dirty = false;
+        }
+        GROUP_FINISH_WRITE(fs, g);
+
+        if (blkbm_blk) {
+            int r = ext2_blockWrite(fs, blkbm_blk, scratch);
+            if (r != 0) {
+                GROUP_START_WRITE(fs, g);
+                grp->blkbm_dirty = true;
+                GROUP_FINISH_WRITE(fs, g);
+                if (ret == 0) ret = r;
             }
         }
-        
+
+        // Inode bitmap
+        GROUP_START_WRITE(fs, g);
         if (grp->inobm && grp->inobm_dirty) {
-            int err = ext2_blockWrite(fs,grp->bg.inode_usage_bitmap, grp->inobm);
-            if (err != 0) {
-                LOG(ERR, "Failed to syncronize block group %d due to error %d\n", g, err);
-                r = err;
-            } else {
-                grp->inobm_dirty = false;
+            memcpy(scratch, grp->inobm, fs->blksize);
+            inobm_blk = grp->bg.inode_usage_bitmap;
+            grp->inobm_dirty = false;
+        }
+        GROUP_FINISH_WRITE(fs, g);
+
+        if (inobm_blk) {
+            int r = ext2_blockWrite(fs, inobm_blk, scratch);
+            if (r != 0) {
+                GROUP_START_WRITE(fs, g);
+                grp->inobm_dirty = true;
+                GROUP_FINISH_WRITE(fs, g);
+                if (ret == 0) ret = r;
             }
         }
-        
-        if (grp->bg_dirty) {
-            loff_t off = EXT2_BGD_READ_OFFSET(fs, g);;
+
+        // Descriptor
+        GROUP_START_WRITE(fs, g);
+        want_bg = grp->bg_dirty;
+        if (want_bg) {
+            memcpy(&bgd, &grp->bg, sizeof(ext2_bgd_t));
+            grp->bg_dirty = false;
+        }
+        GROUP_FINISH_WRITE(fs, g);
+
+        if (want_bg) {
+            loff_t off = EXT2_BGD_READ_OFFSET(fs, g);
             ext2_buffer_t *b = ext2_bcacheGet(fs, off / PAGE_SIZE);
 
             if (b) {
-                memcpy(b->data + (off & (PAGE_SIZE-1)), &grp->bg, sizeof(ext2_bgd_t));
+                memcpy(b->data + (off & (PAGE_SIZE - 1)), &bgd, sizeof(ext2_bgd_t));
                 b->dirty = true;
-                ext2_bcacheFinish(fs,b);
-                grp->bg_dirty = false;
+                ext2_bcacheFinish(fs, b);
             } else {
-                LOG(ERR, "bcacheGet failed on block group %d :-(\n", g);
-                r = -EIO;
+                GROUP_START_WRITE(fs, g);
+                grp->bg_dirty = true;
+                GROUP_FINISH_WRITE(fs, g);
+                if (ret == 0) ret = -EIO;
             }
         }
-        GROUP_FINISH_WRITE(fs, g);
     }
 
-    return r;
+    kfree(scratch);
+    return ret;
 }
 
 /**
