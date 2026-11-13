@@ -792,6 +792,16 @@ void cache_markRangeDirty(page_cache_t *cache, page_range_t *range) {
 
         mutex_release(&dirty_lock);
     }
+
+    EVENT_SIGNAL(&sync_event);
+}
+
+/**
+ * @brief Request a sync on the cache
+ * Used after updating filesystem metadata
+ */
+void cache_requestSync() {
+    EVENT_SIGNAL(&sync_event);
 }
 
 /**

@@ -14,6 +14,7 @@
 
 #include "ext2.h"
 #include <kernel/debug.h>
+#include <kernel/mm/cache.h>
 #include <string.h>
 
 /* Log method */
@@ -118,9 +119,15 @@ static ssize_t ext2_allocGroupBlock(ext2_t *fs, uint32_t g, uint32_t hint, size_
     // this is the case for the last group usually
     uint32_t avail = fs->sb.block_count - (fs->sb.start_block_number + (g * fs->sb.bg_block_count));
     uint32_t blocks = min(avail, fs->sb.bg_block_count);
+    if (hint >= blocks) hint = 0;
 
     // check from the hint
     GROUP_START_WRITE(fs, g);
+
+    if (grp->bg.free_blocks == 0) {
+        GROUP_FINISH_WRITE(fs, g);
+        return 0;
+    }
 
     uint32_t best_start = 0;
     size_t best_len = 0;
@@ -136,10 +143,10 @@ static ssize_t ext2_allocGroupBlock(ext2_t *fs, uint32_t g, uint32_t hint, size_
     }
 
     if (best_len == 0) {
-        // the descriptor lied
+        LOG(WARN, "Group %u reports %u free blocks, but bitmap has none (blocks %u, hint %u)\n", g, grp->bg.free_blocks, blocks, hint);
         GROUP_FINISH_WRITE(fs, g);
         ext2_markError(fs);
-        return -ENOSPC;
+        return 0;
     }
 
     if (best_len > want) best_len = want;
@@ -197,6 +204,8 @@ int ext2_alloc(ext2_t *fs, uint32_t preferred, size_t want, uint32_t *start, siz
 
         fs->alloc_hint = g;
         *got = (size_t)n;
+
+        cache_requestSync();
         return 0;
     }
 
@@ -252,6 +261,7 @@ int ext2_allocInode(ext2_t *fs, uint32_t b_group, bool dir, ino_t *out) {
         mutex_release(&fs->sb_lock);
 
         *out = (ino_t)(best_start + (g * fs->sb.bg_ino_count) + 1);
+        cache_requestSync();
         return 0;
     }
 
@@ -294,6 +304,7 @@ int ext2_freeBlocks(ext2_t *fs, uint32_t start, size_t count) {
     fs->sb_dirty = true;
     mutex_release(&fs->sb_lock);
 
+    cache_requestSync();
     return 0;
 }
 
@@ -323,5 +334,6 @@ int ext2_freeInode(ext2_t *fs, ino_t ino, bool dir) {
     fs->sb_dirty = true;
     mutex_release(&fs->sb_lock);
 
+    cache_requestSync();
     return 0;
 }

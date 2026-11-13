@@ -166,6 +166,12 @@ int cache_dirty();
 void cache_sync();
 
 /**
+ * @brief Request a sync on the cache
+ * Used after updating filesystem metadata
+ */
+void cache_requestSync();
+
+/**
  * @brief Sync all dirty pages in an inode
  * @param inode The inode to sync
  */
