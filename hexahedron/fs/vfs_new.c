@@ -1510,7 +1510,11 @@ int vfs_linkat(vfs_inode_t *src_inode, char *src_path, vfs_inode_t *dst_inode, c
  * @param attr_mask Mask of attributes to set
  */
 int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) {
-    // TODO locking
+    if (current_cpu->current_process) {
+        int r = auth_filesystem(&current_cpu->current_process->cred, inode, NULL, AUTH_FILE_SETATTR);
+        if (r) return r;
+    }
+
     return inode_setattr(inode, attr, attr_mask);
 }
 
@@ -1521,11 +1525,7 @@ int vfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t attr_mask) 
  * @returns 0 on success or error code 
  */
 int vfs_chmod(vfs_inode_t *inode, mode_t mode) {
-    if (current_cpu->current_process) {
-        int r = auth_filesystem(&current_cpu->current_process->cred, inode, NULL, AUTH_FILE_SETATTR);
-        if (r) return r;
-    }
-    // to chmod, just do setattr 
+    // to chmod, just do setattr
     vfs_inode_attr_t attr = {
         .mode = mode & 07777
     };
@@ -1729,9 +1729,9 @@ ino_t vfs_getNextInode() {
  */
 void vfs_destroyInode(vfs_inode_t *inode, char *fn) {
     // LOG(DEBUG, "Destroying inode %p, by %s\n", inode, fn);
+    vfs_cacheRemoveInode(inode->mount, inode);
     cache_destroy(inode);
     if (inode->ops->destroy) inode->ops->destroy(inode);
-    vfs_cacheRemoveInode(inode->mount, inode);
     slab_free(inode_cache, inode);
 }
 
