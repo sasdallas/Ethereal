@@ -1,36 +1,54 @@
 #!/usr/bin/python3
+# ethereal's super advanced initrd generator
 
-import tarfile 
-import sys
+import argparse
 import os
+from pathlib import Path
+import subprocess
+import tarfile
+import tempfile
 
-if len(sys.argv) < 3:
-    print("Usage: mkinitrd.py <tar file> <directory>")
-    sys.exit(0)
+parser = argparse.ArgumentParser()
+parser.add_argument("archive", type=Path)
+parser.add_argument("directory", type=Path)
+args = parser.parse_args()
 
-file = sys.argv[1]
-dir = sys.argv[2]
-
-try:
-    os.unlink(file)
-except FileNotFoundError:
-    pass
+archive = args.archive.parent.resolve() / args.archive.name
+directory = args.directory.resolve()
+archive.parent.mkdir(parents=True, exist_ok=True)
 
 mode_overrides = {
-    "tmp": 0o775,       # /tmp: drwxrwxr-x
-    "var": 0o775,       # /var: drwxrwxr-x
+    "tmp": 0o775,
+    "var": 0o775,
     "usr/bin/sudo": 0o4755,
 }
 
-def ramdisk_filter(tarinfo):
-    print("Packaging file: " + tarinfo.name)
-    tarinfo.uid = 0
-    tarinfo.gid = 0
+excluded = {"boot/initrd.tar.img", "boot/initrd_tiny.tar.img"}
+if archive.is_relative_to(directory):
+    excluded.add(archive.relative_to(directory).as_posix())
 
-    if tarinfo.name in mode_overrides:
-        tarinfo.mode = mode_overrides[tarinfo.name]
+with tempfile.NamedTemporaryFile(prefix=".initrd.", dir=archive.parent, delete=False) as temp:
+    temporary = Path(temp.name)
 
-    return tarinfo
+def ramdisk_filter(member):
+    if member.name.lstrip("/") in excluded or Path(member.name).name.startswith(".initrd."):
+        return None
+    member.uid = member.gid = 0
+    if member.name in mode_overrides:
+        member.mode = mode_overrides[member.name]
+    return member
 
-with tarfile.open(file, "w:gz", format=tarfile.USTAR_FORMAT, compresslevel=6) as ramdisk:
-    ramdisk.add(dir, arcname="/", filter=ramdisk_filter)
+# gzip was faster than using tarfile.open's compression level, for some reason
+try:
+    with temporary.open("wb") as output:
+        with subprocess.Popen(["gzip", "-6", "-n"], stdin=subprocess.PIPE, stdout=output) as gzip:
+            with gzip.stdin:
+                with tarfile.open(fileobj=gzip.stdin, mode="w|", format=tarfile.USTAR_FORMAT) as ramdisk:
+                    ramdisk.add(directory, arcname="/", filter=ramdisk_filter)
+            if gzip.wait():
+                raise RuntimeError("gzip failed while packing the initrd")
+
+    temporary.chmod(0o644)
+    os.replace(temporary, archive)
+finally:
+    temporary.unlink(missing_ok=True)

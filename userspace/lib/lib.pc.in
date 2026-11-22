@@ -1,0 +1,13 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: @OPT_LIB_NAME@
+Description: @OPT_LIB_DESC@
+Requires: @PC_REQUIRES@
+Requires.private: @PC_REQUIRES_PRIVATE@
+Version: @OPT_LIB_VERSION@
+Libs: -L${libdir} -l@OPT_LIB_NAME@
+Libs.private: @PC_LIBS_PRIVATE@
+Cflags: -I${includedir}

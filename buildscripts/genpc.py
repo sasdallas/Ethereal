@@ -2,7 +2,6 @@
 import sys
 import os
 import lib
-import subprocess
 
 # genpc.py - Generate PC files from library configuration
 
@@ -28,7 +27,6 @@ path = path + n + ".pc"
 
 f = open(path, "w+")
 
-
 data = ""
 data = data + "prefix={}\n".format(os.environ["PREFIX"])
 data = data + "exec_prefix=${prefix}\n"
@@ -37,13 +35,14 @@ data = data + "includedir={}/include\n\n".format(os.environ["PREFIX"])
 data = data + "Name: {}\n".format(n)
 if l.desc != "":
     data = data + "Description: {}\n".format(l.desc.replace("\"", ""))
-data = data + "Requires:\nRequires.private:\n"
-data = data + "Version: {}\n".format(l.version)
-data = data + "Libs: -L${libdir} -l" + n + " "
-
+data = data + "Requires: "
 for i in l.deps:
-    data = data +  subprocess.check_output(["pkg-config", "--libs", i]).decode('utf-8').strip() + " "
-data = data + "\n"
+    data = data + i + " "
+data = data + "\nRequires.private: "
+for i in l.deps_private:
+    data = data + i + " "
+data = data + "\nVersion: {}\n".format(l.version)
+data = data + "Libs: -L${libdir} -l" + n + "\n"
 
 
 data = data + "Libs.private: "

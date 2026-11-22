@@ -1,67 +1,34 @@
-# Hexahedron Makefile - Adapted from reduceOS Makefile
+BUILD_DIR=build-output/
+SYSROOT=$(shell pwd)/$(BUILD_DIR)/sysroot/
+export SYSROOT
 
-include ./make.config
+$(BUILD_DIR)/CMakeCache.txt:
+	@mkdir -p $(BUILD_DIR)/
+	cmake -S . -B $(BUILD_DIR)/ --toolchain $(shell pwd)/ethereal-cmake.txt -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug -DHEADERS_ONLY=FALSE
 
-.PHONY: all targets clean build help
+$(BUILD_DIR)/headers/CMakeCache.txt:
+	@mkdir -p $(BUILD_DIR)/headers
+	cmake -S . -B $(BUILD_DIR)/headers/ --toolchain $(shell pwd)/ethereal-cmake.txt -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug -DHEADERS_ONLY=TRUE
 
-targets:
-	@echo "Available targets for this makefile:"
-	@echo " all			build the OS and package it in an ISO"
-	@echo " build			build the project (DOES NOT PACKAGE INTO ISO)"
-	@echo " headers			install project headers into sysroot"
-	@echo " initrd          build the initrd"
-	@echo " clean			clean the project"
-	@echo " iso 			build an ISO "
-	
+build: $(BUILD_DIR)/CMakeCache.txt
+	cmake --build $(BUILD_DIR) --target install
 
-help: targets
+initrd: $(BUILD_DIR)/CMakeCache.txt
+	cmake --build $(BUILD_DIR) --target initrd
 
+iso: $(BUILD_DIR)/CMakeCache.txt
+	cmake --build $(BUILD_DIR) --target iso
 
-all: build initrd iso
+all: $(BUILD_DIR)/CMakeCache.txt build initrd iso
 
-
-iso:
-	$(MAKE) headerlog header="Packing ISO, please wait..."
-	bash -c "$(BUILDSCRIPTS_ROOT)/iso.sh"
-	@echo
-	@echo
-
-build:
-	$(MAKE) headerlog header="Building OS, please wait..."
-	bash -c "$(BUILDSCRIPTS_ROOT)/build.sh"
-	@echo
-	@echo
-	@echo "[ Finished building. You may need to pack it into an ISO file. ]"
-
-headers:
-	$(MAKE) headerlog header="Installing headers, please wait..."
-	bash -c "$(BUILDSCRIPTS_ROOT)/install-headers.sh"
-	@echo
-	@echo
-	@echo "[ Finished header install ]"
-
-initrd:
-	$(MAKE) headerlog header="Creating initial ramdisk, please wait..."
-	python3 $(BUILDSCRIPTS_ROOT)/mkinitrd.py $(BUILDSCRIPTS_ROOT)/../build-output/sysroot/boot/initrd.tar.img $(BUILDSCRIPTS_ROOT)/../build-output/sysroot/
-	@echo
-	@echo
-	@echo "[ Finished creating initial ramdisk ]"
+headers: $(BUILD_DIR)/headers/CMakeCache.txt
+	cmake --build $(BUILD_DIR) --target install
 
 clean:
-	$(MAKE) headerlog header="Cleaning build, please wait..."
-	bash -c "$(BUILDSCRIPTS_ROOT)/clean.sh"
-	@echo
-	@echo
-	@echo "[ Finished cleaning. ]"
+	-cmake --build $(BUILD_DIR) --target clean
+	-cmake --build $(BUILD_DIR)/headers/ --target clean
 
+clean-sysroot:
+	-rm -rf $(SYSROOT)
 
-headerlog:
-	@echo
-	@echo
-	@echo "[ $(header) ]"
-	@echo
-	@echo
-
-qemu:
-	$(MAKE) headerlog header="Launching QEMU..."
-	qemu-system-x86_64 -cdrom build-output/hexahedron.iso
+.PHONY: all

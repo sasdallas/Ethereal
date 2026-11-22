@@ -112,7 +112,6 @@ for i in range(1, len(sys.argv)):
     # Solve list (hate this..)
     driver_filenames.append(filename)
 
-    print(f"-- {filename} will be loaded with priority {priority} and environment {environment}")
 
 
 # Solve!
@@ -122,7 +121,6 @@ solved = solve_driver_constraints(driver_filenames, constraints)
 final_driver_list = [drivers[filename] for filename in solved]
 
 for driver in final_driver_list:
-    print(str(driver.filename))
     driver_data = {"filename": driver.filename, "priority": driver.priority, "environment": driver.environment, "load_before": driver.load_before}
     data["drivers"].append(driver_data)
 

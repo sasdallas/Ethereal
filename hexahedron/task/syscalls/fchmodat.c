@@ -30,6 +30,7 @@ long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
 
     uint32_t lookup_flags = LOOKUP_DEFAULT;
     if (flags & AT_SYMLINK_NOFOLLOW) lookup_flags |= LOOKUP_NO_FOLLOW;
+
     vfs_inode_t *inode;
     int r;
     if (path[0] == '/' || dirfd == AT_FDCWD) {
@@ -43,6 +44,7 @@ long sys_fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
         r = vfs_lookupat(dir->inode, (char *)path, &inode, lookup_flags);
         FD_FINISH(dir);
     }
+
     if (r) return r;
     r = vfs_chmod(inode, mode);
     inode_release(inode);

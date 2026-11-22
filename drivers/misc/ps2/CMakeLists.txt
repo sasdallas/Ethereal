@@ -1,0 +1,9 @@
+list(APPEND SOURCES
+    ps2.c
+)
+
+add_driver(
+    DRIVER_NAME ps2
+    ARCHITECTURES I386 X86_64
+    SOURCES ${SOURCES}
+)

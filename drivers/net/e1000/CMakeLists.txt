@@ -1,0 +1,9 @@
+list(APPEND SOURCES
+    e1000.c
+)
+
+add_driver(
+    DRIVER_NAME net_e1000
+    ARCHITECTURES I386 X86_64
+    SOURCES ${SOURCES}
+)

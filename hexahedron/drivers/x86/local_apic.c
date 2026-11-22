@@ -52,7 +52,7 @@ int lapic_available() {
 /**
  * @brief Read register from local APIC
  */
-inline uint32_t lapic_read(uint32_t reg) {
+static inline uint32_t lapic_read(uint32_t reg) {
     if (!lapic_base) return 0;
     return *((uint32_t volatile*)(lapic_base + reg));
 }
@@ -62,7 +62,7 @@ inline uint32_t lapic_read(uint32_t reg) {
  * @param reg Register to write
  * @param data Data to write
  */
-inline void lapic_write(uint32_t reg, uint32_t data) {
+static inline void lapic_write(uint32_t reg, uint32_t data) {
     if (!lapic_base) return;
     *((volatile uint32_t*)(lapic_base + reg)) = data;
 }
@@ -70,7 +70,7 @@ inline void lapic_write(uint32_t reg, uint32_t data) {
 /**
  * @brief Check whether local APIC initialized
  */
-inline int lapic_initialized() {
+static inline int lapic_initialized() {
     return !!lapic_base;
 }
 

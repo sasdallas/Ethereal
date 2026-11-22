@@ -1,0 +1,17 @@
+install(DIRECTORY
+    sysroot/
+    DESTINATION "${CMAKE_SYSROOT}"
+    USE_SOURCE_PERMISSIONS
+)
+
+install(DIRECTORY
+    initrd/
+    DESTINATION "${ETHEREAL_INITRD_DIR}"
+    USE_SOURCE_PERMISSIONS
+)
+
+foreach(DIRECTORY kernel tmp device comm)
+    install(DIRECTORY DESTINATION "${CMAKE_SYSROOT}/${DIRECTORY}")
+endforeach()
+
+install(DIRECTORY DESTINATION "${ETHEREAL_INITRD_DIR}/boot/drivers")

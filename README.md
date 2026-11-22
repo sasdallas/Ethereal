@@ -4,7 +4,7 @@ A custom all-in-one hobby operating system.
 
 ## What is Ethereal?
 
-Ethereal is a project with the goal of creating a fully functional OS with all components a modern OS would have.
+Ethereal is a hobby UNIX-like operating system designed from the ground-up.
 
 It is **not** Linux-based, nor does it share any code with Linux at all. Rather, it uses a custom OS kernel.
 
@@ -89,11 +89,11 @@ Take caution if using Ethereal as a source to learn how to make your own OS.
 
 ### ACPICA notice (READ THIS BEFORE BUILDING)
 
-If you use ACPICA (**it is on by default**), you must download the tarfile from [here](https://downloadmirror.intel.com/834974/acpica-unix-20240927.tar.gz) and extract it to `external/acpica/acpica-src`
-
-Alternatively, you can edit `conf/build/<arch>.mk` and set `USE_ACPICA` to 0.  
+If you use ACPICA, you must download the tarfile from [here](https://downloadmirror.intel.com/834974/acpica-unix-20240927.tar.gz) and extract it to `external/acpica/acpica-src`
 
 As of now the benefits of ACPICA is the ability to shutdown the system and hibernate, with support for the PCI IRQ routing table coming later (+ batteries).
+
+To enable ACPI support in the system, use manual cmake configuration
 
 ### Building
 
@@ -102,8 +102,17 @@ The Ethereal toolchain can be found at [the repository](https://github.com/sasda
 
 Other packages required: `grub-common`, `xorriso`, `qemu-system`, `meson`, `ninja`
 
-Edit `buildscripts/build-arch.sh` to change the target build architecture. \
 Running `make all` will build an ISO in `build-output/ethereal.iso`
+
+You can run `make headers` to install the headers if attempting to build the sysroot.
+
+
+**Alternative:** You can configure CMake to build specific targets if you need:
+
+```
+cmake -S . -B build-output --toolchain="ethereal-cmake.txt" -DENABLE_U80211=OFF -DENABLE_ACPICA=OFF
+cmake --build build-output --target iso
+```
 
 Currently, Ethereal's lack of filesystem drivers means that LiveCD boots are usually the best option.\
 The initial ramdisk in a LiveCD is the sysroot, and if the OS detects the boot it will copy the initial ramdisk into RAM.
