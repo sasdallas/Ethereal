@@ -17,7 +17,6 @@ list(APPEND USERSPACE_APPS
     miniutils
     plasma
     play
-    resize_test
     show-dialog
     sudo
     symphonyd
