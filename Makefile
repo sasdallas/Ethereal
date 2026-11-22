@@ -19,7 +19,7 @@ initrd: $(BUILD_DIR)/CMakeCache.txt
 iso: $(BUILD_DIR)/CMakeCache.txt
 	cmake --build $(BUILD_DIR) --target iso
 
-all: $(BUILD_DIR)/CMakeCache.txt build initrd iso
+all: iso
 
 headers: $(BUILD_DIR)/headers/CMakeCache.txt
 	cmake --build $(BUILD_DIR)/headers --target install
