@@ -1,3 +1,5 @@
+add_custom_target(userspace_lib)
+
 add_library(lib_headers INTERFACE)
 file(GLOB_RECURSE LIBRARY_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 
@@ -87,6 +89,8 @@ function(add_lib)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${OPT_LIB_NAME}.pc"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
     )
+
+    add_dependencies(userspace_lib ${TARGETS})
 endfunction()
 
 foreach(LIB IN LISTS LIBRARIES)

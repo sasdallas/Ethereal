@@ -5,7 +5,6 @@ list(APPEND SOURCES
     geometry.c
     input.c
     label.c
-    menu.c
     widget.c
 )
 

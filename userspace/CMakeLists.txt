@@ -1,5 +1,7 @@
 include("userspace.cmake")
 
+add_custom_target(userspace)
+
 function(add_app)
     set(ONEVALUE APP_NAME TARGET_NAME)
     set(MULTIVALUE LIBRARIES SOURCES)
@@ -16,9 +18,11 @@ function(add_app)
     add_dependencies(${OPT_TARGET_NAME} libc)
 
     install(TARGETS ${OPT_TARGET_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    add_dependencies(userspace ${OPT_TARGET_NAME})
 endfunction()
 
 add_subdirectory("lib")
+add_dependencies(userspace userspace_lib)
 
 if(HEADERS_ONLY)
     return()

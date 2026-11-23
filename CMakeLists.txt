@@ -32,15 +32,23 @@ add_compile_definitions(
     "$<IF:$<CONFIG:Debug>,__DEBUG__,__RELEASE__>"
 )
 
+# always compile with -O2, cmake only adds it in release builds or something
+add_compile_options("$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C>>:-O2>")
+
 if(BUILD_ARCH STREQUAL "x86_64")
     add_compile_options(-mcmodel=large -fstrict-volatile-bitfields)
 endif()
 
+# the kernel ABI has specifics to it
 add_library(ethereal_kernel_abi INTERFACE)
+set(KERNEL_ABI )
 if(BUILD_ARCH STREQUAL "x86_64")
-    target_compile_options(ethereal_kernel_abi INTERFACE -mno-red-zone)
+    set(KERNEL_ABI -mno-red-zone -fno-omit-frame-pointer)
 endif()
 
+target_compile_options(ethereal_kernel_abi INTERFACE ${KERNEL_ABI})
+
+# directories
 add_subdirectory(base)
 add_subdirectory(libc)
 add_subdirectory(libkstructures)
@@ -53,6 +61,7 @@ if(HEADERS_ONLY)
     return()
 endif()
 
+# kind of a hacky helper to collect all the build targets in the project
 function(collect_build_targets DIRECTORY RESULT)
     get_property(TARGETS DIRECTORY "${DIRECTORY}" PROPERTY BUILDSYSTEM_TARGETS)
     get_property(SUBDIRECTORIES DIRECTORY "${DIRECTORY}" PROPERTY SUBDIRECTORIES)
