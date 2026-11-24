@@ -11,7 +11,7 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#ifdef ACPICA_ENABLED
+#ifdef ENABLE_ACPICA
 
 #ifndef DRIVERS_X86_ACPICA_H
 #define DRIVERS_X86_ACPICA_H

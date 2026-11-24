@@ -32,6 +32,7 @@ typedef struct elf_image {
     
     void *file_base;
     size_t file_size;
+    void *program_headers;
 
     uintptr_t entrypoint;
     uintptr_t img_base;

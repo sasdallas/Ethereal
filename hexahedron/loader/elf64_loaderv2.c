@@ -23,7 +23,7 @@
 /* Macros to assist in getting section header/section */
 #define ELF_SHDR(ehdr) ((Elf64_Shdr*)((uintptr_t)ehdr + ehdr->e_shoff))
 #define ELF_SECTION(ehdr, idx) ((Elf64_Shdr*)&ELF_SHDR(ehdr)[idx])
-#define ELF_PHDR(ehdr, idx) ((Elf64_Phdr*)((uintptr_t)ehdr + ehdr->e_phoff + ehdr->e_phentsize * idx))
+#define ELF_PHDR(img, idx) (&((Elf64_Phdr*)(img)->program_headers)[idx])
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "LOADER:ELF2", __VA_ARGS__)
@@ -42,75 +42,62 @@
  */
 int elf_openImage(vfs_file_t *file, elf_image_t *img) {
     img->file = file;
-    
-    // Read the file into memory
     img->file_size = inode_size(file->inode);
-    img->file_base = kmalloc(img->file_size);
-    
-    ssize_t r = vfs_read(file, 0, img->file_size, (char*)img->file_base);
-    if (r < (ssize_t)img->file_size) {
-        LOG(WARN, "Failed to read in ELF image (error code %d)\n", r);
-        return r;
-    }
+    img->file_base = NULL;
+    img->program_headers = NULL;
+    img->interp_path = NULL;
+    if (img->file_size < sizeof(Elf64_Ehdr)) return -ENOEXEC;
 
-    // Check this is a valid ELF image
+    // Load the EHDR
+    img->file_base = kmalloc(sizeof(Elf64_Ehdr));
+    ssize_t r = vfs_read(file, 0, sizeof(Elf64_Ehdr), img->file_base);
+    if (r != sizeof(Elf64_Ehdr)) goto _bad_image;
+
+    // Big check for literally everything that could go wrong
     Elf64_Ehdr *ehdr = (Elf64_Ehdr*)img->file_base;
-    
     if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
         ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
-        ehdr->e_ident[EI_MAG2] != ELFMAG2 || 
-        ehdr->e_ident[EI_MAG3] != ELFMAG3) {
-            LOG(ERR, "Invalid ELF header magic");
-            return -ENOEXEC;
+        ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
+        ehdr->e_ident[EI_MAG3] != ELFMAG3 ||
+        ehdr->e_ident[EI_CLASS] != ELFCLASS64 ||
+        ehdr->e_ident[EI_DATA] != ELFDATA2LSB ||
+        ehdr->e_ident[EI_VERSION] != EV_CURRENT ||
+        ehdr->e_machine != EM_X86_64 ||
+        (ehdr->e_type != ET_REL && ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) ||
+        ehdr->e_phentsize != sizeof(Elf64_Phdr) || !ehdr->e_phnum ||
+        ehdr->e_phoff > img->file_size ||
+        ehdr->e_phnum > (img->file_size - ehdr->e_phoff) / sizeof(Elf64_Phdr)) {
+        goto _bad_image;
     }
 
-    if (ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
-        LOG(ERR, "Unsupported ELF file class\n");
-        return -ENOEXEC;
-    }
+    // Load program headers
+    size_t headers_size = (size_t)ehdr->e_phnum * sizeof(Elf64_Phdr);
+    img->program_headers = kmalloc(headers_size);
+    r = vfs_read(file, ehdr->e_phoff, headers_size, img->program_headers);
+    if (r != (ssize_t)headers_size) goto _bad_image;
 
-    if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
-        LOG(ERR, "Unimplemented data order (ELFDATA2LSB expected)\n");
-        return -ENOEXEC;
-    }
+    img->entrypoint = 0;
+    img->img_base = 0;
+    img->load_bias = 0;
 
-    if (ehdr->e_machine != EM_X86_64) {
-        LOG(ERR, "Unimplemented machine type: %i\n", ehdr->e_machine);
-        return -ENOEXEC;
-    }
-
-    if (ehdr->e_ident[EI_VERSION] != EV_CURRENT) {
-        LOG(ERR, "Bad ELF file version: %i\n", ehdr->e_ident[EI_VERSION]);
-        return -ENOEXEC;
-    }
-
-    if (ehdr->e_type != ET_REL && ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) {
-        LOG(ERR, "Unsupported ELF file type: %i\n", ehdr->e_type);
-        return -ENOEXEC;
-    }
-
-    // Setup some other fields of the image
-    img->entrypoint = 0x0;
-    img->img_base = 0x0;
-    img->load_bias = 0x0;
-    img->interp_path = NULL;
-
-    // If this is an EXEC/DYN image look for a interpreter path
-    if (ehdr->e_type == ET_EXEC || ehdr->e_type == ET_DYN) {
-        for (unsigned i = 0; i < ehdr->e_phnum; i++) {
-            Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
-            if (phdr->p_type == PT_INTERP) {
-                // TODO: string checks
-                img->interp_path = kmalloc(phdr->p_filesz);
-                memcpy(img->interp_path, (char*)img->file_base + phdr->p_offset, phdr->p_filesz);
-                if (phdr->p_filesz == 0) img->interp_path[0] = '\0';
-                else img->interp_path[phdr->p_filesz - 1] = '\0';
-                break;
-            }
+    // Locate the PT_INTERP if present
+    for (unsigned i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr *phdr = ELF_PHDR(img, i);
+        if (phdr->p_type == PT_INTERP) {
+            img->interp_path = kmalloc(phdr->p_filesz);
+            r = vfs_read(file, phdr->p_offset, phdr->p_filesz, img->interp_path);
+            if (r != (ssize_t)phdr->p_filesz) goto _bad_image;
+            img->interp_path[phdr->p_filesz - 1] = '\0';
+            break;
         }
     }
 
     return 0;
+
+_bad_image:
+    LOG(WARN, "Bad ELF image\n");
+    elf_destroyImage(img);
+    return -ENOEXEC;
 }
 
 /**
@@ -135,13 +122,31 @@ static int elf_mapSegment(elf_image_t *img, Elf64_Phdr *phdr) {
     // Zero out the memory region that will be loaded
     DEBUG("Map segment p_vaddr=%p p_offset=%p p_filesz=0x%x p_memsz=0x%x\n", phdr->p_vaddr, phdr->p_offset, phdr->p_filesz, phdr->p_memsz);
     uintptr_t seg_start = img->load_bias + phdr->p_vaddr;
-    uintptr_t seg_end = seg_start + phdr->p_memsz;
+    if (phdr->p_filesz > phdr->p_memsz || phdr->p_offset > img->file_size || phdr->p_filesz > img->file_size - phdr->p_offset) {
+        return -ENOEXEC;
+    }
 
-    // Copy the file data into memory
-    memcpy((void*)seg_start, (char*)img->file_base + phdr->p_offset, phdr->p_filesz);
+    if (phdr->p_filesz) {
+        ssize_t r = vfs_read(img->file, phdr->p_offset, phdr->p_filesz, (char*)seg_start);
+        if (r != (ssize_t)phdr->p_filesz) return r < 0 ? (int)r : -ENOEXEC;
+    }
 
-    // Zero out the BSS section
-    if (phdr->p_memsz > phdr->p_filesz) {
+    // the fresh pages we allocate for the BSS are already zeroed
+    // we can leave the BSS demand-paged unless an earlier segment wrote to it
+    bool clear_bss = false;
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr*)img->file_base;
+    for (unsigned i = 0; i < ehdr->e_phnum; i++) {
+        Elf64_Phdr *previous = ELF_PHDR(img, i);
+        if (previous == phdr) break;
+        if (previous->p_type == PT_LOAD && previous->p_filesz) {
+            if (previous->p_vaddr < phdr->p_vaddr + phdr->p_memsz && previous->p_vaddr + previous->p_filesz > phdr->p_vaddr + phdr->p_filesz) {
+                clear_bss = true;
+                break;
+            }
+        }
+    }
+
+    if (clear_bss && phdr->p_memsz > phdr->p_filesz) {
         memset((void*)(seg_start + phdr->p_filesz), 0, phdr->p_memsz - phdr->p_filesz);
     }
 
@@ -159,7 +164,7 @@ static int elf_loadImageExecutable(elf_image_t *img) {
     uintptr_t min_vaddr = MMU_USERSPACE_END;
     uintptr_t max_vaddr = 0x0;
     for (unsigned i = 0; i < ehdr->e_phnum; i++) {
-        Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
+        Elf64_Phdr *phdr = ELF_PHDR(img, i);
 
         if (phdr->p_type == PT_LOAD) {
             if (phdr->p_vaddr < min_vaddr) {
@@ -180,7 +185,6 @@ static int elf_loadImageExecutable(elf_image_t *img) {
 
     min_vaddr = PAGE_ALIGN_DOWN(min_vaddr);
     max_vaddr = PAGE_ALIGN_UP(max_vaddr);
-
 
     void *base;
     if (ehdr->e_type == ET_EXEC) {
@@ -208,7 +212,7 @@ static int elf_loadImageExecutable(elf_image_t *img) {
 
     // PHDR round 2 time
     for (unsigned i = 0; i < ehdr->e_phnum; i++) {
-        Elf64_Phdr *phdr = ELF_PHDR(ehdr, i);
+        Elf64_Phdr *phdr = ELF_PHDR(img, i);
 
         if (phdr->p_type == PT_LOAD) {
             int r = elf_mapSegment(img, phdr);
@@ -282,6 +286,7 @@ int elf_buildAuxv(elf_image_t *image, elf_auxv_t *auxv) {
  */
 int elf_destroyImage(elf_image_t *image) {
     kfree(image->file_base);
+    kfree(image->program_headers);
     if (image->interp_path) kfree(image->interp_path);
     return 0;
 }
