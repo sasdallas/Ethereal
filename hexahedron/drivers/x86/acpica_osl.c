@@ -14,7 +14,7 @@
  * Copyright (C) 2024 Samuel Stuart
  */
 
-#ifdef ACPICA_ENABLED
+#ifdef ENABLE_ACPICA
 
 #include <acpica/acpi.h>
 #include <acpica/actypes.h>
