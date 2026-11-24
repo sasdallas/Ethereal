@@ -845,11 +845,8 @@ int vfs_symlinkat(vfs_inode_t *inode, char *target, char *linkpath, vfs_inode_t 
         *symlink_out = tmp;
     }
 
-    if (r == 0 && tmp->attr.nlink == 0) {
-        // Now, release the inode again. This drops the initial reference when it was made by vfs_inode().
-        inode_release(tmp);
-    }
 
+    inode_release(tmp);
     inode_release(parent);
     return 0;
 }
@@ -914,7 +911,10 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
     int r = vfs_lookupat(inode, name, &i_parent, LOOKUP_PARENT);
     if (r) return r;
 
-    if (i_parent->attr.type != VFS_DIRECTORY) return -ENOTDIR;
+    if (i_parent->attr.type != VFS_DIRECTORY) {
+        inode_release(i_parent);
+        return -ENOTDIR;
+    }
 
     // get the child
     // !!!: BUG: THIS DOESNT PROTECT AGAINST CANONICALIZATION
@@ -934,10 +934,13 @@ int vfs_mkdirat(vfs_inode_t *inode, char *name, mode_t mode, vfs_inode_t **dirou
         return -EEXIST;
     }
 
-    vfs_inode_t *holder;
-    r = inode_mkdir(i_parent, child, mode, dirout ? dirout : &holder);
-    if (dirout && r == 0) inode_hold(holder);
-    
+    vfs_inode_t *holder = NULL;
+    r = inode_mkdir(i_parent, child, mode, &holder);
+    if (dirout && r == 0) {
+        inode_hold(holder);
+        *dirout = holder;
+    }
+
     if (r == 0) {
         // drop the initial reference to the inode. the inode will still be held if dirout exists.
         // TODO: add dentry caching, which will allow much faster VFS lookups 
@@ -1094,6 +1097,7 @@ ssize_t vfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer)
     cache_markRangeDirty(file->inode->cache, range);
     cache_releaseRange(range);
     kfree(range);
+
     return bpos;
 }
 
