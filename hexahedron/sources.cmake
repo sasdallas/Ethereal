@@ -197,6 +197,7 @@ list(APPEND __SYSCALL_SOURCES
     task/syscalls/listen.c
     task/syscalls/lseek.c
     task/syscalls/mkdir.c
+    task/syscalls/mknodat.c
     task/syscalls/mmap.c
     task/syscalls/mount.c
     task/syscalls/mprotect.c
@@ -212,6 +213,7 @@ list(APPEND __SYSCALL_SOURCES
     task/syscalls/pwrite.c
     task/syscalls/read.c
     task/syscalls/read_entries.c
+    task/syscalls/readlinkat.c
     task/syscalls/recvmsg.c
     task/syscalls/renameat.c
     task/syscalls/sendmsg.c
