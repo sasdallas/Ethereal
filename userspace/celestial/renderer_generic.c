@@ -87,22 +87,23 @@ void render_request(render_request_t *upd) {
             .alpha = SPRITE_ALPHA_BLEND
         };
 
-        double progress = (double)upd->anim_time / (double)WINDOW_ANIMATION_TIME;
+        double progress = (double)upd->anim_time / (double)WINDOW_OPEN_ANIMATION_TIME;
         if (progress > 1.0) progress = 1.0;
-        double tdiff = progress * progress * (3.0 - 2.0 * progress);
+        double remaining = 1.0 - progress;
+        double tdiff = 1.0 - remaining * remaining * remaining;
 
         if (upd->win->flags & CELESTIAL_WINDOW_FLAG_FADE_ANIM) {
             double scale = 0.0 + tdiff * (1.0 - 0.0);
             gfx_renderSpriteAlpha(RENDERER->ctx, &sp, upd->x, upd->y, scale * 255);
         } else {
-            double scale = 0.9 + tdiff * (1.0 - 0.9); // Starting scale at 90%, scale up to 100%
+            double scale = 0.86 + tdiff * (1.0 - 0.86);
             double off_x = (upd->win->width - (upd->win->width * scale)) / 2.0f;
             double off_y = (upd->win->height - (upd->win->height * scale)) / 2.0f;
             gfx_mat2x3_t mat = gfx_mat2x3_identity();
             gfx_mat2x3_translate(&mat, off_x + upd->x, off_y + upd->y);
             gfx_mat2x3_scale(&mat, scale, scale);
 
-            scale = 0.0 + tdiff * (1.0 - 0.0);
+            scale = 0.15 + tdiff * (1.0 - 0.15);
             gfx_renderSpriteTransform(RENDERER->ctx, &sp, &mat, 255*scale);
         }
     } else if (upd->state == WINDOW_STATE_CLOSING) {
@@ -113,7 +114,7 @@ void render_request(render_request_t *upd) {
             .alpha = SPRITE_ALPHA_BLEND
         };
 
-        double progress = (double)upd->anim_time / (double)WINDOW_ANIMATION_TIME;
+        double progress = (double)upd->anim_time / (double)WINDOW_CLOSE_ANIMATION_TIME;
         if (progress > 1.0) progress = 1.0;
         double tdiff = progress * progress * (3.0 - 2.0 * progress);
 
@@ -121,7 +122,7 @@ void render_request(render_request_t *upd) {
             double scale = 1.0 + tdiff * (0.0 - 1.0);
             gfx_renderSpriteAlpha(RENDERER->ctx, &sp, upd->x, upd->y, scale * 255);
         } else {
-            double scale = 1.0 + tdiff * (0.9 - 1.0); // Starting scale at 90%, scale up to 100%
+            double scale = 1.0 + tdiff * (0.88 - 1.0);
             double off_x = (upd->win->width - (upd->win->width * scale)) / 2.0f;
             double off_y = (upd->win->height - (upd->win->height * scale)) / 2.0f;
             gfx_mat2x3_t mat = gfx_mat2x3_identity();

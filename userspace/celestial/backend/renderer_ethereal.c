@@ -57,7 +57,7 @@ void *render_main(void *arg) {
 
         req = RENDERER->frame;
         while (req) {
-            render_copyRect(&req->rect);
+            if (!req->win) render_copyRect(&req->rect);
 
             render_request_t *next = req->next;
             free(req);

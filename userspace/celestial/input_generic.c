@@ -199,6 +199,7 @@ void mouse_check_events(int new_x, int new_y, int scroll, uint32_t new_btns) {
         // Send the exit event
         EVENT_SEND(SERVER->mouse_window, celestial_event_mouse_exit_t, CELESTIAL_EVENT_MOUSE_EXIT);
         SERVER->mouse_window = top;
+        input_set_mouse(CELESTIAL_MOUSE_DEFAULT);
 
         if (SERVER->mouse_window) {
             // Now send an entry event
@@ -287,14 +288,15 @@ void keyboard_process_event(key_event_t event) {
     pthread_mutex_unlock(&keyboard_lock);
 
     // check server binds
+    pthread_mutex_lock(&SERVER->bind_lck);
     if (SERVER->binds) {
         input_bind_t *bind = SERVER->binds;
 
         while (bind) {
-            // TODO: there is a bug where if the bound window exits this will crash
             if (bind->sc == kev.scancode && kev.mods == bind->mods) {
                 EVENT_SEND(bind->win, celestial_event_bound_key_t, CELESTIAL_EVENT_BOUND_KEY, .pressed = (kev.type == KEYBOARD_EVENT_PRESS), .focused = SERVER->focused ? SERVER->focused->id : (wid_t)-1, .sc = bind->sc, .mods = bind->mods);
                 if (bind->capture) {
+                    pthread_mutex_unlock(&SERVER->bind_lck);
                     return;
                 }
             }
@@ -302,6 +304,7 @@ void keyboard_process_event(key_event_t event) {
             bind = bind->next;
         }
     }
+    pthread_mutex_unlock(&SERVER->bind_lck);
 
     if (SERVER->focused) {
         EVENT_SEND(SERVER->focused, celestial_event_key_t, CELESTIAL_EVENT_KEY_EVENT, .ev = event);
@@ -408,7 +411,7 @@ void input_set_mouse_capture(wm_window_t *win) {
 
 void input_set_mouse(int mouse) {
     if (!input_ready) return;
-    if (mouse < 0 || mouse > CELESTIAL_NMOUSE || mouse_sprites[mouse] == NULL) {
+    if (mouse < 0 || mouse >= CELESTIAL_NMOUSE || mouse_sprites[mouse] == NULL) {
         TRACE_ERROR("input_set_mouse unknown mouse type %d\n", mouse);
         return;
     }

@@ -119,7 +119,6 @@ wm_window_t *window_create(wm_client_t *client, int flags, size_t width, size_t 
     
     // Update window flags
     if (flags & (CELESTIAL_WINDOW_FLAG_NO_ANIMATIONS | CELESTIAL_WINDOW_FLAG_NO_OPEN_ANIMATION)) {
-        window->presented = true;
         WINDOW_CHANGE_STATE(window, WINDOW_STATE_NORMAL);
     } else {
         WINDOW_CHANGE_STATE(window, WINDOW_STATE_OPENING);
@@ -134,7 +133,7 @@ wm_window_t *window_top_exclude(wm_window_t *excl) {
     pthread_mutex_lock(&SERVER->window_lock);
     wm_window_t *win = SERVER->window_list[Z_DEFAULT];
     while (win) {
-        if (win != excl) {
+        if (win != excl && win->visible && win->presented && win->state != WINDOW_STATE_CLOSING && win->state != WINDOW_STATE_CLOSED) {
             pthread_mutex_unlock(&SERVER->window_lock);
             return win;
         }
@@ -149,7 +148,26 @@ wm_window_t *window_top_exclude(wm_window_t *excl) {
 void window_close(wm_window_t *win) {
     TRACE_DEBUG("Closing window %p\n", win);
     EVENT_SEND(win, celestial_event_window_close_t, CELESTIAL_EVENT_WINDOW_CLOSE);
+    if (win == SERVER->root) SERVER->root = NULL;
     CHANGED_EVENT(win->id, CELESTIAL_WINDOW_CHANGE_CLOSING);
+
+    bool was_focused = (win == SERVER->focused);
+    if (was_focused) SERVER->focused = NULL;
+    wm_window_t *next_focus = was_focused ? window_top_exclude(win) : NULL;
+
+    // Destroy window bindings
+    pthread_mutex_lock(&SERVER->bind_lck);
+    input_bind_t **bind = &SERVER->binds;
+    while (*bind) {
+        if ((*bind)->win == win) {
+            input_bind_t *dead = *bind;
+            *bind = dead->next;
+            free(dead);
+        } else {
+            bind = &(*bind)->next;
+        }
+    }
+    pthread_mutex_unlock(&SERVER->bind_lck);
 
     // Remove from client list now
     wm_window_t *last = NULL;
@@ -168,9 +186,13 @@ void window_close(wm_window_t *win) {
 
     if (win == SERVER->mouse_window) {
         SERVER->mouse_window = NULL; // TODO: RECALCULATE THIS VALUE
+        input_set_mouse(CELESTIAL_MOUSE_DEFAULT);
     }
     if (win == SERVER->mouse_grab) {
         SERVER->mouse_grab = NULL;
+    }
+    if (win == SERVER->mouse_capture) {
+        SERVER->mouse_capture = NULL;
     }
 
     WINDOW_CHANGE_STATE(win, WINDOW_STATE_CLOSING);
@@ -183,6 +205,8 @@ void window_close(wm_window_t *win) {
     } else {
         window_beginAnimation(win);
     }
+
+    if (next_focus) window_focus(next_focus);
 }
 
 void window_destroy(wm_window_t *win) {
@@ -210,10 +234,12 @@ void window_destroy(wm_window_t *win) {
     munmap(win->buffer, win->width * win->height * 4);
     close(win->shmfd);
     wm_client_t *client = win->client;
-    __atomic_sub_fetch(&client->window_count, 1, __ATOMIC_SEQ_CST);
+    int remaining = __atomic_sub_fetch(&client->window_count, 1, __ATOMIC_SEQ_CST);
 
     free(win);
-    ipc_releaseClient(client);
+    if (remaining == 0 && __atomic_load_n(&client->dead, __ATOMIC_SEQ_CST)) {
+        free(client);
+    }
 }
 
 
@@ -255,7 +281,7 @@ wm_window_t *window_top(int x, int y) {
     for (z_array_t i = Z_BACKGROUND; i < Z_COUNT; i++) {
         wm_window_t *win = SERVER->window_list[i];
         while (win) {
-            if (x < win->x + win->width && x >= win->x && y < win->y + win->height && y >= win->y && win->visible && win->state != WINDOW_STATE_CLOSING && win->state != WINDOW_STATE_CLOSED) {
+            if (x < win->x + win->width && x >= win->x && y < win->y + win->height && y >= win->y && win->visible && win->presented && win->state != WINDOW_STATE_CLOSING && win->state != WINDOW_STATE_CLOSED) {
                 if (!candidate || candidate->z_array < i) {
                     candidate = win;   
                     break;
@@ -367,15 +393,16 @@ void window_processAnimations() {
         // this is a good balance between animations looking good and not stalling the system
         // when they take too long (I have yet to figure out *why* they take too long sometimes)
         uint64_t dt = now - anim->anim_last_paint;
-        uint64_t remaining = WINDOW_ANIMATION_TIME - anim->anim_time;
+        int duration = anim->win->state == WINDOW_STATE_OPENING ? WINDOW_OPEN_ANIMATION_TIME : WINDOW_CLOSE_ANIMATION_TIME;
+        uint64_t remaining = anim->anim_time >= duration ? 0 : duration - anim->anim_time;
         anim->anim_last_paint = now;
         if (dt >= remaining) {
-            anim->anim_time = WINDOW_ANIMATION_TIME;
+            anim->anim_time = duration;
         } else {
             anim->anim_time += dt;
         }
 
-        if (anim->anim_time >= WINDOW_ANIMATION_TIME) {
+        if (anim->anim_time >= duration) {
             TRACE_DEBUG("window_processAnimations: animation finished\n");
             
             wm_window_anim_t *nxt = anim->next;

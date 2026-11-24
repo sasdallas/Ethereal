@@ -36,7 +36,8 @@
 
 #define RENDERER_FPS 120
 #define RENDERER_FRAME_TIME (1000000 / RENDERER_FPS)
-#define WINDOW_ANIMATION_TIME 80000
+#define WINDOW_OPEN_ANIMATION_TIME 160000
+#define WINDOW_CLOSE_ANIMATION_TIME 130000
 
 /**** TYPES ****/
 
@@ -64,6 +65,7 @@ typedef struct wm_client {
     int client_fd;
     int window_count;
     bool dead;
+    bool disconnect_pending;
 } wm_client_t;
 
 /* Window animation state */
@@ -244,23 +246,29 @@ uint64_t celestial_now();
 int ipc_init();
 void ipc_shutdown();
 void ipc_removeClient(int fd);
-void ipc_releaseClient(wm_client_t *client);
+void ipc_markClientDisconnected(wm_client_t *client);
 
 /* Event functions */
-inline int event_send_int(wm_client_t *cli, void *buffer, size_t size) {
-    if (!cli || __atomic_load_n(&cli->dead, __ATOMIC_SEQ_CST) || cli->client_fd < 0) {
+static inline int event_send_int(wm_client_t *cli, void *buffer, size_t size) {
+    if (!cli || __atomic_load_n(&cli->dead, __ATOMIC_SEQ_CST) || __atomic_load_n(&cli->disconnect_pending, __ATOMIC_SEQ_CST) || cli->client_fd < 0) {
         return 0;
     }
 
-    ssize_t ret = send(cli->client_fd, buffer, size, 0);
+    ssize_t ret;
+    do {
+        ret = send(cli->client_fd, buffer, size, 0);
+    } while (ret < 0 && errno == EINTR);
     if (ret < 0) {
-        TRACE_ERROR("Failed to send event: %s\n", strerror(errno));
-        return -1;
+        if (errno == EPIPE || errno == ECONNRESET || errno == EBADF) {
+            ipc_markClientDisconnected(cli);
+        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            TRACE_ERROR("Failed to send event: %s\n", strerror(errno));
+        }
     }
     return 0;
 }
 
-#define EVENT_SEND(win, evtype, t, ...) ({ wm_window_t *_ev_win = (win); wm_client_t *_ev_cli = _ev_win->client; if (_ev_cli && !__atomic_load_n(&_ev_cli->dead, __ATOMIC_SEQ_CST)) { int _ev_fd = _ev_cli->client_fd; evtype ev = { .magic = CELESTIAL_MAGIC_EVENT, .size = sizeof(evtype), .type = (t), .wid = _ev_win->id, ## __VA_ARGS__ }; if (event_send_int(_ev_cli, &ev, sizeof(evtype))) { TRACE_WARN("Connection error with client %d: %s\n", _ev_fd, strerror(errno)); ipc_removeClient(_ev_fd); } } })
+#define EVENT_SEND(win, evtype, t, ...) ({ wm_window_t *_ev_win = (win); wm_client_t *_ev_cli = _ev_win->client; if (_ev_cli && !__atomic_load_n(&_ev_cli->dead, __ATOMIC_SEQ_CST)) { evtype ev = { .magic = CELESTIAL_MAGIC_EVENT, .size = sizeof(evtype), .type = (t), .wid = _ev_win->id, ## __VA_ARGS__ }; event_send_int(_ev_cli, &ev, sizeof(evtype)); } })
 
 #define CHANGED_EVENT(cwin, ctype) if (SERVER->root != NULL) { EVENT_SEND(SERVER->root, celestial_event_window_changed_t, CELESTIAL_EVENT_WINDOW_CHANGED, .changed_window = (cwin), .changed_event = (ctype)); }
 

@@ -46,17 +46,20 @@
 
 
 void request_send(wm_client_t *client, void *buffer, size_t size) {
-    if (!client || __atomic_load_n(&client->dead, __ATOMIC_SEQ_CST) || client->client_fd < 0) {
+    if (!client || __atomic_load_n(&client->dead, __ATOMIC_SEQ_CST) || __atomic_load_n(&client->disconnect_pending, __ATOMIC_SEQ_CST) || client->client_fd < 0) {
         return;
     }
 
     int fd = client->client_fd;
-    ssize_t ret = send(fd, (const void*)buffer, size, 0);
+    ssize_t ret;
+    do {
+        ret = send(fd, (const void*)buffer, size, 0);
+    } while (ret < 0 && errno == EINTR);
     if (ret < 0) {
         if (errno == ECONNRESET || errno == EPIPE || errno == EBADF) {
-            // Peer disconnected
-            TRACE_INFO("Client %d disconnected\n", fd);
-            ipc_removeClient(fd);
+            ipc_markClientDisconnected(client);
+        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            TRACE_WARN("Client %d did not read response\n", fd);
         } else {
             FATAL("send failed: %s\n", strerror(errno));
         }
@@ -178,13 +181,27 @@ REQUEST_HANDLER(flip, CELESTIAL_REQ_FLIP) {
     wm_window_t *win = window_get(client, req->wid);
     if (!win) return;
 
+    if (req->x >= win->width || req->y >= win->height || !req->width || !req->height) return;
+
+    int64_t left = req->x;
+    int64_t top = req->y;
+    int64_t right = req->width >= (uint64_t)((int64_t)win->width - left) ? (int64_t)win->width : left + (int64_t)req->width;
+    int64_t bottom = req->height >= (uint64_t)((int64_t)win->height - top) ? (int64_t)win->height : top + (int64_t)req->height;
+
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > win->width) right = win->width;
+    if (bottom > win->height) bottom = win->height;
+    if (right <= left || bottom <= top) return;
+
     if (win->presented == false) {
         win->presented = true;
-        window_beginAnimation(win);
+        if (win->state == WINDOW_STATE_OPENING) window_beginAnimation(win);
+        else damage_window_locked(win);
         return;
     }
 
-    damage_window_locked(win);
+    damage_add_locked(GFX_RECT(win->x + left, win->y + top, right - left, bottom - top));
 }
 
 REQUEST_HANDLER(set_z_array, CELESTIAL_REQ_SET_Z_ARRAY) {
@@ -249,12 +266,21 @@ REQUEST_HANDLER(set_window_visible, CELESTIAL_REQ_SET_WINDOW_VISIBLE) {
     if (!win) return request_send_error(client, CELESTIAL_REQ_SET_WINDOW_VISIBLE, -ESRCH);
     
     win->visible = req->visible;
+    if (!win->visible && SERVER->mouse_window == win) {
+        EVENT_SEND(win, celestial_event_mouse_exit_t, CELESTIAL_EVENT_MOUSE_EXIT);
+        SERVER->mouse_window = NULL;
+        input_set_mouse(CELESTIAL_MOUSE_DEFAULT);
+    }
+
     damage_window_locked(win);
     REQ_OK(req);
 }
 
 REQUEST_HANDLER(set_mouse_cursor, CELESTIAL_REQ_SET_MOUSE_CURSOR) {
-    input_set_mouse(req->cursor);
+    if (SERVER->mouse_window && SERVER->mouse_window->client == client) {
+        input_set_mouse(req->cursor);
+    }
+
     REQ_OK(req);
 }
 

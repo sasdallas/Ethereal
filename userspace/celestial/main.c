@@ -87,6 +87,7 @@ extern bool render_blur_enable;
     strcpy(SERVER->theme, "mercury");
     signal(SIGUSR1, sigusr1_handler);
     signal(SIGINT, sigint_handler);
+    signal(SIGPIPE, SIG_IGN);
 
     pthread_mutex_init(&SERVER->dmg_lock, NULL);
     pthread_mutex_init(&SERVER->bind_lck, NULL);

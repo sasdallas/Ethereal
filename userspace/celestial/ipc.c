@@ -35,6 +35,7 @@ void ipc_addClient(int fd) {
     client->client_fd = fd;
     client->window_count = 0;
     client->dead = false;
+    client->disconnect_pending = false;
 
     // TODO: make this atomic
     pthread_mutex_lock(&SERVER->client_lock);
@@ -44,6 +45,15 @@ void ipc_addClient(int fd) {
     pthread_mutex_unlock(&SERVER->client_lock);
 
     // Wakeup the thread
+    char buf[1] = { 'a' };
+    write(SERVER->ipc_wake_pipe[1], buf, 1);
+}
+
+void ipc_markClientDisconnected(wm_client_t *client) {
+    if (!client || __atomic_load_n(&client->dead, __ATOMIC_SEQ_CST)) return;
+    if (__atomic_exchange_n(&client->disconnect_pending, true, __ATOMIC_SEQ_CST)) return;
+
+    TRACE_INFO("Client %d disconnected\n", client->client_fd);
     char buf[1] = { 'a' };
     write(SERVER->ipc_wake_pipe[1], buf, 1);
 }
@@ -59,6 +69,7 @@ void ipc_removeClient(int fd) {
         if (c->client_fd == fd) {
             *prev = c->next;
             c->next = NULL;
+            __atomic_add_fetch(&c->window_count, 1, __ATOMIC_SEQ_CST);
             c->client_fd = -1;
             __atomic_store_n(&c->dead, true, __ATOMIC_SEQ_CST);
 
@@ -86,17 +97,7 @@ void ipc_removeClient(int fd) {
         win = next;
     }
 
-    ipc_releaseClient(c);
-}
-
-void ipc_releaseClient(wm_client_t *client) {
-    if (!client || !__atomic_load_n(&client->dead, __ATOMIC_SEQ_CST)) {
-        return;
-    }
-
-    if (__atomic_load_n(&client->window_count, __ATOMIC_SEQ_CST) == 0) {
-        free(client);
-    }
+    if (__atomic_sub_fetch(&c->window_count, 1, __ATOMIC_SEQ_CST) == 0) free(c);
 }
 
 void ipc_handle(int fd) {
@@ -159,6 +160,21 @@ void *ipc_acceptor_thread(void *arg) {
 void *ipc_thread(void *arg) {
     TRACE_DEBUG("IPC thread TID: %d\n", gettid());
     for (;;) {
+        // Cleanup any dead file descriptors
+        for (;;) {
+            int dead_fd = -1;
+            pthread_mutex_lock(&SERVER->client_lock);
+            for (wm_client_t *client = SERVER->client_list; client; client = client->next) {
+                if (__atomic_load_n(&client->disconnect_pending, __ATOMIC_SEQ_CST)) {
+                    dead_fd = client->client_fd;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&SERVER->client_lock);
+            if (dead_fd < 0) break;
+            ipc_removeClient(dead_fd);
+        }
+
         pthread_mutex_lock(&SERVER->client_lock);
         int nfds = SERVER->client_count + 1;
         struct pollfd fds[nfds];
@@ -196,7 +212,7 @@ void *ipc_thread(void *arg) {
         }
 
         for (int i = 0; i < nfds-1; i++) {
-            if (fds[i].revents & POLLHUP) {
+            if (fds[i].revents & (POLLHUP | POLLERR | POLLNVAL)) {
                 ipc_removeClient(fds[i].fd);
             } else if (fds[i].revents & POLLIN) {
                 ipc_handle(fds[i].fd); 

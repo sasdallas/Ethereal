@@ -56,7 +56,7 @@ static void damage_expandBlurredWindows(gfx_rect_t *damage) {
 
         for (int z = 0; z < Z_COUNT; z++) {
             for (wm_window_t *win = SERVER->window_list[z]; win; win = win->next) {
-                if (win->state == WINDOW_STATE_CLOSED || !win->visible || !(win->flags & CELESTIAL_WINDOW_FLAG_BLURRED)) {
+                if (win->state == WINDOW_STATE_CLOSED || !win->visible || !win->presented || !(win->flags & CELESTIAL_WINDOW_FLAG_BLURRED)) {
                     continue;
                 }
 
@@ -241,7 +241,7 @@ render_request_t *damage_build() {
             }
 
             for (wm_window_t *win = tail_win; win; win = win->prev) {
-                if (win->state == WINDOW_STATE_CLOSED || !win->visible) {
+                if (win->state == WINDOW_STATE_CLOSED || !win->visible || !win->presented) {
                     continue;
                 }
 
