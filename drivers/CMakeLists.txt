@@ -37,7 +37,7 @@ function(add_driver)
 
     set(DRIVER_LIBRARIES)
     foreach(LIBRARY IN LISTS OPT_LIBRARIES)
-        target_link_libraries(${OPT_DRIVER_NAME}_objects PRIVATE "${LIBRARY}")
+        target_link_libraries(${TARGET} PRIVATE "${LIBRARY}")
         list(APPEND DRIVER_LIBRARIES "$<TARGET_FILE:${LIBRARY}>")
     endforeach()
 
