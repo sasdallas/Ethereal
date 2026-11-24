@@ -38,7 +38,7 @@ slab_cache_t *trie_cache = NULL;
 /**
  * @brief Calculate CIDR length
  */
-static int route_getCIDRLength(in_addr_t a) {
+static inline int route_getCIDRLength(in_addr_t a) {
     return ((~a) != 0) ? __builtin_clz(~a) : 32; 
 }
 
