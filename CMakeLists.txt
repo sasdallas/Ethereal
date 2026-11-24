@@ -27,6 +27,8 @@ set(ETHEREAL_BOOT_DIR "${CMAKE_SYSROOT}/boot")
 cmake_path(GET CMAKE_SYSROOT PARENT_PATH ETHEREAL_OUTPUT_DIR)
 set(ETHEREAL_INITRD_DIR "${ETHEREAL_OUTPUT_DIR}/initrd")
 
+add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+
 add_compile_definitions(
     "__ARCH__=${BUILD_ARCH}" "__ARCH_${BUILD_ARCH_UPPER}__"
     "$<IF:$<CONFIG:Debug>,__DEBUG__,__RELEASE__>"
@@ -110,3 +112,9 @@ add_custom_target(iso
     VERBATIM
 )
 add_dependencies(iso initrd)
+
+add_custom_target(disk
+    COMMAND bash "${CMAKE_SOURCE_DIR}/buildscripts/gendisk.sh"
+        "${CMAKE_SYSROOT}/" "${CMAKE_SOURCE_DIR}/root.img"
+)
+add_dependencies(disk initrd_tiny)
