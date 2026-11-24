@@ -40,9 +40,17 @@ void *mouse_thread(void *arg) {
         }
         if (!ret) continue;
 
-        // uncomment if you need faster mouse
-        // event.rel.x_difference *= 2;
-        // event.rel.y_difference *= 2;
+        // Mouse acceleration thing I threw together. Keeps small stuff precise but accelerates larger
+        // mouse movements.
+        int dx = event.rel.x_difference;
+        int dy = event.rel.y_difference;
+        int speed = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+        if (speed > 2) {
+            int boost = speed - 2;
+            if (boost > 4) boost = 4;
+            event.rel.x_difference += dx * boost / 4;
+            event.rel.y_difference += dy * boost / 4;
+        }
 
         // TRACE_DEBUG("Mouse event dx %d dy %d\n", event.x_difference, event.y_difference);
         int mouse_x;
