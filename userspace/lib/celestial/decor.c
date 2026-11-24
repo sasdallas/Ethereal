@@ -2,7 +2,7 @@
  * @file userspace/lib/celestial/decor.c
  * @brief Decoration system
  * 
- * Includes Celestial's built-in Mercury, MINTIA, and Windows XP themes.
+ * Includes Celestial's built-in Mercury and MINTIA themes
  * @todo Add support for loading other decorations (from shared libraries?)
  * 
  * @copyright
@@ -207,7 +207,7 @@ static int celestial_applyWindowTheme2(window_t *win, decor_handler_t *handler) 
 
     free(pixels);
     gfx_render(decor->ctx);
-    celestial_flip(win);
+    if (win->content_presented) celestial_flip(win);
 
     if (old->font) gfx_destroyFont(old->font);
     free(old);
@@ -496,6 +496,11 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
 
                 // Fix hack
                 if (!in_borders) {
+                    if (decor_had_custom_mouse) {
+                        celestial_setMouseCursor(CELESTIAL_MOUSE_DEFAULT);
+                        decor_had_custom_mouse = false;
+                    }
+
                     // Look for event handler
                     celestial_event_handler_t h = celestial_lookupEventHandler(win, CELESTIAL_EVENT_MOUSE_ENTER);
                         
@@ -514,6 +519,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                     }
                     
                     decor_was_last_in_borders = 0;
+                    decor_faked_exit_event = 0;
                 } else {
                     if (!decor_was_last_in_borders) {
                         // Look for event handler 
@@ -536,7 +542,7 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
                     decor_was_last_in_borders = 1;
                 }
 
-                if (win->decor->resizable) {
+                if (in_borders && win->decor->resizable) {
                     celestial_handleDecorEventResize(win, event);
                 }
 
@@ -556,13 +562,17 @@ int celestial_handleDecorationEvent(struct window *win, void *event) {
 
         case CELESTIAL_EVENT_MOUSE_ENTER:
             decor_was_last_in_borders = 1;
+            decor_faked_exit_event = 0;
+            decor_had_custom_mouse = false;
+            decor_last_clicked_in_borders = 0;
             return 0;
 
         case CELESTIAL_EVENT_MOUSE_EXIT:
             if (win->decor->resizable) {
                 celestial_handleDecorEventResize(win, event);
             }
-        
+            decor_was_last_in_borders = 0;
+            decor_last_clicked_in_borders = 0;
             if (!decor_faked_exit_event) {
                 return 1;
             }

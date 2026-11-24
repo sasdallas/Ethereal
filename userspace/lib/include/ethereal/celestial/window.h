@@ -79,6 +79,7 @@ typedef struct window {
 
     hashmap_t *event_handler_map;       // Window event handler map
     void *d;                            // Driver object
+    bool content_presented;             // Content has been drawn at least once
 } window_t;
 
 /**

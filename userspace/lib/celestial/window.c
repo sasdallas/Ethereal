@@ -552,7 +552,9 @@ void celestial_flipRegion(window_t *win, int32_t x, int32_t y, size_t width, siz
 
     // Send the request
     // For a flip request, we don't wait for a response
-    celestial_sendRequest(&req, req.size);
+    if (celestial_sendRequest(&req, req.size) == 0) {
+        win->content_presented = true;
+    }
 }
 
 /**
