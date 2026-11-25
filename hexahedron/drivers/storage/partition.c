@@ -24,6 +24,7 @@ static ssize_t partition_write(devfs_node_t *node, loff_t offset, size_t size, c
 static ssize_t partition_read(devfs_node_t *node, loff_t offset, size_t size, char *buffer);
 static int partition_read_range(devfs_node_t *node, page_range_t *range);
 static int partition_write_range(devfs_node_t *node, page_range_t *range);
+static int partition_fsync(devfs_node_t *node);
 
 static devfs_ops_t partition_ops = {
     .open           = NULL,
@@ -39,7 +40,16 @@ static devfs_ops_t partition_ops = {
     .poll_events    = NULL,
     .read_range     = partition_read_range,
     .write_range    = partition_write_range,
+    .fsync          = partition_fsync,
 };
+
+/**
+ * @brief Partition sync method
+ */
+static int partition_fsync(devfs_node_t *node) {
+    partition_t *part = node->priv;
+    return part->parent->node->ops->fsync(part->parent->node);
+}
 
 /**
  * @brief Partition read method

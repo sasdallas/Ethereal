@@ -39,6 +39,7 @@
 #define ATA_CMD_WRITE_DMA               0xCA
 #define ATA_CMD_WRITE_DMA_EXT           0x35
 #define ATA_CMD_IDENTIFY                0xEC
+#define ATA_CMD_CACHE_FLUSH             0xE7
 
 #define	SATA_SIG_ATA	                0x00000101	// SATA drive
 #define	SATA_SIG_ATAPI	                0xEB140101	// SATAPI drive
@@ -365,6 +366,7 @@ typedef struct ahci_port {
     ahci_ident_t ident;
 
     uintptr_t cmd_region;
+    uintptr_t cmd_tables[32]; /* One preallocated DMA page per command slot. */
     tasklet_t tasklet;
     wait_queue_t slot_wait;
     struct thread *waiters[32];

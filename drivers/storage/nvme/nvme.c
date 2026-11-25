@@ -34,11 +34,12 @@ static ssize_t nvme_read(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buff
 static ssize_t nvme_write(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer);
 static ssize_t nvme_read_range(drive_t *d, page_range_t *r);
 static ssize_t nvme_write_range(drive_t *d, page_range_t *r);
+static int nvme_cache_flush(drive_t *d);
 
 drive_ops_t nvme_ops = {
     .read_sectors = nvme_read,
     .write_sectors = nvme_write,
-    .flush = NULL,
+    .flush = nvme_cache_flush,
     .ioctl = NULL,
     .read_range = nvme_read_range,
     .write_range = nvme_write_range,
@@ -396,7 +397,7 @@ static ssize_t nvme_write(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buf
 
         cmd->nsid = ns->nsid;
         cmd->slba = lba;
-        cmd->nlb = sectors;
+        cmd->nlb = sectors - 1;
         cmd->dptr.prp1 = arch_mmu_physical(NULL, (uintptr_t)buffer);
 
         int ioqueueidx = GET_IO_QUEUE(ns->controller);
@@ -407,7 +408,7 @@ static ssize_t nvme_write(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buf
             return -EIO;
         }
 
-        return 0;
+        return sectors;
     }
 
     size_t s = min(PAGE_SIZE*16,sectors*d->sector_size);
@@ -546,6 +547,23 @@ static ssize_t nvme_read_range(drive_t *d, page_range_t *r) {
  */
 static ssize_t nvme_write_range(drive_t *d, page_range_t *r) {
     return nvme_io_range(d, r, true);
+}
+
+/**
+ * @brief NVMe cache flush
+ */
+static int nvme_cache_flush(drive_t *d) {
+    nvme_namespace_t *ns = d->driver;
+    nvme_transfer_t xfer = { .ent = { .opc = NVME_OPC_FLUSH } };
+    xfer.ent.command.nsid = ns->nsid;
+
+    int idx = GET_IO_QUEUE(ns->controller);
+    nvme_queue_t *ioqueue = ns->controller->ioqueues[idx];
+
+    int ret = nvme_submitWait(ioqueue, &xfer);
+    if (ret != 0) return ret;
+
+    return xfer.status == NVME_STATUS_SUCCESS ? 0 : -EIO;
 }
 
 /**

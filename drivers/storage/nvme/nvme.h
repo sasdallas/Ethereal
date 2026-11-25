@@ -607,6 +607,7 @@ typedef struct nvme_namespace_identify {
 #define NVME_OPC_CREATE_SQ              0x01
 #define NVME_OPC_CREATE_CQ              0x05
 #define NVME_OPC_IDENTIFY               0x06
+#define NVME_OPC_FLUSH                   0x00
 #define NVME_OPC_WRITE                  0x01
 #define NVME_OPC_READ                   0x02
 #define NVME_OPC_SET_FEATURES           0x09

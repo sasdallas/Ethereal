@@ -56,6 +56,7 @@ static int drive_ioctl(devfs_node_t *node, unsigned long request, void *argp);
 
 static int drive_read_range(devfs_node_t *node, page_range_t *range);
 static int drive_write_range(devfs_node_t *node, page_range_t *range);
+static int drive_fsync(devfs_node_t *node);
 
 static devfs_ops_t drive_ops = {
     .open = NULL,
@@ -71,6 +72,7 @@ static devfs_ops_t drive_ops = {
     .munmap = NULL,
     .read_range = drive_read_range,
     .write_range = drive_write_range,
+    .fsync = drive_fsync,
 };
 
 /**
@@ -101,7 +103,7 @@ static int drive_ioctl(devfs_node_t *node, unsigned long request, void *argp) {
         case IO_DRIVE_GET_VENDOR:
             if (d->vendor) strncpy(argp, d->vendor, 256);
             return 0;
-        
+
         case IO_DRIVE_RESCAN_PART: {
             LOG(INFO, "Rescanning for partitions on drive.\n");
 
@@ -220,9 +222,25 @@ static ssize_t drive_write(devfs_node_t *node, loff_t off, size_t size, const ch
     // We now have a temporary buffer, copy at sector_offset to buffer
     vmm_unmap(write_buffer, bsz);
 
+    if (d->ops->flush) {
+        int ret = d->ops->flush(d);
+        if (ret != 0) return ret;
+    }
+
     return size;
 }
 
+/**
+ * @brief Drive fsync
+ */
+static int drive_fsync(devfs_node_t *node) {
+    drive_t *d = node->priv;
+    return d->ops->flush ? d->ops->flush(d) : 0;
+}
+
+/**
+ * @brief Drive read range
+ */
 static int drive_read_range(devfs_node_t *node, page_range_t *range) {
     drive_t *d = (drive_t*)node->priv;
 
@@ -248,6 +266,9 @@ static int drive_read_range(devfs_node_t *node, page_range_t *range) {
     return r;
 }
 
+/**
+ * @brief Drive write range
+ */
 static int drive_write_range(devfs_node_t *node, page_range_t *range) {
     drive_t *d = (drive_t*)node->priv;
 

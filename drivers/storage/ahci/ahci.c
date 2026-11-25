@@ -30,6 +30,7 @@ static ssize_t ahci_read_range(drive_t *d, page_range_t *r);
 static ssize_t ahci_write_range(drive_t *d, page_range_t *r);
 static ssize_t ahci_read_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer);
 static ssize_t ahci_write_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer);
+static int ahci_cache_flush(drive_t *d);
 
 #define AHCI_REORDER_BYTES(buffer, size)     for (int i = 0; i < size-1; i+=2) { uint8_t tmp = ((uint8_t*)buffer)[i+1]; ((uint8_t*)buffer)[i+1] = ((uint8_t*)buffer)[i]; ((uint8_t*)buffer)[i] = tmp; }
 
@@ -40,7 +41,7 @@ drive_ops_t ahci_ops = {
     .read_range = ahci_read_range,
     .write_range = ahci_write_range,
     .ioctl = NULL,
-    .flush = NULL
+    .flush = ahci_cache_flush
 };
 
 /**
@@ -166,11 +167,12 @@ static int ahci_claimSlot(ahci_port_t *port) {
     waitqueue_add(&port->slot_wait, &n);
 
     // TODO: adjust memory ordering
+    uint32_t valid = port->controller->nslots == 32 ? ~0U : (1U << port->controller->nslots) - 1;
     uint32_t cur = __atomic_load_n(&port->slot_bitmap, __ATOMIC_RELAXED);
     uint32_t new;
     int slot = 0;
     do {
-        while (cur == ~0U) {
+        while ((cur & valid) == valid) {
             int w = waitqueue_wait(&port->slot_wait, &n, -1);
             waitqueue_remove(&port->slot_wait, &n);
 
@@ -184,7 +186,7 @@ static int ahci_claimSlot(ahci_port_t *port) {
             cur = __atomic_load_n(&port->slot_bitmap, __ATOMIC_RELAXED);
         }
 
-        slot = __builtin_ctzl(~cur);
+        slot = __builtin_ctzl(~cur & valid);
         new = cur | (1U << slot);
     } while (!__atomic_compare_exchange_n(&port->slot_bitmap, &cur, new, true, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
 
@@ -199,9 +201,7 @@ static int ahci_claimSlot(ahci_port_t *port) {
  * @param port The port to enqueue into
  * @param cmd The command to enqueue
  */
-static int ahci_submitWait(ahci_port_t *port, ahci_cmd_header_t *cmd) {
-    int slot = ahci_claimSlot(port);
-
+static int ahci_submitClaimed(ahci_port_t *port, ahci_cmd_header_t *cmd, int slot) {
     // LOG(DEBUG, "claimed slot %d\n", slot);
 
     // Because we own the slot we can write to it with no problems
@@ -241,6 +241,25 @@ static int ahci_submitWait(ahci_port_t *port, ahci_cmd_header_t *cmd) {
     __atomic_fetch_and(&port->slot_bitmap, ~(1U << slot), __ATOMIC_RELEASE);
     waitqueue_wakeup(&port->slot_wait, 1);
     return r;
+}
+
+/**
+ * @brief Submit a command and wait
+ */
+static int ahci_submitWait(ahci_port_t *port, ahci_cmd_header_t *cmd) {
+    int slot = ahci_claimSlot(port);
+    if (slot < 0) return slot;
+    return ahci_submitClaimed(port, cmd, slot);
+}
+
+/**
+ * @brief Returns the slot in the command table
+ */
+static ahci_cmd_tbl_t *ahci_slotTable(ahci_port_t *port, int slot, size_t prdts) {
+    if (prdts > (PAGE_SIZE - sizeof(ahci_cmd_tbl_t)) / sizeof(ahci_prdt_t)) return NULL;
+    ahci_cmd_tbl_t *table = (ahci_cmd_tbl_t *)port->cmd_tables[slot];
+    memset(table, 0, sizeof(ahci_cmd_tbl_t) + prdts * sizeof(ahci_prdt_t));
+    return table;
 }
 
 /**
@@ -376,6 +395,11 @@ static int ahci_initPort(ahci_t *ahci, int pnum, volatile ahci_hba_port_t *hbapo
     memset((void*)fis,0,256);
     port->cmd_region = cmd_list_region;
 
+    // prepare command tables
+    for (int i = 0; i < ahci->nslots; i++) {
+        port->cmd_tables[i] = dma_map(PAGE_SIZE);
+    }
+
     uintptr_t cmd_list_region_phys = arch_mmu_physical(NULL, cmd_list_region);
     uintptr_t fis_phys  = arch_mmu_physical(NULL, fis);
     port->regs->clb = (cmd_list_region_phys & 0xFFFFFFFF);
@@ -500,10 +524,28 @@ static ssize_t ahci_io_range(drive_t *d, page_range_t *r, bool write) {
     ahci_port_t *p = d->driver;
     assert(r->offset < (loff_t)d->sectors*512);
 
+    // Hack to handle max_pages. Should probably add the ability to tell the page cache
+    // our maximum batching amount.
+    size_t max_pages = ((PAGE_SIZE - sizeof(ahci_cmd_tbl_t)) / sizeof(ahci_prdt_t));
+    if (r->npages > max_pages) {
+        CACHE_DEFINE_PAGE_RANGE(part, max_pages);
+        for (size_t done = 0; done < r->npages; done += max_pages) {
+            part->offset = r->offset + done * PAGE_SIZE;
+            part->npages = min(max_pages, r->npages - done);
+            memcpy(part->pages, &r->pages[done], part->npages * sizeof(uintptr_t));
+            int result = ahci_io_range(d, part, write);
+            if (result) return result;
+        }
+
+        return 0;
+    }
+
     // TODO: if we get lucky enough and have contiguous pages in memory we could lower the amount of PRDTs
     // TODO: maybe in storage subsys rev 3
 
-    ahci_cmd_tbl_t *tbl = ahci_allocateCommand(r->npages);
+    int slot = ahci_claimSlot(p);
+    if (slot < 0) return slot;
+    ahci_cmd_tbl_t *tbl = ahci_slotTable(p, slot, r->npages);
     tbl->cfis.c = 1;
     tbl->cfis.type = AHCI_FIS_TYPE_REG_H2D;
     
@@ -559,8 +601,7 @@ static ssize_t ahci_io_range(drive_t *d, page_range_t *r, bool write) {
     };
 
     AHCI_CMDHDR_LINK_TBL(&hdr, tbl);
-    int ret = ahci_submitWait(p, &hdr);
-    ahci_freeCommand(tbl, r->npages);
+    int ret = ahci_submitClaimed(p, &hdr, slot);
     return ret;
 }
 
@@ -578,6 +619,30 @@ static ssize_t ahci_write_range(drive_t *d, page_range_t *r) {
     return ahci_io_range(d, r, true);
 }
 
+/**
+ * @brief AHCI cache flush
+ */
+static int ahci_cache_flush(drive_t *d) {
+    ahci_port_t *port = d->driver;
+    int slot = ahci_claimSlot(port);
+    if (slot < 0) return slot;
+
+    ahci_cmd_tbl_t *tbl = ahci_slotTable(port, slot, 0);
+    tbl->cfis.type = AHCI_FIS_TYPE_REG_H2D;
+    tbl->cfis.c = 1;
+    tbl->cfis.command = ATA_CMD_CACHE_FLUSH;
+
+    ahci_cmd_header_t hdr = {
+        .cfl = sizeof(ahci_fis_h2d_t) / sizeof(uint32_t),
+        .prdtl = 0,
+        .w = 0
+    };
+
+    AHCI_CMDHDR_LINK_TBL(&hdr, tbl);
+    int ret = ahci_submitClaimed(port, &hdr, slot);
+    return ret;
+}
+
 
 /**
  * @brief AHCI IO sectors
@@ -585,11 +650,28 @@ static ssize_t ahci_write_range(drive_t *d, page_range_t *r) {
 static ssize_t ahci_io_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer, bool write) {
     ahci_port_t *p = d->driver;
 
+    // HACK to handle maximum allowed pages and maximum sectors
+    size_t max_pages = (PAGE_SIZE - sizeof(ahci_cmd_tbl_t)) / sizeof(ahci_prdt_t);
+    size_t max_sectors = max_pages * PAGE_SIZE / 512;
+    if (sectors > max_sectors) {
+        size_t done = 0;
+        while (done < sectors) {
+            size_t count = min(sectors - done, max_sectors);
+            ssize_t result = ahci_io_sectors(d, lba + done, count, buffer + done * 512, write);
+            if (result <= 0) return result < 0 ? result : -EIO;
+            done += (size_t)result;
+        }
+
+        return (ssize_t)done;
+    }
+
     // TODO: if we get lucky enough and have contiguous pages in memory we could lower the amount of PRDTs
     // TODO: maybe in storage subsys rev 3
 
     size_t pgs = PAGE_ALIGN_UP(sectors * 512) / PAGE_SIZE;
-    ahci_cmd_tbl_t *tbl = ahci_allocateCommand(pgs);
+    int slot = ahci_claimSlot(p);
+    if (slot < 0) return slot;
+    ahci_cmd_tbl_t *tbl = ahci_slotTable(p, slot, pgs);
     tbl->cfis.c = 1;
     tbl->cfis.type = AHCI_FIS_TYPE_REG_H2D;
 
@@ -637,8 +719,7 @@ static ssize_t ahci_io_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t
     };
 
     AHCI_CMDHDR_LINK_TBL(&hdr, tbl);
-    int ret = ahci_submitWait(p, &hdr);
-    ahci_freeCommand(tbl, pgs);
+    int ret = ahci_submitClaimed(p, &hdr, slot);
     return ret < 0 ? ret : (ssize_t)sectors;
 }
 
@@ -646,11 +727,9 @@ static ssize_t ahci_read_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8
     return ahci_io_sectors(d,lba,sectors,buffer,false);
 }
 
-
 static ssize_t ahci_write_sectors(drive_t *d, uint64_t lba, size_t sectors, uint8_t *buffer) {
     return ahci_io_sectors(d,lba,sectors,buffer,true);
 }
-
 
 /**
  * @brief Perform handoff
