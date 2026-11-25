@@ -1,30 +1,25 @@
-set(ACPICA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/acpica-src/source")
-set(ACPICA_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include/acpica")
+set(ACPICA_VERSION 20260930)
+set(ACPICA_URL "https://github.com/open-acpica/acpica/releases/download/${ACPICA_VERSION}/acpica-unix-${ACPICA_VERSION}.tar.gz")
 
-file(GLOB SOURCES CONFIGURE_DEPENDS "${ACPICA_SOURCE_DIR}/components/*/*.c")
-list(FILTER SOURCES EXCLUDE REGEX "/(debugger|disassembler)/|/resources/rsdump\\.c$")
-file(GLOB_RECURSE ACPICA_HEADERS CONFIGURE_DEPENDS
-    RELATIVE "${ACPICA_SOURCE_DIR}/include"
-    "${ACPICA_SOURCE_DIR}/include/*.h"
+include(FetchContent)
+
+FetchContent_Declare(acpica_src 
+    URL "${ACPICA_URL}"
+    URL_HASH SHA256=aa18901b92e30749be0edc3081c8d550c61fce4fa37546fc6a65d367a4ae71a5
+    PATCH_COMMAND patch -p1 -i "${CMAKE_CURRENT_SOURCE_DIR}/acpica-${ACPICA_VERSION}.patch"
 )
-foreach(HEADER IN LISTS ACPICA_HEADERS)
-    if(NOT HEADER STREQUAL "platform/acenv.h")
-        configure_file("${ACPICA_SOURCE_DIR}/include/${HEADER}" "${ACPICA_INCLUDE_DIR}/${HEADER}" COPYONLY)
-    endif()
-endforeach()
 
-set(ACPICA_ENV_HEADER "${ACPICA_SOURCE_DIR}/include/platform/acenv.h")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ACPICA_ENV_HEADER}")
-file(READ "${ACPICA_ENV_HEADER}" ACPICA_ENV)
-string(REPLACE "aclinux.h" "achexahedron.h" ACPICA_ENV "${ACPICA_ENV}")
-string(REPLACE "defined(_LINUX)" "defined(__HEXAHEDRON__)" ACPICA_ENV "${ACPICA_ENV}")
-file(GENERATE OUTPUT "${ACPICA_INCLUDE_DIR}/platform/acenv.h" CONTENT "${ACPICA_ENV}")
-configure_file(achexahedron.h "${ACPICA_INCLUDE_DIR}/platform/achexahedron.h" COPYONLY)
+FetchContent_MakeAvailable(acpica_src)
 
+# debugger + disassembler + resources/rsdump.c are not supported
+file(GLOB SOURCES CONFIGURE_DEPENDS "${acpica_src_SOURCE_DIR}/source/components/*/*.c")
+list(FILTER SOURCES EXCLUDE REGEX "/(debugger|disassembler)/|/resources/rsdump\\.c$")
+
+# lesgo
 add_library(acpica STATIC ${SOURCES})
-target_compile_definitions(acpica PRIVATE __HEXAHEDRON__ __KERNEL__)
+target_compile_definitions(acpica PRIVATE __KERNEL__)
 target_compile_options(acpica PRIVATE -ffreestanding)
-target_include_directories(acpica PUBLIC "${ACPICA_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/include")
+target_include_directories(acpica PUBLIC "${acpica_src_SOURCE_DIR}/source/include/")
 target_link_libraries(acpica PRIVATE ethereal_kernel_abi kernel_headers structures_headers lib_headers)
 add_dependencies(acpica libc)
 
