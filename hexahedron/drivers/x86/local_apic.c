@@ -274,6 +274,13 @@ uint64_t lapic_getTicksElapsed(timer_device_t *device) {
     return (uint32_t)lapic_read(LAPIC_REGISTER_INITCOUNT) - lapic_read(LAPIC_REGISTER_CURCOUNT);
 }
 
+/**
+ * @brief local apic get remaining ticks
+ */
+uint64_t lapic_getTicksRemaining(timer_device_t *device) {
+    return lapic_read(LAPIC_REGISTER_CURCOUNT);
+}
+
 
 /**
  * @brief local apic stop
@@ -287,6 +294,7 @@ timer_ops_t lapic_ops = {
     .deinit = lapic_timerDeinit,
     .set_timer = lapic_timerSet,
     .stop = lapic_timerStop,
+    .get_ticks_remaining = lapic_getTicksRemaining,
     .get_ticks_elapsed = lapic_getTicksElapsed,
 };
 

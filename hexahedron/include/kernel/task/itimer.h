@@ -58,4 +58,13 @@ void itimer_set(itimer_t *itimer, struct timeval *it_value, struct timeval *it_i
  */
 void itimer_get(itimer_t *itimer, struct timeval *it_value, struct timeval *it_interval);
 
+/**
+ * @brief Destroy itimer
+ * @param itimer The itimer to destroy
+ */
+static inline void itimer_destroy(itimer_t *itimer) {
+    __atomic_store_n(&itimer->ns_intv, 0, __ATOMIC_RELEASE);
+    timer_remove(&itimer->timer, NULL);
+}
+
 #endif
