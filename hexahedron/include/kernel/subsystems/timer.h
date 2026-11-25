@@ -29,6 +29,7 @@
 
 struct timer_device;
 struct timer_event;
+typedef struct processor processor_t;
 
 typedef tasklet_cb_t timer_expire_t;
 
@@ -71,6 +72,7 @@ typedef struct timer_device {
 typedef struct timer_event {
     struct timer_event *next;
     struct timer_event *prev;
+    processor_t *cpu;
     uint64_t absolute_expire; // in ticks
     tasklet_t tsklet; // stores timer name
     uint64_t intv; // in ticks
@@ -121,8 +123,10 @@ int timer_insert(timer_event_t *timer);
 /**
  * @brief Remove a timer entry
  * @param timer The timer to remove
+ * @param ns_rem Optional pointer to store remaining nanoseconds
+ * @returns Negative on error, 0 on success, 1 on wasn't queued
+ * @warning Operation may block, not safe to call from certain contexts.
  */
-int timer_remove(timer_event_t *timer);
-
+int timer_remove(timer_event_t *timer, time_t *ns_rem);
 
 #endif

@@ -13,12 +13,21 @@
 
 #include <kernel/subsystems/timer.h>
 #include <kernel/processor_data.h>
+#include <kernel/smp.h>
 #include <kernel/debug.h>
 
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TIMER", __VA_ARGS__)
 
 #define NS_TO_TICKS(ns, dev) (((ns) * (dev)->freq.mult) >> (dev)->freq.shift)
+#define TICKS_TO_NS(ticks, dev) (((ticks) << (dev)->freq.shift) / (dev)->freq.mult)
+
+/* bs */
+struct remove_ctx {
+    timer_event_t *timer;
+    bool was_queued;
+    time_t rem_ns;
+};
 
 /**
  * @brief Arm the timer
@@ -28,7 +37,6 @@ static void timer_arm() {
     if (dev->queue == NULL) return;
     dev->ops->set_timer(dev, dev->queue->absolute_expire - dev->total_ticks);
 }
-
 
 /**
  * @brief Insert a timer while locked
@@ -164,6 +172,7 @@ void timer_irq() {
 
             timer_insertLocked(ev);
         } else {
+            __atomic_store_n(&ev->cpu, NULL, __ATOMIC_RELEASE);
             ev->active = false;
         }
 
@@ -172,7 +181,6 @@ void timer_irq() {
 
     // cleanup the linked list
     if (device->queue) device->queue->prev = NULL;
-
 
     // the repeat mechanism builds a small list reusing the timer pointers
     // then uses a tasklet to re-insert them asyncronously
@@ -202,6 +210,7 @@ int timer_init(timer_event_t *timer, timer_expire_t expire, void *expire_ctx, ti
     timer->repeat = repeat;
     timer->intv = NS_TO_TICKS(ns, current_cpu->timer_dev);
     timer->active = false;
+    __atomic_store_n(&timer->cpu, NULL, __ATOMIC_RELEASE);
     return 0;
 }
 
@@ -220,6 +229,7 @@ int timer_insert(timer_event_t *timer) {
 
     int ret = timer_insertLocked(timer);
     timer->active = true;
+    __atomic_store_n(&timer->cpu, GET_PROCESSOR(), __ATOMIC_RELEASE);
 
     // Re-arm timer if needed
     timer_arm();
@@ -229,23 +239,36 @@ int timer_insert(timer_event_t *timer) {
 }
 
 /**
- * @brief Remove a timer entry
- * @param timer The timer to remove
+ * @brief Remove inner
  */
-int timer_remove(timer_event_t *timer) {
+static void timer_removeInner(void *context) {
+    struct remove_ctx *remove = (struct remove_ctx*)context;
+    timer_event_t *timer = remove->timer;
+
     // acquire queue lock and stop current timer
     timer_device_t *dev = current_cpu->timer_dev;
     spinlock_acquire(&dev->queue_lock);
 
+    // timer_stop() will clear the countdown, so get it
+    uint64_t remaining = 0;
+    if (timer->active && __atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE) == GET_PROCESSOR() && dev->queue) {
+        uint64_t head_remaining = dev->ops->get_ticks_remaining(dev);
+        remaining = head_remaining + (timer->absolute_expire - dev->queue->absolute_expire);
+    }
+
     // stop timer and update ticks
     timer_stop();
 
-    if (timer->active == false) {
-        // This timer is not active
+    if (!dev->queue || timer->active == false || __atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE) != GET_PROCESSOR()) {
+        // This timer is not active or does not belong to us anymore
         timer_arm();
         spinlock_release(&dev->queue_lock);
-        return 1;
+        remove->was_queued = false;
+        remove->rem_ns = 0;
+        return;
     }
+
+    remove->rem_ns = TICKS_TO_NS(remaining, dev);
 
     if (timer == dev->queue) {
         // the timer is the head of the queue
@@ -257,12 +280,53 @@ int timer_remove(timer_event_t *timer) {
     }
 
     timer->active = false;
+    __atomic_store_n(&timer->cpu, NULL, __ATOMIC_RELEASE);
+    remove->was_queued = true;
 
     // Re-arm timer
     timer_arm();
 
     spinlock_release(&dev->queue_lock);
-    return 0;
+}
+
+/**
+ * @brief Remove a timer entry
+ * @param timer The timer to remove
+ * @param ns_rem Optional pointer to store remaining nanoseconds
+ * @returns Negative on error, 0 on success, 1 on wasn't queued
+ */
+int timer_remove(timer_event_t *timer, time_t *ns_rem) {
+    if (ns_rem) *ns_rem = 0;
+
+    // This is a loop because I observed that the timers can be requeued onto other CPUs
+    // beofre timer_removeInner gets a chance to execute
+    for (;;) {
+        processor_t *timer_cpu = __atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE);
+        if (!timer_cpu) return 1;
+
+        struct remove_ctx ctx = { .timer = timer };
+        if (GET_PROCESSOR() == timer_cpu) {
+            timer_removeInner(&ctx);
+        } else {
+            procmask_t pmask = PROCMASK_INITIALIZER;
+            procmask_set(&pmask, timer_cpu->cpu_id);
+
+            int r = smp_callFunctionMask(&pmask, timer_removeInner, &ctx, true);
+            if (r != 0) {
+                LOG(ERR, "smp_callFunctionMask failed with error %d\n", r);
+                return r;
+            }
+        }
+
+        if (ctx.was_queued) {
+            if (ns_rem) *ns_rem = ctx.rem_ns;
+            return 0;
+        }
+
+        if (__atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE) == timer_cpu) {
+            return 1;
+        }
+    }
 }
 
 /**

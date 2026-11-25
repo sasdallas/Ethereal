@@ -49,7 +49,7 @@ void workqueue_drain(void *context) {
         work_t *work = STAILQ_FIRST(&wq->pending_work);
         if (work) {
             STAILQ_REMOVE_HEAD(&wq->pending_work, node);
-            
+
             // Get the work details then allow it to be queued back
             cb = work->work_callback;
             context = work->work_context;
