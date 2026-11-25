@@ -105,12 +105,12 @@ thread_t *thread_create(struct process *parent, vmm_context_t *ctx, uintptr_t en
         thr->stack = thr->kstack;
     }
 
-    // Push the entrypoint to the stack
-    THREAD_PUSH_STACK(thr->stack, uintptr_t, entrypoint);
+    if (!(flags & THREAD_FLAG_CHILD)) {
+        THREAD_PUSH_STACK(thr->stack, uintptr_t, entrypoint);
 
-    // For threads that aren't kernel threads a context must be pushed
-    if ((thr->flags & THREAD_FLAG_KERNEL) == 0) {
-        THREAD_PUSH_STACK(thr->stack, uintptr_t, 0x0);
+        if (!(flags & THREAD_FLAG_KERNEL)) {
+            THREAD_PUSH_STACK(thr->stack, uintptr_t, 0x0);
+        }
     }
 
     // Initialize the handler context

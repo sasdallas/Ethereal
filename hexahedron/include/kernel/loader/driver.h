@@ -70,13 +70,6 @@ typedef struct loaded_driver {
 #define DRIVER_WARN         1   // Warn the user if load fails
 #define DRIVER_IGNORE       2   // Ignore if load fails
 
-// Driver environments. Some drivers can be loaded as "quickload" drivers by Polyaniline (loaded as Multiboot modules),
-// however certain drivers may require a normal environment instead.
-// !!!: DEPRECATED. PRELOAD DRIVERS DO NOT DIFFER FROM NORMAL DRIVERS
-#define DRIVER_ENVIRONMENT_NORMAL       0       // A normal driver environment is required.
-#define DRIVER_ENVIRONMENT_PRELOAD      1       // A preload driver environment is required.
-#define DRIVER_ENVIRONMENT_ANY          2       // Any environment, either normal/preload
-
 // Statuses for drivers to return
 #define DRIVER_STATUS_SUCCESS           0       // Success
 #define DRIVER_STATUS_UNSUPPORTED       1       // Unsupported/broken components were used (-ENOSYS)

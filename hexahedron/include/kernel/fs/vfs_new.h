@@ -118,7 +118,7 @@ typedef struct {
     fsblkcnt_t fs_blocks;
     fsblkcnt_t fs_blocks_free;
     fsblkcnt_t fs_blocks_free_unpriv;
-    fsfilcnt_t fs_file_count;
+    fsfilcnt_t fs_inode_count;
     fsfilcnt_t fs_inodes_free;
     fsfilcnt_t fs_inodes_free_unpriv;
     unsigned long fs_id;

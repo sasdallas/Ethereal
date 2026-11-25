@@ -384,6 +384,10 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
         assert(0);
     }
 
+    if (i->flags & IRQ_FLAG_EARLY_EOI) {
+        i->domain->chip->ops.irq_eoi(i);
+    }
+
     if (i->flags & IRQ_FLAG_SHARED) {
         bool handled = false;
         irq_t *iter = i;
@@ -413,7 +417,9 @@ void irq_handler(irq_number_t vector, registers_t *regs) {
     }
 
     // EOI now
-    i->domain->chip->ops.irq_eoi(i);
+    if (!(i->flags & IRQ_FLAG_EARLY_EOI)) {
+        i->domain->chip->ops.irq_eoi(i);
+    }
 
     IRQ_EXIT();
     timemonitor_updateIrqExit();

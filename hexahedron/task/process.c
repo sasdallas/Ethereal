@@ -151,11 +151,6 @@ void process_yield(uint8_t reschedule) {
         timemonitor_updateContextSwitch();
     }
 
-    // Exit the thread if its trying to stop
-    if (current_cpu->current_thread->status & THREAD_STATUS_STOPPING) {
-        return thread_exit();
-    }
-
     // Get current thread
     thread_t *prev = current_cpu->current_thread;
 
@@ -341,6 +336,11 @@ static process_t *process_createStructure(process_t *parent, char *name, unsigne
         session_initProcess(parent, process);
     }
 
+    // Initialize timers
+    itimer_init(&process->timer.real, process, SIGALRM);
+    itimer_init(&process->timer.virtual, process, SIGVTALRM);
+    itimer_init(&process->timer.prof, process, SIGPROF);
+
     // Create the SystemFS runtime
 extern systemfs_node_t *systemfs_proc_create(process_t *proc);
     process->proc_sysfs = systemfs_proc_create(process);
@@ -476,6 +476,11 @@ void process_destroyZombie(process_t *proc) {
 void process_destroy(process_t *proc) {
     assert(proc->nthreads == 0);
 
+    // Disarm process timers
+    itimer_destroy(&proc->timer.real);
+    itimer_destroy(&proc->timer.virtual);
+    itimer_destroy(&proc->timer.prof);
+
 extern void systemfs_proc_destroy(process_t *proc);
     systemfs_proc_destroy(proc);
 
@@ -574,7 +579,6 @@ int process_executeCommon(elf_image_t *img) {
 
     victims = proc->thread_list;
     proc->thread_list = NULL;
-    proc->nthreads = 0;
 
     for (thread_t *iter = victims; iter; iter = iter->next) {
         if (iter == self) {
@@ -584,6 +588,7 @@ int process_executeCommon(elf_image_t *img) {
         __atomic_fetch_or(&iter->status, THREAD_STATUS_STOPPING, __ATOMIC_RELEASE);
     }
 
+    proc->nthreads = 0;
     spinlock_release(&proc->thread_lock);
 
     // Finish thread destruction
@@ -675,26 +680,14 @@ int process_executeCommon(elf_image_t *img) {
 }
 
 /**
- * @brief Execute a new ELF binary for the current process (execve)
- * @param path Full path of the file
- * @param file The file to execute
- * @param argc The argument count
- * @param argv The argument list
- * @param envp The environment variables pointer
- * @returns Error code
- * 
- * @todo There's a lot of pointless directory switching for some reason - need to fix
+ * @brief Execute dynamic image
  */
-int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
+static int process_executeDynamicImage(char *path, vfs_file_t *file, int argc, char **argv, char **envp, elf_image_t file_img) {
     process_t *proc = current_cpu->current_process;
 
     // Execute dynamic loader
     // First, try to open the interpreter that's in PT_INTERP
-    elf_image_t file_img;
-    int r = elf_openImage(file, &file_img);
-    if (r != 0) {
-        return r;
-    }
+    int r;
     assert(file_img.interp_path);
 
     // Next, search for the interpreter
@@ -716,6 +709,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Strike 3
     if (r) {
         LOG(ERR, "No interpreter available\n");
+        elf_destroyImage(&file_img);
         return -ENOENT;
     }
 
@@ -723,10 +717,9 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     elf_image_t interp_img;
     r = elf_openImage(interpreter, &interp_img);
     
-    // Interpreter is useless now
-    vfs_close(interpreter);
-    
     if (r != 0) {
+        vfs_close(interpreter);
+        elf_destroyImage(&file_img);
         return r;
     }
 
@@ -735,6 +728,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
         LOG(WARN, "Interpreter is not executable\n");
         elf_destroyImage(&file_img);
         elf_destroyImage(&interp_img);
+        vfs_close(interpreter);
         vfs_close(file);
         return -ENOEXEC;
     }
@@ -760,6 +754,7 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
     // Load the file's image
     r = elf_loadImage(&file_img);
     assert(r == 0); // TODO: error handling
+    vfs_close(interpreter);
 
     // SUID and SGID
     if (!file->inode->mount || !(file->inode->mount->flags & MS_NOSUID)) {
@@ -862,6 +857,22 @@ int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, 
  * @param argv The argument list
  * @param envp The environment variables pointer
  * @returns Error code
+ */
+int process_executeDynamic(char *path, vfs_file_t *file, int argc, char **argv, char **envp) {
+    elf_image_t img;
+    int r = elf_openImage(file, &img);
+    if (r != 0) return r;
+    return process_executeDynamicImage(path, file, argc, argv, envp, img);
+}
+
+/**
+ * @brief Execute a new ELF binary for the current process (execve)
+ * @param path Full path of the file
+ * @param file The file to execute
+ * @param argc The argument count
+ * @param argv The argument list
+ * @param envp The environment variables pointer
+ * @returns Error code
  * 
  * @todo There's a lot of pointless directory switching for some reason - need to fix
  */
@@ -879,8 +890,7 @@ int process_execute(char *path, vfs_file_t *file, int argc, char **argv, char **
     // First, check if the file requires an interpreter
     if (img.interp_path) {
         // Yes, it is, run the process with ld.so
-        elf_destroyImage(&img); // !!!
-        return process_executeDynamic(path, file, argc, argv, envp);
+        return process_executeDynamicImage(path, file, argc, argv, envp, img);
     }
 
     // Check the ELF binary

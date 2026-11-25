@@ -57,7 +57,8 @@ typedef struct processor_info {
 } processor_info_t;
 
 typedef struct processor {
-    int cpu_id;                             // CPU ID (zero-based and linear)
+    struct processor *self;
+    int cpu_id;                             // Logical CPU ID assigned by kernel
     struct vmm_context *current_context;    // Current page directory
     struct thread *current_thread;          // Current thread of the process
 
@@ -67,8 +68,8 @@ typedef struct processor {
 #if defined(__ARCH_X86_64__) || defined(__ARCH_I386__)
 
 #ifdef __ARCH_X86_64__
-    uintptr_t kstack;                       // (0x28) Kernel-mode stack loaded in TSS
-    uintptr_t ustack;                       // (0x30) Usermode stack, saved in SYSCALL entrypoint    
+    uintptr_t kstack;                       // (0x30) Kernel-mode stack loaded in TSS
+    uintptr_t ustack;                       // (0x38) Usermode stack, saved in SYSCALL entrypoint
 #endif
 
     int lapic_id;
@@ -82,7 +83,6 @@ typedef struct processor {
 
     volatile uint32_t irq_bitmap;           // Per-CPU IRQ bitmap
     irq_table_t *irq_table;                 // IRQ table (FOR PERCPU INTERRUPTS ONLY!!)
-    uint64_t idle_time;                     // Time the processor has spent idling
     timekeeper_t timekeeper;                // Timekeeper
     tasklet_cpu_t *tasklet;                 // Tasklet data
     timer_device_t *timer_dev;              // Selected timer device
@@ -91,8 +91,8 @@ typedef struct processor {
 
 /* Ensure these are right */
 #ifdef __ARCH_X86_64__
-MUST_BE_AT_OFFSET(processor_t, kstack, 0x28);
-MUST_BE_AT_OFFSET(processor_t, ustack, 0x30);
+MUST_BE_AT_OFFSET(processor_t, kstack, 0x30);
+MUST_BE_AT_OFFSET(processor_t, ustack, 0x38);
 #endif
 
 /* In kernel SMP */
@@ -108,8 +108,10 @@ extern int processor_count;
 
 #if defined(__INTELLISENSE__)
 #define current_cpu ((processor_t*)&(processor_data[arch_current_cpu()]))
+#define GET_PROCESSOR() current_cpu
 #elif defined(__ARCH_X86_64__)
 static processor_t __seg_gs * const current_cpu = 0;
+#define GET_PROCESSOR() ((current_cpu)->self)
 #else
 #error "Please define a method of getting processor data"
 #endif

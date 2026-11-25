@@ -160,8 +160,8 @@ list(APPEND __TASK_SOURCES
     task/syscall_ethereal.c
     task/syscall_trace.c
     task/thread.c
-    task/timer.c
     task/workqueue.c
+    task/itimer.c
 )
 
 list(APPEND __SYSCALL_SOURCES

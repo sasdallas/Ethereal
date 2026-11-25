@@ -131,7 +131,6 @@ int rwsem_tryStartRead(rwsem_t *rwsem) {
  * @returns 0 on success
  */
 int rwsem_tryStartWrite(rwsem_t *rwsem) {
-    atomic_fetch_add(&rwsem->writers_waiting, 1);
     while (1) {
         int old = atomic_load(&rwsem->state);
         if (RWSEM_WRITER_ACTIVE(old) || RWSEM_READERS_ACTIVE(old) > 0) {
@@ -141,6 +140,5 @@ int rwsem_tryStartWrite(rwsem_t *rwsem) {
         if (atomic_compare_exchange_weak(&rwsem->state, &old, old | (1u << 31))) break;
     }
 
-    atomic_fetch_sub(&rwsem->writers_waiting, 1);
     return 0;
 }

@@ -243,13 +243,13 @@ halIsrHandlerTableEnd:
 halSyscallEntrypoint:
     swapgs                          // CS isn't pushed, this only happens from usermode
 
-    /* Fix stacks. Stolen from Toaru */
-    mov %rsp, %gs:0x30
-    mov %gs:0x28, %rsp
+    /* Fix stacks */
+    mov %rsp, %gs:0x38
+    mov %gs:0x030, %rsp
 
     /* Now we need to make a struct regs layout ourselves */
     pushq $0x23                     // SS
-    pushq %gs:0x30                  // RSP
+    pushq %gs:0x38                  // Saved user RSP
     push %r11                       // AMD: "SYSCALL" stores EFLAGS in R11
     pushq $0x1b                     // CS
     push %rcx                       // AMD: "SYSCALL" stores RIP in RCX

@@ -109,9 +109,11 @@ int smp_handleTLBShootdown(irq_t *irq, void *context) {
     // Acknowledge the request
     struct tlb_shootdown_request *r = &tlb_shootdown_req[arch_current_cpu()];
 
+    atomic_int *completion = r->pending_completion;
+    if (!completion) return IRQ_HANDLED;
+
     smp_invalidate(r->addr, r->size);
-    __atomic_add_fetch(r->pending_completion, 1, __ATOMIC_SEQ_CST);
-    spinlock_releaseRaw(&r->shootdown_lck); // Astral
+    __atomic_add_fetch(completion, 1, __ATOMIC_SEQ_CST);
 
     return IRQ_HANDLED;
 }
@@ -148,6 +150,7 @@ __attribute__((noreturn)) void smp_finalizeAP() {
 
     // Get the CPU ID
     int id = last_cpu_number++;
+    processor_data[id].self = &processor_data[id];
 
     // Set GSbase
     arch_set_gsbase((uintptr_t)&processor_data[id]);
@@ -176,7 +179,7 @@ extern void hal_installIDT();
 
     // Map the SMP TLB shootdown event
     irq_map(percpu_domain, 124, 124, NULL);
-    irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
+    irq_register(124, smp_handleTLBShootdown, IRQ_FLAG_EARLY_EOI, NULL, NULL);
 
     // Enable interrupts
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
@@ -277,24 +280,20 @@ int smp_init(smp_info_t *info) {
     memcpy((void*)temp_frame_remap, (void*)SMP_AP_BOOTSTRAP_PAGE, PAGE_SIZE);
 
     // Start APs
-    // WARNING: Starting CPU0/BSP will triple fault (bad)
-    for (int i = 0; i < smp_data->processor_count; i++) {
-        if (i != 0) {
-            smp_startAP(smp_data->lapic_ids[i]);
-        }
+    for (int i = 1; i < smp_data->processor_count; i++) {
+        smp_startAP(smp_data->lapic_ids[i]);
     }
 
     // Finished! Unmap bootstrap code
     memcpy((void*)SMP_AP_BOOTSTRAP_PAGE, (void*)temp_frame_remap, PAGE_SIZE);
     arch_mmu_unmap_physical(temp_frame_remap, PAGE_SIZE);
 
-    // Unmap bootstrap page
     arch_mmu_unmap(NULL, SMP_AP_BOOTSTRAP_PAGE);
     pmm_freePage(temp_frame);
 
     // Register TLB shootdown IRQ for BSP
     irq_map(percpu_domain, 124, 124, NULL);
-    irq_register(124, smp_handleTLBShootdown, 0, NULL, NULL);
+    irq_register(124, smp_handleTLBShootdown, IRQ_FLAG_EARLY_EOI, NULL, NULL);
 
     processor_count = smp_data->processor_count;
     arch_get_generic_parameters()->cpu_count = processor_count;
@@ -367,6 +366,7 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
     
     atomic_int waiting = 0;
     int expected = 0;
+    int targets[MAX_CPUS];
 
     for (int i = 0; i < processor_count; i++) {
         if (i != arch_current_cpu() && (!is_user_shootdown || processor_data[i].current_context == current_cpu->current_context)) {
@@ -376,12 +376,19 @@ void smp_tlbShootdown(uintptr_t address, size_t size) {
             tlb_shootdown_req[i].size = size;
             tlb_shootdown_req[i].pending_completion = &waiting;
             lapic_sendIPI(processor_data[i].lapic_id, 124, LAPIC_ICR_DESTINATION_PHYSICAL | LAPIC_ICR_INITDEASSERT | LAPIC_ICR_EDGE);
+            targets[expected] = i;
             expected++;
         }
     }
 
     while (__atomic_load_n(&waiting, __ATOMIC_RELAXED) != expected) {
         __builtin_ia32_pause();
+    }
+
+    for (int i = 0; i < expected; i++) {
+        struct tlb_shootdown_request *r = &tlb_shootdown_req[targets[i]];
+        r->pending_completion = NULL;
+        spinlock_releaseRaw(&r->shootdown_lck);
     }
     
     PREEMPT_ENABLE();

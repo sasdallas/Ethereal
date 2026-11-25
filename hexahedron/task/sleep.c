@@ -290,6 +290,13 @@ inline int sleep_wakeup(struct thread *thread) {
  */
 int sleep_enter() {
     thread_t *thread = current_cpu->current_thread;
+
+    // If this thread is stopping, ya can't sleep.
+    if (thread->sleep.interruptible && (__atomic_load_n(&thread->status, __ATOMIC_SEQ_CST) & THREAD_STATUS_STOPPING)) {
+        sleep_exit();
+        return WAKEUP_SIGNAL;
+    }
+
     if (thread->sleep.interruptible) {
         // There might've been a signal queued before sleep_prepare was marked sleeping
         if (__atomic_load_n(&thread->signal.have_pending, __ATOMIC_ACQUIRE)) {
@@ -356,8 +363,7 @@ int sleep_enter() {
     current_cpu->current_thread->sleep.seconds = current_cpu->current_thread->sleep.subseconds = 0;
 
     if (__atomic_load_n(&current_cpu->current_thread->status, __ATOMIC_SEQ_CST) & THREAD_STATUS_STOPPING) {
-        thread_exit();
-        __builtin_unreachable();
+        return WAKEUP_SIGNAL;
     }
 
     return __atomic_load_n(&current_cpu->current_thread->sleep.wakeup_reason, __ATOMIC_SEQ_CST);

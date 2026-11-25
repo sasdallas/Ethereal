@@ -30,6 +30,7 @@
 #include <kernel/task/syscall.h>
 #include <kernel/task/futex.h>
 #include <kernel/task/session.h>
+#include <kernel/task/itimer.h>
 #include <kernel/fs/systemfs.h>
 
 #include <kernel/subsystems/auth.h>
@@ -127,6 +128,12 @@ typedef struct process {
 
     // TIMER
     process_timer_t itimers[3];
+
+    struct {
+        itimer_t real;
+        itimer_t virtual;
+        itimer_t prof;
+    } timer;
     
     // DEBUG
     process_ptrace_t ptrace;
