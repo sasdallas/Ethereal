@@ -270,7 +270,7 @@ static void vfs_cacheRemoveInode(vfs_mount_t *mount, vfs_inode_t *inode) {
     if (inode->c_entry.next) inode->c_entry.next->prev = inode->c_entry.prev;
     if (inode->c_entry.prev) inode->c_entry.prev->next = inode->c_entry.next;
 
-    if (ent == &inode->c_entry) {
+    if (!inode->c_entry.prev) {
         vfs_inode_cache[hash % 40] = inode->c_entry.next;
     }
     
@@ -480,7 +480,7 @@ int vfs_lookup(char *path, vfs_inode_t **output, uint32_t flags) {
     // canonicalize the path
     if (current_cpu->current_process) {
         char *wd = current_cpu->current_process->wd_path;
-        char canon[strlen(wd) + strlen(path) + 1];
+        char canon[strlen(wd) + strlen(path) + 2];
         if (vfs_canonicalize(wd, path, canon)) {
             return -EINVAL;
         }
@@ -778,7 +778,7 @@ int vfs_openat(vfs_inode_t *inode, char *path, long flags, vfs_file_t **output) 
     }
 
     // Authorization time!
-    if (current_cpu->current_process && !(flags & O_CREAT)) {
+    if (current_cpu->current_process && !(flags & (O_CREAT | O_PATH))) {
         uint32_t request = 0;
         switch (flags & (O_WRONLY | O_RDWR)) {
             case O_WRONLY: request = AUTH_FILE_WRITE; break;
@@ -1594,6 +1594,10 @@ vfs_inode_t *vfs_iget(vfs_mount_t *mount, ino_t ino) {
     // create it
     vfs_inode_t *inode = vfs_inode();
     __atomic_fetch_or(&inode->state, INODE_STATE_NEW, __ATOMIC_SEQ_CST);
+    // Readers must be able to find this entry while initialization is in
+    // progress; they will wait for vfs_createdInode() before using it.
+    inode->mount = mount;
+    inode->attr.ino = ino;
     inode_hold(inode); // Cache inode ref
     vfs_cacheInsertInode(mount,ino,inode);
 
