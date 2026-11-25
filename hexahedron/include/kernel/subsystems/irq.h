@@ -35,6 +35,7 @@
 #define IRQ_FLAG_SHARED         0x1
 #define IRQ_FLAG_UNMAPPED       0x2 // hacky: This IRQ was allocated but hasnt been registered yet.
 #define IRQ_FLAG_REGISTERS      0x4 // Instead of passing the context pointer pass architecture registers
+#define IRQ_FLAG_EARLY_EOI      0x8 // Acknowledge before the handler reports completion
 
 /**** TYPES ****/
 
