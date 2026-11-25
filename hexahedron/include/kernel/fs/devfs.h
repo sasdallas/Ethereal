@@ -75,6 +75,7 @@ typedef struct devfs_ops {
     int (*munmap)(struct devfs_node *file, void *addr, size_t len, off_t offset);
     int (*read_range)(struct devfs_node *file, page_range_t *range);
     int (*write_range)(struct devfs_node *file, page_range_t *range);
+    int (*fsync)(struct devfs_node *file);
 } devfs_ops_t;
 
 typedef struct devfs_node {

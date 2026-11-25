@@ -26,6 +26,7 @@
 
 static int devfs_open(vfs_file_t *file, unsigned long flags);
 static int devfs_close(vfs_file_t *file);
+static int devfs_fsync(vfs_file_t *file);
 static ssize_t devfs_read(vfs_file_t *file, loff_t off, size_t size, char *buffer);
 static ssize_t devfs_write(vfs_file_t *file, loff_t off, size_t size, const char *buffer);
 static int devfs_ioctl(vfs_file_t *file, long request, void *argp);
@@ -42,6 +43,7 @@ static int devfs_lookup(vfs_inode_t *inode, char *name, vfs_inode_t **inode_dst)
 static int devfs_write_inode(vfs_inode_t *inode);
 static int devfs_getattr(vfs_inode_t *inode, vfs_inode_attr_t *attr);
 static int devfs_setattr(vfs_inode_t *inode, vfs_inode_attr_t *attr, uint32_t mask);
+static int devfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **out);
 
 static int devfs_read_range(vfs_inode_t *file, page_range_t *range);
 static int devfs_write_range(vfs_inode_t *file, page_range_t *range);
@@ -61,6 +63,7 @@ static vfs_file_ops_t devfs_file_ops = {
     .mmap           = devfs_mmap,
     .mmap_prepare   = devfs_mmap_prepare,
     .munmap         = devfs_munmap,
+    .fsync          = devfs_fsync,
 };
 
 /* Inode operations */
@@ -69,7 +72,7 @@ static vfs_inode_ops_t devfs_inode_ops = {
     .destroy    = NULL,
     .link       = NULL,
     .lookup     = devfs_lookup,
-    .mkdir      = NULL,
+    .mkdir      = devfs_mkdir,
     .readlink   = NULL,
     .rmdir      = NULL,
     .getattr    = devfs_getattr,
@@ -164,6 +167,19 @@ static int devfs_close(vfs_file_t *file) {
     devfs_node_t *n = file->priv;
     if (n->ops && n->ops->close) return n->ops->close(n);
     return 0;
+}
+
+/**
+ * @brief devfs fsync
+ */
+static int devfs_fsync(vfs_file_t *file) {
+    if (file->inode->cache) {
+        int r = cache_syncInode(file->inode);
+        if (r != 0) return r;
+    }
+
+    devfs_node_t *n = file->priv;
+    return n->ops && n->ops->fsync ? n->ops->fsync(n) : 0;
 }
 
 /**
@@ -438,6 +454,20 @@ static int devfs_write_range(vfs_inode_t *inode, page_range_t *range) {
 }
 
 /**
+ * @brief devfs mkdir
+ */
+static int devfs_mkdir(vfs_inode_t *parent, char *name, mode_t mode, vfs_inode_t **out) {
+    devfs_node_t *n = parent->priv;
+
+    devfs_node_t *child = devfs_createDirectory(n, name);
+    if (!child) return -EEXIST;
+
+    child->attr.mode = mode;
+
+    return devfs_lookup(parent, name, out);
+}
+
+/**
  * @brief Create device filesystem node
  */
 static devfs_node_t *devfs_node() {
@@ -474,6 +504,15 @@ devfs_node_t *devfs_createDirectory(devfs_node_t *parent, char *name) {
     n->children = hashmap_create("devfs node children", 5);
     
     mutex_acquire(&parent->lck);
+
+    if (hashmap_has(parent->children, name)) {
+        mutex_release(&parent->lck);
+        kfree(n->name);
+        hashmap_free(n->children);
+        kfree(n);
+        return NULL;
+    }
+
     hashmap_set(parent->children, name, n);
     mutex_release(&parent->lck);
     return n;
