@@ -42,12 +42,13 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
         // Ok, make the file using some garbage hacks
         vfs_inode_t *ino_output;
         r = vfs_create(pathname, mode & ~current_cpu->current_process->umask, &ino_output);
-        if (r < 0) {
-            return r;
+        if (r != 0) {
+            return r < 0 ? r : -EIO;
         }
 
         // HACK: Open the node
         r = vfs_openat(ino_output, NULL, flags, &file);
+        inode_release(ino_output);
         if (r != 0) {
             return r;
         }
@@ -95,7 +96,11 @@ int __sys_open_internal(char *pathname, int flags, mode_t mode) {
     }
 
     file->path = kmalloc(path_size);
-    vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);
+    r = vfs_canonicalize(current_cpu->current_process->wd_path, pathname, file->path);
+    if (r != 0) {
+        fd_remove(fd_out);
+        return r;
+    }
 
     // Are they trying to append? If so modify length to be equal to node length
     if (flags & O_APPEND) {
@@ -128,7 +133,11 @@ long sys_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
 
     // !!
     char tmp_buf[PATH_MAX];
-    vfs_canonicalize(f->path, (char*)pathname, tmp_buf);
+    int cr = vfs_canonicalize(f->path, (char*)pathname, tmp_buf);
+    if (cr != 0) {
+        FD_FINISH(f);
+        return cr;
+    }
     long r = __sys_open_internal(tmp_buf, flags, mode);
     
     FD_FINISH(f);
