@@ -126,8 +126,6 @@ typedef struct process {
     } signal;
 
     // TIMER
-    process_timer_t itimers[3];
-
     struct {
         itimer_t real;
         itimer_t virtual;
