@@ -58,8 +58,7 @@ long sys_exit_thread(void *retval) {
     // Mark this thread as stopped
     __sync_or_and_fetch(&current_cpu->current_thread->status, THREAD_STATUS_STOPPING);
 
-    // Bye thread
-    process_yield(0);
+    thread_exit();
     return -1;
 }
 
