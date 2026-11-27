@@ -19,9 +19,6 @@
 /* Log method */
 #define LOG(status, ...) dprintf_module(status, "TIMER", __VA_ARGS__)
 
-#define NS_TO_TICKS(ns, dev) (((ns) * (dev)->freq.mult) >> (dev)->freq.shift)
-#define TICKS_TO_NS(ticks, dev) (((ticks) << (dev)->freq.shift) / (dev)->freq.mult)
-
 /* bs */
 struct remove_ctx {
     timer_event_t *timer;
@@ -107,30 +104,6 @@ static void timer_stop() {
 
 
 /**
- * @brief Repeat tasklet
- */
-static void timer_repeatTasklet(void *context) {
-    timer_device_t *dev = (timer_device_t*)context;
-    
-    // TODO: profile
-    spinlock_acquire(&dev->queue_lock);
-    timer_stop();
-
-    timer_event_t *ev = dev->pending_repeats;
-    dev->pending_repeats = NULL;
-
-    while (ev) {
-        timer_event_t *nxt_save = ev->next;
-        timer_insertLocked(ev);
-        ev = nxt_save;
-    }
-
-    timer_arm();
-    spinlock_release(&dev->queue_lock);
-}
-
-
-/**
  * @brief Timer IRQ callback
  */
 void timer_irq() {
@@ -150,42 +123,29 @@ void timer_irq() {
     // we can be sure of this
     device->total_ticks = device->queue->absolute_expire;
 
-    // while we can keep executing
-    bool do_repeats = false;
-    timer_event_t *ev = device->queue;
-    while (ev && ev->absolute_expire <= device->total_ticks) {
-        // execute event
-        timer_event_t *next_ev = ev->next;
-        device->queue = next_ev;
+    timer_event_t *repeats = NULL;
+    while (device->queue && device->queue->absolute_expire <= device->total_ticks) {
+        timer_event_t *ev = device->queue;
+        device->queue = ev->next;
+        if (device->queue) device->queue->prev = NULL;
         ev->next = ev->prev = NULL;
         tasklet_insert(&ev->tsklet);
 
         if (ev->repeat) {
-            // Insert into repeats, ignore previous pointer since that's not used in repeat code
-            // I couldn't care less about missed deadlines that's the tasklet system's fault 
-            // !!!: this is done backwards which shouldnt really matter but might cause a bit of latency
-            // ev->next = device->pending_repeats;
-            // device->pending_repeats = ev;
-            
-            // we need to do repeats
-            // do_repeats = true;
-
-            timer_insertLocked(ev);
+            ev->next = repeats;
+            repeats = ev;
         } else {
-            __atomic_store_n(&ev->cpu, NULL, __ATOMIC_RELEASE);
             ev->active = false;
+            __atomic_store_n(&ev->cpu, NULL, __ATOMIC_RELEASE);
         }
-
-        ev = next_ev;
     }
 
-    // cleanup the linked list
-    if (device->queue) device->queue->prev = NULL;
-
-    // the repeat mechanism builds a small list reusing the timer pointers
-    // then uses a tasklet to re-insert them asyncronously
-    if (do_repeats && device->repeat_tasklet.active == false) {
-        tasklet_insert(&device->repeat_tasklet);
+    // finish cleaning up the repeat list
+    while (repeats) {
+        timer_event_t *ev = repeats;
+        repeats = ev->next;
+        ev->next = NULL;
+        timer_insertLocked(ev);
     }
 
     // re-arm the timer if needed
@@ -208,7 +168,9 @@ int timer_init(timer_event_t *timer, timer_expire_t expire, void *expire_ctx, ti
     TASKLET_INIT(&timer->tsklet, name, expire, expire_ctx);
     
     timer->repeat = repeat;
+    // timer->intv = ((__uint128_t)ns * current_cpu->timer_dev->freq.mult) >> current_cpu->timer_dev->freq.shift;
     timer->intv = NS_TO_TICKS(ns, current_cpu->timer_dev);
+    if (ns > 0 && timer->intv == 0) timer->intv = 1;
     timer->active = false;
     __atomic_store_n(&timer->cpu, NULL, __ATOMIC_RELEASE);
     return 0;
@@ -299,10 +261,20 @@ int timer_remove(timer_event_t *timer, time_t *ns_rem) {
     if (ns_rem) *ns_rem = 0;
 
     // This is a loop because I observed that the timers can be requeued onto other CPUs
-    // beofre timer_removeInner gets a chance to execute
+    // before timer_removeInner gets a chance to execute
     for (;;) {
         processor_t *timer_cpu = __atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE);
-        if (!timer_cpu) return 1;
+        if (!timer_cpu) {
+            // Even if the CPU is nonexistent that could mean the tasklet is still executing
+            // Let's wait for it just in case
+            tasklet_drain(&timer->tsklet);
+
+            if (__atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE)) {
+                continue;
+            }
+
+            return 1;
+        }
 
         struct remove_ctx ctx = { .timer = timer };
         if (GET_PROCESSOR() == timer_cpu) {
@@ -319,6 +291,8 @@ int timer_remove(timer_event_t *timer, time_t *ns_rem) {
         }
 
         if (ctx.was_queued) {
+            tasklet_drain(&timer->tsklet);
+            if (__atomic_load_n(&timer->cpu, __ATOMIC_ACQUIRE)) continue;
             if (ns_rem) *ns_rem = ctx.rem_ns;
             return 0;
         }
@@ -358,7 +332,6 @@ timer_device_t *timer_createDevice(char *name, timer_ops_t *ops, unsigned char p
     dev->name = name;
     dev->priority = priority;
     dev->ops = ops;
-    TASKLET_INIT(&dev->repeat_tasklet, "timer repeat", timer_repeatTasklet, dev);
     dev->private = private;
     return dev;
 }

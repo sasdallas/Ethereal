@@ -32,8 +32,8 @@ long sys_mount(const char *src, const char *dst, const char *type, unsigned long
     if (!fs) { return -ENODEV; }
 
     // Canonicalize paths
-    char *src_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);
-    char *dst_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 1);  
+    char *src_canonicalized = kmalloc(strlen(src) + strlen(current_cpu->current_process->wd_path) + 2);
+    char *dst_canonicalized = kmalloc(strlen(dst) + strlen(current_cpu->current_process->wd_path) + 2);
 
     if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)src, src_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }
     if (vfs_canonicalize(current_cpu->current_process->wd_path, (char*)dst, dst_canonicalized)) { kfree(src_canonicalized); kfree(dst_canonicalized); return -EINVAL; }

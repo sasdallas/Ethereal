@@ -28,6 +28,7 @@
 #include <kernel/misc/args.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/subsystems/irq.h>
+#include <kernel/subsystems/clock.h>
 
 // Drivers (generic)
 #include <kernel/drivers/serial.h>
@@ -41,13 +42,15 @@
 #include <kernel/drivers/x86/serial.h>
 #include <kernel/drivers/x86/clock.h>
 #include <kernel/drivers/x86/pit.h>
-#include <kernel/drivers/x86/acpica.h> // #ifdef ACPICA_ENABLED in this file
+#include <kernel/drivers/x86/acpica.h> // #ifdef ENABLE_ACPICA in this file
 #include <kernel/drivers/x86/minacpi.h>
 #include <kernel/drivers/x86/early_log.h>
 
 static uintptr_t hal_rsdp = 0x0;
 static int hal_acpica_in_use = 0;
 
+extern void tasklet_init();
+extern void arch_clock_register();
 
 /**
  * @brief Sets an RSDP if one was set
@@ -96,7 +99,7 @@ static void hal_init_stage1() {
  * @brief Initialize the ACPI subsystem
  */
 smp_info_t *hal_initACPI() {
-    #ifdef ACPICA_ENABLED
+#ifdef ENABLE_ACPICA
     // Initialize ACPICA
     // There are still a few bugs in ACPICA implementation that I have yet to track down.
     
@@ -166,18 +169,13 @@ static void hal_init_stage2() {
     irq_initCPU();
     hal_initializeInterrupts();
 
-    // PIT can be initialized here for now
-    pit_initialize();
-
     // Initialize tasklet
-extern void tasklet_init();
     tasklet_init();
 
     // Now we can enable interrupts
     hal_setInterruptState(HAL_INTERRUPTS_ENABLED);
 
-    /* VIDEO INITIALIZATION */
-
+    // Video initialization
     if (!kargs_has("--no-video")) {
         // Next, initialize video subsystem.
         video_init();
@@ -202,15 +200,17 @@ extern void tasklet_init();
         dprintf(INFO, "Argument \"--no_video\" found, disabling video.\n");
     }
 
-    /* ACPI INITIALIZATION */
-
+    // Initialize ACPI and collect SMP information
     smp_info_t *smp = hal_initACPI();
 
-    /* SMP INITIALIZATION */
+    // Clock initialize
+    arch_clock_register();
+    clock2_init();
 
     // Collect AP info for CPU0
     smp_collectAPInfo(0);
 
+    // Initialize SMP if requested
     if (smp) {
         if (smp_init(smp)) {
             dprintf(ERR, "Failed to initialize SMP\n");
@@ -219,7 +219,7 @@ extern void tasklet_init();
         arch_get_generic_parameters()->cpu_count = 1;
     }
 
-    /* PCI INITIALIZATION */
+    // PCI
     pci_init();
 }
 
@@ -242,7 +242,7 @@ void hal_init(int stage) {
 }
 
 
-#ifdef ACPICA_ENABLED
+#ifdef ENABLE_ACPICA
 
 /**
  * @brief HAL do ACPICA shutdown

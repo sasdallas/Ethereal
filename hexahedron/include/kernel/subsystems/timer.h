@@ -57,10 +57,6 @@ typedef struct timer_device {
 
     timer_ops_t *ops;
 
-    // repeat handler
-    tasklet_t repeat_tasklet;
-    struct timer_event *pending_repeats;
-
     spinlock_t queue_lock;
     uint64_t total_ticks;             // Total amount of ticks, updated async.
     struct timer_event *queue;
@@ -79,6 +75,11 @@ typedef struct timer_event {
     bool repeat; // if repeating will be requeued as a tasklet
     bool active;
 } timer_event_t;
+
+/**** MACROS ****/
+#define NS_TO_TICKS(ns, dev) (((ns) * (dev)->freq.mult) >> (dev)->freq.shift)
+#define TICKS_TO_NS(ticks, dev) (((ticks) << (dev)->freq.shift) / (dev)->freq.mult)
+
 
 /**** FUNCTIONS ****/
 

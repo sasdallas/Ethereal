@@ -241,6 +241,7 @@ void arch_main(multiboot_t *bootinfo, uint32_t multiboot_magic, void *esp) {
     // !!!: (which I should for compatibility)
 
     // Setup GSBase first
+    processor_data[0].self = &processor_data[0];
     arch_set_gsbase((uintptr_t)&processor_data[0]);
 
     // Initialize the hardware abstraction layer

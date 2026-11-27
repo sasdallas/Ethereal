@@ -42,6 +42,8 @@ static int sys_stat_common(vfs_file_t *f, struct stat *statbuf) {
     statbuf->st_size = attr.size;
     statbuf->st_blksize = 512; // TODO: This would prove useful for file I/O
     statbuf->st_blocks = 0; // TODO
+
+    // TODO atime, mtime, and ctime should be timespecs rather than time_ts
     statbuf->st_atim.tv_sec = attr.atime;
     statbuf->st_atim.tv_nsec = 0;
     statbuf->st_mtim.tv_sec = attr.mtime;

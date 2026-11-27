@@ -24,6 +24,7 @@
 /**** TYPES ****/
 
 struct tasklet;
+struct tasklet_cpu;
 typedef void (*tasklet_cb_t)(void *context);
 
 typedef struct tasklet {
@@ -31,6 +32,9 @@ typedef struct tasklet {
     struct tasklet *prev;
 
     bool active;
+    bool running;
+    struct tasklet_cpu *owner;
+
     char *name;
     tasklet_cb_t cb;
     void *tasklet_ctx;
@@ -39,13 +43,14 @@ typedef struct tasklet {
 typedef struct tasklet_cpu {
     spinlock_t lock;
     tasklet_t *queue;
+    tasklet_t *executing;
     int pending;
 } tasklet_cpu_t;
 
 /**** MACROS ****/
 
-#define TASKLET_DECLARE(_vname, _name, _cb, _ctx) tasklet_t _vname = { .next = NULL, .prev = NULL, .name = _name, .cb = _cb, .tasklet_ctx = _ctx, .active = false, }
-#define TASKLET_INIT(t, _name, _cb, _ctx) ({ (t)->name = _name; (t)->cb = _cb; (t)->tasklet_ctx = _ctx; (t)->next = (t)->prev = NULL; (t)->active = false ;})
+#define TASKLET_DECLARE(_vname, _name, _cb, _ctx) tasklet_t _vname = { .next = NULL, .prev = NULL, .name = _name, .cb = _cb, .tasklet_ctx = _ctx, .active = false, .running = false, .owner = NULL }
+#define TASKLET_INIT(t, _name, _cb, _ctx) ({ (t)->name = _name; (t)->cb = _cb; (t)->tasklet_ctx = _ctx; (t)->next = (t)->prev = NULL; (t)->active = false; (t)->running = false; (t)->owner = NULL; })
 
 /**** FUNCTIONS ****/
 
@@ -66,9 +71,12 @@ void tasklet_process();
 void tasklet_insert(tasklet_t *tasklet);
 
 /**
- * @brief Remove a tasklet from the current CPU queue
- * @param tasklet The tasklet to remove from the current CPU queue
+ * @brief Remove a queued tasklet from its owner CPU
+ * @param tasklet The tasklet to remove
  */
 void tasklet_remove(tasklet_t *tasklet);
+
+/** Remove a queued tasklet and wait for an executing callback to finish. */
+void tasklet_drain(tasklet_t *tasklet);
 
 #endif

@@ -50,8 +50,5 @@ extern const int __kernel_version_lower;
 
 // Debug settings
 extern const int __debug_output_com_port, __debug_output_baud_rate;
-extern const int __debugger_com_port, __debugger_baud_rate, __debugger_enabled, __debugger_wait_time;
-
-
 
 #endif

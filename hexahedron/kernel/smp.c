@@ -207,8 +207,6 @@ int smp_callFunctionMask(procmask_t *mask, void (*func)(void*), void *context, b
         }
     }
 
-    LOG(DEBUG, "callFunctionMask delivery_method=%d\n", delivery_method);
-
     // Deliver the IPIs 
     if (delivery_method == IPI_DEST_CORE) {
         cpu = procmask_first(mask);
@@ -314,7 +312,7 @@ void smp_genericInit() {
 
     // Prepare BSP queue
     SPINLOCK_INIT(&smp_queues[0].lock);
-    TASKLET_INIT(&smp_queues[0].tsklet, "smp internal", smp_tasklet, NULL);
+    TASKLET_INIT(&smp_queues[0].tsklet, "smp internal", smp_tasklet, &smp_queues[0]);
 
     // Allocate the internal IPI vector on the BSP
     assert(irq_allocate(percpu_domain, 0, NULL, &smp_internal_vector) == 0);

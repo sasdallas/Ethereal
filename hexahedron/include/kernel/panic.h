@@ -55,6 +55,8 @@ extern int __kernel_stop_codes;
 
 /**** FUNCTIONS ****/
 
+extern int kernel_in_panic_state;
+
 /**
  * @brief Immediately panic and stop the kernel.
  * @param bugcode Takes in a kernel bugcode, e.g. KERNEL_DEBUG_TRAP

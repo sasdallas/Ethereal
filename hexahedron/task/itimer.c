@@ -25,7 +25,8 @@ static void itimer_expire(void *context) {
 
     time_t ns_intv = __atomic_load_n(&itimer->ns_intv, __ATOMIC_ACQUIRE);
     if (ns_intv != 0) {
-        timer_init(&itimer->timer, itimer_expire, itimer, ns_intv, false, "proc_itimer");
+        itimer->timer.intv = NS_TO_TICKS(ns_intv, current_cpu->timer_dev);
+        if (itimer->timer.intv == 0) itimer->timer.intv = 1;
         timer_insert(&itimer->timer);
     }
 }
