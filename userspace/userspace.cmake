@@ -13,7 +13,6 @@ list(APPEND USERSPACE_APPS
     init
     login
     login-gui
-    memvisualize
     miniutils
     plasma
     play
