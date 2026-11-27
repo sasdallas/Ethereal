@@ -54,8 +54,8 @@ jobs:
 
               This build of Ethereal may be unstable.
 
-              QEMU command: `qemu-system-x86_64 -cdrom ethereal.iso -m 1G -enable-kvm -smp 4 -s -cpu host`
+              QEMU command: `qemu-system-x86_64 -cdrom hexahedron.iso -m 1G -enable-kvm -smp 4 -s -cpu host`
             files: |
-              artifacts/ethereal.iso
+              artifacts/hexahedron.iso
               artifacts/hexahedron-kernel.elf
               artifacts/initrd.tar.img
