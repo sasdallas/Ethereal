@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <graphics/gfx.h>
 #include <neutron/neutron.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 struct wp {
     struct wp *next;
@@ -121,6 +123,16 @@ int main(int argc, char *argv[]) {
     struct dirent *ent;
     while ((ent = readdir(d))) {
         if (ent->d_name[0] == '.') continue;
+
+        struct stat st;
+        if (lstat(ent->d_name, &st) < 0) {
+            fprintf(stderr, "set-wallpaper: %s: %s\n", ent->d_name, strerror(errno));
+            continue;
+        }
+
+        if (!S_ISREG(st.st_mode)) {
+            continue;
+        }
 
         struct wp *w = malloc(sizeof(struct wp));
         strncpy(w->name, ent->d_name, 255);
