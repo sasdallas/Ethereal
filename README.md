@@ -8,6 +8,10 @@ Ethereal is a hobby UNIX-like operating system designed from the ground-up.
 
 It is **not** Linux-based, nor does it share any code with Linux at all. Rather, it uses a custom OS kernel.
 
+## Downloads
+
+The latest and greatest is available in GitHub actions, or the nightly release build.
+
 ## Screenshots
 
 ![Ethereal Latest](screenshots/1.png)\
@@ -47,33 +51,7 @@ It is **not** Linux-based, nor does it share any code with Linux at all. Rather,
 
 ## AI policy
 
-Ethereal **does not** permit coding assisted by LLMs to be present in the online repo.\
-If such code does make it, it should be removed immediately.
-
-My personal stance on AI is that its a tool with specific usages.
-
-Artificial intelligence is good at:
-
-- Reading through large codebases (assuming a human double-checks) such as Linux or NetBSD.
-- Generating small, single-use test programs that never make it to upstream.
-- Teaching certain small foreign concepts or asking small questions (when this information is not readily accessible)
-
-Artificial intelligence is horrible at:
-
-- Generating any type of kernel code
-- Explaining why it is doing something/what something does
-- Not overcomplicating the simplest of topics
-
-Due to the above no AI code should ever be present in Ethereal.
-
-As I have noticed (from myself and others) people tend to "overdose" on AI and become dependent on it.\
-This only hurts you in the long run, causing your ability to program to falter.
-
-For your own sake, please avoid using AI in the wrong ways.
-
-**PRs containing AI-generated or suspected AI-generated code can be closed at any time.**
-
-**THERE IS NO VIBECODING IN ETHEREAL.**
+See [AI_POLICY.md](AI_POLICY.md).
 
 ## Code notice
 
@@ -85,7 +63,6 @@ In other areas, it isn't - I learned as I made this project.
 Take caution if using Ethereal as a source to learn how to make your own OS.
 
 ## Building
-
 
 ### ACPICA notice (READ THIS BEFORE BUILDING)
 
@@ -100,16 +77,15 @@ To enable ACPI support in the system, use manual cmake configuration
 To build Ethereal, you will need an Ethereal toolchain for your target architecture.\
 The Ethereal toolchain can be found at [the repository](https://github.com/sasdallas/Ethereal-Toolchain)
 
-Other packages required: `grub-common`, `xorriso`, `qemu-system`, `meson`, `ninja`
+Other packages required: `grub-common`, `xorriso`, `qemu-system`, `meson`, `ninja`, `cmake`
 
 Running `make all` will build an ISO in `build-output/ethereal.iso`
 
 You can run `make headers` to install the headers if attempting to build the sysroot.
 
-
 **Alternative:** You can configure CMake to build specific targets if you need:
 
-```
+```sh
 cmake -S . -B build-output --toolchain="ethereal-cmake.txt" -DENABLE_U80211=OFF -DENABLE_ACPICA=OFF
 cmake --build build-output --target iso
 ```
@@ -124,32 +100,37 @@ A lot of times, Ethereal fails to load. This is expected. Please start a GitHub 
 You can solve some problems by using 'e' to open a GRUB configuration and adding some kernel arguments to the end of the `multiboot entry`.\
 Here is a small list:
 
-- `--debug=`: Options are `console` and `none`. If `console`, will redirect kernel debug output to the screen. Useful for debugging
+- `--debug=`: Options are `console` and `none`. If `console`, will redirect kernel debug output to the screen. Useful for debugging, but will cause issues if loaded to a GUI.
 - `--noload=`: Comma-separated list of driver (.sys) files to not load. Problematic drivers: usb_xhci.sys, ahci.sys, ps2.sys (if you don't support PS/2),
 - `--no-acpica`: Disable the ACPICA library and fallback to MinACPI implementation. Only useful in extreme cases.
 - `--no-acpi`: Disable all ACPI implementations. Disables SMP as well.
 - `--disable-smp`: Enable ACPI, but disable SMP
-- `--no-psf-font`: Don't load the PSF font from initrd
 
-## External components
+## External libraries
 
-Certain external components are available in `external`, `libc`, and other parts of the kernel. Here is a list of them and their versions:
+Multiple external libraries have been used in the creation of Ethereal.\
+I thank everyone who created these libraries for their amazing work.
 
-- ACPICA UNIX* (Intel License): Version 20240927 [available here](https://www.intel.com/content/www/us/en/developer/topic-technology/open/acpica/download.html)
-- libmusl math library (MIT License): [available here](https://github.com/kraj/musl)
+Note that this list includes only required libraries for OS build.
+
 - freetype (GPL license): [available here](https://sourceforge.net/projects/freetype/)
-- mlibc (MIT license): [Ethereal fork available here](https://github.com/sasdallas/mlibc)
+- mlibc (MIT license): [available here](https://github.com/sasdallas/mlibc)
 - tinf (zlib license): [available here](https://github.com/jibsen/tinf/)
 - json-parser (BSD 2-clause license): [available here](https://github.com/json-parser/json-parser)
+- flanterm (BSD 2-clause license): [available here](https://github.com/Mintsuki/Flanterm)
+- tiny-regex-c (public domain): [available here](https://github.com/kokke/tiny-regex-c)
+- stb_image (public domain)
 
-Certain external components are by the same developer, however may follow a different license:
+Certain external components are by the same developer (that's me), however may follow a different license:
 
 - Essence (BSD 3-clause license): [available here](https://github.com/sasdallas/Essence)
-- Neutron (GPLv3 license): [available here](https://github.com/sasdallas/Neutron) 
+- Neutron (GPLv3 license): [available here](https://github.com/sasdallas/Neutron)
+
+All libraries using GPLv3 licensing are compiled externally without direct code integration.
 
 ## Credits
 
-A lot of Ethereal's design was inspired by [ToaruOS by klange](https://github.com/klange/ToaruOS) - thank you!
+A lot of Ethereal's userspace design was inspired by [ToaruOS by klange](https://github.com/klange/ToaruOS)
 
 The "grab" cursor from ToaruOS is used in Celestial (art asset is located at base/sysroot/usr/share/cursors/grab.bmp).
 
@@ -166,4 +147,4 @@ All files, unless specified in the copyright header, fall under this license. An
 
 **LICENSING ISSUES:** If a file is found without proper commenting, immediately contact me (preferably through a public channel such as GitHub issues for transparency) directly to resolve it.
 
-Ethereal's goal has **NEVER** been to take code, however if it does happen please contact me!
+Ethereal's goal has never been to take code, however if it does happen please contact me!

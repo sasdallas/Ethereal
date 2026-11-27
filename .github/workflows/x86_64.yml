@@ -1,5 +1,9 @@
 on: [push, workflow_dispatch]
 name: x86_64 ISO image
+
+permissions:
+  contents: read
+
 jobs:
   build-iso:
     runs-on: ubuntu-latest
@@ -14,7 +18,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: iso
-          path: build-output/hexahedron.iso
+          path: build-output/ethereal.iso
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:

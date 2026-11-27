@@ -1,0 +1,61 @@
+name: Publish nightly release
+
+on:
+  workflow_run:
+      workflows: ["x86_64 ISO image"]
+      types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+# ensure that more than one nightly release can't run at the same time
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  publish:
+      if: |
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Checkout build commit
+          uses: actions/checkout@v6
+          with:
+            ref: ${{ github.event.workflow_run.head_sha }}
+        - name: Download artifacts
+          uses: actions/download-artifact@v5
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            run-id: ${{ github.event.workflow_run.id }}
+            path: artifacts
+            merge-multiple: true
+        - name: Update nightly tag
+          run: |
+            git tag -f nightly HEAD
+            git push origin refs/tags/nightly --force
+        - name: Publish release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: nightly
+            name: Nightly
+            prerelease: true
+            make_latest: false
+            overwrite_files: true
+            fail_on_unmatched_files: true
+
+            body: |
+              Automated nightly build of Ethereal.\
+              Built by commit `${{ github.event.workflow_run.head_sha }}`.
+
+              This build of Ethereal may be unstable.
+
+              QEMU command: `qemu-system-x86_64 -cdrom ethereal.iso -m 1G -enable-kvm -smp 4 -s -cpu host`
+            files: |
+              artifacts/ethereal.iso
+              artifacts/hexahedron-kernel.elf
+              artifacts/initrd.tar.img
