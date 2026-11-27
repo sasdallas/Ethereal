@@ -65,7 +65,6 @@ void arch_say_hello(int is_debug) {
                     __kernel_build_configuration,
                     __kernel_version_codename);
 
-        printf("%i system processors\n", processor_count);
         printf("Booting with command line: %s\n", parameters->kernel_cmdline);
 
         // Draw logo

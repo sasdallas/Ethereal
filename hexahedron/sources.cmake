@@ -4,7 +4,8 @@ list(APPEND __DEBUG_SOURCES
 
 list(APPEND __DRIVER_SOURCES
     drivers/clock.c
-    drivers/font.c
+    drivers/fb.c
+    drivers/fb_linux.c
     drivers/grubvid.c
     drivers/net/arp.c
     drivers/net/ethernet.c
@@ -31,7 +32,6 @@ list(APPEND __DRIVER_SOURCES
     drivers/usb/roothub.c
     drivers/usb/usb.c
     drivers/usb/util.c
-    drivers/video.c
     drivers/virtio.c
 )
 
@@ -53,6 +53,8 @@ list(APPEND __FILESYSTEM_SOURCES
 )
 
 list(APPEND __GRAPHICS_SOURCES
+    gfx/flanterm/fb.c
+    gfx/flanterm/flanterm.c
     gfx/gfx.c
     gfx/term.c
 )
@@ -108,7 +110,6 @@ list(APPEND __LOCK_SOURCES
 
 list(APPEND __MISC_SOURCES
     misc/args.c
-    misc/backup-font.c
     misc/hash.c
     misc/ksym.c
     misc/mutex.c

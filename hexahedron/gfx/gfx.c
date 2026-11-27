@@ -13,18 +13,12 @@
 
 #include <stdlib.h>
 #include <kernel/gfx/gfx.h>
-#include <kernel/drivers/video.h>
-#include <kernel/debug.h>
+#include <kernel/drivers/fb.h>
 
 /**
  * @brief Draw a line
- * @param x1 First X
- * @param y1 First Y
- * @param x2 Second X
- * @param y2 Second Y
- * @param color The color of the line
  */
-void gfx_drawLine(int x1, int y1, int x2, int y2, color_t color) {
+static void gfx_drawLine(int x1, int y1, int x2, int y2, color_t color) {
     int dx = abs(x2 - x1); // Delta X
     int dy = abs(y2 - y1); // Delta Y
     int cx = (x1 < x2) ? 1 : -1; // Change for X
@@ -35,7 +29,7 @@ void gfx_drawLine(int x1, int y1, int x2, int y2, color_t color) {
     int x = x1;
     int y = y1;
     while (1) {
-        video_plotPixel(x, y, color);
+        fb_plotPixel(fb_getDefaultDevice(), x, y, color);
         if (x == x2 && y == y2) break;
 
         // Update dc for dy
@@ -63,11 +57,11 @@ void gfx_drawLogo(color_t color) {
     int offsetY = size / 2;
 
     // Calculate the center x/y of the screen
-    int center_x = video_getDriver()->screenWidth - size - 10; // Subtract 10 for some extra centering
+    fb_device_t *driver = fb_getDefaultDevice();
+    if (!driver) return;
+    int center_x = driver->info.xres - size - 10; // Subtract 10 for some extra centering
     int center_y = size + 10;
 
-    // Vertices of the cube in 3D space (without any projection applied)
-    // Cube vertices (8 total)
     int vertices[8][2] = {
         {center_x - offsetX, center_y - offsetY}, // Front-bottom-left
         {center_x + offsetX, center_y - offsetY}, // Front-bottom-right
@@ -79,18 +73,14 @@ void gfx_drawLogo(color_t color) {
         {center_x - offsetX + offsetY, center_y + offsetY - offsetX}  // Back-top-left
     };
 
-    // Draw the front and back squares (front and back edges)
     gfx_drawLine(vertices[0][0], vertices[0][1], vertices[1][0], vertices[1][1], color); // Front-bottom-left to front-bottom-right
     gfx_drawLine(vertices[1][0], vertices[1][1], vertices[2][0], vertices[2][1], color); // Front-bottom-right to front-top-right
     gfx_drawLine(vertices[2][0], vertices[2][1], vertices[3][0], vertices[3][1], color); // Front-top-right to front-top-left
     gfx_drawLine(vertices[3][0], vertices[3][1], vertices[0][0], vertices[0][1], color); // Front-top-left to front-bottom-left
-
     gfx_drawLine(vertices[4][0], vertices[4][1], vertices[5][0], vertices[5][1], color); // Back-bottom-left to back-bottom-right
     gfx_drawLine(vertices[5][0], vertices[5][1], vertices[6][0], vertices[6][1], color); // Back-bottom-right to back-top-right
     gfx_drawLine(vertices[6][0], vertices[6][1], vertices[7][0], vertices[7][1], color); // Back-top-right to back-top-left
     gfx_drawLine(vertices[7][0], vertices[7][1], vertices[4][0], vertices[4][1], color); // Back-top-left to back-bottom-left
-
-    // Connect the front and back squares
     gfx_drawLine(vertices[0][0], vertices[0][1], vertices[4][0], vertices[4][1], color); // Front-bottom-left to back-bottom-left
     gfx_drawLine(vertices[1][0], vertices[1][1], vertices[5][0], vertices[5][1], color); // Front-bottom-right to back-bottom-right
     gfx_drawLine(vertices[2][0], vertices[2][1], vertices[6][0], vertices[6][1], color); // Front-top-right to back-top-right

@@ -33,8 +33,6 @@
 // Drivers (generic)
 #include <kernel/drivers/serial.h>
 #include <kernel/drivers/grubvid.h>
-#include <kernel/drivers/video.h>
-#include <kernel/drivers/font.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/usb/usb.h>
 
@@ -164,7 +162,7 @@ _minacpi: ; // Jumped here if "--no-acpica" was present
  * @brief Stage 2 startup - initializes debugger, ACPI, etc.
  */
 static void hal_init_stage2() {
-    /* Initialize the IRQ subsystem now that memory allocators are ready */
+    // Initialize the IRQ subsystem now that memory allocators are ready
     irq_init();
     irq_initCPU();
     hal_initializeInterrupts();
@@ -177,22 +175,13 @@ static void hal_init_stage2() {
 
     // Video initialization
     if (!kargs_has("--no-video")) {
-        // Next, initialize video subsystem.
-        video_init();
-
-        video_driver_t *driver = grubvid_initialize(arch_get_generic_parameters());
-        if (driver) {
-            video_switchDriver(driver);
+        int rval = grubvid_initialize(arch_get_generic_parameters());
+        if (rval != 0) {
+            dprintf(WARN, "Could not initialize grubvid (error %d)\n", rval);
         }
-
-        // Now, fonts - just do the backup one for now.
-        font_init();
 
         // Terminal!
-        int term = terminal_init(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
-        if (term != 0) {
-            dprintf(WARN, "Terminal failed to initialize (return code %i)\n", term);
-        }
+        terminal_init();
 
         // Say hi again!
         arch_say_hello(0);
@@ -218,6 +207,8 @@ static void hal_init_stage2() {
     } else {
         arch_get_generic_parameters()->cpu_count = 1;
     }
+
+    printf("%d system processors\n", processor_count);
 
     // PCI
     pci_init();

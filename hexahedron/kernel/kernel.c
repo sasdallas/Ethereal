@@ -40,10 +40,10 @@
 #include <kernel/fs/devfs.h>
 
 // Drivers
-#include <kernel/drivers/video.h>
-#include <kernel/drivers/font.h>
+#include <kernel/drivers/fb.h>
 #include <kernel/drivers/pci.h>
 #include <kernel/drivers/usb/usb.h>
+#include <kernel/drivers/clock.h>
 
 // Graphics
 #include <kernel/gfx/term.h>
@@ -67,8 +67,7 @@
 int kernel_shutdown = 0;
 
 /* Taken from tgunzip example of tinf inflate library */
-static unsigned int read_le32(const unsigned char *p)
-{
+static unsigned int read_le32(const unsigned char *p) {
 	return ((unsigned int) p[0])
 	     | ((unsigned int) p[1] << 8)
 	     | ((unsigned int) p[2] << 16)
@@ -205,39 +204,6 @@ void kernel_loadSymbols(ini_t *ini) {
 }
 
 /**
- * @brief Load font file
- */
-void kernel_loadFont(ini_t *ini) {
-    // Try to load new font file
-    if (!kargs_has("--no-psf-font")) {
-        char *font_file = ini_get(ini, "boot", "kernel_font");
-        if (!font_file) {
-            LOG(ERR, "No entry for \"kernel_font\" in /boot/conf.ini, cannot load new font\n");
-        } else {
-
-            vfs_file_t *new_font;
-            int r = vfs_open(font_file, O_RDONLY, &new_font);
-
-            if (new_font) {
-                // Load PSF
-                if (!font_loadPSF(new_font)) {
-                    // Say hello
-                    gfx_drawLogo(TERMINAL_DEFAULT_FG);
-                    arch_say_hello(0);
-                    printf("Loaded font from initial ramdisk successfully\n");
-                } else {
-                    LOG(ERR, "Failed to load font file \"%s\".\n", font_file);
-                }
-                
-                vfs_close(new_font);
-            } else {
-                LOG(ERR, "Could not find new font file \"%s\" (error %d), using old font\n", font_file, r);
-            }
-        }
-    }
-}
-
-/**
  * @brief Try running init process
  */
 void kernel_runInit(char *path, int argc, char **argv) {
@@ -308,9 +274,6 @@ void kmain() {
     ini_t *ini = ini_load("/boot/conf.ini");
     if (!ini) kernel_panic_extended(INITIAL_RAMDISK_CORRUPTED, "initrd", "*** Missing /boot/conf.ini\n");
 
-    // Load the font
-    kernel_loadFont(ini);
-
     // Load symbols
     kernel_loadSymbols(ini);
     ini_destroy(ini);
@@ -336,14 +299,37 @@ void kmain() {
     if (kargs_has("root")) {
         char *r = kargs_get("root");
         char *fs = kargs_get("rootfs");
+        if (fs == NULL) fs = "ext2";
 
         // mount a device fs temporarily
         // !!!! THIS IS A HACK!!!!
         vfs_mkdir("/device", 0755, NULL);
         vfs_mount(vfs_getFilesystem("devfs"), "device", "device", 0, NULL);
 
-        // Default to ext2 if no root filesystem was specified
-        vfs_changeGlobalRoot(vfs_getFilesystem(fs?fs:"ext2"), r, 0, NULL);
+        // wait for rootfs to become accessible
+        vfs_file_t *root_device;
+        while (1) {
+            int rval = vfs_open(r, O_RDONLY, &root_device);
+            if (rval != 0 && rval != -ENOENT) {
+                kernel_panic_extended(MISSING_BOOT_DEVICE, "Could not open %s: error code %d\n", r, rval);
+            }
+
+            if (rval == 0) break;
+            LOG(INFO, "Waiting for root device %s to become accessible.\n", r);
+            clock_sleep(100);
+        }
+
+        vfs_close(root_device);
+
+        vfs_filesystem_t *filesystem = vfs_getFilesystem(fs);
+        if (filesystem == NULL) {
+            kernel_panic_extended(KERNEL_BAD_ARGUMENT_ERROR, "kernel", "*** Filesystem \'%s\' does not exist or a driver was not loaded.\n", fs);
+        }
+
+        int result = vfs_changeGlobalRoot(filesystem, r, 0, NULL);
+        if (result) {
+            kernel_panic_extended(MISSING_BOOT_DEVICE, "kernel", "*** Failed to mount root filesystem (%s) for %s: %d\n", fs, r, result);
+        }
     }
 
     // Run kernel late
@@ -398,11 +384,10 @@ void kernel_prepareForPowerState(int state) {
     // Enter shutdown state
     kernel_shutdown = 1;
 
-extern int video_ks;
-    video_ks = 0;
+    // Undisable the framebuffer
+    fb_is_disabled = false;
 
-    video_clearScreen(RGB(0,0,0));
-    terminal_clear(TERMINAL_DEFAULT_FG, TERMINAL_DEFAULT_BG);
+    fb_clearScreen(fb_getDefaultDevice(), RGB(0,0,0));
 
     printf(COLOR_CODE_YELLOW "System is preparing to enter power state: %s\n" COLOR_CODE_RESET, (state == HAL_POWER_SHUTDOWN) ? "SHUTDOWN" : "REBOOT");
     printf("Waiting for all processes to exit... ");

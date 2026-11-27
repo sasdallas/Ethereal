@@ -40,6 +40,7 @@ char *kernel_bugcode_strings[KERNEL_STOP_CODES] = {
     "STACK_SMASHING_DETECTED",
     "MISSING_INIT_DEPENDENCY",
     "INIT_ROUTINE_FAILURE",
+    "MISSING_BOOT_DEVICE"
 };
 
 char *kernel_panic_messages[KERNEL_STOP_CODES] = {
@@ -65,4 +66,5 @@ char *kernel_panic_messages[KERNEL_STOP_CODES] = {
     "Kernel stack smashing detected.\n",
     "Initialization routine missing dependency.\n",
     "Critical initialization routine failure.\n",
+    "The root device is corrupted or was not found.\n"
 };

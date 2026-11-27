@@ -21,7 +21,7 @@
 
 /**** STOP CODES ****/
 
-#define     KERNEL_STOP_CODES               22
+#define     KERNEL_STOP_CODES               23
 
 #define     KERNEL_DEBUG_TRAP               0x00000000 // Debugging trap
 #define     MEMORY_MANAGEMENT_ERROR         0x00000001 // Memory management failure
@@ -45,6 +45,7 @@
 #define     STACK_SMASHING_DETECTED         0x00000013 // Kernel detected stack smash
 #define     MISSING_INIT_DEPENDENCY         0x00000014 // Initcall dependency missing
 #define     INIT_ROUTINE_FAILURE            0x00000015 // Critical init routine failed
+#define     MISSING_BOOT_DEVICE             0x00000016 // Could not load root or root filesystem
 
 /**** MESSAGES ****/
 
