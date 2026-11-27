@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-Ethereal does not permit PRs containing AI generated code.
+Ethereal does not permit PRs containing large chunks of AI generated code (anything more than minor fixes).
 
 **PRs containing AI-generated or suspected AI-generated code can be closed at any time.**
 
