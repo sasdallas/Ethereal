@@ -81,6 +81,7 @@ static key_scancode_t kbd_us_scancodes_upper[128] = {
 keyboard_t *keyboard_create() {
     keyboard_t *kbd = malloc(sizeof(keyboard_t));
     kbd->mods = 0;
+    kbd->extension = 0;
     return kbd;
 }
 

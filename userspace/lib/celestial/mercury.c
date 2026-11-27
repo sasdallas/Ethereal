@@ -235,7 +235,9 @@ int celestial_renderMercury(window_t *win) {
     gfx_renderSprite(win->decor->ctx, minimize_sprite, win->decor->ctx->width - close_sprite->width - maximize_sprite->width - minimize_sprite->width - BTN_OFFSET_INITIAL - 2, 4);
     gfx_renderString(win->decor->ctx, win->decor->font, win->decor->titlebar, 8, win->decor->borders.top_height - 6, (win->decor->focused ? MERCURY_COLOR_TEXT_FOCUSED : MERCURY_COLOR_TEXT_UNFOCUSED));
     gfx_render(win->decor->ctx);
-    celestial_flip(win); // TODO: Only flip decorations
+    if (win->content_presented) {
+        celestial_flip(win); // TODO: Only flip decorations
+    }
 
     return 0;
 }

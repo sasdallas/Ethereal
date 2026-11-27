@@ -138,7 +138,7 @@ static int celestial_renderMintia(window_t *win) {
     mintia_drawButton(win, DECOR_BTN_MINIMIZE, 0);
     mintia_drawButton(win, DECOR_BTN_MAXIMIZE, 0);
     gfx_render(ctx);
-    celestial_flip(win);
+    if (win->content_presented) celestial_flip(win);
     return 0;
 }
 
@@ -160,7 +160,7 @@ static int celestial_updateStateMintia(window_t *win, int button, int state) {
     if (button >= DECOR_BTN_CLOSE && button <= DECOR_BTN_MINIMIZE) {
         mintia_drawButton(win, button, state == DECOR_BTN_STATE_HOVER);
         gfx_render(win->decor->ctx);
-        celestial_flip(win);
+        if (win->content_presented) celestial_flip(win);
     }
     return 0;
 }
