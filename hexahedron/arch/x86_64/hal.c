@@ -193,7 +193,6 @@ static void hal_init_stage2() {
     smp_info_t *smp = hal_initACPI();
 
     // Clock initialize
-    arch_clock_register();
     clock2_init();
 
     // Collect AP info for CPU0

@@ -43,13 +43,13 @@ static ssize_t fbcon_write(devfs_node_t *file, loff_t off, size_t size, const ch
     if (!size) return 0;
 
 extern spinlock_t debug_lock;
-extern int video_ks;
-    if (video_ks) spinlock_acquire(&debug_lock);
+extern bool fb_is_disabled;
+    if (fb_is_disabled) spinlock_acquire(&debug_lock);
     for (size_t i = 0; i < size; i++) {
-        if (!video_ks) terminal_putchar(buffer[i]);
+        if (!fb_is_disabled) terminal_putchar(buffer[i]);
         else debug_print(NULL, buffer[i]);
     }
-    if (video_ks) spinlock_release(&debug_lock);
+    if (fb_is_disabled) spinlock_release(&debug_lock);
 
     return size;
 }
